@@ -1,0 +1,10 @@
+vcpkg_installed
+build/**
+out/**
+.vs
+.vscode
+list.txt
+bin/**
+lib/**
+CMakeLists
+3rdparty/**
