@@ -57,6 +57,10 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-lat` 纬度  
 `-lng` 经度  
 `-height` 高度  
+# 编译说明
+1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah 
+提取码：fgah )，下载解压后放在和src同级目录下即可  
+2、编译时需要修改根目录下的CMakeLists文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径  
 # 缺陷
 1、当前不支持b3dm、gltf/glb文件的导入；  
 2、webp插件无法导出灰度图；  
@@ -123,6 +127,9 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-lat` latitude  
 `-lng` longitude  
 `-height` height  
+# Compilation Instructions
+1. Compilation requires libraries such as fbxsdk and modified tinygltf, but the file is too large to upload, so it was placed on Baidu's online drive (link: [https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah](https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah),Extract code: fgah). After downloading and decompressing, it can be placed in the same level directory as src  
+2. When compiling, it is necessary to modify the CMAKE in the CMakeLists file in the root directory the value of CMAKE_TOOLCHAIN_FILE the variable is the local vcpkg tool path.
 # Defect
 1. Currently, importing b3dm and gltf/glb files is not supported;
 2. The webp plugin cannot export grayscale images;
