@@ -10,7 +10,7 @@ public:
     osg::ref_ptr<osg::Texture2D> baseColorTexture;
 
 
-    std::array<double,4> baseColorFactor{1.0};
+    std::array<double,4> baseColorFactor{1.0,1.0 ,1.0 ,1.0 };
     double metallicFactor = 1.0;
     double roughnessFactor = 1.0;
 
@@ -20,7 +20,7 @@ public:
 #pragma endregion
 #pragma region KHR_materials_sheen(conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness)
     bool enable_KHR_materials_sheen = false;
-    std::array<double, 3> sheenColorFactor{ 0.0 };
+    std::array<double, 3> sheenColorFactor{ 0.0 , 0.0 , 0.0 };
     osg::ref_ptr<osg::Texture2D> sheenColorTexture;
     double sheenRoughnessFactor = 0.0;
     osg::ref_ptr<osg::Texture2D> sheenRoughnessTexture;
@@ -31,7 +31,7 @@ public:
     double thicknessFactor = 0.0;
     osg::ref_ptr<osg::Texture2D> thicknessTexture;
     double attenuationDistance = DBL_MAX;
-    std::array<double, 3> attenuationColor{ 1.0 };
+    std::array<double, 3> attenuationColor{ 1.0,1.0,1.0 };
 #pragma endregion
 
 
@@ -39,7 +39,7 @@ public:
     bool enable_KHR_materials_specular = false;
     double specularFactor = 1.0;
     osg::ref_ptr<osg::Texture2D> specularTexture;
-    std::array<double, 3> specularColorFactor{ 1.0 };
+    std::array<double, 3> specularColorFactor{ 1.0,1.0,1.0 };
     osg::ref_ptr<osg::Texture2D> specularColorTexture;
 #pragma endregion
 
