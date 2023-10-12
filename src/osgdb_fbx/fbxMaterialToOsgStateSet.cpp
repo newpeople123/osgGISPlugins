@@ -479,6 +479,40 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			if (result.specular.valid()) result.specular->factor = pFbxPhong->SpecularFactor.Get();
 			// get more factors here...
 		}
+		
+		OSG_INFO << ("3dsMax Traditional Material.") << std::endl;
+		osg::ref_ptr<GltfPbrMetallicRoughnessMaterial> mat = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(pOsgMat.get());
+	
+		FbxFileTexture* diffuseTexture = selectFbxFileTexture(pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse));
+		if (diffuseTexture)
+		{
+			mat->baseColorTexture = fbxTextureToOsgTexture(diffuseTexture);
+		}
+		mat->emissiveStrength = 1.0f;
+		FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
+		mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
+		if (shadingModel.Lower() == "blinn" || shadingModel.Lower() == "phong") {
+			pOsgMat->setName(pFbxMat->GetName());
+
+			auto getRoughness = [&](float shininess) { return sqrtf(2.0f / (2.0f + shininess)); };
+			mat->metallicFactor = 0.4;
+			const FbxProperty shininessProp = pFbxMat->FindProperty("Shininess");
+			if (shininessProp.IsValid()) {
+				FbxDouble roughness = shininessProp.Get<FbxDouble>();
+				mat->roughnessFactor = getRoughness(roughness);
+			}
+			else {
+				const FbxProperty shininessExponentProp = pFbxMat->FindProperty("ShininessExponent");
+				if (shininessExponentProp.IsValid()) {
+					FbxDouble roughness = shininessExponentProp.Get<FbxDouble>();
+					mat->roughnessFactor = getRoughness(roughness);
+				}
+			}
+		}
+		else {
+			mat->metallicFactor = 0.2;
+			mat->roughnessFactor = 0.8;
+		}
 	}
 
 	if (_lightmapTextures)

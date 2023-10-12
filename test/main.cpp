@@ -367,7 +367,7 @@ inline std::string gbk_to_utf8(const std::string& str)
 }
 void testOsgdb_fbx() {
 
-    string filename = "E:\\Code\\2023\\Other\\data\\2.fbx";
+    string filename = "E:\\Code\\2023\\Other\\data\\jianzhu+tietu.fbx";
     osg::setNotifyLevel(osg::ALWAYS);
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
     //TraverseMaterials(node);
@@ -377,11 +377,11 @@ void testOsgdb_fbx() {
     //osgViewer::Viewer viewer1;
     //viewer1.setSceneData(node.get());
     //viewer1.run();
-    option->setOptionString("embedImages embedBuffers prettyPrint compressionType=none");
-    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer.gltf", option);
-    //option->setOptionString("embedImages embedBuffers prettyPrint compressionType=meshopt");
-    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-meshopt.gltf", option);
-    //option->setOptionString("embedImages embedBuffers prettyPrint compressionType=draco");
+    //option->setOptionString("embedImages embedBuffers prettyPrint compressionType=none");
+    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer.gltf", option);
+    option->setOptionString("embedImages  compressionType=meshopt");
+    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-meshopt.gltf", option);
+    //option->setOptionString("embedImages compressionType=draco");
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-draco.gltf", option);
     //osgUtil::SmoothingVisitor smoothVisitor;
     //node->accept(smoothVisitor);

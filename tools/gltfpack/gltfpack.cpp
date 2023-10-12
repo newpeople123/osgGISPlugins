@@ -368,7 +368,7 @@ static void process(cgltf_data* data, const char* input_path, const char* output
 	}
 
 	mergeMeshMaterials(data, meshes, settings);
-	//mergeMeshes(meshes, settings);
+	mergeMeshes(meshes, settings);
 	filterEmptyMeshes(meshes);
 
 	markNeededNodes(data, nodes, meshes, animations, settings);
@@ -407,7 +407,7 @@ static void process(cgltf_data* data, const char* input_path, const char* output
 	}
 
 #ifndef NDEBUG
-	meshes.insert(meshes.end(), debug_meshes.begin(), debug_meshes.end());
+	//meshes.insert(meshes.end(), debug_meshes.begin(), debug_meshes.end());
 #endif
 
 	filterEmptyMeshes(meshes); // some meshes may become empty after processing
