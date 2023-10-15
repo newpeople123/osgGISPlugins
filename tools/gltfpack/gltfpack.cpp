@@ -1174,21 +1174,23 @@ int main(int argc, char** argv)
 #ifndef __wasi__
 	setlocale(LC_ALL, "C"); // disable locale specific convention for number parsing/printing
 #endif
-	const char* inputFilename = "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer.gltf";
-	const char* inputCmd = "-i";
-	const char* outputFilename = "D:\\nginx-1.22.1\\html\\3dtiles\\1\\output2.gltf";
-	const char* outputCmd = "-o";
-	const char* otherCmd1 = "-c";
-	const char* otherCmd2 = "-noq";
+	const char* cmds[] = {
+		"-i",
+		"D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer.gltf",
+		"-o",
+		"D:\\nginx-1.22.1\\html\\3dtiles\\1\\output01.gltf",
+		"-c",
+		"-noq",
+		"-si",
+		"0.1"
+	};
+
 
 	std::vector<char*> args;
 	args.push_back("gltfpack");
-	args.push_back(const_cast<char*>(inputCmd));
-	args.push_back(const_cast<char*>(inputFilename));
-	args.push_back(const_cast<char*>(outputCmd));
-	args.push_back(const_cast<char*>(outputFilename));
-	args.push_back(const_cast<char*>(otherCmd1));
-	args.push_back(const_cast<char*>(otherCmd2));
+	for (auto& cmd : cmds) {
+		args.push_back(const_cast<char*>(cmd));
+	}
 
 	std::vector<char*> argv1;
 	for (char* arg : args) {
