@@ -12,7 +12,8 @@ public:
         supportsOption("embedBuffers", "");
         supportsOption("prettyPrint", "");
         supportsOption("textureType=<value>", "value enum values:jpg、png、webp、ktx、ktx2，default value is png");
-        supportsOption("compressionType=<value>", "value enum values:draco、meshoptimizer,default is none");
+        supportsOption("compressionType=<value>", "value enum values:draco、meshopt,default is none");
+        supportsOption("comporessLevel=<string>", "default is medium,value enum values:low、medium、high");
         //supportsOption("batchId", "Enable batchid attribute");
 
     }

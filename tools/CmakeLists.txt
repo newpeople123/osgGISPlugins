@@ -1,5 +1,5 @@
 SET(TARGET_DEFAULT_LABEL_PREFIX "Tools")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
-add_subdirectory(b3dm2glb)
+add_subdirectory(b3dm2gltf)
 add_subdirectory(model23dtiles)
 add_subdirectory(gltfpack)

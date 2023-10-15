@@ -8,14 +8,10 @@ public:
     ReaderWriterB3DM() {
         supportsExtension("b3dm", "gltf format");
         supportsOption("textureType=<value>", "value enum values:jpg、png、webp、ktx、ktx2,default value is png");
-        supportsOption("compressionType=<value>", "value enum values:draco、meshoptimizer,default is none");
+        supportsOption("compressionType=<value>", "value enum values:draco、meshopt,default is none");
         supportsOption("batchId=<true/false>", "default is true");
         supportsOption("optimizer=<true/false>", "default is true");
-        supportsOption("dracoPositionQuantizationBits=<number>", "default is 14,only effective if the value of compressionType is draco");
-        supportsOption("dracoTexCoordQuantizationBits=<number>", "default is 12,only effective if the value of compressionType is draco");
-        supportsOption("dracoNormalQuantizationBits=<number>", "default is 10,only effective if the value of compressionType is draco");
-        supportsOption("dracoColorQuantizationBits=<number>", "default is 8,only effective if the value of compressionType is draco");
-        supportsOption("dracoGenericQuantizationBits=<number>", "default is 16,only effective if the value of compressionType is draco");
+        supportsOption("comporessLevel=<string>", "default is medium,value enum values:low、medium、high");
     }
     const char* className() const { return "b3dm reader/writer"; }
     virtual ReadResult readObject(const std::string& filename, const Options* options) const

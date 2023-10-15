@@ -366,8 +366,9 @@ inline std::string gbk_to_utf8(const std::string& str)
     return cv2.to_bytes(tmp_wstr);
 }
 void testOsgdb_fbx() {
-
-    string filename = "E:\\Code\\2023\\Other\\data\\jianzhu+tietu.fbx";
+    clock_t start, end;
+    start = clock();
+    string filename = "D:\\Data\\芜湖水厂总装1.fbx";
     osg::setNotifyLevel(osg::ALWAYS);
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
     //TraverseMaterials(node);
@@ -379,10 +380,14 @@ void testOsgdb_fbx() {
     //viewer1.run();
     //option->setOptionString("embedImages embedBuffers prettyPrint compressionType=none");
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer.gltf", option);
-    option->setOptionString("embedImages  compressionType=meshopt");
-    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-meshopt.gltf", option);
+    //option->setOptionString("embedImages  compressionType=meshopt");
+    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-meshopt.gltf", option);
     //option->setOptionString("embedImages compressionType=draco");
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-draco.gltf", option);
+    
+    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none");
+    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\1.gltf", option);
+
     //osgUtil::SmoothingVisitor smoothVisitor;
     //node->accept(smoothVisitor);
     //option->setOptionString("embedImages embedBuffers prettyPrint textureType=jpg");
@@ -404,6 +409,9 @@ void testOsgdb_fbx() {
     //{
     //    std::cout << path << std::endl;
     //}
+
+    end = clock();
+    std::cout << "time = " << double(end - start) / CLOCKS_PER_SEC << "s" << std::endl;
 }
 void testOsgdb_webp() {
     osg::ref_ptr<osg::Image> Tank_Roughness = osgDB::readImageFile("C://Users//ecidi-cve//Downloads//31-gas-tank//pbr.fbm//Gas Tank_Roughness.png");

@@ -29,7 +29,7 @@ public:
 	~OctreeBuilder() {};
 
 protected:
-	osg::ref_ptr<TreeNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int parentX = 0, int parentY = 0, int parentZ = 0, osg::ref_ptr<TreeNode> parent = nullptr, int depth = 0) {
+	osg::ref_ptr<TreeNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int x = 0, int y = 0, int z = 0, osg::ref_ptr<TreeNode> parent = nullptr, int depth = 0) {
 		if (total.valid()) {
 			int s[3];
 			osg::Vec3f extentSet[3] = {
@@ -88,9 +88,9 @@ protected:
 			osg::ref_ptr<TreeNode> root = new TreeNode;
 			root->parentTreeNode = parent;
 			root->level = depth;
-			root->x = parentX;
-			root->y = parentY;
-			root->z = parentZ;
+			root->x = x;
+			root->y = y;
+			root->z = z;
 
 			if (!isLeafNode)
 			{
@@ -112,7 +112,7 @@ protected:
 
 							int id = s[0] + (2 * s[1]) + (4 * s[2]);
 
-							osg::ref_ptr<TreeNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x + s[0], root->y * 2 + s[1], root->z * 4 + s[2], root, depth + 1);
+							osg::ref_ptr<TreeNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x * 2 + s[0], root->y * 2 + s[1], root->z * 2 + s[2], root, depth + 1);
 							if(childTreeNode!=NULL)
 								childNodes->addChild(childTreeNode);
 						}

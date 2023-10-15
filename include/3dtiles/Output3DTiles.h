@@ -14,6 +14,7 @@
 #include <osgDB/WriteFile>
 #include <tinygltf/tiny_gltf.h>
 #include <osg/CoordinateSystemNode>
+//#include <future>
 double getGeometricError(const TreeNode& node) {
 	double geometricError = 0.0;
 	for (unsigned int i = 0; i < node.currentNodes->getNumChildren(); ++i) {
@@ -56,6 +57,7 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 	else {
 		tilesetPath = output + "/tileset.json";
 	}
+	
 	json tileset;
 	tileset["asset"]["version"] = "1.0";
 	tileset["asset"]["tilesetVersion"] = "1.0.0";
@@ -103,7 +105,6 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 		if (node.currentNodes->getNumChildren()) {
 			tileset["root"]["content"]["uri"] = "L" + std::to_string(node.level - 1) + "_" + std::to_string(node.x) + "_" + std::to_string(node.y) + "_" + std::to_string(node.z) + ".b3dm";
 		}
-
 		double maxGeometricError = 0;
 		for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 			osg::ref_ptr<TreeNode> child = dynamic_cast<TreeNode*>(node.children->getChild(i));
@@ -124,25 +125,24 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 
 	std::ofstream tilesetFile(tilesetPath);
 	if (tilesetFile.is_open()) {
-		auto oldduf = std::cout.rdbuf(tilesetFile.rdbuf());
-		std::cout << std::setw(0) << tileset;
-		std::cout.rdbuf(oldduf);
+		tilesetFile << tileset.dump();
 		tilesetFile.close();
 
 		if (b3dmPath != "" && node.currentNodes->getNumChildren()) {
 			osg::ref_ptr<osg::Node> outputNode = node.currentNodes->asNode();
-			//osgViewer::Viewer viewer;
-			//viewer.setSceneData(outputNode);
-			//viewer.run();
 			osgDB::writeNodeFile(*outputNode.get(), b3dmPath, option);
 		}
 	}
-
+	//std::vector<std::future<void>> futures;
 	for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 		osg::ref_ptr<TreeNode> child = dynamic_cast<TreeNode*>(node.children->getChild(i));
+		//futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
 		outputTreeNode(*child.get(), option, output, level + 1);
-	}
 
+	}
+	//for (auto& future : futures) {
+	//	future.get();
+	//}
 }
 void OsgNodeTo3DTiles(const osg::ref_ptr<osg::Node> osgNode, const osg::ref_ptr<osgDB::Options>& option,const std::string& type,const double max,const double ratio, const std::string& output, const double lng, const double lat, const double height) {
 	if (osgNode.valid()) {

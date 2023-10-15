@@ -10,6 +10,33 @@
 #include <osgUtil/Simplifier>
 #include <osg/ComputeBoundsVisitor>
 #include <iostream>
+#include <random>
+#include <future>
+std::string generateUUID() {
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<int> dis(0, 15);
+
+	const std::string hexChars = "0123456789abcdef";
+
+	std::string uuid;
+	for (int i = 0; i < 32; ++i) {
+		if (i == 8 || i == 12 || i == 16 || i == 20) {
+			uuid += "-";
+		}
+		else if (i == 16) {
+			uuid += "4";
+		}
+		else if (i == 12) {
+			uuid += hexChars[3 & dis(gen)]; 
+		}
+		else {
+			uuid += hexChars[15 & dis(gen)];
+		}
+	}
+
+	return uuid;
+}
 class TreeNode:public osg::Node
 {
 public:
@@ -19,6 +46,7 @@ public:
 	int level;//current node's level
 	TreeNode* parentTreeNode;
 	int x, y, z;
+	std::string uuid;
 	double geometricError;
 	std::vector<double> box;
 	TreeNode() {
@@ -26,6 +54,7 @@ public:
 		children = new osg::Group;
 		currentNodes = new osg::Group;
 		parentTreeNode = NULL;
+		uuid = generateUUID();
 	}
 };
 
@@ -180,7 +209,7 @@ protected:
 				q.pop();
 				level.push_back(node);
 
-				for (unsigned int j = 0; j < node->children->getNumChildren();++j) {
+				for (unsigned int j = 0; j < node->children->getNumChildren(); ++j) {
 					osg::ref_ptr<TreeNode> child = dynamic_cast<TreeNode*>(node->children->getChild(j));
 					q.push(child);
 				}
@@ -192,10 +221,10 @@ protected:
 		std::vector<std::vector<osg::ref_ptr<TreeNode>>> levels;
 		convertTreeNode2Levels(rootTreeNode, levels);
 
-		for (int i = levels.size() - 1; i > -1; --i) {
+		auto func = [=] (int i){
 			std::vector<osg::ref_ptr<TreeNode>> level = levels.at(i);
 			for (osg::ref_ptr<TreeNode> treeNode : level) {
-				if (treeNode->currentNodes->getNumChildren()==0) {
+				if (treeNode->currentNodes->getNumChildren() == 0) {
 					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
 						osg::ref_ptr<TreeNode> childNode = dynamic_cast<TreeNode*>(treeNode->children->getChild(j));
 						const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
@@ -217,6 +246,13 @@ protected:
 					}
 				}
 			}
+			};
+		std::vector<std::future<void>> futures;
+		for (int i = levels.size() - 1; i > -1; --i) {
+			futures.push_back(std::async(std::launch::async, func, i));
+		}
+		for (auto& future : futures) {
+			future.get();
 		}
 		computeBoundingVolume(rootTreeNode);
 
@@ -286,9 +322,9 @@ private:
 
 	}
 	void computeBoundingVolume(osg::ref_ptr<TreeNode> treeNode) {
-		if (treeNode->currentNodes->getNumChildren()) {
+		if (treeNode->nodes->getNumChildren()) {
 			osg::ComputeBoundsVisitor computeBoundsVisitor;
-			treeNode->currentNodes->accept(computeBoundsVisitor);
+			treeNode->nodes->accept(computeBoundsVisitor);
 			osg::BoundingBox boundingBox = computeBoundsVisitor.getBoundingBox();
 			const osg::Vec3f size = boundingBox._max - boundingBox._min;
 			const osg::Vec3f cesiumBoxCenter = boundingBox.center();

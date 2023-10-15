@@ -2,6 +2,10 @@
 #include <osgDB/FileNameUtils>
 #include <iostream>
 #include <fstream>
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <tinygltf/tiny_gltf.h>
 int main(int argc, char** argv)
 {
     // use an ArgumentParser object to manage the program arguments.
@@ -18,7 +22,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "", output = "";
+    std::string input = "D:\\nginx-1.24.0\\html\\3dtiles\\singleThread\\0\\L0_1_0_0.b3dm", output = "D:\\nginx-1.24.0\\html\\3dtiles\\singleThread\\0\\1.gltf";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -30,11 +34,6 @@ int main(int argc, char** argv)
 
     if (output == "") {
         std::cout << "output file can not be null!" << std::endl;
-        arguments.getApplicationUsage()->write(std::cout);
-        return 0;
-    }
-    if (osgDB::convertToLowerCase(osgDB::getFileExtension(output)) != "glb") {
-        std::cout << "output file's extension name must be glb!" << std::endl;
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
@@ -80,9 +79,12 @@ int main(int argc, char** argv)
     uint32_t position = 28 + featureTableJSONByteLength + featureTableBinaryByteLength + batchTableJSONByteLength + batchTableBinaryByteLength;
     b3dmFile.seekg(position, std::ios::beg);
 
-    uint32_t glbLength = byteLength - 28 - featureTableJSONByteLength - featureTableBinaryByteLength - batchTableJSONByteLength - batchTableBinaryByteLength;
+    uint32_t glbLength = byteLength - position;
     std::unique_ptr<char[]> glbBuffer(new char[glbLength]);
     b3dmFile.read(glbBuffer.get(), glbLength);
+    tinygltf::Model model;
+    std::string err, waring;
+    tinygltf::TinyGLTF writer;
 
     std::ofstream gltfFile(output, std::ios::binary);
     if (!gltfFile) {
@@ -93,7 +95,16 @@ int main(int argc, char** argv)
     gltfFile.write(glbBuffer.get(), glbLength);
 
     gltfFile.close();
-
-    std::cout << "Successfully converted B3DM to GLB:" << input << " -> " << output << std::endl;
+    if (osgDB::convertToLowerCase(osgDB::getFileExtension(output)) != "glb") {
+        bool result = writer.LoadBinaryFromFile(&model, &err, &waring, output);
+        if (result) {
+            result = writer.WriteGltfSceneToFile(&model, output, true, true, false, false);
+            if (result)
+                std::cout << "Successfully converted B3DM to GLTF:" << input << " -> " << output << std::endl;
+        }
+    }
+    else {
+        std::cout << "Successfully converted B3DM to GLB:" << input << " -> " << output << std::endl;
+    }
     return 1;
 }

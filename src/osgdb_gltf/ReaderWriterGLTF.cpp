@@ -17,7 +17,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     std::string textureTypeStr, compressionTypeStr;
     TextureType textureType = TextureType::PNG;
     CompressionType comporessionType = CompressionType::NONE;
-
+    int comporessLevel = 1;
     if (options)
     {
         std::istringstream iss(options->getOptionString());
@@ -74,10 +74,21 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
                     comporessionType = CompressionType::MESHOPT;
                 }
             }
+            else if (key == "comporessLevel") {
+                if (val == "low") {
+                    comporessLevel = 0;
+                }
+                else if (val == "high") {
+                    comporessLevel = 2;
+                }
+                else {
+                    comporessLevel = 1;
+                }
+            }
         }
     }
 
-    OsgToGltf osg2gltf(textureType, comporessionType);
+    OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
     osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
     nc_node.ref();
 
@@ -100,7 +111,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
         embedImages,           // embedImages
         embedBuffers,           // embedBuffers
         prettyPrint,           // prettyPrint
-        isBinary);
+        true);
     return isSuccess ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 REGISTER_OSGPLUGIN(gltf, ReaderWriterGLTF)

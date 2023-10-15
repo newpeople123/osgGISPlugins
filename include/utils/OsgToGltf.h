@@ -33,10 +33,11 @@ private:
 	StateSetStack _ssStack;
 	osg::ref_ptr<osg::Geode> _cacheGeode = NULL;
 	CompressionType _compresssionType = CompressionType::NONE;
+	int _vco = 1;
 	TextureType _textureType = TextureType::PNG;
 	GltfUtils* _gltfUtils;
 public:
-	OsgToGltf(TextureType textureType, CompressionType compresstionType) :_textureType(textureType), _compresssionType(compresstionType) {
+	OsgToGltf(TextureType textureType, CompressionType compresstionType,int vco) :_textureType(textureType), _compresssionType(compresstionType),_vco(vco) {
 		_model.asset.version = "2.0";
 		_gltfUtils = new GltfUtils(_model);
 		setTraversalMode(TRAVERSE_ALL_CHILDREN);
@@ -51,7 +52,7 @@ public:
 		_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
 		std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
 		_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
-		_gltfUtils->geometryCompresstion(_compresssionType);
+		_gltfUtils->geometryCompresstion(_compresssionType, _vco);
 		return _model;
 	}
 private:
@@ -223,7 +224,7 @@ private:
 					//same as osgearth
 					return _gltfUtils->textureCompression(_textureType, stateSet, osgTexture);
 				}
-				};
+			};
 			if (osgMatrial)
 			{
 				int index = setGltfMaterial();
@@ -368,359 +369,8 @@ private:
 					//geom->setTexCoordArray(0, texCoords.get());
 				}
 			}
-
-			osg::PrimitiveSet* mergePrimitiveset = NULL;
-			for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i) {
-				osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);
-				const GLenum mode = pset->getMode();
-				osg::PrimitiveSet::Type type = pset->getType();
-				switch (type)
-				{
-				case osg::PrimitiveSet::PrimitiveType:
-					break;
-				case osg::PrimitiveSet::DrawArraysPrimitiveType:
-				{
-					switch (mode)
-					{
-					case osg::PrimitiveSet::TRIANGLES:
-					{
-						const GLsizei  count = (dynamic_cast<osg::DrawArrays*>(pset))->getCount();
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							for (GLsizei i = 0; i < count; ++i) {
-								newDrawElements->push_back(i);
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							for (GLsizei i = 0; i < count; ++i) {
-								newDrawElements->push_back(i);
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::TRIANGLES_ADJACENCY:
-					{
-						GLuint numVertices = positions->size();
-						GLuint numTriangles = numVertices / 6;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numTriangles; ++i) {
-								GLuint adjacencyStart = i * 6;
-								GLuint triangleStart = i * 3;
-
-								newDrawElements->at(triangleStart) = adjacencyStart;
-								newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
-								newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numTriangles; ++i) {
-								GLuint adjacencyStart = i * 6;
-								GLuint triangleStart = i * 3;
-
-								newDrawElements->at(triangleStart) = adjacencyStart;
-								newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
-								newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::TRIANGLE_FAN:
-					{
-						GLuint numVertices = positions->size();
-						GLuint numTriangles = numVertices - 2;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 1; i < numTriangles + 1; ++i) {
-								newDrawElements->at((i - 1) * 3) = 0;
-								newDrawElements->at((i - 1) * 3 + 1) = i;
-								newDrawElements->at((i - 1) * 3 + 2) = i + 1;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 1; i < numTriangles + 1; ++i) {
-								newDrawElements->at((i - 1) * 3) = 0;
-								newDrawElements->at((i - 1) * 3 + 1) = i;
-								newDrawElements->at((i - 1) * 3 + 2) = i + 1;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::TRIANGLE_STRIP:
-					{
-						GLuint numVertices = positions->size();
-						GLuint numTriangles = numVertices - 2;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLsizei i = 0; i < count; ++i) {
-								if (i % 2 == 0) {
-									newDrawElements->at(i * 3) = i;
-									newDrawElements->at(i * 3 + 1) = i + 1;
-									newDrawElements->at(i * 3 + 2) = i + 2;
-								}
-								else {
-									newDrawElements->at(i * 3) = i;
-									newDrawElements->at(i * 3 + 1) = i + 2;
-									newDrawElements->at(i * 3 + 2) = i + 1;
-								}
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLsizei i = 0; i < count; ++i) {
-								if (i % 2 == 0) {
-									newDrawElements->at(i * 3) = i;
-									newDrawElements->at(i * 3 + 1) = i + 1;
-									newDrawElements->at(i * 3 + 2) = i + 2;
-								}
-								else {
-									newDrawElements->at(i * 3) = i;
-									newDrawElements->at(i * 3 + 1) = i + 2;
-									newDrawElements->at(i * 3 + 2) = i + 1;
-								}
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::TRIANGLE_STRIP_ADJACENCY:
-					{
-						GLuint numVertices = positions->size();
-						GLuint numTriangles = numVertices / 2 - 2;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numTriangles; ++i) {
-								GLuint adjacencyStart = i * 2;
-								GLuint triangleStart = i * 3;
-								if (i % 2 == 0) {
-									newDrawElements->at(triangleStart) = adjacencyStart;
-									newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
-									newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
-								}
-								else {
-									newDrawElements->at(triangleStart) = adjacencyStart;
-									newDrawElements->at(triangleStart + 1) = adjacencyStart + 4;
-									newDrawElements->at(triangleStart + 2) = adjacencyStart + 2;
-								}
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numTriangles; ++i) {
-								GLuint adjacencyStart = i * 6;
-								GLuint triangleStart = i * 3;
-
-								newDrawElements->at(triangleStart) = adjacencyStart;
-								newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
-								newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::QUADS:
-					{
-						GLuint numQuads = positions->size() / 4;
-						GLuint numTriangles = numQuads * 2;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numQuads; ++i) {
-								GLuint quadStart = i * 4;
-								GLuint triangleStart = i * 6;
-
-								newDrawElements->at(triangleStart) = quadStart;
-								newDrawElements->at(triangleStart + 1) = quadStart + 1;
-								newDrawElements->at(triangleStart + 2) = quadStart + 2;
-
-								newDrawElements->at(triangleStart + 3) = quadStart;
-								newDrawElements->at(triangleStart + 4) = quadStart + 2;
-								newDrawElements->at(triangleStart + 5) = quadStart + 3;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numQuads; ++i) {
-								GLuint quadStart = i * 4;
-								GLuint triangleStart = i * 6;
-
-								newDrawElements->at(triangleStart) = quadStart;
-								newDrawElements->at(triangleStart + 1) = quadStart + 1;
-								newDrawElements->at(triangleStart + 2) = quadStart + 2;
-
-								newDrawElements->at(triangleStart + 3) = quadStart;
-								newDrawElements->at(triangleStart + 4) = quadStart + 2;
-								newDrawElements->at(triangleStart + 5) = quadStart + 3;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::QUAD_STRIP:
-					{
-						GLuint numVertices = positions->size();
-						GLuint numQuads = numVertices - 2;
-						GLuint numTriangles = numQuads * 2;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numQuads; ++i) {
-								GLuint quadStart = i * 2;
-								GLuint triangleStart = i * 6;
-
-								newDrawElements->at(triangleStart) = quadStart;
-								newDrawElements->at(triangleStart + 1) = quadStart + 1;
-								newDrawElements->at(triangleStart + 2) = quadStart + 2;
-
-								newDrawElements->at(triangleStart + 3) = quadStart + 1;
-								newDrawElements->at(triangleStart + 4) = quadStart + 3;
-								newDrawElements->at(triangleStart + 5) = quadStart + 2;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 0; i < numQuads; ++i) {
-								GLuint quadStart = i * 2;
-								GLuint triangleStart = i * 6;
-
-								newDrawElements->at(triangleStart) = quadStart;
-								newDrawElements->at(triangleStart + 1) = quadStart + 1;
-								newDrawElements->at(triangleStart + 2) = quadStart + 2;
-
-								newDrawElements->at(triangleStart + 3) = quadStart + 1;
-								newDrawElements->at(triangleStart + 4) = quadStart + 3;
-								newDrawElements->at(triangleStart + 5) = quadStart + 2;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					case osg::PrimitiveSet::POLYGON:
-					{
-						GLuint numVertices = positions->size();
-						GLuint numTriangles = numVertices - 2;
-						const GLsizei count = numTriangles * 3;
-						if (count > std::numeric_limits<unsigned short>::max()) {
-							osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 1; i < numTriangles + 1; ++i) {
-								newDrawElements->at((i - 1) * 3) = 0;
-								newDrawElements->at((i - 1) * 3 + 1) = i;
-								newDrawElements->at((i - 1) * 3 + 2) = i + 1;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-						else {
-							osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
-							newDrawElements->resize(count);
-							for (GLuint i = 1; i < numTriangles + 1; ++i) {
-								newDrawElements->at((i - 1) * 3) = 0;
-								newDrawElements->at((i - 1) * 3 + 1) = i;
-								newDrawElements->at((i - 1) * 3 + 2) = i + 1;
-							}
-							geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
-						}
-					}
-					break;
-					default:
-						OSG_WARN << "Current primitiveset does not support!" << std::endl;
-						break;
-					}
-				}
-				case osg::PrimitiveSet::DrawArrayLengthsPrimitiveType:
-					break;
-				case osg::PrimitiveSet::DrawElementsUBytePrimitiveType:
-					if (mergePrimitiveset == NULL) {
-						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_NODES);
-					}
-					else {
-						osg::DrawElementsUByte* primitiveUByte = static_cast<osg::DrawElementsUByte*>(pset);
-						osg::DrawElementsUByte* mergePrimitiveUByte = static_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
-						mergePrimitiveUByte->insert(mergePrimitiveUByte->end(), primitiveUByte->begin(), primitiveUByte->end());
-					}
-					geom->removePrimitiveSet(i);
-					i--;
-					break;
-				case osg::PrimitiveSet::DrawElementsUShortPrimitiveType:
-					if (mergePrimitiveset == NULL) {
-						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_NODES);
-					}
-					else {
-						osg::DrawElementsUShort* primitiveUShort = static_cast<osg::DrawElementsUShort*>(pset);
-						osg::DrawElementsUShort* mergePrimitiveUShort = static_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
-						mergePrimitiveUShort->insert(mergePrimitiveUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
-					}
-					geom->removePrimitiveSet(i);
-					i--;
-					break;
-				case osg::PrimitiveSet::DrawElementsUIntPrimitiveType:
-					if (mergePrimitiveset == NULL) {
-						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_NODES);
-					}
-					else {
-						osg::DrawElementsUInt* primitiveUInt = static_cast<osg::DrawElementsUInt*>(pset);
-						osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
-						mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
-					}
-					geom->removePrimitiveSet(i);
-					i--;
-					break;
-				case osg::PrimitiveSet::MultiDrawArraysPrimitiveType:
-					break;
-				case osg::PrimitiveSet::DrawArraysIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::DrawElementsUByteIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::DrawElementsUShortIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::DrawElementsUIntIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::MultiDrawArraysIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::MultiDrawElementsUByteIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::MultiDrawElementsUShortIndirectPrimitiveType:
-					break;
-				case osg::PrimitiveSet::MultiDrawElementsUIntIndirectPrimitiveType:
-					break;
-				default:
-					break;
-				}
-			}
-			if (mergePrimitiveset != NULL)
-				geom->addPrimitiveSet(mergePrimitiveset);
-
-
-			ReindexMesh(geom, positions, normals, texCoords);
+			//mergePrimitives(geom, positions);
+			//reindexMesh(geom, positions, normals, texCoords);
 
 			osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
 			osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -813,7 +463,7 @@ private:
 					if (colors.valid()) {
 						getOrCreateAccessor(colors, pset, primitive, "COLOR_0");
 					}
-					if (texCoords.valid()&& currentMaterial >= 0) {
+					if (texCoords.valid() && currentMaterial >= 0) {
 						getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
 					}
 
@@ -831,8 +481,433 @@ private:
 			}
 		}
 	}
+	void mergePrimitives(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions) {
+		osg::PrimitiveSet* mergePrimitiveset = NULL;
+		for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i) {
+			osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);
+			const GLenum mode = pset->getMode();
+			osg::PrimitiveSet::Type type = pset->getType();
+			switch (type)
+			{
+			case osg::PrimitiveSet::PrimitiveType:
+				break;
+			case osg::PrimitiveSet::DrawArraysPrimitiveType:
+			{
+				switch (mode)
+				{
+				case osg::PrimitiveSet::TRIANGLES:
+				{
+					const GLsizei  count = (dynamic_cast<osg::DrawArrays*>(pset))->getCount();
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						for (GLsizei i = 0; i < count; ++i) {
+							newDrawElements->push_back(i);
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						for (GLsizei i = 0; i < count; ++i) {
+							newDrawElements->push_back(i);
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::TRIANGLES_ADJACENCY:
+				{
+					GLuint numVertices = positions->size();
+					GLuint numTriangles = numVertices / 6;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numTriangles; ++i) {
+							GLuint adjacencyStart = i * 6;
+							GLuint triangleStart = i * 3;
 
-	void ReindexMesh(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords) {
+							newDrawElements->at(triangleStart) = adjacencyStart;
+							newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
+							newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numTriangles; ++i) {
+							GLuint adjacencyStart = i * 6;
+							GLuint triangleStart = i * 3;
+
+							newDrawElements->at(triangleStart) = adjacencyStart;
+							newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
+							newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::TRIANGLE_FAN:
+				{
+					GLuint numVertices = positions->size();
+					GLuint numTriangles = numVertices - 2;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 1; i < numTriangles + 1; ++i) {
+							newDrawElements->at((i - 1) * 3) = 0;
+							newDrawElements->at((i - 1) * 3 + 1) = i;
+							newDrawElements->at((i - 1) * 3 + 2) = i + 1;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 1; i < numTriangles + 1; ++i) {
+							newDrawElements->at((i - 1) * 3) = 0;
+							newDrawElements->at((i - 1) * 3 + 1) = i;
+							newDrawElements->at((i - 1) * 3 + 2) = i + 1;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::TRIANGLE_STRIP:
+				{
+					GLuint numVertices = positions->size();
+					GLuint numTriangles = numVertices - 2;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLsizei i = 0; i < count; ++i) {
+							if (i % 2 == 0) {
+								newDrawElements->at(i * 3) = i;
+								newDrawElements->at(i * 3 + 1) = i + 1;
+								newDrawElements->at(i * 3 + 2) = i + 2;
+							}
+							else {
+								newDrawElements->at(i * 3) = i;
+								newDrawElements->at(i * 3 + 1) = i + 2;
+								newDrawElements->at(i * 3 + 2) = i + 1;
+							}
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLsizei i = 0; i < count; ++i) {
+							if (i % 2 == 0) {
+								newDrawElements->at(i * 3) = i;
+								newDrawElements->at(i * 3 + 1) = i + 1;
+								newDrawElements->at(i * 3 + 2) = i + 2;
+							}
+							else {
+								newDrawElements->at(i * 3) = i;
+								newDrawElements->at(i * 3 + 1) = i + 2;
+								newDrawElements->at(i * 3 + 2) = i + 1;
+							}
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::TRIANGLE_STRIP_ADJACENCY:
+				{
+					GLuint numVertices = positions->size();
+					GLuint numTriangles = numVertices / 2 - 2;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numTriangles; ++i) {
+							GLuint adjacencyStart = i * 2;
+							GLuint triangleStart = i * 3;
+							if (i % 2 == 0) {
+								newDrawElements->at(triangleStart) = adjacencyStart;
+								newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
+								newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
+							}
+							else {
+								newDrawElements->at(triangleStart) = adjacencyStart;
+								newDrawElements->at(triangleStart + 1) = adjacencyStart + 4;
+								newDrawElements->at(triangleStart + 2) = adjacencyStart + 2;
+							}
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numTriangles; ++i) {
+							GLuint adjacencyStart = i * 6;
+							GLuint triangleStart = i * 3;
+
+							newDrawElements->at(triangleStart) = adjacencyStart;
+							newDrawElements->at(triangleStart + 1) = adjacencyStart + 2;
+							newDrawElements->at(triangleStart + 2) = adjacencyStart + 4;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::QUADS:
+				{
+					GLuint numQuads = positions->size() / 4;
+					GLuint numTriangles = numQuads * 2;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numQuads; ++i) {
+							GLuint quadStart = i * 4;
+							GLuint triangleStart = i * 6;
+
+							newDrawElements->at(triangleStart) = quadStart;
+							newDrawElements->at(triangleStart + 1) = quadStart + 1;
+							newDrawElements->at(triangleStart + 2) = quadStart + 2;
+
+							newDrawElements->at(triangleStart + 3) = quadStart;
+							newDrawElements->at(triangleStart + 4) = quadStart + 2;
+							newDrawElements->at(triangleStart + 5) = quadStart + 3;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numQuads; ++i) {
+							GLuint quadStart = i * 4;
+							GLuint triangleStart = i * 6;
+
+							newDrawElements->at(triangleStart) = quadStart;
+							newDrawElements->at(triangleStart + 1) = quadStart + 1;
+							newDrawElements->at(triangleStart + 2) = quadStart + 2;
+
+							newDrawElements->at(triangleStart + 3) = quadStart;
+							newDrawElements->at(triangleStart + 4) = quadStart + 2;
+							newDrawElements->at(triangleStart + 5) = quadStart + 3;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::QUAD_STRIP:
+				{
+					GLuint numVertices = positions->size();
+					GLuint numQuads = numVertices - 2;
+					GLuint numTriangles = numQuads * 2;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numQuads; ++i) {
+							GLuint quadStart = i * 2;
+							GLuint triangleStart = i * 6;
+
+							newDrawElements->at(triangleStart) = quadStart;
+							newDrawElements->at(triangleStart + 1) = quadStart + 1;
+							newDrawElements->at(triangleStart + 2) = quadStart + 2;
+
+							newDrawElements->at(triangleStart + 3) = quadStart + 1;
+							newDrawElements->at(triangleStart + 4) = quadStart + 3;
+							newDrawElements->at(triangleStart + 5) = quadStart + 2;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 0; i < numQuads; ++i) {
+							GLuint quadStart = i * 2;
+							GLuint triangleStart = i * 6;
+
+							newDrawElements->at(triangleStart) = quadStart;
+							newDrawElements->at(triangleStart + 1) = quadStart + 1;
+							newDrawElements->at(triangleStart + 2) = quadStart + 2;
+
+							newDrawElements->at(triangleStart + 3) = quadStart + 1;
+							newDrawElements->at(triangleStart + 4) = quadStart + 3;
+							newDrawElements->at(triangleStart + 5) = quadStart + 2;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+				}
+				break;
+				case osg::PrimitiveSet::POLYGON:
+				{
+					GLuint numVertices = positions->size();
+					GLuint numTriangles = numVertices - 2;
+					const GLsizei count = numTriangles * 3;
+					if (count > std::numeric_limits<unsigned short>::max()) {
+						osg::ref_ptr<osg::DrawElementsUInt> newDrawElements = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 1; i < numTriangles + 1; ++i) {
+							newDrawElements->at((i - 1) * 3) = 0;
+							newDrawElements->at((i - 1) * 3 + 1) = i;
+							newDrawElements->at((i - 1) * 3 + 2) = i + 1;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					else {
+						osg::ref_ptr<osg::DrawElementsUShort> newDrawElements = new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES);
+						newDrawElements->resize(count);
+						for (GLuint i = 1; i < numTriangles + 1; ++i) {
+							newDrawElements->at((i - 1) * 3) = 0;
+							newDrawElements->at((i - 1) * 3 + 1) = i;
+							newDrawElements->at((i - 1) * 3 + 2) = i + 1;
+						}
+						geom->setPrimitiveSet(i, newDrawElements->asPrimitiveSet());
+					}
+					i--;
+					break;
+				}
+				default:
+					OSG_WARN << "Current primitiveset does not support!" << std::endl;
+					break;
+				}
+			}
+			case osg::PrimitiveSet::DrawArrayLengthsPrimitiveType:
+				break;
+			case osg::PrimitiveSet::DrawElementsUBytePrimitiveType:
+				if (mergePrimitiveset != NULL && geom->getNumPrimitiveSets() > 1) {
+					if (mergePrimitiveset == NULL) {
+						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
+					}
+					else {
+						osg::DrawElementsUByte* primitiveUByte = static_cast<osg::DrawElementsUByte*>(pset);
+						osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
+						if(mergeType== osg::PrimitiveSet::DrawElementsUBytePrimitiveType){
+						osg::DrawElementsUByte* mergePrimitiveUByte = static_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
+							mergePrimitiveUByte->insert(mergePrimitiveUByte->end(), primitiveUByte->begin(), primitiveUByte->end());
+						}
+						else {
+
+							osg::DrawElementsUShort* mergePrimitiveUShort = static_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
+							if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
+
+								for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
+									unsigned short index = primitiveUByte->at(k);
+									mergePrimitiveUShort->push_back(index);
+								}
+							}
+							else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+								osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
+								for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
+									unsigned int index = primitiveUByte->at(k);
+									mergePrimitiveUShort->push_back(index);
+								}
+							}
+						}
+
+					}
+					geom->removePrimitiveSet(i);
+					i--;
+				}
+				break;
+			case osg::PrimitiveSet::DrawElementsUShortPrimitiveType:
+				if (mergePrimitiveset != NULL && geom->getNumPrimitiveSets() > 1) {
+					if (mergePrimitiveset == NULL) {
+						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
+					}
+					else {
+						osg::DrawElementsUShort* primitiveUShort = static_cast<osg::DrawElementsUShort*>(pset);
+						osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
+						osg::DrawElementsUShort* mergePrimitiveUShort = static_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
+						if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
+							mergePrimitiveUShort->insert(mergePrimitiveUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
+						}
+						else {
+							if (mergeType == osg::PrimitiveSet::DrawElementsUBytePrimitiveType) {
+								osg::DrawElementsUByte* mergePrimitiveUByte = static_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
+								osg::DrawElementsUShort* newMergePrimitvieUShort = new osg::DrawElementsUShort;
+								for (unsigned int k = 0; k < mergePrimitiveUByte->getNumIndices(); ++k) {
+									unsigned short index = mergePrimitiveUByte->at(k);
+									newMergePrimitvieUShort->push_back(index);
+								}
+								newMergePrimitvieUShort->insert(newMergePrimitvieUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
+								mergePrimitiveset = newMergePrimitvieUShort;
+							}
+							else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+								osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
+								for (unsigned int k = 0; k < primitiveUShort->getNumIndices(); ++k) {
+									unsigned int index = primitiveUShort->at(k);
+									mergePrimitiveUInt->push_back(index);
+								}
+							}
+						}
+
+					}
+					geom->removePrimitiveSet(i);
+					i--;
+				}
+				break;
+			case osg::PrimitiveSet::DrawElementsUIntPrimitiveType:
+				if (mergePrimitiveset != NULL && geom->getNumPrimitiveSets() > 1) {
+					if (mergePrimitiveset == NULL) {
+						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
+					}
+					else {
+						osg::DrawElementsUInt* primitiveUInt = static_cast<osg::DrawElementsUInt*>(pset);
+						osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
+						if (mergeType==osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+							osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
+							mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
+						}
+						else {
+							osg::DrawElements* mergePrimitive = static_cast<osg::DrawElements*>(mergePrimitiveset);
+							osg::DrawElementsUShort* newMergePrimitvieUInt = new osg::DrawElementsUShort;
+							for (unsigned int k = 0; k < mergePrimitive->getNumIndices(); ++k) {
+								unsigned int index = mergePrimitive->getElement(k);
+								newMergePrimitvieUInt->push_back(index);
+							}
+							newMergePrimitvieUInt->insert(newMergePrimitvieUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
+							mergePrimitiveset = newMergePrimitvieUInt;
+						}
+					}
+					geom->removePrimitiveSet(i);
+					i--;
+				}
+				break;
+			case osg::PrimitiveSet::MultiDrawArraysPrimitiveType:
+				break;
+			case osg::PrimitiveSet::DrawArraysIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::DrawElementsUByteIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::DrawElementsUShortIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::DrawElementsUIntIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::MultiDrawArraysIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::MultiDrawElementsUByteIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::MultiDrawElementsUShortIndirectPrimitiveType:
+				break;
+			case osg::PrimitiveSet::MultiDrawElementsUIntIndirectPrimitiveType:
+				break;
+			default:
+				break;
+			}
+		}
+		if (mergePrimitiveset != NULL)
+			geom->addPrimitiveSet(mergePrimitiveset);
+		if (mergePrimitiveset && mergePrimitiveset->getNumIndices() % 3 != 0) {
+			std::cout << std::endl;
+		}
+	}
+	void reindexMesh(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords) {
 		//reindexmesh
 		if (geom->getNumPrimitiveSets()) {
 			osg::ref_ptr<osg::DrawElements> drawElements = dynamic_cast<osg::DrawElements*>(geom->getPrimitiveSet(0));
@@ -885,127 +960,134 @@ private:
 						meshopt_Stream texCoordStream = { &texCoordData[0], sizeof(Attr), sizeof(Attr) };
 						streams.push_back(texCoordStream);
 					}
-				}
 
-				if (numIndices <= std::numeric_limits<unsigned short>::max()) {
+
 					osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(geom->getPrimitiveSet(0));
-					osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
-					for (unsigned int i = 0; i < numIndices; ++i)
-					{
-						indices->push_back(drawElementsUShort->at(i));
-					}
-					std::vector<unsigned int> remap(positions->size());
-					size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(&remap[0], &(*indices)[0], indices->size(), positions->size(), &streams[0], streams.size());
-
-					//size_t uniqueVertexCount = meshopt_generateVertexRemap(&remap[0], &(*indices)[0], indices->size(), &(*positions)[0].x(), positions->size(), sizeof(osg::Vec3));
-					osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
-					osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
-					osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
-					osg::ref_ptr<osg::UShortArray> optimizedIndices = new osg::UShortArray(indices->size());
-					meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
-					meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
-					vertexData.resize(uniqueVertexCount);
-					if (normals.valid()) {
-						meshopt_remapVertexBuffer(&normalData[0], &normalData[0], normals->size(), sizeof(Attr), &remap[0]);
-						normalData.resize(uniqueVertexCount);
-					}
-					if (texCoords.valid()) {
-						meshopt_remapVertexBuffer(&texCoordData[0], &texCoordData[0], texCoords->size(), sizeof(Attr), &remap[0]);
-						texCoordData.resize(uniqueVertexCount);
-					}
-					for (size_t i = 0; i < uniqueVertexCount; ++i) {
-						optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
-						if (normals.valid())
+					if (drawElementsUShort.valid()) {
+						osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
+						for (unsigned int i = 0; i < numIndices; ++i)
 						{
-							osg::Vec3 n(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
-							n.normalize();
-							optimizedNormals->at(i) = osg::Vec3(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
+							indices->push_back(drawElementsUShort->at(i));
 						}
-						if (texCoords.valid())
-							optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-					}
-					geom->setVertexArray(optimizedVertices);
-					if (normals.valid())
-						geom->setNormalArray(optimizedNormals);
-					if (texCoords.valid())
-						geom->setTexCoordArray(0, optimizedTexCoords);
-#pragma region filterTriangles
-					size_t newNumIndices = 0;
-					for (size_t i = 0; i < numIndices; i += 3) {
-						unsigned short a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
+						std::vector<unsigned int> remap(positions->size());
+						size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(&remap[0], &(*indices)[0], indices->size(), positions->size(), &streams[0], streams.size());
 
-						if (a != b && a != c && b != c)
-						{
-							optimizedIndices->at(newNumIndices) = a;
-							optimizedIndices->at(newNumIndices + 1) = b;
-							optimizedIndices->at(newNumIndices + 2) = c;
-							newNumIndices += 3;
-						}
-					}
-					optimizedIndices->resize(newNumIndices);
-#pragma endregion
-
-					geom->setPrimitiveSet(0, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, optimizedIndices->size(), &(*optimizedIndices)[0]));
-
-				}
-				else {
-					osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(0));
-					osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
-					for (unsigned int i = 0; i < numIndices; ++i)
-					{
-						indices->push_back(drawElementsUInt->at(i));
-					}
-					std::vector<unsigned int> remap(positions->size());
-					size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(&remap[0], &(*indices)[0], indices->size(), positions->size(), &streams[0], streams.size());
-
-					//size_t uniqueVertexCount = meshopt_generateVertexRemap(&remap[0], &(*indices)[0], indices->size(), &(*positions)[0].x(), positions->size(), sizeof(osg::Vec3));
-					osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
-					osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
-					osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
-					osg::ref_ptr<osg::UIntArray> optimizedIndices = new osg::UIntArray(indices->size());
-					meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
-					meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
-					vertexData.resize(uniqueVertexCount);
-					if (normals.valid()) {
-						meshopt_remapVertexBuffer(&normalData[0], &normalData[0], normals->size(), sizeof(Attr), &remap[0]);
-						normalData.resize(uniqueVertexCount);
-					}
-					if (texCoords.valid()) {
-						meshopt_remapVertexBuffer(&texCoordData[0], &texCoordData[0], texCoords->size(), sizeof(Attr), &remap[0]);
-						texCoordData.resize(uniqueVertexCount);
-					}
-					for (size_t i = 0; i < uniqueVertexCount; ++i) {
-						optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
+						//size_t uniqueVertexCount = meshopt_generateVertexRemap(&remap[0], &(*indices)[0], indices->size(), &(*positions)[0].x(), positions->size(), sizeof(osg::Vec3));
+						osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
+						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
+						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
+						osg::ref_ptr<osg::UShortArray> optimizedIndices = new osg::UShortArray(indices->size());
+						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
+						meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
+						vertexData.resize(uniqueVertexCount);
 						if (normals.valid()) {
-							osg::Vec3 n(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
-							n.normalize();
-							optimizedNormals->at(i) = osg::Vec3(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
+							meshopt_remapVertexBuffer(&normalData[0], &normalData[0], normals->size(), sizeof(Attr), &remap[0]);
+							normalData.resize(uniqueVertexCount);
 						}
-						if (texCoords.valid())
-							optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-					}
-					geom->setVertexArray(optimizedVertices);
-					if (normals.valid())
-						geom->setNormalArray(optimizedNormals);
-					if (texCoords.valid())
-						geom->setTexCoordArray(0, optimizedTexCoords);
-#pragma region filterTriangles
-					size_t newNumIndices = 0;
-					for (size_t i = 0; i < numIndices; i += 3) {
-						unsigned int a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
+						if (texCoords.valid()) {
+							meshopt_remapVertexBuffer(&texCoordData[0], &texCoordData[0], texCoords->size(), sizeof(Attr), &remap[0]);
+							texCoordData.resize(uniqueVertexCount);
+						}
+						std::cout << "ushort2" << std::endl;
 
-						if (a != b && a != c && b != c)
-						{
-							optimizedIndices->at(newNumIndices) = a;
-							optimizedIndices->at(newNumIndices + 1) = b;
-							optimizedIndices->at(newNumIndices + 2) = c;
-							newNumIndices += 3;
+						for (size_t i = 0; i < uniqueVertexCount; ++i) {
+							optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
+							if (normals.valid())
+							{
+								osg::Vec3 n(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
+								n.normalize();
+								optimizedNormals->at(i) = osg::Vec3(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
+							}
+							if (texCoords.valid())
+								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
 						}
-					}
-					optimizedIndices->resize(newNumIndices);
+						geom->setVertexArray(optimizedVertices);
+						if (normals.valid())
+							geom->setNormalArray(optimizedNormals);
+						if (texCoords.valid())
+							geom->setTexCoordArray(0, optimizedTexCoords);
+#pragma region filterTriangles
+						size_t newNumIndices = 0;
+						std::cout << "ushort3" << std::endl;
+
+						for (size_t i = 0; i < numIndices; i += 3) {
+							unsigned short a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
+
+							if (a != b && a != c && b != c)
+							{
+								optimizedIndices->at(newNumIndices) = a;
+								optimizedIndices->at(newNumIndices + 1) = b;
+								optimizedIndices->at(newNumIndices + 2) = c;
+								newNumIndices += 3;
+							}
+						}
+						optimizedIndices->resize(newNumIndices);
 #pragma endregion
-					geom->setPrimitiveSet(0, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, optimizedIndices->size(), &(*optimizedIndices)[0]));
+
+						geom->setPrimitiveSet(0, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, optimizedIndices->size(), &(*optimizedIndices)[0]));
+
+					}
+					else {
+						std::cout << "uint" << std::endl;
+						osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(0));
+						osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
+						for (unsigned int i = 0; i < numIndices; ++i)
+						{
+							indices->push_back(drawElementsUInt->at(i));
+						}
+						std::vector<unsigned int> remap(positions->size());
+						size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(&remap[0], &(*indices)[0], indices->size(), positions->size(), &streams[0], streams.size());
+
+						//size_t uniqueVertexCount = meshopt_generateVertexRemap(&remap[0], &(*indices)[0], indices->size(), &(*positions)[0].x(), positions->size(), sizeof(osg::Vec3));
+						osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
+						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
+						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
+						osg::ref_ptr<osg::UIntArray> optimizedIndices = new osg::UIntArray(indices->size());
+						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
+						meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
+						vertexData.resize(uniqueVertexCount);
+						if (normals.valid()) {
+							meshopt_remapVertexBuffer(&normalData[0], &normalData[0], normals->size(), sizeof(Attr), &remap[0]);
+							normalData.resize(uniqueVertexCount);
+						}
+						if (texCoords.valid()) {
+							meshopt_remapVertexBuffer(&texCoordData[0], &texCoordData[0], texCoords->size(), sizeof(Attr), &remap[0]);
+							texCoordData.resize(uniqueVertexCount);
+						}
+						for (size_t i = 0; i < uniqueVertexCount; ++i) {
+							optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
+							if (normals.valid()) {
+								osg::Vec3 n(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
+								n.normalize();
+								optimizedNormals->at(i) = osg::Vec3(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
+							}
+							if (texCoords.valid())
+								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
+						}
+						geom->setVertexArray(optimizedVertices);
+						if (normals.valid())
+							geom->setNormalArray(optimizedNormals);
+						if (texCoords.valid())
+							geom->setTexCoordArray(0, optimizedTexCoords);
+#pragma region filterTriangles
+						size_t newNumIndices = 0;
+						for (size_t i = 0; i < numIndices; i += 3) {
+							unsigned int a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
+
+							if (a != b && a != c && b != c)
+							{
+								optimizedIndices->at(newNumIndices) = a;
+								optimizedIndices->at(newNumIndices + 1) = b;
+								optimizedIndices->at(newNumIndices + 2) = c;
+								newNumIndices += 3;
+							}
+						}
+						optimizedIndices->resize(newNumIndices);
+#pragma endregion
+						geom->setPrimitiveSet(0, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, optimizedIndices->size(), &(*optimizedIndices)[0]));
+					}
 				}
+
 			}
 		}
 	}

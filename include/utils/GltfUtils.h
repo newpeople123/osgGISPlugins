@@ -115,7 +115,12 @@ private:
 	std::vector<osg::ref_ptr<osg::Texture>> _textures;
 public:
 	struct VertexCompressionOptions {
-
+		int PositionQuantizationBits = 14;
+		int TexCoordQuantizationBits = 12;
+		int NormalQuantizationBits = 10;
+		int ColorQuantizationBits = 8;
+		int GenericQuantizationBits = 16;
+		int Speed = 0;
 	};
 	struct DracoCompressionOptions :VertexCompressionOptions {
 		//Default value is medium level
@@ -258,9 +263,8 @@ private:
 
 		return attId;
 	}
-	void CompressMeshByDraco(tinygltf::Mesh& mesh, std::unordered_set<int>& bufferViewsToRemove) {
+	void CompressMeshByDraco(tinygltf::Mesh& mesh, std::unordered_set<int>& bufferViewsToRemove, VertexCompressionOptions vco) {
 		draco::Encoder encoder;
-		DracoCompressionOptions options;
 		//low level
 		//options.PositionQuantizationBits = 16.0;
 		//options.TexCoordQuantizationBits = 14.0;
@@ -281,7 +285,7 @@ private:
 		//options.GenericQuantizationBits = 14.0;
 		//vertex lossless compression
 		//options.PositionQuantizationBits = 0.0;
-		setDracoEncoderOptions(encoder, options);
+		setDracoEncoderOptions(encoder, vco);
 
 		for (int j = 0; j < mesh.primitives.size(); j++) {
 			const auto& primitive = mesh.primitives.at(j);
@@ -462,7 +466,7 @@ private:
 		}
 
 	}
-	void CompressMeshByMeshopt(tinygltf::Mesh& mesh) {
+	void CompressMeshByMeshopt(tinygltf::Mesh& mesh, const VertexCompressionOptions& vco) {
 		// 1、Indexing
 		// 2、Vertex cache optimization
 		// 3、Overdraw optimization
@@ -707,7 +711,7 @@ private:
 			}
 		}
 	}
-	void setDracoEncoderOptions(draco::Encoder& encoder, const DracoCompressionOptions& options) {
+	void setDracoEncoderOptions(draco::Encoder& encoder, const VertexCompressionOptions& options) {
 		encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, options.PositionQuantizationBits);
 		encoder.SetAttributeQuantization(draco::GeometryAttribute::TEX_COORD, options.TexCoordQuantizationBits);
 		encoder.SetAttributeQuantization(draco::GeometryAttribute::NORMAL, options.NormalQuantizationBits);
@@ -716,7 +720,7 @@ private:
 		encoder.SetSpeedOptions(options.Speed, options.Speed);
 		encoder.SetTrackEncodedProperties(true);
 	}
-	bool geometryCompression(const std::string& extensionName) {
+	bool geometryCompression(const std::string& extensionName, const VertexCompressionOptions& vco) {
 		_model.extensionsRequired.push_back(extensionName);
 		_model.extensionsUsed.push_back(extensionName);
 
@@ -724,7 +728,7 @@ private:
 			for (auto& mesh : _model.meshes) {
 				std::unordered_set<int> bufferViewsToRemove;
 
-				CompressMeshByDraco(mesh, bufferViewsToRemove);
+				CompressMeshByDraco(mesh, bufferViewsToRemove, vco);
 				//TODO:this can be simplified such as meshopt
 				std::vector<int> bufferViewsToRemoveVector(bufferViewsToRemove.begin(), bufferViewsToRemove.end());
 				for (int i = 0; i < bufferViewsToRemoveVector.size(); ++i) {
@@ -779,7 +783,7 @@ private:
 		else {
 			for (auto& mesh : _model.meshes) {
 				std::unordered_set<int> buffersToRemove;
-				CompressMeshByMeshopt(mesh);
+				CompressMeshByMeshopt(mesh, vco);
 			}
 			return true;
 		}
@@ -1330,15 +1334,35 @@ public:
 		_model.materials.push_back(mat);
 		return materialIndex;
 	}
-	bool geometryCompresstion(const CompressionType& type) {
+	bool geometryCompresstion(const CompressionType& type,const int vertexComporessLevel) {
+		VertexCompressionOptions vco;
+		switch (vertexComporessLevel)
+		{
+		case 0:
+			vco.PositionQuantizationBits = 16.0;
+			vco.TexCoordQuantizationBits = 14.0;
+			vco.NormalQuantizationBits = 12.0;
+			vco.ColorQuantizationBits = 10.0;
+			vco.GenericQuantizationBits = 18.0;
+			break;
+		case 2:
+			vco.PositionQuantizationBits = 12.0;
+			vco.TexCoordQuantizationBits = 10.0;
+			vco.NormalQuantizationBits = 8.0;
+			vco.ColorQuantizationBits = 8.0;
+			vco.GenericQuantizationBits = 14.0;
+			break;
+		default:
+			break;
+		}
 		//KHR_draco_mesh_compression
 		if (type == CompressionType::DRACO) {
-			geometryCompression("KHR_draco_mesh_compression");
+			geometryCompression("KHR_draco_mesh_compression", vco);
 		}
 
 		//EXT_meshopt_compression
 		if (type == CompressionType::MESHOPT) {
-			geometryCompression("EXT_meshopt_compression");
+			geometryCompression("EXT_meshopt_compression", vco);
 		}
 		mergeBuffers();
 		return true;
