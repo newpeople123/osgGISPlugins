@@ -224,6 +224,18 @@ protected:
 		auto func = [=] (int i){
 			std::vector<osg::ref_ptr<TreeNode>> level = levels.at(i);
 			for (osg::ref_ptr<TreeNode> treeNode : level) {
+				if (treeNode->currentNodes->getNumChildren()) {
+					osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
+					osgUtil::Simplifier simplifier;
+					simplifier.setSampleRatio(_simpleRatio);
+					lodModel->accept(simplifier);
+				}
+			}
+			};
+		std::vector<std::future<void>> futures;
+		for (int i = levels.size() - 1; i > -1; --i) {
+			std::vector<osg::ref_ptr<TreeNode>> level = levels.at(i);
+			for (osg::ref_ptr<TreeNode> treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren() == 0) {
 					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
 						osg::ref_ptr<TreeNode> childNode = dynamic_cast<TreeNode*>(treeNode->children->getChild(j));
@@ -237,17 +249,16 @@ protected:
 								}
 							}
 						}
-						if (treeNode->currentNodes->getNumChildren()) {
-							osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
-							osgUtil::Simplifier simplifier;
-							simplifier.setSampleRatio(_simpleRatio);
-							lodModel->accept(simplifier);
-						}
+					}
+					if (treeNode->currentNodes->getNumChildren()) {
+						osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
+						osgUtil::Simplifier simplifier;
+						simplifier.setSampleRatio(_simpleRatio);
+						lodModel->accept(simplifier);
 					}
 				}
 			}
-			};
-		std::vector<std::future<void>> futures;
+		}
 		for (int i = levels.size() - 1; i > -1; --i) {
 			futures.push_back(std::async(std::launch::async, func, i));
 		}

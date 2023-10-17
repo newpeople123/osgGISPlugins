@@ -133,16 +133,16 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 			osgDB::writeNodeFile(*outputNode.get(), b3dmPath, option);
 		}
 	}
-	//std::vector<std::future<void>> futures;
+	std::vector<std::future<void>> futures;
 	for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 		osg::ref_ptr<TreeNode> child = dynamic_cast<TreeNode*>(node.children->getChild(i));
-		//futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
-		outputTreeNode(*child.get(), option, output, level + 1);
+		futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
+		//outputTreeNode(*child.get(), option, output, level + 1);
 
 	}
-	//for (auto& future : futures) {
-	//	future.get();
-	//}
+	for (auto& future : futures) {
+		future.get();
+	}
 }
 void OsgNodeTo3DTiles(const osg::ref_ptr<osg::Node> osgNode, const osg::ref_ptr<osgDB::Options>& option,const std::string& type,const double max,const double ratio, const std::string& output, const double lng, const double lat, const double height) {
 	if (osgNode.valid()) {

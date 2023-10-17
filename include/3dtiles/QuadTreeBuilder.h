@@ -15,7 +15,7 @@ public:
         rootTreeNode = buildTree(totalBoundingBox, group);
         buildHlod(rootTreeNode);
     }
-    QuadTreeBuilder(osg::ref_ptr<osg::Node> node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const int simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth,simpleRatio) {
+    QuadTreeBuilder(osg::ref_ptr<osg::Node> node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const double simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth,simpleRatio) {
         RebuildDataNodeVisitor rdnv;
         node->accept(rdnv);
         osg::ref_ptr<osg::Group> group = rdnv.output;

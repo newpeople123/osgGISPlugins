@@ -3,6 +3,7 @@
 #include <osgUtil/Optimizer>
 #include <osg/MatrixTransform>
 #include <osgUtil/Statistics>
+#include <osgUtil/Simplifier>
 class UserDataVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
@@ -369,7 +370,9 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
             }
         }
     }
-
+    osgUtil::Simplifier simplifier;
+    simplifier.setSampleRatio(0.1);
+    node->accept(simplifier);
     OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
 
 
@@ -403,22 +406,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     nc_node.unref_nodelete();
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
-    //成功解决问题
+
     StateSetOptimizerVisitor stateSetOptimize;
     copyNode->accept(stateSetOptimize);
     stateSetOptimize.sharedDuplicateState();
-    //osg::setNotifyLevel(osg::INFO);
+
     B3dmOptimizer b3dmOptimizer;
     copyNode->accept(b3dmOptimizer);
-    //osgUtil::Optimizer optimizer;
-    //optimizer.optimize(copyNode, osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-    //optimizer.optimize(copyNode, osgUtil::Optimizer::INDEX_MESH);
-    //optimizer.optimize(copyNode, osgUtil::Optimizer::MERGE_GEODES);
-    //optimizer.optimize(copyNode, osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
 
-    //osgUtil::Optimizer::MergeGeometryVisitor mgv;
-    //mgv.setTargetMaximumNumberOfVertices(10000000);//100w
-    //copyNode->accept(mgv);
     osgUtil::StatsVisitor stats;
     if (osg::getNotifyLevel() >= osg::INFO)
     {
@@ -439,7 +434,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     if (gltfDataPadding == 4) gltfDataPadding = 0;
 
     std::string b3dm_buf;
-    const int batchIdCount = batchidVisitor.getBatchId();
+    const unsigned int batchIdCount = batchidVisitor.getBatchId();
     std::string feature_json_string;
     feature_json_string += "{\"BATCH_LENGTH\":";
     feature_json_string += std::to_string(batchIdCount);

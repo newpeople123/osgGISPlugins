@@ -369,8 +369,8 @@ private:
 					//geom->setTexCoordArray(0, texCoords.get());
 				}
 			}
-			//mergePrimitives(geom, positions);
-			//reindexMesh(geom, positions, normals, texCoords);
+			mergePrimitives(geom, positions);
+			reindexMesh(geom, positions, normals, texCoords);
 
 			osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
 			osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -903,13 +903,11 @@ private:
 		}
 		if (mergePrimitiveset != NULL)
 			geom->addPrimitiveSet(mergePrimitiveset);
-		if (mergePrimitiveset && mergePrimitiveset->getNumIndices() % 3 != 0) {
-			std::cout << std::endl;
-		}
 	}
 	void reindexMesh(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords) {
 		//reindexmesh
 		if (geom->getNumPrimitiveSets()) {
+			osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 			osg::ref_ptr<osg::DrawElements> drawElements = dynamic_cast<osg::DrawElements*>(geom->getPrimitiveSet(0));
 			if (drawElements.valid() && positions.valid()) {
 				const unsigned int numIndices = drawElements->getNumIndices();
@@ -928,7 +926,12 @@ private:
 						v.f[0] = vertex.x();
 						v.f[1] = vertex.y();
 						v.f[2] = vertex.z();
-						v.f[3] = 0.0;
+						if (batchIds.valid()) {
+							v.f[3] = batchIds->at(i);
+						}
+						else {
+							v.f[3] = 0.0;
+						}
 						vertexData.push_back(v);
 
 						if (normals.valid()) {
@@ -977,6 +980,7 @@ private:
 						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
 						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
 						osg::ref_ptr<osg::UShortArray> optimizedIndices = new osg::UShortArray(indices->size());
+						osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(uniqueVertexCount);
 						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
 						meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
 						vertexData.resize(uniqueVertexCount);
@@ -988,7 +992,6 @@ private:
 							meshopt_remapVertexBuffer(&texCoordData[0], &texCoordData[0], texCoords->size(), sizeof(Attr), &remap[0]);
 							texCoordData.resize(uniqueVertexCount);
 						}
-						std::cout << "ushort2" << std::endl;
 
 						for (size_t i = 0; i < uniqueVertexCount; ++i) {
 							optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
@@ -1000,7 +1003,12 @@ private:
 							}
 							if (texCoords.valid())
 								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
+							if (batchIds.valid()) {
+								optimizedBatchIds->at(i) = vertexData[i].f[3];
+							}
 						}
+						if (batchIds.valid())
+							geom->setVertexAttribArray(0, optimizedBatchIds);
 						geom->setVertexArray(optimizedVertices);
 						if (normals.valid())
 							geom->setNormalArray(optimizedNormals);
@@ -1008,7 +1016,6 @@ private:
 							geom->setTexCoordArray(0, optimizedTexCoords);
 #pragma region filterTriangles
 						size_t newNumIndices = 0;
-						std::cout << "ushort3" << std::endl;
 
 						for (size_t i = 0; i < numIndices; i += 3) {
 							unsigned short a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
@@ -1028,7 +1035,6 @@ private:
 
 					}
 					else {
-						std::cout << "uint" << std::endl;
 						osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(0));
 						osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
 						for (unsigned int i = 0; i < numIndices; ++i)
@@ -1043,6 +1049,7 @@ private:
 						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
 						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
 						osg::ref_ptr<osg::UIntArray> optimizedIndices = new osg::UIntArray(indices->size());
+						osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(uniqueVertexCount);
 						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
 						meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
 						vertexData.resize(uniqueVertexCount);
@@ -1063,7 +1070,12 @@ private:
 							}
 							if (texCoords.valid())
 								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
+							if (batchIds.valid()) {
+								optimizedBatchIds->at(i) = vertexData[i].f[3];
+							}
 						}
+						if (batchIds.valid())
+							geom->setVertexAttribArray(0, optimizedBatchIds);
 						geom->setVertexArray(optimizedVertices);
 						if (normals.valid())
 							geom->setNormalArray(optimizedNormals);
