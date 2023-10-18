@@ -1,4 +1,4 @@
-set(TOOL_NAME "b3dm2gtf")
+set(TOOL_NAME "b3dm2gltf")
 project(${TOOL_NAME})
 aux_source_directory(. DIR_SRCS)
 ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS})

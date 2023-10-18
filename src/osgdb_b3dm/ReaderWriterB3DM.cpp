@@ -3,7 +3,6 @@
 #include <osgUtil/Optimizer>
 #include <osg/MatrixTransform>
 #include <osgUtil/Statistics>
-#include <osgUtil/Simplifier>
 class UserDataVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
@@ -90,7 +89,6 @@ public:
     void apply(osg::Group& group) {
         _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
         _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::MERGE_GEODES);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::INDEX_MESH);
         _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
         osgUtil::Optimizer::MergeGeometryVisitor mgv;
         mgv.setTargetMaximumNumberOfVertices(10000000);//100w
@@ -370,9 +368,6 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
             }
         }
     }
-    osgUtil::Simplifier simplifier;
-    simplifier.setSampleRatio(0.1);
-    node->accept(simplifier);
     OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
 
 

@@ -6,6 +6,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tinygltf/tiny_gltf.h>
+#include <cstdio>
 int main(int argc, char** argv)
 {
     // use an ArgumentParser object to manage the program arguments.
@@ -22,7 +23,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "D:\\nginx-1.24.0\\html\\3dtiles\\singleThread\\0\\L0_1_0_0.b3dm", output = "D:\\nginx-1.24.0\\html\\3dtiles\\singleThread\\0\\1.gltf";
+    std::string input = "D:\\nginx-1.22.1\\html\\3dtiles\\wuhu\\Data\\InstancedTile\\R3_InstancedTile+L2_1_0_0.b3dm", output = "D:\\nginx-1.22.1\\html\\3dtiles\\wuhu\\Data\\InstancedTile\\1.gltf";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -88,7 +89,7 @@ int main(int argc, char** argv)
 
     std::ofstream gltfFile(output, std::ios::binary);
     if (!gltfFile) {
-        std::cout << "create glb file failed:" << output << std::endl;
+        std::cout << "create gltf/glb file failed:" << output << std::endl;
         return false;
     }
 
@@ -101,6 +102,10 @@ int main(int argc, char** argv)
             result = writer.WriteGltfSceneToFile(&model, output, true, true, false, false);
             if (result)
                 std::cout << "Successfully converted B3DM to GLTF:" << input << " -> " << output << std::endl;
+        }
+        else {
+            std::remove(output.c_str());
+            std::cout << "Failed converted B3DM to GLTF:" << input << " -> " << output << std::endl;
         }
     }
     else {

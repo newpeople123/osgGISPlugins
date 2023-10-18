@@ -18,7 +18,7 @@ int main(int argc, char** argv)
     arguments.getApplicationUsage()->addCommandLineOption("-i <file>", "input 3D model file full path");
     arguments.getApplicationUsage()->addCommandLineOption("-o <path>", "output 3dtiles path");
     arguments.getApplicationUsage()->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "texture format,option values are png、jpg、webp、ktx2，default value is png.");
-    arguments.getApplicationUsage()->addCommandLineOption("-vf <draco/none>", "vertex format,option values are draco、none,default is none.");
+    arguments.getApplicationUsage()->addCommandLineOption("-vf <draco/meshopt/none>", "vertex format,option values are draco、meshopt、none,default is none.");
     arguments.getApplicationUsage()->addCommandLineOption("-t <quad/oc>", " tree format,option values are quad、oc,default is oc.");
     arguments.getApplicationUsage()->addCommandLineOption("-max <number>", "the maximum number of triangles contained in the b3dm node.default value is 40000.");
     arguments.getApplicationUsage()->addCommandLineOption("-ratio <number>", "Simplified ratio of intermediate nodes.default is 0.5.");
@@ -26,11 +26,6 @@ int main(int argc, char** argv)
     arguments.getApplicationUsage()->addCommandLineOption("-lng <number>", "datum point's longitude");
     arguments.getApplicationUsage()->addCommandLineOption("-height <number>", "datum point's height");
     arguments.getApplicationUsage()->addCommandLineOption("-draco_compression_level <low/medium/hight>", "draco compression level");
-    arguments.getApplicationUsage()->addCommandLineOption("-draco_position_compression_level <number>", "PositionQuantizationBits value");
-    arguments.getApplicationUsage()->addCommandLineOption("-draco_texcoord_compression_level <number>", "TexCoordQuantizationBits value");
-    arguments.getApplicationUsage()->addCommandLineOption("-draco_normal_compression_level <number>", "NormalQuantizationBits value");
-    arguments.getApplicationUsage()->addCommandLineOption("-draco_color_compression_level <number>", "ColorQuantizationBits value");
-    arguments.getApplicationUsage()->addCommandLineOption("-draco_generic_compression_level <number>", "GenericQuantizationBits value");
     arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters");
 
     // if user request help write it out to cout.
@@ -40,7 +35,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "E:\\Code\\2023\\Other\\data\\芜湖水厂总装1.fbx", output = "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
