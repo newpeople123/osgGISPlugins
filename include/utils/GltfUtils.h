@@ -1364,7 +1364,7 @@ public:
 		if (type == CompressionType::MESHOPT) {
 			geometryCompression("EXT_meshopt_compression", vco);
 		}
-		mergeBuffers();
+		//mergeBuffers();
 		return true;
 	}
 

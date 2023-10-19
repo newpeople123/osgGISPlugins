@@ -21,7 +21,7 @@ double getGeometricError(const TreeNode& node) {
 		osg::ComputeBoundsVisitor computeBoundsVisitor;
 		node.currentNodes->getChild(i)->accept(computeBoundsVisitor);
 		osg::BoundingBox boundingBox = computeBoundsVisitor.getBoundingBox();
-		const double diagonalLength = (boundingBox._max - boundingBox._min).length();
+		const double diagonalLength = (boundingBox._max - boundingBox._min).length() / 2;
 		geometricError = std::max(geometricError, diagonalLength);
 	}
 	return geometricError;

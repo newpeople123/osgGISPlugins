@@ -486,7 +486,8 @@ private:
 		osgUtil::Optimizer optimizer;
 		optimizer.optimize(geom, osgUtil::Optimizer::INDEX_MESH);
 		osg::PrimitiveSet* mergePrimitiveset = NULL;
-		for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i) {
+		const unsigned int numPrimitiveSets = geom->getNumPrimitiveSets();
+		for (unsigned i = 0; i < numPrimitiveSets; ++i) {
 			osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);
 			const GLenum mode = pset->getMode();
 			osg::PrimitiveSet::Type type = pset->getType();
@@ -499,103 +500,94 @@ private:
 			case osg::PrimitiveSet::DrawArrayLengthsPrimitiveType:
 				break;
 			case osg::PrimitiveSet::DrawElementsUBytePrimitiveType:
-				if (mergePrimitiveset != NULL && geom->getNumPrimitiveSets() > 1) {
-					if (mergePrimitiveset == NULL) {
+				if (mergePrimitiveset == NULL) {
+					if(geom->getNumPrimitiveSets() > 1)
 						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
+				}
+				else {
+					osg::DrawElementsUByte* primitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(pset);
+					osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
+					if(mergeType== osg::PrimitiveSet::DrawElementsUBytePrimitiveType){
+						osg::DrawElementsUByte* mergePrimitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
+						mergePrimitiveUByte->insert(mergePrimitiveUByte->end(), primitiveUByte->begin(), primitiveUByte->end());
 					}
 					else {
-						osg::DrawElementsUByte* primitiveUByte = static_cast<osg::DrawElementsUByte*>(pset);
-						osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
-						if(mergeType== osg::PrimitiveSet::DrawElementsUBytePrimitiveType){
-						osg::DrawElementsUByte* mergePrimitiveUByte = static_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
-							mergePrimitiveUByte->insert(mergePrimitiveUByte->end(), primitiveUByte->begin(), primitiveUByte->end());
-						}
-						else {
 
-							osg::DrawElementsUShort* mergePrimitiveUShort = static_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
-							if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
+						osg::DrawElementsUShort* mergePrimitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
+						if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
 
-								for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
-									unsigned short index = primitiveUByte->at(k);
-									mergePrimitiveUShort->push_back(index);
-								}
-							}
-							else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
-								osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
-								for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
-									unsigned int index = primitiveUByte->at(k);
-									mergePrimitiveUShort->push_back(index);
-								}
+							for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
+								unsigned short index = primitiveUByte->at(k);
+								mergePrimitiveUShort->push_back(index);
 							}
 						}
-
+						else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+							osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
+							for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
+								unsigned int index = primitiveUByte->at(k);
+								mergePrimitiveUInt->push_back(index);
+							}
+						}
 					}
-					geom->removePrimitiveSet(i);
-					i--;
 				}
+
 				break;
 			case osg::PrimitiveSet::DrawElementsUShortPrimitiveType:
-				if (mergePrimitiveset != NULL && geom->getNumPrimitiveSets() > 1) {
-					if (mergePrimitiveset == NULL) {
+				if (mergePrimitiveset == NULL) {
+					if (geom->getNumPrimitiveSets() > 1)
 						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
+				}
+				else {
+					osg::DrawElementsUShort* primitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(pset);
+					osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
+					osg::DrawElementsUShort* mergePrimitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
+					if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
+						mergePrimitiveUShort->insert(mergePrimitiveUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
 					}
 					else {
-						osg::DrawElementsUShort* primitiveUShort = static_cast<osg::DrawElementsUShort*>(pset);
-						osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
-						osg::DrawElementsUShort* mergePrimitiveUShort = static_cast<osg::DrawElementsUShort*>(mergePrimitiveset);
-						if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
-							mergePrimitiveUShort->insert(mergePrimitiveUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
-						}
-						else {
-							if (mergeType == osg::PrimitiveSet::DrawElementsUBytePrimitiveType) {
-								osg::DrawElementsUByte* mergePrimitiveUByte = static_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
-								osg::DrawElementsUShort* newMergePrimitvieUShort = new osg::DrawElementsUShort;
-								for (unsigned int k = 0; k < mergePrimitiveUByte->getNumIndices(); ++k) {
-									unsigned short index = mergePrimitiveUByte->at(k);
-									newMergePrimitvieUShort->push_back(index);
-								}
-								newMergePrimitvieUShort->insert(newMergePrimitvieUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
-								mergePrimitiveset = newMergePrimitvieUShort;
+						if (mergeType == osg::PrimitiveSet::DrawElementsUBytePrimitiveType) {
+							osg::DrawElementsUByte* mergePrimitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(mergePrimitiveset);
+							osg::DrawElementsUShort* newMergePrimitvieUShort = new osg::DrawElementsUShort;
+							for (unsigned int k = 0; k < mergePrimitiveUByte->getNumIndices(); ++k) {
+								unsigned short index = mergePrimitiveUByte->at(k);
+								newMergePrimitvieUShort->push_back(index);
 							}
-							else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
-								osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
-								for (unsigned int k = 0; k < primitiveUShort->getNumIndices(); ++k) {
-									unsigned int index = primitiveUShort->at(k);
-									mergePrimitiveUInt->push_back(index);
-								}
+							newMergePrimitvieUShort->insert(newMergePrimitvieUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
+							mergePrimitiveset = newMergePrimitvieUShort;
+						}
+						else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+							osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
+							for (unsigned int k = 0; k < primitiveUShort->getNumIndices(); ++k) {
+								unsigned int index = primitiveUShort->at(k);
+								mergePrimitiveUInt->push_back(index);
 							}
 						}
-
 					}
-					geom->removePrimitiveSet(i);
-					i--;
+
 				}
 				break;
 			case osg::PrimitiveSet::DrawElementsUIntPrimitiveType:
-				if (mergePrimitiveset != NULL && geom->getNumPrimitiveSets() > 1) {
-					if (mergePrimitiveset == NULL) {
+				if (mergePrimitiveset == NULL) {
+					if(geom->getNumPrimitiveSets() > 1)
 						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
+				}
+				else {
+					osg::DrawElementsUInt* primitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(pset);
+					osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
+					if (mergeType==osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+						osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
+						mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
 					}
 					else {
-						osg::DrawElementsUInt* primitiveUInt = static_cast<osg::DrawElementsUInt*>(pset);
-						osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
-						if (mergeType==osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
-							osg::DrawElementsUInt* mergePrimitiveUInt = static_cast<osg::DrawElementsUInt*>(mergePrimitiveset);
-							mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
+						osg::DrawElements* mergePrimitive = dynamic_cast<osg::DrawElements*>(mergePrimitiveset);
+						osg::DrawElementsUInt* newMergePrimitvieUInt = new osg::DrawElementsUInt;
+						for (unsigned int k = 0; k < mergePrimitive->getNumIndices(); ++k) {
+							unsigned int index = mergePrimitive->getElement(k);
+							newMergePrimitvieUInt->push_back(index);
 						}
-						else {
-							osg::DrawElements* mergePrimitive = static_cast<osg::DrawElements*>(mergePrimitiveset);
-							osg::DrawElementsUShort* newMergePrimitvieUInt = new osg::DrawElementsUShort;
-							for (unsigned int k = 0; k < mergePrimitive->getNumIndices(); ++k) {
-								unsigned int index = mergePrimitive->getElement(k);
-								newMergePrimitvieUInt->push_back(index);
-							}
-							newMergePrimitvieUInt->insert(newMergePrimitvieUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
-							mergePrimitiveset = newMergePrimitvieUInt;
-						}
+						newMergePrimitvieUInt->insert(newMergePrimitvieUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
+						mergePrimitiveset = newMergePrimitvieUInt;
 					}
-					geom->removePrimitiveSet(i);
-					i--;
 				}
 				break;
 			case osg::PrimitiveSet::MultiDrawArraysPrimitiveType:
@@ -620,8 +612,12 @@ private:
 				break;
 			}
 		}
-		if (mergePrimitiveset != NULL)
+		if (mergePrimitiveset != NULL) {
+			for (unsigned i = 0; i < numPrimitiveSets; ++i) {
+				geom->removePrimitiveSet(0);
+			}
 			geom->addPrimitiveSet(mergePrimitiveset);
+		}
 	}
 	void reindexMesh(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords) {
 		//reindexmesh
