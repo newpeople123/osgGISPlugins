@@ -1176,13 +1176,12 @@ int main(int argc, char** argv)
 #endif
 	const char* cmds[] = {
 		"-i",
-		"D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer.gltf",
+		"D:\\nginx-1.22.1\\html\\3dtiles\\singleThread\\0\\1.glTF",
 		"-o",
-		"D:\\nginx-1.22.1\\html\\3dtiles\\1\\output01.gltf",
+		"D:\\nginx-1.22.1\\html\\3dtiles\\singleThread\\0\\1-1.gltf",
 		"-c",
-		"-noq",
 		"-si",
-		"0.1"
+		"0.01"
 	};
 
 

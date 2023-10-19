@@ -34,7 +34,7 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-
+    std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
