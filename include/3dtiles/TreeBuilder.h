@@ -28,7 +28,7 @@ std::string generateUUID() {
 			uuid += "4";
 		}
 		else if (i == 12) {
-			uuid += hexChars[3 & dis(gen)]; 
+			uuid += hexChars[3 & dis(gen)];
 		}
 		else {
 			uuid += hexChars[15 & dis(gen)];
@@ -37,7 +37,7 @@ std::string generateUUID() {
 
 	return uuid;
 }
-class TreeNode:public osg::Node
+class TreeNode :public osg::Node
 {
 public:
 	osg::ref_ptr<osg::Group> nodes;//all descendant nodes
@@ -58,7 +58,7 @@ public:
 	}
 };
 
-class TriangleNumberNodeVisitor:public osg::NodeVisitor
+class TriangleNumberNodeVisitor :public osg::NodeVisitor
 {
 public:
 	unsigned int count = 0;
@@ -177,7 +177,7 @@ public:
 		}
 	};
 };
-class TreeBuilder:public osg::Object
+class TreeBuilder :public osg::Object
 {
 public:
 	osg::ref_ptr<TreeNode> rootTreeNode = new TreeNode;
@@ -221,7 +221,7 @@ protected:
 		std::vector<std::vector<osg::ref_ptr<TreeNode>>> levels;
 		convertTreeNode2Levels(rootTreeNode, levels);
 
-		auto func = [=] (int i){
+		auto func = [=](int i) {
 			std::vector<osg::ref_ptr<TreeNode>> level = levels.at(i);
 			for (osg::ref_ptr<TreeNode> treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren()) {
@@ -337,8 +337,9 @@ private:
 			osg::ComputeBoundsVisitor computeBoundsVisitor;
 			treeNode->nodes->accept(computeBoundsVisitor);
 			osg::BoundingBox boundingBox = computeBoundsVisitor.getBoundingBox();
-			const osg::Vec3f size = boundingBox._max - boundingBox._min;
-			const osg::Vec3f cesiumBoxCenter = boundingBox.center();
+			osg::Matrixd mat = osg::Matrixd::rotate(osg::inDegrees(-90.0f), 1.0f, 0.0f, 0.0f);
+			const osg::Vec3f size = boundingBox._max * mat - boundingBox._min * mat;
+			const osg::Vec3f cesiumBoxCenter = boundingBox.center() * mat;
 
 			treeNode->box.push_back(cesiumBoxCenter.x());
 			treeNode->box.push_back(cesiumBoxCenter.y());

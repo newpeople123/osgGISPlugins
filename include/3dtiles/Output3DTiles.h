@@ -61,7 +61,7 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 	json tileset;
 	tileset["asset"]["version"] = "1.0";
 	tileset["asset"]["tilesetVersion"] = "1.0.0";
-	tileset["root"]["refine"] = node.children->getNumChildren() == 0 ? "REPLACE" : "ADD";
+	tileset["root"]["refine"] = "REPLACE";
 	for (const double& i : node.box) {
 		tileset["root"]["boundingVolume"]["box"].push_back(i);
 	}
@@ -81,7 +81,7 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 				const std::string uri = std::to_string(child->level - 1) + "/" + "L" + std::to_string(child->level - 1) + "_" + std::to_string(child->x) + "_" + std::to_string(child->y) + "_" + std::to_string(child->z) + ".json";
 				root["content"]["uri"] = uri;
 				root["geometricError"] = child->geometricError == 0 ? getGeometricError(*child) : child->geometricError;
-				root["refine"] = child->children->getNumChildren() == 0 ? "REPLACE" : "ADD";
+				root["refine"] = "REPLACE";
 				tileset["root"]["children"].push_back(root);
 				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
@@ -99,6 +99,7 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 	else if (node.children->getNumChildren() == 0) {
 		tileset["root"]["content"]["uri"] = "L" + std::to_string(node.level - 1) + "_" + std::to_string(node.x) + "_" + std::to_string(node.y) + "_" + std::to_string(node.z) + ".b3dm";
 		tileset["geometricError"] = 0.0;
+		tileset["refine"] = "ADD";
 		tileset["root"]["geometricError"] = tileset["geometricError"];
 	}
 	else {
@@ -115,7 +116,7 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 			root["content"]["uri"] = "../" + std::to_string(child->level - 1) + "/" + "L" + std::to_string(child->level - 1) + "_" + std::to_string(child->x) + "_" + std::to_string(child->y) + "_" + std::to_string(child->z) + ".json";
 
 			root["geometricError"] = child->geometricError == 0 ? getGeometricError(*child) : child->geometricError;
-			root["refine"] = child->children->getNumChildren() == 0 ? "REPLACE" : "ADD";
+			root["refine"] = "REPLACE";
 			tileset["root"]["children"].push_back(root);
 			maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 		}
