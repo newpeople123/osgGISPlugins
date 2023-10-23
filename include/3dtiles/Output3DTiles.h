@@ -14,17 +14,55 @@
 #include <osgDB/WriteFile>
 #include <tinygltf/tiny_gltf.h>
 #include <osg/CoordinateSystemNode>
+#include <osgUtil/CullVisitor>
 //#include <future>
+double getPixelSize(const double& distance, const double& radius) {
+	const double far1 = 10000000000.0;
+	const double near1 = 0.1;
+	const double fov1 = 1.0471975511965976;
+	const double aspectRatio1 = 1.869851729818781;
+	const double viewportWidth = 1920.0;
+	const double viewportHeight = 1080.0;
+
+	const double angularSize = osg::RadiansToDegrees(2.0 * atan(radius / distance));
+	const double dpp = osg::maximum(fov1, 1.0e-17) / viewportHeight;
+	double pixelSize = angularSize / dpp;
+	return pixelSize;
+}
+
+double getDistance(const double& radius, const double& pixelSize = 10000.0f) {
+
+	const double far1 = 10000000000.0;
+	const double near1 = 0.1;
+	const double fov1 = 1.0471975511965976;
+	const double aspectRatio1 = 1.869851729818781;
+	const double viewportWidth = 1920.0;
+	const double viewportHeight = 1080.0;
+
+	const double dpp = osg::maximum(fov1, 1.0e-17) / viewportHeight;
+	const double angularSize = dpp * pixelSize;
+
+	double distance = radius / tan(osg::DegreesToRadians(angularSize) / 2);
+	return distance;
+}
 double getGeometricError(const TreeNode& node) {
+
+	osgUtil::CullVisitor* t = new osgUtil::CullVisitor;
+	double pS = t->pixelSize(node.currentNodes->getBound().center(), node.currentNodes->getBound().radius());
 	double geometricError = 0.0;
+	double radius = 0.0;
 	for (unsigned int i = 0; i < node.currentNodes->getNumChildren(); ++i) {
 		osg::ComputeBoundsVisitor computeBoundsVisitor;
 		node.currentNodes->getChild(i)->accept(computeBoundsVisitor);
+		radius = std::max((double)node.currentNodes->getChild(i)->getBound().radius(), radius);
 		osg::BoundingBox boundingBox = computeBoundsVisitor.getBoundingBox();
 		const double diagonalLength = (boundingBox._max - boundingBox._min).length() / 2;
 		geometricError = std::max(geometricError, diagonalLength);
 	}
-	return geometricError;
+	const double distance = getDistance(radius);
+	double newGeometricError = distance * 0.5629165124598852 * 16 / 936.0;
+	std::cout << newGeometricError << std::endl;
+	return newGeometricError;
 }
 void getAllTreeNodesGeometricError(TreeNode& node) {
 	for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
@@ -86,7 +124,7 @@ void outputTreeNode(const TreeNode& node, const osg::ref_ptr<osgDB::Options>& op
 				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
 			tileset["geometricError"] = maxGeometricError;
-			tileset["root"]["geometricError"] = tileset["geometricError"];
+			tileset["root"]["geometricError"] = getDistance(node.nodes->getBound().radius()) * 0.5629165124598852 * 16 / 936.0;
 		}
 		else {
 			if (node.currentNodes->getNumChildren()) {
