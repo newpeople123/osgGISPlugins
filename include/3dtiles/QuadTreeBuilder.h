@@ -28,7 +28,7 @@ public:
 
 protected:
  
-    osg::ref_ptr<TreeNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int x = 0, int y = 0, int z = 0, osg::ref_ptr<TreeNode> parent = nullptr, int depth = 0) {
+    osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int x = 0, int y = 0, int z = 0, osg::ref_ptr<TileNode> parent = nullptr, int depth = 0) {
 
         if (total.valid()) {
             int s[2];
@@ -85,7 +85,7 @@ protected:
             }
 
 
-            osg::ref_ptr<TreeNode> root = new TreeNode;
+            osg::ref_ptr<TileNode> root = new TileNode;
             root->parentTreeNode = parent;
             root->level = depth;
             root->x = x;
@@ -111,7 +111,7 @@ protected:
                         max[2] = total._max.z();
 
                         int id = s[0] + (2 * s[1]);
-                        osg::ref_ptr<TreeNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x * 2 + s[0], root->y * 2 + s[1], root->z , root, depth + 1);
+                        osg::ref_ptr<TileNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x * 2 + s[0], root->y * 2 + s[1], root->z , root, depth + 1);
                         if (childTreeNode != NULL)
                             childNodes->addChild(childTreeNode);
                     }
@@ -119,7 +119,7 @@ protected:
 
                 for (unsigned int i = 0; i < childNodes->getNumChildren(); ++i)
                 {
-                    osg::ref_ptr<TreeNode> childTreeNode = dynamic_cast<TreeNode *>(childNodes->getChild(i));
+                    osg::ref_ptr<TileNode> childTreeNode = dynamic_cast<TileNode *>(childNodes->getChild(i));
                     if (childTreeNode->children->getNumChildren() > 0 || childTreeNode->currentNodes->getNumChildren() > 0) {
                         root->children->addChild(childTreeNode);
                         for (unsigned int j = 0; j < childTreeNode->nodes->getNumChildren(); j++) {

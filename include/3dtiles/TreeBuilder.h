@@ -12,6 +12,7 @@
 #include <iostream>
 #include <random>
 #include <future>
+#include <utils/ComputeObbBoundsVisitor.h>
 std::string generateUUID() {
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -37,24 +38,28 @@ std::string generateUUID() {
 
 	return uuid;
 }
-class TreeNode :public osg::Node
+class TileNode :public osg::Node
 {
 public:
 	osg::ref_ptr<osg::Group> nodes;//all descendant nodes
 	osg::ref_ptr<osg::Group> children;//direct child node 
 	osg::ref_ptr<osg::Group> currentNodes;//current node contains nodes
 	int level;//current node's level
-	TreeNode* parentTreeNode;
+	TileNode* parentTreeNode;
 	int x, y, z;
 	std::string uuid;
 	double geometricError;
 	std::vector<double> box;
-	TreeNode() {
+	std::vector<double> region;
+
+	std::string refine;
+	TileNode() {
 		nodes = new osg::Group;
 		children = new osg::Group;
 		currentNodes = new osg::Group;
 		parentTreeNode = NULL;
 		uuid = generateUUID();
+		refine = "REPLACE";
 	}
 };
 
@@ -180,7 +185,7 @@ public:
 class TreeBuilder :public osg::Object
 {
 public:
-	osg::ref_ptr<TreeNode> rootTreeNode = new TreeNode;
+	osg::ref_ptr<TileNode> rootTreeNode = new TileNode;
 	TreeBuilder(const TreeBuilder& node, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY) {};
 	TreeBuilder() :_maxTriangleNumber(40000), _maxTreeDepth(8), _maxLevel(0), _simpleRatio(0.5f) {
 	};
@@ -197,33 +202,33 @@ public:
 	virtual const char* className() const { return "model23dtiles"; }
 protected:
 	//todo:create quadtree or octree
-	//virtual osg::ref_ptr<TreeNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int parentX = 0, int parentY = 0, int parentZ = 0, osg::ref_ptr<TreeNode> parent = nullptr, int depth = 0);
-	void convertTreeNode2Levels(osg::ref_ptr<TreeNode> rootTreeNode, std::vector<std::vector<osg::ref_ptr<TreeNode>>>& levels) {
-		std::queue<osg::ref_ptr<TreeNode>> q;
+	//virtual osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int parentX = 0, int parentY = 0, int parentZ = 0, osg::ref_ptr<TileNode> parent = nullptr, int depth = 0);
+	void convertTreeNode2Levels(osg::ref_ptr<TileNode> rootTreeNode, std::vector<std::vector<osg::ref_ptr<TileNode>>>& levels) {
+		std::queue<osg::ref_ptr<TileNode>> q;
 		q.push(rootTreeNode);
 		while (!q.empty()) {
 			int size = q.size();
-			std::vector<osg::ref_ptr<TreeNode>> level;
+			std::vector<osg::ref_ptr<TileNode>> level;
 			for (int i = 0; i < size; i++) {
-				osg::ref_ptr<TreeNode> node = q.front();
+				osg::ref_ptr<TileNode> node = q.front();
 				q.pop();
 				level.push_back(node);
 
 				for (unsigned int j = 0; j < node->children->getNumChildren(); ++j) {
-					osg::ref_ptr<TreeNode> child = dynamic_cast<TreeNode*>(node->children->getChild(j));
+					osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node->children->getChild(j));
 					q.push(child);
 				}
 			}
 			levels.push_back(level);
 		}
 	}
-	void buildHlod(osg::ref_ptr<TreeNode> rootTreeNode) {
-		std::vector<std::vector<osg::ref_ptr<TreeNode>>> levels;
+	void buildHlod(osg::ref_ptr<TileNode> rootTreeNode) {
+		std::vector<std::vector<osg::ref_ptr<TileNode>>> levels;
 		convertTreeNode2Levels(rootTreeNode, levels);
 
 		auto func = [=](int i) {
-			std::vector<osg::ref_ptr<TreeNode>> level = levels.at(i);
-			for (osg::ref_ptr<TreeNode> treeNode : level) {
+			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+			for (osg::ref_ptr<TileNode> treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren()) {
 					osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
 					osgUtil::Simplifier simplifier;
@@ -234,11 +239,11 @@ protected:
 			};
 		std::vector<std::future<void>> futures;
 		for (int i = levels.size() - 1; i > -1; --i) {
-			std::vector<osg::ref_ptr<TreeNode>> level = levels.at(i);
-			for (osg::ref_ptr<TreeNode> treeNode : level) {
+			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+			for (osg::ref_ptr<TileNode> treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren() == 0) {
 					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
-						osg::ref_ptr<TreeNode> childNode = dynamic_cast<TreeNode*>(treeNode->children->getChild(j));
+						osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
 						const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
 						for (unsigned int l = 0; l < childNode->currentNodes->getNumChildren(); ++l) {
 							osg::ref_ptr<osg::Node> childNodeCurrentNode = childNode->currentNodes->getChild(l);
@@ -249,12 +254,6 @@ protected:
 								}
 							}
 						}
-					}
-					if (treeNode->currentNodes->getNumChildren()) {
-						osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
-						osgUtil::Simplifier simplifier;
-						simplifier.setSampleRatio(_simpleRatio);
-						lodModel->accept(simplifier);
 					}
 				}
 			}
@@ -324,20 +323,27 @@ private:
 		}
 		return result;
 	}
-	void hlodOptimizierProxy(osg::ref_ptr<TreeNode> rootTreeNode) {
+	void hlodOptimizierProxy(osg::ref_ptr<TileNode> rootTreeNode) {
 		for (unsigned int i = 0; i < rootTreeNode->children->getNumChildren(); ++i) {
-			hlodOptimizierProxy(dynamic_cast<TreeNode*>(rootTreeNode->children->getChild(i)));
+			hlodOptimizierProxy(dynamic_cast<TileNode*>(rootTreeNode->children->getChild(i)));
 		}
 		rootTreeNode->nodes = hlodOptimizier(rootTreeNode->nodes);
 		rootTreeNode->currentNodes = hlodOptimizier(rootTreeNode->currentNodes);
 
 	}
-	void computeBoundingVolume(osg::ref_ptr<TreeNode> treeNode) {
+	void computeBoundingVolume(osg::ref_ptr<TileNode> treeNode) {
 		if (treeNode->nodes->getNumChildren()) {
+			//ComputeObbBoundsVisitor computeObbBoundsVisitor;
+			//treeNode->nodes->accept(computeObbBoundsVisitor);
+			//osg::ref_ptr<osg::Vec3Array> region = computeObbBoundsVisitor.getOBBBoundingBox();
+			//for (unsigned int i = 0; i < region->size(); ++i) {
+			//	treeNode->region.push_back(region->at(i));
+			//}
+
 			osg::ComputeBoundsVisitor computeBoundsVisitor;
 			treeNode->nodes->accept(computeBoundsVisitor);
 			osg::BoundingBox boundingBox = computeBoundsVisitor.getBoundingBox();
-			osg::Matrixd mat = osg::Matrixd::rotate(osg::inDegrees(-90.0f), 1.0f, 0.0f, 0.0f);
+			osg::Matrixd mat = osg::Matrixd::rotate(osg::inDegrees(90.0f), 1.0f, 0.0f, 0.0f);
 			const osg::Vec3f size = boundingBox._max * mat - boundingBox._min * mat;
 			const osg::Vec3f cesiumBoxCenter = boundingBox.center() * mat;
 
@@ -358,7 +364,7 @@ private:
 			treeNode->box.push_back(size.z() / 2);
 		}
 		for (unsigned int i = 0; i < treeNode->children->getNumChildren(); ++i) {
-			computeBoundingVolume(dynamic_cast<TreeNode*>(treeNode->children->getChild(i)));
+			computeBoundingVolume(dynamic_cast<TileNode*>(treeNode->children->getChild(i)));
 		}
 	}
 };
