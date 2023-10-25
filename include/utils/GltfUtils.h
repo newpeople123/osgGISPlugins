@@ -832,7 +832,7 @@ private:
 		// Flip the image before writing
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
 		flipped->flipVertical();
-		textureOptimize(flipped, 2);
+		textureOptimize(flipped);
 
 		std::string filename;
 		std::string ext = "png";
@@ -1056,25 +1056,22 @@ private:
 			gltfMaterial.extensions["KHR_materials_emissive_strength"] = tinygltf::Value(obj);
 		}
 	}
+
 	//convert image size to the power of 2
-	void textureOptimize(osg::ref_ptr<osg::Image> img, int type) {
-		switch (type)
-		{
-		case 0://256*256
-			img->scaleImage(256, 256, 1);
-			break;
-		case 1://512*512
-			img->scaleImage(512, 512, 1);
-			break;
-		case 2://1024*1024
-			img->scaleImage(1024, 1024, 1);
-			break;
-		case 3://2048*2048
-			img->scaleImage(2048, 2048, 1);
-			break;
-		default:
-			break;
-		}
+	void textureOptimize(osg::ref_ptr<osg::Image> img) {
+		auto findNearestGreaterPowerOfTwo = [](int n) {
+			int powerOfTwo = 1;
+			while (powerOfTwo < n) {
+				powerOfTwo <<= 1;
+			}
+			return powerOfTwo;
+			};
+
+		const int oldS = img->s();
+		const int oldR = img->t();
+		const int newS = findNearestGreaterPowerOfTwo(oldS);
+		const int newR = findNearestGreaterPowerOfTwo(oldR);
+		img->scaleImage(newS, newR, 1);
 	}
 	void mergeBuffers() {
 		tinygltf::Buffer totalBuffer;
