@@ -13,6 +13,7 @@
 #include <random>
 #include <future>
 #include <utils/ComputeObbBoundsVisitor.h>
+#include <utils/CustomSimplify.h>
 std::string generateUUID() {
 	std::random_device rd;
 	std::mt19937 gen(rd());
