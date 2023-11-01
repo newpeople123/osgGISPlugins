@@ -41,9 +41,11 @@ double getPixelSize(const double& distance, const double& radius) {
 /// <param name="radius"></param>
 /// <param name="hopePixelSize">20 pixels: visible;700 pixels: can see the outline clearly;1000 pixels : can see details clearly</param>
 /// <returns></returns>
-double getDistance(const double& radius, const double& hopePixelSize = 20.0f) {
-	const double pixelSizeRatio = 100.0 / 3.0;
-	const double pixelSize = hopePixelSize * pixelSizeRatio;
+double getDistance(const double& radius, const double& hopePixelSize = 50.0f) {
+	//const double pixelSizeRatio = 100.0 / 3.0;
+	//const double pixelSize = hopePixelSize * pixelSizeRatio;
+
+	const double pixelSize = hopePixelSize;
 
 	const double dpp = osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight;
 	const double angularSize = dpp * pixelSize;
@@ -57,16 +59,19 @@ double getGeometricError(const TileNode& node) {
 	//double pS = t->pixelSize(node.currentNodes->getBound().center(), node.currentNodes->getBound().radius());
 	double geometricError = 0.0;
 	double distance = 0.0;
-	const double radius = node.currentNodes->getBound().radius();
-	if (node.level == 0) {
-		distance = getDistance(radius);
-	}
-	else if (node.children->getNumChildren() > 0) {
-		distance = getDistance(radius, 700.0);
-	}
-	else {
-		distance = getDistance(radius);
-	}
+	const double radius = node.nodes->getBound().radius();
+	osg::ComputeBoundsVisitor cbv;
+	node.nodes->accept(cbv);
+	const osg::Vec3 max = cbv.getBoundingBox()._max;
+	const osg::Vec3 min = cbv.getBoundingBox()._min;
+	const double radius2 = (max - min).length() / 2;
+	distance = getDistance(radius2);
+	//if (node.level == 0) {
+	//	distance = getDistance(radius2);
+	//}
+	//else if (node.children->getNumChildren() > 0) {
+	//	distance = getDistance(radius2, 700.0);
+	//}
 	geometricError = distance * CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight;
 	return geometricError;
 }
@@ -130,7 +135,7 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
 			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);
-			tileset["root"]["geometricError"] = getDistance(node.nodes->getBound().radius()) * 0.5629165124598852 * 16 / 936.0;
+			tileset["root"]["geometricError"] = node.geometricError;
 		}
 		else {
 			if (node.currentNodes->getNumChildren()) {

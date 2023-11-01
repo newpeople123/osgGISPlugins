@@ -1142,6 +1142,22 @@ private:
 			_model.buffers.push_back(fallbackBuffer);
 		}
 	}
+	void mergePrimitves() {
+		tinygltf::Mesh totalMesh;
+		for (auto& mesh : _model.meshes) {
+			if(mesh.primitives.size()>0)
+				totalMesh.primitives.push_back(mesh.primitives[0]);
+		}
+		_model.nodes.clear();
+		tinygltf::Node node;
+		node.mesh = 0;
+		_model.nodes.push_back(node);
+		_model.meshes.clear();
+		_model.meshes.push_back(totalMesh);
+		_model.scenes[0].nodes.clear();
+		_model.scenes[0].nodes.push_back(0);
+
+	}
 public:
 	GltfUtils(tinygltf::Model& model) :_model(model) {
 
@@ -1361,7 +1377,8 @@ public:
 		if (type == CompressionType::MESHOPT) {
 			geometryCompression("EXT_meshopt_compression", vco);
 		}
-		//mergeBuffers();
+		mergeBuffers();
+		//mergePrimitves();
 		return true;
 	}
 
