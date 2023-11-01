@@ -16,6 +16,7 @@
 #include <osgUtil/Optimizer>
 #include <osgDB/ConvertUTF>
 #include <codecvt>
+#include <utils/TextureAtlas.h>
 using namespace std;
 /*
 
@@ -434,8 +435,8 @@ void testOsgdb_ktx() {
     osgDB::writeImageFile(*img.get(), "./osgdb_ktx_test.ktx");
 }
 
-void preview_img() {
-    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("E://Code//2022//GIS//C++//anqing-data//output//FAC_jianchajing01.jpg");
+void preview_img(osg::ref_ptr<osg::Image> image) {
+    //osg::ref_ptr<osg::Image> image = osgDB::readImageFile("E://Code//2022//GIS//C++//anqing-data//output//FAC_jianchajing01.jpg");
     
     if (image) {
         unsigned char bu1 = image->data()[0];
@@ -472,9 +473,36 @@ void preview_img() {
         std::cerr << "Error:image is null!" << std::endl;
     }
 }
+
+void testTextureAtlas() {
+    const std::string basePath = "E:\\Code\\2023\\Other\\data\\1.fbm\\";
+    osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "BLOCK03.jpg");
+    osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "BRUSH1.jpg");
+    osg::ref_ptr<osg::Image> img3 = osgDB::readImageFile(basePath + "DTD0709017.png");
+    osg::ref_ptr<osg::Image> img4 = osgDB::readImageFile(basePath + "anisotropy_angled001.jpg");
+    osg::ref_ptr<osg::Image> img5 = osgDB::readImageFile(basePath + "concrete03.jpg");
+    osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "dt002.jpg");
+
+
+    TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(4096.0 * 2, 4096.0 * 2), GL_RGB, 1));
+    int a6 = textureAtlas->addImage("6", img6);
+    int a1 = textureAtlas->addImage("1", img1);
+    const int index = textureAtlas->getImageIndex("6");
+    BoundingRectangle br = textureAtlas->textureCoordinates()[index];
+    //preview_img(textureAtlas->_texture.get());
+    int a2 = textureAtlas->addImage("2", img2);
+    int a3 = textureAtlas->addImage("3", img3);
+    int a4 = textureAtlas->addImage("4", img4);
+    int a5 = textureAtlas->addImage("5", img5);
+
+    preview_img(textureAtlas->_texture.get());
+    osgDB::writeImageFile(*textureAtlas->_texture.get(), "E:\\Code\\2023\\Other\\data\\test.jpg");
+    std::cout << std::endl;
+}
 int main() {
     //testOsgdb_webp();
-    testOsgdb_fbx();
+    //testOsgdb_fbx();
+    testTextureAtlas();
     //preview_img();
     //osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C:\\Users\\ecidi-cve\\Desktop\\1.jpg");
     //img->scaleImage(800, 600, 1);

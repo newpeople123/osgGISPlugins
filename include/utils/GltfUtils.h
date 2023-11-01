@@ -23,7 +23,7 @@
 #include <osgDB/FileNameUtils>
 #include <ktx/ktx.h>
 #include <meshoptimizer.h>
-
+#include <utils/TextureAtlas.h>
 
 struct Stringify
 {

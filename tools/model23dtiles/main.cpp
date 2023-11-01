@@ -77,7 +77,7 @@ int main(int argc, char** argv)
             double h = std::stod(height);
             osgUtil::Simplifier simplifier;
             simplifier.setSampleRatio(ratio);
-            //node->accept(simplifier);
+            node->accept(simplifier);
             OsgNodeTo3DTiles(node, options, treeFormat, max, ratio, output, lng, lat, h);
         }
         catch (const std::invalid_argument& e) {
