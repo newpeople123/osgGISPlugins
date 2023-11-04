@@ -3,6 +3,7 @@
 #include <osgUtil/Optimizer>
 #include <osg/MatrixTransform>
 #include <osgUtil/Statistics>
+#include <utils/TextureOptimizier.h>
 class UserDataVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
@@ -71,6 +72,78 @@ private:
     std::vector<osg::ref_ptr<osg::UserDataContainer>> _userDatas;
 };
 
+class GeometryOptimizer :public osg::NodeVisitor {
+    void mergePrimitives(osg::Geometry* geom) {
+        osg::ref_ptr<osg::PrimitiveSet> mergePrimitiveset = NULL;
+        const unsigned int numPrimitiveSets = geom->getNumPrimitiveSets();
+        for (unsigned i = 0; i < numPrimitiveSets; ++i) {
+            osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);
+            const GLenum mode = pset->getMode();
+            osg::PrimitiveSet::Type type = pset->getType();
+            if (type == osg::PrimitiveSet::DrawElementsUBytePrimitiveType) {
+                osg::DrawElementsUByte* primitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(pset);
+                if (mergePrimitiveset == NULL) {
+                    if (geom->getNumPrimitiveSets() > 1) {
+                        mergePrimitiveset = new osg::DrawElementsUInt;
+                        osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
+                        mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUByte->begin(), primitiveUByte->end());
+                    }
+                }
+                else {
+                    osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
+                    mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUByte->begin(), primitiveUByte->end());
+                }
+            }
+            else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
+                osg::ref_ptr<osg::DrawElementsUShort> primitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(pset);
+                if (mergePrimitiveset == NULL) {
+                    if (geom->getNumPrimitiveSets() > 1)
+                    {
+                        mergePrimitiveset = new osg::DrawElementsUInt;
+                        osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
+                        mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUShort->begin(), primitiveUShort->end());
+                    }
+                }
+                else {
+                    osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
+                    mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUShort->begin(), primitiveUShort->end());
+                }
+            }
+            else if (type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType){
+                osg::ref_ptr<osg::DrawElementsUInt> primitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(pset);
+                if (mergePrimitiveset == NULL) {
+                    if (geom->getNumPrimitiveSets() > 1)
+                    {
+                        mergePrimitiveset = new osg::DrawElementsUInt;
+                        osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
+                        mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
+                    }
+                }
+                else {
+                    osg::DrawElementsUInt* mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
+                    mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
+                }
+                }
+        }
+        if (mergePrimitiveset != NULL) {
+            for (unsigned i = 0; i < numPrimitiveSets; ++i) {
+                geom->removePrimitiveSet(0);
+            }
+            geom->addPrimitiveSet(mergePrimitiveset);
+        }
+    }
+
+    void apply(osg::Group& group)
+    {
+        traverse(group);
+    }
+
+    void apply(osg::Drawable& drawable) {
+        osg::Geometry* geom = drawable.asGeometry();
+        mergePrimitives(geom);
+    }
+};
+
 class B3dmOptimizer :public osg::NodeVisitor {
 public:
     B3dmOptimizer() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
@@ -89,7 +162,10 @@ public:
     void apply(osg::Group& group) {
         _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
         _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::MERGE_GEODES);
+        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::INDEX_MESH);
         _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
+        GeometryOptimizer go;
+        group.accept(go);
         osgUtil::Optimizer::MergeGeometryVisitor mgv;
         mgv.setTargetMaximumNumberOfVertices(10000000);//100w
         group.accept(mgv);
@@ -114,7 +190,6 @@ public:
 private:
     osgUtil::Optimizer _optimizer;
 };
-
 class StateSetOptimizerVisitor : public osg::NodeVisitor {
 public:
     StateSetOptimizerVisitor() : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
@@ -401,15 +476,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     nc_node.unref_nodelete();
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
-
-    StateSetOptimizerVisitor stateSetOptimize;
-    copyNode->accept(stateSetOptimize);
-    stateSetOptimize.sharedDuplicateState();
-
-    B3dmOptimizer b3dmOptimizer;
-    copyNode->accept(b3dmOptimizer);
-
+    TextureOptimizer* to = new TextureOptimizer(copyNode);
+    //StateSetOptimizerVisitor stateSetOptimize;
+    //copyNode->accept(stateSetOptimize);
+    //stateSetOptimize.sharedDuplicateState();
     osgUtil::StatsVisitor stats;
+    //B3dmOptimizer b3dmOptimizer;
+    //copyNode->accept(b3dmOptimizer);
+    osg::setNotifyLevel(osg::INFO);
     if (osg::getNotifyLevel() >= osg::INFO)
     {
         stats.reset();

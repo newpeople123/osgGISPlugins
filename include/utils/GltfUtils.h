@@ -23,7 +23,7 @@
 #include <osgDB/FileNameUtils>
 #include <ktx/ktx.h>
 #include <meshoptimizer.h>
-#include <utils/TextureAtlas.h>
+//#include <utils/TextureAtlas.h>
 
 struct Stringify
 {
@@ -831,6 +831,7 @@ private:
 		_textures.push_back(osgTexture);
 		// Flip the image before writing
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
+		//need to forbid filpVertical when use texture atlas 
 		flipped->flipVertical();
 		textureOptimize(flipped);
 
@@ -1142,12 +1143,61 @@ private:
 			_model.buffers.push_back(fallbackBuffer);
 		}
 	}
-	void mergePrimitves() {
-		tinygltf::Mesh totalMesh;
+	void mergeMeshes() {
+		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
 		for (auto& mesh : _model.meshes) {
-			if(mesh.primitives.size()>0)
-				totalMesh.primitives.push_back(mesh.primitives[0]);
+			if (mesh.primitives.size() > 0) {
+				auto& item = materialPrimitiveMap.find(mesh.primitives[0].material);
+				if (item != materialPrimitiveMap.end()) {
+					item->second.push_back(mesh.primitives[0]);
+				}
+				else {
+					std::vector<tinygltf::Primitive> primitives;
+					primitives.push_back(mesh.primitives[0]);
+					materialPrimitiveMap.insert(std::make_pair(mesh.primitives[0].material, primitives));
+				}
+			}
 		}
+		for (const auto& pair : materialPrimitiveMap) {
+			tinygltf::Primitive primitive;
+			const int key = pair.first;
+			unsigned int count = 0;
+			for (const auto& prim : pair.second) {
+				const tinygltf::Accessor accessor = _model.accessors[prim.indices];
+				if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+					count = std::numeric_limits<unsigned short>::max() + 1;
+					break;
+				}
+				count += accessor.count;
+			}
+			tinygltf::Accessor totalAccessor;
+			tinygltf::BufferView totalBufferView;
+			tinygltf::Buffer totalBuffer;
+			if (count > std::numeric_limits<unsigned short>::max()) {
+				totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+			}
+			else {
+				totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
+			}
+			for (const auto& prim : pair.second) {
+				tinygltf::Accessor& accessor = _model.accessors[prim.indices];
+				//TODO:1、merge buffer and reindex buffer
+				//TODO:2、merge bufferView and reindex bufferView
+				//TODO:3、merge accessor and reindex accessor
+			}
+		}
+	
+
+
+
+		tinygltf::Mesh totalMesh;
+		//for (auto& mesh : _model.meshes) {
+		//	if (mesh.primitives.size() > 0) {
+		//		totalMesh.primitives.push_back(mesh.primitives[0]);
+		//	}
+		//}
+
+
 		_model.nodes.clear();
 		tinygltf::Node node;
 		node.mesh = 0;
@@ -1156,6 +1206,8 @@ private:
 		_model.meshes.push_back(totalMesh);
 		_model.scenes[0].nodes.clear();
 		_model.scenes[0].nodes.push_back(0);
+
+
 
 	}
 public:
@@ -1377,8 +1429,10 @@ public:
 		if (type == CompressionType::MESHOPT) {
 			geometryCompression("EXT_meshopt_compression", vco);
 		}
+		//1
+		mergeMeshes();
+		//2
 		mergeBuffers();
-		//mergePrimitves();
 		return true;
 	}
 

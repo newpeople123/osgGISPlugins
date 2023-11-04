@@ -1,15 +1,19 @@
-#ifndef OSG_GIS_PLUGINS_TEXTURE_ATLAS
-#define OSG_GIS_PLUGINS_TEXTURE_ATLAS 1
+#ifndef OSG_GIS_PLUGINS_TEXTURE_ATLAS_H
+#define OSG_GIS_PLUGINS_TEXTURE_ATLAS_H 1
 #include <osg/Node>
 #include <osg/Vec2>
 #include <vector>
 #include <string>
 #include <utils/UUID.h>
 #include <osg/Image>
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tinygltf/tiny_gltf.h>
+//#ifndef TINYGLTF_IMPLEMENTATION
+//#else
+//#define TINYGLTF_IMPLEMENTATION
+//#define STB_IMAGE_IMPLEMENTATION
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
+//#include <tinygltf/tiny_gltf.h>
+//#endif // !1
+
 struct UVRange
 {
 	double startU, startV, endU, endV;
@@ -27,6 +31,9 @@ struct BoundingRectangle {
 		uvRange.endU = x + w;
 		uvRange.startV = y;
 		uvRange.endV = y + h;
+	}
+	BoundingRectangle() :BoundingRectangle(0.0, 0.0, 1.0, 1.0) {
+
 	}
 };
 struct TextureAtlasNode
@@ -119,6 +126,7 @@ public:
 			}
 			return index;
 		}
+		return -1;
 	}
 	int addSubRegion(std::string id, BoundingRectangle subRegion) {
 		const int index = this->_idHash[id];
@@ -142,7 +150,7 @@ public:
 
 	}
 	
-	double borderWidthInPixels() {
+	int borderWidthInPixels() {
 		return this->_borderWidthInPixels;
 	}
 	auto& textureCoordinates() {
@@ -168,7 +176,7 @@ public:
 	}
 	TextureAtlasNode* _root;
 	GLenum _pixelFormat;
-	double _borderWidthInPixels;
+	int _borderWidthInPixels;
 	std::vector<BoundingRectangle> _textureCoordinates;
 	std::string _guid;
 	json _idHash;
@@ -179,58 +187,164 @@ public:
 	std::map<std::string, UVRange> imgUVRangeMap;
 	std::vector<std::string> imgNames;
 };
-void resizeAtlas(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image) {
-	//const int numImages = textureAtlas->numberOfImages();
-	//const double scalingFactor = 2.0;
-	//const double borderWidthInPixels = textureAtlas->borderWidthInPixels();
+BoundingRectangle calculateIntersection(const BoundingRectangle& r1, const BoundingRectangle& r2) {
+	BoundingRectangle result;
+	result.uvRange.startU = std::max(r1.uvRange.startU, r2.uvRange.startU);
+	result.uvRange.startV = std::max(r1.uvRange.startV, r2.uvRange.startV);
+	result.uvRange.endU = std::min(r1.uvRange.endU, r2.uvRange.endU);
+	result.uvRange.endV = std::min(r1.uvRange.endV, r2.uvRange.endV);
+	return result;
+}
+BoundingRectangle calculateMaxRemainingRectangle(std::vector<BoundingRectangle> rectangles) {
+	double maxX1 = 0, maxY1 = 0, minX2 = 1.0, minY2 = 1.0;
+	for (const BoundingRectangle& rect : rectangles) {
+		maxX1 = std::max(maxX1, rect.uvRange.startU);
+		maxY1 = std::max(maxY1, rect.uvRange.startV);
+		minX2 = std::min(minX2, rect.uvRange.endU);
+		minY2 = std::min(minY2, rect.uvRange.endV);
 
-	//if (numImages > 0) {
-	//	const double oldAtlasWidth = textureAtlas->texture()->s();
-	//	const double oldAtlasHeight = textureAtlas->texture()->t();
-	//	const double atlasWidth = scalingFactor * (oldAtlasWidth + image->s() + borderWidthInPixels);
-	//	const double atlasHeight = scalingFactor * (oldAtlasHeight + image->t() + borderWidthInPixels);
-	//	const double widthRatio = oldAtlasWidth / atlasWidth;
-	//	const double heightRatio = oldAtlasHeight / atlasHeight;
+	}
+	if (maxX1 < minX2 && maxY1 < minY2) {
+		BoundingRectangle remaining(maxX1, maxY1, minX2, minY2);
+		return remaining;
+	}
+	else {
+		BoundingRectangle remaining(0, 0, 0, 0);
+		return remaining;
+	}
+}
 
-	//	const TextureAtlasNode* nodeBottomRight = new TextureAtlasNode(osg::Vec2(oldAtlasWidth + borderWidthInPixels, borderWidthInPixels), osg::Vec2(atlasWidth, oldAtlasHeight));
-	//	const TextureAtlasNode* nodeBottomHalf = new TextureAtlasNode(osg::Vec2(), osg::Vec2(atlasWidth, oldAtlasHeight), textureAtlas->_root,const_cast<TextureAtlasNode*>(nodeBottomRight));
-	//	const TextureAtlasNode* nodeTopHalf = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, oldAtlasHeight + borderWidthInPixels), osg::Vec2(atlasWidth, atlasHeight));
-	//	const TextureAtlasNode* nodeMain = new TextureAtlasNode(osg::Vec2(), osg::Vec2(atlasWidth, atlasHeight), const_cast<TextureAtlasNode*>(nodeBottomHalf), const_cast<TextureAtlasNode*>(nodeTopHalf));
+bool resizeAtlas(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image) {
+	const int numImages = textureAtlas->numberOfImages();
+	const int borderWidthInPixels = textureAtlas->borderWidthInPixels();
 
-	//	for (int i = 0; i < textureAtlas->textureCoordinates().size(); ++i) {
-	//		BoundingRectangle& texCoord= textureAtlas->textureCoordinates().at(i);
-	//		texCoord.x *= widthRatio;
-	//		texCoord.y *= heightRatio;
-	//		texCoord.w *= widthRatio;
-	//		texCoord.h *= heightRatio;
-	//	}
-	//	
-	//	osg::ref_ptr<osg::Image> newTexture = new osg::Image;
-	//	newTexture->allocateImage(atlasWidth, atlasHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
-	//	textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
-	//	textureAtlas->_texture = newTexture;
-	//	textureAtlas->_root = const_cast<TextureAtlasNode*>(nodeMain);
-	//}
-	//else {
-	//	double initialWidth = scalingFactor * (image->s() + 2 * borderWidthInPixels);
-	//	double initialHeight = scalingFactor * (image->t() + 2 * borderWidthInPixels);
-	//	if (initialWidth < textureAtlas->_initialSize.x()) {
-	//		initialWidth = textureAtlas->_initialSize.x();
-	//	}
-	//	if (initialHeight < textureAtlas->_initialSize.y()) {
-	//		initialHeight = textureAtlas->_initialSize.y();
-	//	}
-	//	textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
-	//	osg::ref_ptr<osg::Image> newTexture = new osg::Image;
-	//	newTexture->allocateImage(initialWidth, initialHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
-	//	textureAtlas->_texture = newTexture;
-	//	textureAtlas->_root = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, borderWidthInPixels), osg::Vec2(initialWidth, initialHeight));
-	//}
-	textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
+	auto findNearestGreaterPowerOfTwo = [](int n) {
+		int powerOfTwo = 1;
+		while (powerOfTwo < n) {
+			powerOfTwo <<= 1;
+		}
+		return powerOfTwo;
+		};
+
+	if (numImages > 0) {
+		const int oldAtlasWidth = textureAtlas->texture()->s();
+		const int oldAtlasHeight = textureAtlas->texture()->t();
+		//TO DO:seartch max useful storage
+		const int atlasWidth = findNearestGreaterPowerOfTwo(oldAtlasWidth + image->s() + borderWidthInPixels);
+		const int atlasHeight = findNearestGreaterPowerOfTwo(oldAtlasHeight + image->t() + borderWidthInPixels);
+
+		if (atlasWidth > 4096 || atlasHeight > 4096) {
+			return false;
+		}
+		const double widthRatio = oldAtlasWidth / atlasWidth;
+		const double heightRatio = oldAtlasHeight / atlasHeight;
+
+		const TextureAtlasNode* nodeBottomRight = new TextureAtlasNode(osg::Vec2(oldAtlasWidth + borderWidthInPixels, borderWidthInPixels), osg::Vec2(atlasWidth, oldAtlasHeight));
+		const TextureAtlasNode* nodeBottomHalf = new TextureAtlasNode(osg::Vec2(), osg::Vec2(atlasWidth, oldAtlasHeight), textureAtlas->_root, const_cast<TextureAtlasNode*>(nodeBottomRight));
+		const TextureAtlasNode* nodeTopHalf = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, oldAtlasHeight + borderWidthInPixels), osg::Vec2(atlasWidth, atlasHeight));
+		const TextureAtlasNode* nodeMain = new TextureAtlasNode(osg::Vec2(), osg::Vec2(atlasWidth, atlasHeight), const_cast<TextureAtlasNode*>(nodeBottomHalf), const_cast<TextureAtlasNode*>(nodeTopHalf));
+
+		for (int i = 0; i < textureAtlas->textureCoordinates().size(); ++i) {
+			BoundingRectangle& texCoord = textureAtlas->textureCoordinates().at(i);
+			texCoord.x *= widthRatio;
+			texCoord.y *= heightRatio;
+			texCoord.w *= widthRatio;
+			texCoord.h *= heightRatio;
+		}
+
+		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+		newTexture->allocateImage(atlasWidth, atlasHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
+		for (int imgY = 0; imgY < textureAtlas->_texture->t(); ++imgY) {
+			for (int imgX = 0; imgX < textureAtlas->_texture->s(); ++imgX) {
+				newTexture->setColor(textureAtlas->_texture->getColor(imgX, imgY), imgX, imgY);
+			}
+		}
+		newTexture->setFileName(textureAtlas->_texture->getFileName());
+		textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
+		textureAtlas->_texture = newTexture;
+		textureAtlas->_root = const_cast<TextureAtlasNode*>(nodeMain);
+	}
+	else {
+		int initialWidth = findNearestGreaterPowerOfTwo(image->s() + 2 * borderWidthInPixels);
+		int initialHeight = findNearestGreaterPowerOfTwo(image->t() + 2 * borderWidthInPixels);
+		if (initialWidth < textureAtlas->_initialSize.x()) {
+			initialWidth = textureAtlas->_initialSize.x();
+		}
+		if (initialHeight < textureAtlas->_initialSize.y()) {
+			initialHeight = textureAtlas->_initialSize.y();
+		}
+		textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
+		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+		newTexture->setFileName(generateUUID());
+		newTexture->allocateImage(initialWidth, initialHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
+		textureAtlas->_texture = newTexture;
+		textureAtlas->_root = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, borderWidthInPixels), osg::Vec2(initialWidth, initialHeight));
+	}
+	return true;
+	/*textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
 	osg::ref_ptr<osg::Image> newTexture = new osg::Image;
 	newTexture->allocateImage(textureAtlas->_initialSize.x(), textureAtlas->_initialSize.y(), 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
 	textureAtlas->_texture = newTexture;
-	textureAtlas->_root = new TextureAtlasNode(osg::Vec2(textureAtlas->borderWidthInPixels(), textureAtlas->borderWidthInPixels()), osg::Vec2(textureAtlas->_initialSize.x(), textureAtlas->_initialSize.y()));
+	textureAtlas->_root = new TextureAtlasNode(osg::Vec2(textureAtlas->borderWidthInPixels(), textureAtlas->borderWidthInPixels()), osg::Vec2(textureAtlas->_initialSize.x(), textureAtlas->_initialSize.y()));*/
+}
+void oldResizeAtlas(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image) {
+	const int numImages = textureAtlas->numberOfImages();
+	const double scalingFactor = 2.0;
+	const double borderWidthInPixels = textureAtlas->borderWidthInPixels();
+
+	if (numImages > 0) {
+		const double oldAtlasWidth = textureAtlas->texture()->s();
+		const double oldAtlasHeight = textureAtlas->texture()->t();
+		const double atlasWidth = scalingFactor * (oldAtlasWidth + image->s() + borderWidthInPixels);
+		const double atlasHeight = scalingFactor * (oldAtlasHeight + image->t() + borderWidthInPixels);
+		const double widthRatio = oldAtlasWidth / atlasWidth;
+		const double heightRatio = oldAtlasHeight / atlasHeight;
+
+		const TextureAtlasNode* nodeBottomRight = new TextureAtlasNode(osg::Vec2(oldAtlasWidth + borderWidthInPixels, borderWidthInPixels), osg::Vec2(atlasWidth, oldAtlasHeight));
+		const TextureAtlasNode* nodeBottomHalf = new TextureAtlasNode(osg::Vec2(), osg::Vec2(atlasWidth, oldAtlasHeight), textureAtlas->_root,const_cast<TextureAtlasNode*>(nodeBottomRight));
+		const TextureAtlasNode* nodeTopHalf = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, oldAtlasHeight + borderWidthInPixels), osg::Vec2(atlasWidth, atlasHeight));
+		const TextureAtlasNode* nodeMain = new TextureAtlasNode(osg::Vec2(), osg::Vec2(atlasWidth, atlasHeight), const_cast<TextureAtlasNode*>(nodeBottomHalf), const_cast<TextureAtlasNode*>(nodeTopHalf));
+
+		for (int i = 0; i < textureAtlas->textureCoordinates().size(); ++i) {
+			BoundingRectangle& texCoord= textureAtlas->textureCoordinates().at(i);
+			texCoord.x *= widthRatio;
+			texCoord.y *= heightRatio;
+			texCoord.w *= widthRatio;
+			texCoord.h *= heightRatio;
+		}
+		
+		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+		newTexture->allocateImage(atlasWidth, atlasHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
+		for (int imgY = 0; imgY < textureAtlas->_texture->t(); ++imgY) {
+			for (int imgX = 0; imgX < textureAtlas->_texture->s(); ++imgX) {
+				newTexture->setColor(textureAtlas->_texture->getColor(imgX, imgY), imgX, imgY);
+			}
+		}
+		textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
+		textureAtlas->_texture = newTexture;
+		textureAtlas->_root = const_cast<TextureAtlasNode*>(nodeMain);
+	}
+	else {
+		double initialWidth = scalingFactor * (image->s() + 2 * borderWidthInPixels);
+		double initialHeight = scalingFactor * (image->t() + 2 * borderWidthInPixels);
+		if (initialWidth < textureAtlas->_initialSize.x()) {
+			initialWidth = textureAtlas->_initialSize.x();
+		}
+		if (initialHeight < textureAtlas->_initialSize.y()) {
+			initialHeight = textureAtlas->_initialSize.y();
+		}
+		textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
+		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+		newTexture->allocateImage(initialWidth, initialHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
+		textureAtlas->_texture = newTexture;
+		textureAtlas->_root = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, borderWidthInPixels), osg::Vec2(initialWidth, initialHeight));
+	}
+
+	/*textureAtlas->_texture = textureAtlas->_texture ? textureAtlas->_texture.release() : textureAtlas->_texture;
+	osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+	newTexture->allocateImage(textureAtlas->_initialSize.x(), textureAtlas->_initialSize.y(), 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
+	textureAtlas->_texture = newTexture;
+	textureAtlas->_root = new TextureAtlasNode(osg::Vec2(textureAtlas->borderWidthInPixels(), textureAtlas->borderWidthInPixels()), osg::Vec2(textureAtlas->_initialSize.x(), textureAtlas->_initialSize.y()));*/
 }
 TextureAtlasNode* findNode(TextureAtlas* textureAtlas, TextureAtlasNode* node, osg::ref_ptr<osg::Image> image) {
 	if (node == NULL) {
@@ -276,9 +390,9 @@ TextureAtlasNode* findNode(TextureAtlas* textureAtlas, TextureAtlasNode* node, o
 	return findNode(textureAtlas, node->childNode2, image);
 }
 bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image, int index) {
-	if (index == 0) {
-		resizeAtlas(textureAtlas, image);
-	}
+	//if (index == 0) {
+	//	resizeAtlas(textureAtlas, image);
+	//}
 	TextureAtlasNode* node = findNode(textureAtlas, textureAtlas->root(), image);
 	if (node != NULL) {
 		node->imageIndex = index;
@@ -301,15 +415,18 @@ bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image, int in
 		}
 		textureAtlas->setGuid(generateUUID());
 	}
-	else {
-		return false;
-	}
-	return true;
 	//else {
-	//	resizeAtlas(textureAtlas, image);
-	//	addImage(textureAtlas, image, index);
+	//	return false;
 	//}
-	//textureAtlas->setGuid(generateUUID());
+	//return true;
+	else {
+		if (!resizeAtlas(textureAtlas, image)) {
+			return false;
+		}
+		return addImage(textureAtlas, image, index);
+	}
+	textureAtlas->setGuid(generateUUID());
+	return true;
 }
 int getIndex(TextureAtlas* atlas, osg::ref_ptr<osg::Image> image) {
 	if (atlas == NULL) {
@@ -322,4 +439,4 @@ int getIndex(TextureAtlas* atlas, osg::ref_ptr<osg::Image> image) {
 	else
 		return -1;
 }
-#endif // !OSG_GIS_PLUGINS_TEXTURE_ATLAS
+#endif // !OSG_GIS_PLUGINS_TEXTURE_ATLAS_H

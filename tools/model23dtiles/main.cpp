@@ -3,7 +3,6 @@
 #include <3dtiles/Output3DTiles.h>
 #include <osgDB/ReadFile>
 #include <iostream>
-
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -36,7 +35,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "E:\\Code\\2023\\Other\\data\\1.FBX", output = "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread2";
+    std::string input = "E:\\Code\\2023\\Other\\data\\2.FBX", output = "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread3";
     //std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));

@@ -16,7 +16,13 @@
 #include <osgUtil/Optimizer>
 #include <osgDB/ConvertUTF>
 #include <codecvt>
-#include <utils/TextureAtlas.h>
+#include <osgGA/GUIEventAdapter>
+#include <osgViewer/ViewerEventHandlers>
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <tinygltf/tiny_gltf.h>
+#include <utils/TextureOptimizier.h>
 using namespace std;
 /*
 
@@ -473,8 +479,80 @@ void preview_img(osg::ref_ptr<osg::Image> image) {
         std::cerr << "Error:image is null!" << std::endl;
     }
 }
+class TestNodeVisitor :public osg::NodeVisitor {
+public:
+    TestNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+
+    };
+    void apply(osg::Drawable& drawable) {
+        osg::MatrixList matrixList = drawable.getWorldMatrices();
+        osg::Matrixd mat;
+        for (const osg::Matrixd& matrix : matrixList) {
+            mat = mat * matrix;
+        }
+        if (mat != osg::Matrixd::identity()) {
+            osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
+            for (unsigned int i = 0; i < positions->size(); ++i) {
+                positions->at(i) = positions->at(i) * mat;
+            }
+            drawable.asGeometry()->setVertexArray(positions);
+        }
+    }
+    void apply(osg::Group& group)
+    {
+        traverse(group);
+    }
+
+};
+class RebuildDataNodeVisitor1 :public osg::NodeVisitor {
+public:
+    RebuildDataNodeVisitor1() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+    void apply(osg::Group& group)
+    {
+        traverse(group);
+    }
+    void apply(osg::Transform& mtransform) {
+        //TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
+        //mtransform.accept(tnv);
+        mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
+        apply(static_cast<osg::Group&>(mtransform));
+    };
+};
+
+class RebuildDataNodeVisitor :public osg::NodeVisitor {
+public:
+    RebuildDataNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+    void apply(osg::Group& group)
+    {
+        traverse(group);
+    }
+    void apply(osg::Transform& mtransform) {
+        mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
+        apply(static_cast<osg::Group&>(mtransform));
+    };
+};
 
 void testTextureAtlas() {
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("E:\\Code\\2023\\Other\\data\\2.FBX");
+    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\1.b3dm");
+    TestNodeVisitor tnv;
+    node->accept(tnv);
+    TextureOptimizer* to = new TextureOptimizer(node);
+    RebuildDataNodeVisitor rdnv;
+    node->accept(rdnv);
+    osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none");
+    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\2.b3dm");
+    osgUtil::Optimizer optimizer;
+    optimizer.optimize(node.get(), osgUtil::Optimizer::ALL_OPTIMIZATIONS);
+
+    osgViewer::Viewer viewer1;
+    viewer1.setSceneData(node.get());
+    viewer1.addEventHandler(new osgViewer::WindowSizeHandler);//全屏  快捷键f
+    viewer1.addEventHandler(new osgViewer::StatsHandler);//查看帧数 s
+    viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
+    viewer1.run();
+
     const std::string basePath = "E:\\Code\\2023\\Other\\data\\1.fbm\\";
     osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "BLOCK03.jpg");
     osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "BRUSH1.jpg");
