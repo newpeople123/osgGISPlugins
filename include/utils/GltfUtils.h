@@ -1158,6 +1158,11 @@ private:
 				}
 			}
 		}
+
+		tinygltf::Accessor totalAccessor;
+		totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
+		tinygltf::BufferView totalBufferView;
+		tinygltf::Buffer totalBuffer;
 		for (const auto& pair : materialPrimitiveMap) {
 			tinygltf::Primitive primitive;
 			const int key = pair.first;
@@ -1165,20 +1170,16 @@ private:
 			for (const auto& prim : pair.second) {
 				const tinygltf::Accessor accessor = _model.accessors[prim.indices];
 				if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-					count = std::numeric_limits<unsigned short>::max() + 1;
+					totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
 					break;
 				}
 				count += accessor.count;
+				if (count > std::numeric_limits<unsigned short>::max()) {
+					totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+					break;
+				}
 			}
-			tinygltf::Accessor totalAccessor;
-			tinygltf::BufferView totalBufferView;
-			tinygltf::Buffer totalBuffer;
-			if (count > std::numeric_limits<unsigned short>::max()) {
-				totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
-			}
-			else {
-				totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-			}
+
 			for (const auto& prim : pair.second) {
 				tinygltf::Accessor& accessor = _model.accessors[prim.indices];
 				//TODO:1、merge buffer and reindex buffer
