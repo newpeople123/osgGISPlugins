@@ -7,21 +7,15 @@ class QuadTreeBuilder:public TreeBuilder
 {
 public:
     QuadTreeBuilder(osg::ref_ptr<osg::Node> node) :TreeBuilder() {
-        RebuildDataNodeVisitor rdnv;
-        node->accept(rdnv);
-        osg::ref_ptr<osg::Group> group = rdnv.output;
-
-        osg::BoundingBox totalBoundingBox = getBoundingBox(group);
-        rootTreeNode = buildTree(totalBoundingBox, group);
+        RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+        osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+        rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
         buildHlod(rootTreeNode);
     }
     QuadTreeBuilder(osg::ref_ptr<osg::Node> node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const double simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth,simpleRatio) {
-        RebuildDataNodeVisitor rdnv;
-        node->accept(rdnv);
-        osg::ref_ptr<osg::Group> group = rdnv.output;
-
-        osg::BoundingBox totalBoundingBox = getBoundingBox(group);
-        rootTreeNode = buildTree(totalBoundingBox, group);
+        RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+        osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+        rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
         buildHlod(rootTreeNode);
     }
     ~QuadTreeBuilder() {};
@@ -42,7 +36,7 @@ protected:
             for (unsigned int i = 0; i < inputRoot->getNumChildren(); ++i)
             {
                 const osg::ref_ptr<osg::Node>& obj = inputRoot->getChild(i);
-                osg::MatrixList matrixList = obj->getWorldMatrices();
+                obj->dirtyBound();
                 osg::BoundingBox childBox = getBoundingBox(obj);
                 if (total.contains(childBox._min) && total.contains(childBox._max))
                     childData->addChild(obj);
@@ -56,25 +50,9 @@ protected:
                 }
             }
             unsigned int triangleNumber = 0;
-            for (unsigned int i = 0; i < childData->getNumChildren(); ++i) {
-                osg::ref_ptr<osg::Geode> geode = childData->getChild(i)->asGeode();
-                osg::ref_ptr<osg::Transform> transform = childData->getChild(i)->asTransform();
-                if (geode) {
-                    TriangleNumberNodeVisitor tnnv;
-                    geode->accept(tnnv);
-                    triangleNumber += tnnv.count;
-                }
-                else if (transform) {
-                    for (unsigned int j = 0; j < transform->getNumChildren(); ++j) {
-                        osg::ref_ptr<osg::Geode> geode = transform->getChild(j)->asGeode();
-                        if (geode) {
-                            TriangleNumberNodeVisitor tnnv;
-                            geode->accept(tnnv);
-                            triangleNumber += tnnv.count;
-                        }
-                    }
-                }
-            }
+            TriangleNumberNodeVisitor tnnv;
+            childData->accept(tnnv);
+            triangleNumber += tnnv.count;
             if (triangleNumber == 0) {
                 return NULL;
             }

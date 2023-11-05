@@ -373,17 +373,19 @@ private:
 					//geom->setTexCoordArray(0, texCoords.get());
 				}
 			}
-			osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 			//1
-			reindexMesh(geom, positions, normals, texCoords, batchIds);
+			reindexMesh(geom, positions, normals, texCoords);
 			//2
 			mergePrimitives(geom);
+			//3
 
 			osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
 			osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 			positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 			normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
 			texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+			osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
+			batchIds->resize(positions->size());
 			if (!texCoords.valid())
 			{
 				// See if we have 3d texture coordinates and convert them to vec2
@@ -630,7 +632,7 @@ private:
 			geom->addPrimitiveSet(mergePrimitiveset);
 		}
 	}
-	void reindexMesh(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords, osg::ref_ptr<osg::FloatArray>& batchIds) {
+	void reindexMesh(osg::Geometry* geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords) {
 		//reindexmesh
 		const unsigned int num = geom->getNumPrimitiveSets();
 		if (num>0) {
@@ -652,12 +654,8 @@ private:
 						v.f[0] = vertex.x();
 						v.f[1] = vertex.y();
 						v.f[2] = vertex.z();
-						if (batchIds.valid() && batchIds->size() == positions->size()) {
-							v.f[3] = batchIds->at(i);
-						}
-						else {
-							v.f[3] = 0.0;
-						}
+						v.f[3] = 0.0;
+
 						vertexData.push_back(v);
 
 						if (normals.valid()) {
@@ -706,7 +704,6 @@ private:
 						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
 						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
 						osg::ref_ptr<osg::UShortArray> optimizedIndices = new osg::UShortArray(indices->size());
-						osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(uniqueVertexCount);
 						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
 						meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
 						vertexData.resize(uniqueVertexCount);
@@ -729,12 +726,7 @@ private:
 							}
 							if (texCoords.valid())
 								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-							if (batchIds.valid()) {
-								optimizedBatchIds->at(i) = vertexData[i].f[3];
-							}
 						}
-						if (batchIds.valid())
-							geom->setVertexAttribArray(0, optimizedBatchIds);
 						geom->setVertexArray(optimizedVertices);
 						if (normals.valid())
 							geom->setNormalArray(optimizedNormals);
@@ -775,7 +767,6 @@ private:
 						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
 						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
 						osg::ref_ptr<osg::UIntArray> optimizedIndices = new osg::UIntArray(indices->size());
-						osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(uniqueVertexCount);
 						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap[0]);
 						meshopt_remapVertexBuffer(&vertexData[0], &vertexData[0], positions->size(), sizeof(Attr), &remap[0]);
 						vertexData.resize(uniqueVertexCount);
@@ -796,12 +787,7 @@ private:
 							}
 							if (texCoords.valid())
 								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-							if (batchIds.valid()) {
-								optimizedBatchIds->at(i) = vertexData[i].f[3];
-							}
 						}
-						if (batchIds.valid())
-							geom->setVertexAttribArray(0, optimizedBatchIds);
 						geom->setVertexArray(optimizedVertices);
 						if (normals.valid())
 							geom->setNormalArray(optimizedNormals);

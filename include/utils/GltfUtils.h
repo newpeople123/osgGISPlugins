@@ -1158,40 +1158,275 @@ private:
 				}
 			}
 		}
+		
+		std::vector<tinygltf::Accessor> accessors;
+		std::vector<tinygltf::BufferView> bufferViews;
+		std::vector<tinygltf::Buffer> buffers;
+		std::vector<tinygltf::Primitive> primitives;
+		for (auto& image : _model.images) {
+			tinygltf::BufferView bufferView = _model.bufferViews[image.bufferView];
+			tinygltf::Buffer buffer = _model.buffers[bufferView.buffer];
 
-		tinygltf::Accessor totalAccessor;
-		totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-		tinygltf::BufferView totalBufferView;
-		tinygltf::Buffer totalBuffer;
+			bufferView.buffer = buffers.size();
+			image.bufferView = bufferViews.size();
+			bufferViews.push_back(bufferView);
+			buffers.push_back(buffer);
+		}
+
 		for (const auto& pair : materialPrimitiveMap) {
-			tinygltf::Primitive primitive;
-			const int key = pair.first;
+			tinygltf::Accessor totalIndicesAccessor;
+			totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
+			tinygltf::BufferView totalIndicesBufferView;
+			tinygltf::Buffer totalIndicesBuffer;
+
+			tinygltf::BufferView totalNormalsBufferView;
+			tinygltf::Buffer totalNormalsBuffer;
+			tinygltf::Accessor totalNormalsAccessor;
+
+			tinygltf::BufferView totalVerticesBufferView;
+			tinygltf::Buffer totalVerticesBuffer;
+			tinygltf::Accessor totalVerticesAccessor;
+
+			tinygltf::BufferView totalTexcoordsBufferView;
+			tinygltf::Buffer totalTexcoordsBuffer;
+			tinygltf::Accessor totalTexcoordsAccessor;
+
+			tinygltf::BufferView totalBatchIdsBufferView;
+			tinygltf::Buffer totalBatchIdsBuffer;
+			tinygltf::Accessor totalBatchIdsAccessor;
+
+			tinygltf::BufferView totalColorsBufferView;
+			tinygltf::Buffer totalColorsBuffer;
+			tinygltf::Accessor totalColorsAccessor;
+
+
+			tinygltf::Primitive totalPrimitive;
+			totalPrimitive.mode = 4;//triangles
+			totalPrimitive.material = pair.first;
+
 			unsigned int count = 0;
+
 			for (const auto& prim : pair.second) {
+				tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+				totalIndicesAccessor = oldIndicesAccessor;
+				tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
+				totalVerticesAccessor = oldVerticesAccessor;
+				auto& normalAttr = prim.attributes.find("NORMAL");
+				if (normalAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
+					totalNormalsAccessor = oldNormalsAccessor;
+				}
+				auto& texAttr = prim.attributes.find("TEXCOORD_0");
+				if (texAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
+					totalTexcoordsAccessor = oldTexcoordsAccessor;
+				}
+				auto& batchidAttr = prim.attributes.find("_BATCHID");
+				if (batchidAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
+					totalBatchIdsAccessor = oldBatchIdsAccessor;
+				}
+				auto& colorAttr = prim.attributes.find("COLOR_0");
+				if (colorAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
+					totalColorsAccessor = oldColorsAccessor;
+				}
+
 				const tinygltf::Accessor accessor = _model.accessors[prim.indices];
 				if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-					totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+					totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
 					break;
 				}
 				count += accessor.count;
 				if (count > std::numeric_limits<unsigned short>::max()) {
-					totalAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+					totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
 					break;
 				}
 			}
 
+			totalIndicesAccessor.count = 0;
+			totalVerticesAccessor.count = 0;
+			totalNormalsAccessor.count = 0;
+			totalTexcoordsAccessor.count = 0;
+			totalBatchIdsAccessor.count = 0;
+			totalColorsAccessor.count = 0;
+
+			auto reindexBufferAndBvAndAccessor = [&](tinygltf::Accessor accessor,tinygltf::BufferView& tBv,tinygltf::Buffer& tBuffer,tinygltf::Accessor& newAccessor,unsigned int sum=0,bool isIndices=false) {
+				tinygltf::BufferView& bv = _model.bufferViews[accessor.bufferView];
+				tinygltf::Buffer& buffer = _model.buffers[bv.buffer];
+
+				tBv.byteStride = bv.byteStride;
+				tBv.target = bv.target;
+				if(accessor.componentType!=newAccessor.componentType){
+					if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT && accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+						unsigned short* oldIndicesChar = (unsigned short*)&buffer.data[0];
+						std::vector<unsigned int> indices;
+						for (size_t i = 0; i < accessor.count; ++i) {
+							unsigned short ushortVal = *oldIndicesChar++;
+							unsigned int uintVal = (unsigned int)(ushortVal + sum);
+							indices.push_back(uintVal);
+						}		
+						unsigned char* indicesUChar = (unsigned char*)&indices[0];
+						const unsigned int size = bv.byteLength * 2;
+						for (unsigned int k = 0; k < size; ++k) {
+							tBuffer.data.push_back(*indicesUChar++);
+						}
+						tBv.byteLength += bv.byteLength * 2;
+					}
+
+				}
+				else {
+					if (isIndices) {
+						if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+							unsigned int* oldIndicesChar = (unsigned int*)&buffer.data[0];
+							std::vector<unsigned int> indices;
+							for (unsigned int i = 0; i < accessor.count; ++i) {
+								unsigned int oldUintVal = *oldIndicesChar++;
+								unsigned int uintVal = oldUintVal + sum;
+								indices.push_back(uintVal);
+							}
+							unsigned char* indicesUChar = (unsigned char*)&indices[0];
+							const unsigned int size = bv.byteLength;
+							for (unsigned int i = 0; i < size; ++i) {
+								tBuffer.data.push_back(*indicesUChar++);
+							}
+						}
+						else {
+							unsigned short* oldIndicesChar = (unsigned short*)&buffer.data[0];
+							std::vector<unsigned short> indices;
+							for (size_t i = 0; i < accessor.count; ++i) {
+								unsigned short oldUshortVal = *oldIndicesChar++;
+								unsigned short ushortVal = oldUshortVal + sum;
+								indices.push_back(ushortVal);
+							}
+							unsigned char* indicesUChar = (unsigned char*)&indices[0];
+							const unsigned int size = bv.byteLength;
+							for (size_t i = 0; i < size; ++i) {
+								tBuffer.data.push_back(*indicesUChar++);
+							}
+						}
+					}
+					else {
+						tBuffer.data.insert(tBuffer.data.end(), buffer.data.begin(), buffer.data.end());
+					}
+					tBv.byteLength += bv.byteLength;
+				}
+				newAccessor.count += accessor.count;
+
+				if (accessor.minValues.size()) {
+					if (newAccessor.minValues.size() == accessor.minValues.size()) {
+						for (int k = 0; k < newAccessor.minValues.size(); ++k) {
+							newAccessor.minValues[k] = osg::minimum(newAccessor.minValues[k], accessor.minValues[k]);
+							newAccessor.maxValues[k] = osg::maximum(newAccessor.maxValues[k], accessor.maxValues[k]);
+						}
+					}
+					else {
+						newAccessor.minValues = accessor.minValues;
+						newAccessor.maxValues = accessor.maxValues;
+					}
+				}
+			};
+
+			unsigned int sum = 0;
 			for (const auto& prim : pair.second) {
-				tinygltf::Accessor& accessor = _model.accessors[prim.indices];
+
+				tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
+				reindexBufferAndBvAndAccessor(oldVerticesAccessor, totalVerticesBufferView, totalVerticesBuffer, totalVerticesAccessor);
+
+				tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+				reindexBufferAndBvAndAccessor(oldIndicesAccessor, totalIndicesBufferView, totalIndicesBuffer, totalIndicesAccessor, sum, true);
+				sum += oldVerticesAccessor.count;
+
+				auto& normalAttr = prim.attributes.find("NORMAL");
+				if (normalAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
+					reindexBufferAndBvAndAccessor(oldNormalsAccessor, totalNormalsBufferView, totalNormalsBuffer, totalNormalsAccessor);
+				}
+				auto& texAttr = prim.attributes.find("TEXCOORD_0");
+				if (texAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
+					reindexBufferAndBvAndAccessor(oldTexcoordsAccessor, totalTexcoordsBufferView, totalTexcoordsBuffer, totalTexcoordsAccessor);
+				}
+				auto& batchidAttr = prim.attributes.find("_BATCHID");
+				if (batchidAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
+					reindexBufferAndBvAndAccessor(oldBatchIdsAccessor, totalBatchIdsBufferView, totalBatchIdsBuffer, totalBatchIdsAccessor);
+				}
+				auto& colorAttr = prim.attributes.find("COLOR_0");
+				if (colorAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
+					reindexBufferAndBvAndAccessor(oldColorsAccessor, totalColorsBufferView, totalColorsBuffer, totalColorsAccessor);
+				}
+
+
 				//TODO:1、merge buffer and reindex buffer
 				//TODO:2、merge bufferView and reindex bufferView
 				//TODO:3、merge accessor and reindex accessor
 			}
+
+			totalIndicesBufferView.buffer = buffers.size();
+			totalIndicesAccessor.bufferView = bufferViews.size();
+			buffers.push_back(totalIndicesBuffer);
+			bufferViews.push_back(totalIndicesBufferView);
+			totalPrimitive.indices = accessors.size();
+			accessors.push_back(totalIndicesAccessor);
+
+			totalVerticesBufferView.buffer = buffers.size();
+			totalVerticesAccessor.bufferView = bufferViews.size();
+			buffers.push_back(totalVerticesBuffer);
+			bufferViews.push_back(totalVerticesBufferView);
+			totalPrimitive.attributes.insert(std::make_pair("POSITION", accessors.size()));
+			accessors.push_back(totalVerticesAccessor);
+
+			if (totalNormalsAccessor.count) {
+				totalNormalsBufferView.buffer = buffers.size();
+				totalNormalsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalNormalsBuffer);
+				bufferViews.push_back(totalNormalsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("NORMAL", accessors.size()));
+				accessors.push_back(totalNormalsAccessor);
+			}
+
+			if (totalTexcoordsAccessor.count) {
+				totalTexcoordsBufferView.buffer = buffers.size();
+				totalTexcoordsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalTexcoordsBuffer);
+				bufferViews.push_back(totalTexcoordsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("TEXCOORD_0", accessors.size()));
+				accessors.push_back(totalTexcoordsAccessor);
+			}
+
+			if (totalBatchIdsAccessor.count) {
+				totalBatchIdsBufferView.buffer = buffers.size();
+				totalBatchIdsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalBatchIdsBuffer);
+				bufferViews.push_back(totalBatchIdsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("_BATCHID", accessors.size()));
+				accessors.push_back(totalBatchIdsAccessor);
+			}
+
+			if (totalColorsAccessor.count) {
+				totalColorsBufferView.buffer = buffers.size();
+				totalColorsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalColorsBuffer);
+				bufferViews.push_back(totalColorsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("COLOR_0", accessors.size()));
+				accessors.push_back(totalColorsAccessor);
+			}
+
+			primitives.push_back(totalPrimitive);
 		}
-	
 
 
+		_model.buffers.clear();
+		_model.bufferViews.clear();
+		_model.accessors.clear();
+		_model.buffers = buffers;
+		_model.bufferViews = bufferViews;
+		_model.accessors = accessors;
 
 		tinygltf::Mesh totalMesh;
+		totalMesh.primitives = primitives;
 		//for (auto& mesh : _model.meshes) {
 		//	if (mesh.primitives.size() > 0) {
 		//		totalMesh.primitives.push_back(mesh.primitives[0]);

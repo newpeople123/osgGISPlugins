@@ -533,51 +533,58 @@ public:
 };
 
 void testTextureAtlas() {
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("E:\\Code\\2023\\Other\\data\\2.FBX");
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("D:\\Data\\2.FBX");
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\1.b3dm");
     TestNodeVisitor tnv;
     node->accept(tnv);
-    TextureOptimizer* to = new TextureOptimizer(node);
+    //TextureOptimizer* to = new TextureOptimizer(node);
     RebuildDataNodeVisitor rdnv;
     node->accept(rdnv);
     osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
-    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none");
-    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\2.b3dm");
-    osgUtil::Optimizer optimizer;
-    optimizer.optimize(node.get(), osgUtil::Optimizer::ALL_OPTIMIZATIONS);
+    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=ktx2");
+    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\3.b3dm");
+    //osgUtil::Optimizer optimizer;
+    //optimizer.optimize(node.get(), osgUtil::Optimizer::ALL_OPTIMIZATIONS);
 
     osgViewer::Viewer viewer1;
+    viewer1.setUpViewInWindow(100, 100, 800, 600); // (x, y, width, height)
     viewer1.setSceneData(node.get());
     viewer1.addEventHandler(new osgViewer::WindowSizeHandler);//全屏  快捷键f
     viewer1.addEventHandler(new osgViewer::StatsHandler);//查看帧数 s
     viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
     viewer1.run();
 
-    const std::string basePath = "E:\\Code\\2023\\Other\\data\\1.fbm\\";
-    osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "BLOCK03.jpg");
-    osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "BRUSH1.jpg");
-    osg::ref_ptr<osg::Image> img3 = osgDB::readImageFile(basePath + "DTD0709017.png");
-    osg::ref_ptr<osg::Image> img4 = osgDB::readImageFile(basePath + "anisotropy_angled001.jpg");
-    osg::ref_ptr<osg::Image> img5 = osgDB::readImageFile(basePath + "concrete03.jpg");
-    osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "dt002.jpg");
+    //const std::string basePath = "E:\\Code\\2023\\Other\\data\\1.fbm\\";
+    //osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "BLOCK03.jpg");
+    //osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "BRUSH1.jpg");
+    //osg::ref_ptr<osg::Image> img3 = osgDB::readImageFile(basePath + "DTD0709017.png");
+    //osg::ref_ptr<osg::Image> img4 = osgDB::readImageFile(basePath + "anisotropy_angled001.jpg");
+    //osg::ref_ptr<osg::Image> img5 = osgDB::readImageFile(basePath + "concrete03.jpg");
+    //osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "dt002.jpg");
 
 
-    TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(4096.0 * 2, 4096.0 * 2), GL_RGB, 1));
-    int a6 = textureAtlas->addImage("6", img6);
-    int a1 = textureAtlas->addImage("1", img1);
-    const int index = textureAtlas->getImageIndex("6");
-    BoundingRectangle br = textureAtlas->textureCoordinates()[index];
+    //TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(4096.0 * 2, 4096.0 * 2), GL_RGB, 1));
+    //int a6 = textureAtlas->addImage("6", img6);
+    //int a1 = textureAtlas->addImage("1", img1);
+    //const int index = textureAtlas->getImageIndex("6");
+    //BoundingRectangle br = textureAtlas->textureCoordinates()[index];
+    ////preview_img(textureAtlas->_texture.get());
+    //int a2 = textureAtlas->addImage("2", img2);
+    //int a3 = textureAtlas->addImage("3", img3);
+    //int a4 = textureAtlas->addImage("4", img4);
+    //int a5 = textureAtlas->addImage("5", img5);
+
     //preview_img(textureAtlas->_texture.get());
-    int a2 = textureAtlas->addImage("2", img2);
-    int a3 = textureAtlas->addImage("3", img3);
-    int a4 = textureAtlas->addImage("4", img4);
-    int a5 = textureAtlas->addImage("5", img5);
-
-    preview_img(textureAtlas->_texture.get());
-    osgDB::writeImageFile(*textureAtlas->_texture.get(), "E:\\Code\\2023\\Other\\data\\test.jpg");
-    std::cout << std::endl;
+    //osgDB::writeImageFile(*textureAtlas->_texture.get(), "E:\\Code\\2023\\Other\\data\\test.jpg");
+    //std::cout << std::endl;
 }
 int main() {
+#ifdef _WIN32
+    //system("chcp 65001");
+    SetConsoleOutputCP(CP_UTF8);
+#else
+    setlocale(LC_ALL, "en_US.UTF-8");
+#endif // _WIN32
     //testOsgdb_webp();
     //testOsgdb_fbx();
     testTextureAtlas();

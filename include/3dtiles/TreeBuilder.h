@@ -87,78 +87,84 @@ public:
 			}
 		}
 	}
+
+	void apply(osg::Group& group) {
+		traverse(group);
+	};
 private:
 
 };
-class RebuildDataNodeVisitor :public osg::NodeVisitor {
+class RebuildDataNodeVisitorResolve :public osg::NodeVisitor {
 public:
-	RebuildDataNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+	RebuildDataNodeVisitorResolve() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
 	osg::ref_ptr<osg::Group> output = new osg::Group;
 	void apply(osg::Drawable& drawable) {
-		osg::ref_ptr<osg::Geode> geode = new osg::Geode;
-		geode->addChild(&drawable);
+		if(drawable.asGeometry())
+			output->addChild(&drawable);
+	};
+	//void apply(osg::Geode& geode) {
+	//	osg::Geode* copyGeode = new osg::Geode;
+	//	output->addChild(copyGeode);
+	//};
+	void apply(osg::Group& group) {
+		traverse(group);
+	};
+};
+
+class GeometryNodeVisitor :public osg::NodeVisitor {
+public:
+	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+
+	};
+	void apply(osg::Drawable& drawable) {
 		osg::MatrixList matrixList = drawable.getWorldMatrices();
 		osg::Matrixd mat;
 		for (const osg::Matrixd& matrix : matrixList) {
 			mat = mat * matrix;
 		}
-		if (mat != osg::Matrixd()) {
-			osg::MatrixTransform* transform = new osg::MatrixTransform;
-			transform->setMatrix(mat);
-			transform->addChild(geode);
-			output->addChild(transform);
+		if (mat != osg::Matrixd::identity()) {
+			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
+			for (unsigned int i = 0; i < positions->size(); ++i) {
+				positions->at(i) = positions->at(i) * mat;
+			}
+			drawable.asGeometry()->setVertexArray(positions);
 		}
-		else {
-			output->addChild(geode);
-		}
-	};
-	void apply(osg::Geode& geode) {
-		osg::Geode* copyGeode = new osg::Geode;
-		std::string name = typeid(geode).name();
-		for (unsigned int i = 0; i < geode.getNumChildren(); ++i) {
-			osg::Node* node = geode.getChild(i);
-			if (dynamic_cast<osg::Drawable*>(node) != NULL) {
-				copyGeode->addChild(node);
-			}
-			else {
-				traverse(*node);
-			}
-		}
-		if (copyGeode->getNumChildren()) {
-			osg::MatrixList matrixList = geode.getWorldMatrices();
-			osg::Matrixd mat;
-			for (const osg::Matrixd& matrix : matrixList) {
-				mat = mat * matrix;
-			}
-			if (mat != osg::Matrixd()) {
-				osg::MatrixTransform* transform = new osg::MatrixTransform;
-				transform->setMatrix(mat);
-				transform->addChild(copyGeode);
-				output->addChild(transform);
-			}
-			else {
-				output->addChild(copyGeode);
-			}
-		}
-	};
+	}
+	void apply(osg::Group& group)
+	{
+		traverse(group);
+	}
+
+};
+class TransformNodeVisitor :public osg::NodeVisitor {
+public:
+	TransformNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+	void apply(osg::Group& group)
+	{
+		traverse(group);
+	}
 	void apply(osg::Transform& mtransform) {
-		for (unsigned int i = 0; i < mtransform.getNumChildren(); ++i) {
-			osg::Node* child = mtransform.getChild(i);
-			traverse(*child);
-		}
-	};
-	void apply(osg::Group& group) {
-		for (unsigned int i = 0; i < group.getNumChildren(); ++i) {
-			osg::Node* child = group.getChild(i);
-			if (dynamic_cast<osg::Transform*>(child)) {
-				apply(static_cast<osg::Transform&>(*child));
-			}
-			else {
-				traverse(*child);
-			}
-		}
+		//TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
+		//mtransform.accept(tnv);
+		mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
+		apply(static_cast<osg::Group&>(mtransform));
 	};
 };
+class RebuildDataNodeVisitor {
+public:
+	osg::ref_ptr<osg::Group> output;
+	RebuildDataNodeVisitor(osg::ref_ptr<osg::Node> node)  {
+		GeometryNodeVisitor gnv;
+		node->accept(gnv);
+		TransformNodeVisitor tnv;
+		node->accept(tnv);
+		RebuildDataNodeVisitorResolve rdnvr;
+		node->accept(rdnvr);
+		output = rdnvr.output;
+	};
+
+};
+
 class TreeBuilder :public osg::Object
 {
 public:
