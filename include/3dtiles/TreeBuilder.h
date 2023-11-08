@@ -15,6 +15,7 @@
 #include <utils/ComputeObbBoundsVisitor.h>
 #include <utils/CustomSimplify.h>
 #include <utils/UUID.h>
+#include <utils/GltfUtils.h>
 class TileNode :public osg::Node
 {
 public:
@@ -111,45 +112,7 @@ public:
 	};
 };
 
-class GeometryNodeVisitor :public osg::NodeVisitor {
-public:
-	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
 
-	};
-	void apply(osg::Drawable& drawable) {
-		osg::MatrixList matrixList = drawable.getWorldMatrices();
-		osg::Matrixd mat;
-		for (const osg::Matrixd& matrix : matrixList) {
-			mat = mat * matrix;
-		}
-		if (mat != osg::Matrixd::identity()) {
-			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
-			for (unsigned int i = 0; i < positions->size(); ++i) {
-				positions->at(i) = positions->at(i) * mat;
-			}
-			drawable.asGeometry()->setVertexArray(positions);
-		}
-	}
-	void apply(osg::Group& group)
-	{
-		traverse(group);
-	}
-
-};
-class TransformNodeVisitor :public osg::NodeVisitor {
-public:
-	TransformNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-	void apply(osg::Group& group)
-	{
-		traverse(group);
-	}
-	void apply(osg::Transform& mtransform) {
-		//TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
-		//mtransform.accept(tnv);
-		mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
-		apply(static_cast<osg::Group&>(mtransform));
-	};
-};
 class RebuildDataNodeVisitor {
 public:
 	osg::ref_ptr<osg::Group> output;

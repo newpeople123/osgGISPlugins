@@ -6,6 +6,7 @@
 #include <string>
 #include <utils/UUID.h>
 #include <osg/Image>
+#include <utils/GltfUtils.h>
 //#ifndef TINYGLTF_IMPLEMENTATION
 //#else
 //#define TINYGLTF_IMPLEMENTATION
@@ -119,10 +120,22 @@ public:
 			this->_idHash[id] = index;
 			this->_indexHash[id] = index;
 			if (index != -1) {
-				const std::string filename = image->getFileName();
-				const UVRange uvRange = this->_textureCoordinates[index].uvRange;
-				imgUVRangeMap.insert(std::make_pair(filename, uvRange));
-				imgNames.push_back(filename);
+				imgNames.push_back(image->getFileName());
+			}
+			for (int i = 0; i < this->_textureCoordinates.size(); ++i) {
+				const UVRange uvRange = this->_textureCoordinates[i].uvRange;
+				std::string filename = imgNames.at(i);
+				auto& item = imgUVRangeMap.find(filename);
+				if (item != imgUVRangeMap.end()) {
+					item->second.endU = uvRange.endU;
+					item->second.endV = uvRange.endV;
+					item->second.startU = uvRange.startU;
+					item->second.startV = uvRange.startV;
+
+				}
+				else {
+					imgUVRangeMap.insert(std::make_pair(filename, uvRange));
+				}
 			}
 			return index;
 		}
@@ -227,11 +240,11 @@ bool resizeAtlas(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image) {
 		};
 
 	if (numImages > 0) {
-		const int oldAtlasWidth = textureAtlas->texture()->s();
-		const int oldAtlasHeight = textureAtlas->texture()->t();
+		const double oldAtlasWidth = textureAtlas->texture()->s();
+		const double oldAtlasHeight = textureAtlas->texture()->t();
 		//TO DO:seartch max useful storage
-		const int atlasWidth = findNearestGreaterPowerOfTwo(oldAtlasWidth + image->s() + borderWidthInPixels);
-		const int atlasHeight = findNearestGreaterPowerOfTwo(oldAtlasHeight + image->t() + borderWidthInPixels);
+		const double atlasWidth = findNearestGreaterPowerOfTwo(oldAtlasWidth + image->s() + borderWidthInPixels);
+		const double atlasHeight = findNearestGreaterPowerOfTwo(oldAtlasHeight + image->t() + borderWidthInPixels);
 
 		if (atlasWidth > 4096 || atlasHeight > 4096) {
 			return false;
@@ -250,6 +263,11 @@ bool resizeAtlas(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image) {
 			texCoord.y *= heightRatio;
 			texCoord.w *= widthRatio;
 			texCoord.h *= heightRatio;
+			texCoord.uvRange.startU = texCoord.x;
+			texCoord.uvRange.endU = texCoord.x + texCoord.w;
+			texCoord.uvRange.startV = texCoord.y;
+			texCoord.uvRange.endV = texCoord.y + texCoord.h;
+
 		}
 
 		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
@@ -267,6 +285,9 @@ bool resizeAtlas(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image) {
 	else {
 		int initialWidth = findNearestGreaterPowerOfTwo(image->s() + 2 * borderWidthInPixels);
 		int initialHeight = findNearestGreaterPowerOfTwo(image->t() + 2 * borderWidthInPixels);
+		if (initialWidth > 4096 || initialHeight > 4096) {
+			return false;
+		}
 		if (initialWidth < textureAtlas->_initialSize.x()) {
 			initialWidth = textureAtlas->_initialSize.x();
 		}
@@ -405,15 +426,14 @@ bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image> image, int in
 		const double y = node->bottomLeft.y() / atlasHeight;
 		const double w = nodeWidth / atlasWidth;
 		const double h = nodeHeight / atlasHeight;
-		textureAtlas->textureCoordinates().push_back(BoundingRectangle(0, 0, 0, 0));
-		textureAtlas->textureCoordinates()[index] = BoundingRectangle(x, y, w, h);
+		textureAtlas->textureCoordinates().push_back(BoundingRectangle(x, y, w, h));
 		//textureAtlas->texture()->copySubImage(node->bottomLeft.x(), node->bottomLeft.y(), 1, image.get());
 		for (int imgY = 0; imgY < image->t(); ++imgY) {
 			for (int imgX = 0; imgX < image->s(); ++imgX) {
 				textureAtlas->_texture->setColor(image->getColor(imgX, imgY), node->bottomLeft.x() + imgX, node->bottomLeft.y() + imgY);
 			}
 		}
-		textureAtlas->setGuid(generateUUID());
+		//textureAtlas->setGuid(generateUUID());
 	}
 	//else {
 	//	return false;

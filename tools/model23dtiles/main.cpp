@@ -35,7 +35,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "D:\\Data\\2.FBX", output = "D:\\nginx-1.24.0\\html\\3dtiles\\singleThread3";
+    std::string input = "E:\\Code\\2023\\Other\\data\\2.FBX", output = "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread4";
     //std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
@@ -55,7 +55,7 @@ int main(int argc, char** argv)
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     if (node.valid()) {
 
-        std::string textureFormat = "png", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
+        std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
         while (arguments.read("-tf", textureFormat));
         while (arguments.read("-vf", vertexFormat));
         while (arguments.read("-t", treeFormat));

@@ -1,8 +1,5 @@
 #ifndef OSG_GIS_PLUGINS_OUTPUT3DTILES
 #define OSG_GIS_PLUGINS_OUTPUT3DTILES 1
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "QuadTreeBuilder.h"
 #include "OctreeBuilder.h"
 #include <iostream>
@@ -12,7 +9,6 @@
 #include <vector>
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
-#include <tinygltf/tiny_gltf.h>
 #include <osg/CoordinateSystemNode>
 #include <osgUtil/CullVisitor>
 #include <future>
@@ -65,13 +61,13 @@ double getGeometricError(const TileNode& node) {
 	const osg::Vec3 max = cbv.getBoundingBox()._max;
 	const osg::Vec3 min = cbv.getBoundingBox()._min;
 	const double radius2 = (max - min).length() / 2;
-	distance = getDistance(radius2);
-	//if (node.level == 0) {
-	//	distance = getDistance(radius2);
-	//}
-	//else if (node.children->getNumChildren() > 0) {
-	//	distance = getDistance(radius2, 700.0);
-	//}
+	//distance = getDistance(radius2);
+	if (node.level == 0) {
+		distance = getDistance(radius2);
+	}
+	else if (node.children->getNumChildren() > 0) {
+		distance = getDistance(radius2, 700.0);
+	}
 	geometricError = distance * CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight;
 	return geometricError;
 }
@@ -186,13 +182,13 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 	std::vector<std::future<void>> futures;
 	for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 		osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node.children->getChild(i));
-		//futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
-		outputTreeNode(*child.get(), option, output, level + 1);
+		futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
+		//outputTreeNode(*child.get(), option, output, level + 1);
 
 	}
-	//for (auto& future : futures) {
-	//	future.get();
-	//}
+	for (auto& future : futures) {
+		future.get();
+	}
 }
 void OsgNodeTo3DTiles(const osg::ref_ptr<osg::Node> osgNode, const osg::ref_ptr<osgDB::Options>& option, const std::string& type, const double max, const double ratio, const std::string& output, const double lng, const double lat, const double height) {
 	if (osgNode.valid()) {

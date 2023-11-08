@@ -18,93 +18,9 @@
 #include <codecvt>
 #include <osgGA/GUIEventAdapter>
 #include <osgViewer/ViewerEventHandlers>
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tinygltf/tiny_gltf.h>
-#include <utils/TextureOptimizier.h>
+#include <utils/TextureAtlas.h>
 using namespace std;
-/*
 
-
-    if (true) {
-
-        if (pNode) {
-            FbxProperty topProp = pNode->GetNextProperty(pNode->GetFirstProperty());
-            FbxPropertyFlags
-            FbxString ss;
-            while (topProp.IsValid())
-            {
-                FbxDataType dataType = topProp.GetPropertyDataType();
-                EFbxType eType = dataType.GetType();
-                switch (eType)
-                {
-                case fbxsdk::eFbxUndefined:
-                    break;
-                case fbxsdk::eFbxChar:
-                    break;
-                case fbxsdk::eFbxUChar:
-                    break;
-                case fbxsdk::eFbxShort:
-                    break;
-                case fbxsdk::eFbxUShort:
-                    break;
-                case fbxsdk::eFbxUInt:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<unsigned int>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxLongLong:
-                    break;
-                case fbxsdk::eFbxULongLong:
-                    break;
-                case fbxsdk::eFbxHalfFloat:
-                    break;
-                case fbxsdk::eFbxBool:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<bool>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxInt:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<int>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxFloat:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<float>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxDouble:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<double>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxDouble2:
-                    break;
-                case fbxsdk::eFbxDouble3:
-                    break;
-                case fbxsdk::eFbxDouble4:
-                    break;
-                case fbxsdk::eFbxDouble4x4:
-                    break;
-                case fbxsdk::eFbxEnum:
-                    break;
-                case fbxsdk::eFbxEnumM:
-                    break;
-                case fbxsdk::eFbxString:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<std::string>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxTime:
-                    break;
-                case fbxsdk::eFbxReference:
-                    break;
-                case fbxsdk::eFbxBlob:
-                    break;
-                case fbxsdk::eFbxDistance:
-                    break;
-                case fbxsdk::eFbxDateTime:
-                    break;
-                case fbxsdk::eFbxTypeCount:
-                    break;
-                default:
-                    break;
-                }
-                topProp = pNode->GetNextProperty(topProp);
-            }
-        }
-    }
-*/
 class MyGetValueVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
@@ -479,72 +395,14 @@ void preview_img(osg::ref_ptr<osg::Image> image) {
         std::cerr << "Error:image is null!" << std::endl;
     }
 }
-class TestNodeVisitor :public osg::NodeVisitor {
-public:
-    TestNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
-
-    };
-    void apply(osg::Drawable& drawable) {
-        osg::MatrixList matrixList = drawable.getWorldMatrices();
-        osg::Matrixd mat;
-        for (const osg::Matrixd& matrix : matrixList) {
-            mat = mat * matrix;
-        }
-        if (mat != osg::Matrixd::identity()) {
-            osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
-            for (unsigned int i = 0; i < positions->size(); ++i) {
-                positions->at(i) = positions->at(i) * mat;
-            }
-            drawable.asGeometry()->setVertexArray(positions);
-        }
-    }
-    void apply(osg::Group& group)
-    {
-        traverse(group);
-    }
-
-};
-class RebuildDataNodeVisitor1 :public osg::NodeVisitor {
-public:
-    RebuildDataNodeVisitor1() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-    void apply(osg::Group& group)
-    {
-        traverse(group);
-    }
-    void apply(osg::Transform& mtransform) {
-        //TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
-        //mtransform.accept(tnv);
-        mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
-        apply(static_cast<osg::Group&>(mtransform));
-    };
-};
-
-class RebuildDataNodeVisitor :public osg::NodeVisitor {
-public:
-    RebuildDataNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-    void apply(osg::Group& group)
-    {
-        traverse(group);
-    }
-    void apply(osg::Transform& mtransform) {
-        mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
-        apply(static_cast<osg::Group&>(mtransform));
-    };
-};
 
 void testTextureAtlas() {
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("D:\\Data\\2.FBX");
-    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\1.b3dm");
-    TestNodeVisitor tnv;
-    node->accept(tnv);
-    //TextureOptimizer* to = new TextureOptimizer(node);
-    RebuildDataNodeVisitor rdnv;
-    node->accept(rdnv);
-    osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
-    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=ktx2");
-    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\3.b3dm");
-    //osgUtil::Optimizer optimizer;
-    //optimizer.optimize(node.get(), osgUtil::Optimizer::ALL_OPTIMIZATIONS);
+    osg::ref_ptr<osg::Node> node = osgDB::readRefNodeFile("E:\\Code\\2023\\Other\\data\\芜湖水厂总装.FBX");
+
+    //osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+    //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
+    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\2.gltf", option);
+
 
     osgViewer::Viewer viewer1;
     viewer1.setUpViewInWindow(100, 100, 800, 600); // (x, y, width, height)
@@ -554,37 +412,28 @@ void testTextureAtlas() {
     viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
     viewer1.run();
 
-    //const std::string basePath = "E:\\Code\\2023\\Other\\data\\1.fbm\\";
-    //osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "BLOCK03.jpg");
-    //osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "BRUSH1.jpg");
-    //osg::ref_ptr<osg::Image> img3 = osgDB::readImageFile(basePath + "DTD0709017.png");
-    //osg::ref_ptr<osg::Image> img4 = osgDB::readImageFile(basePath + "anisotropy_angled001.jpg");
+    const std::string basePath = "E:\\Code\\2023\\Other\\data\\芜湖水厂总装.fbm\\";
+    osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "城南污水处理厂地形-5.jpg");
+    osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "城南污水处理厂地形-6.jpg");
+    osg::ref_ptr<osg::Image> img3 = osgDB::readImageFile(basePath + "综合楼_2.jpg");
+    osg::ref_ptr<osg::Image> img4 = osgDB::readImageFile(basePath + "二级泵房及磁混凝高效沉淀池.jpg");
     //osg::ref_ptr<osg::Image> img5 = osgDB::readImageFile(basePath + "concrete03.jpg");
     //osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "dt002.jpg");
 
 
-    //TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(4096.0 * 2, 4096.0 * 2), GL_RGB, 1));
-    //int a6 = textureAtlas->addImage("6", img6);
-    //int a1 = textureAtlas->addImage("1", img1);
-    //const int index = textureAtlas->getImageIndex("6");
-    //BoundingRectangle br = textureAtlas->textureCoordinates()[index];
-    ////preview_img(textureAtlas->_texture.get());
-    //int a2 = textureAtlas->addImage("2", img2);
-    //int a3 = textureAtlas->addImage("3", img3);
-    //int a4 = textureAtlas->addImage("4", img4);
+    TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(128.0,128.0), GL_RGB, 1));
+    int a1 = textureAtlas->addImage("1", img1);
+    int a2 = textureAtlas->addImage("2", img2);
+    int a3 = textureAtlas->addImage("3", img3);
+    int a4 = textureAtlas->addImage("4", img4);
     //int a5 = textureAtlas->addImage("5", img5);
 
-    //preview_img(textureAtlas->_texture.get());
+    preview_img(textureAtlas->_texture.get());
     //osgDB::writeImageFile(*textureAtlas->_texture.get(), "E:\\Code\\2023\\Other\\data\\test.jpg");
     //std::cout << std::endl;
 }
 int main() {
-#ifdef _WIN32
-    //system("chcp 65001");
-    SetConsoleOutputCP(CP_UTF8);
-#else
     setlocale(LC_ALL, "en_US.UTF-8");
-#endif // _WIN32
     //testOsgdb_webp();
     //testOsgdb_fbx();
     testTextureAtlas();

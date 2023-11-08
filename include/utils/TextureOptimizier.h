@@ -3,6 +3,8 @@
 #include <osg/NodeVisitor>
 #include <osg/Texture>
 #include <utils/TextureAtlas.h>
+#include <future>
+#include <osgViewer/Viewer>
 struct ImageSortKey
 {
 	GLenum pixelFormat;
@@ -63,14 +65,14 @@ public:
 		const std::string filename1 = img1->getFileName();
 		const std::string filename2 = img2->getFileName();
 
-		if (filename1!=""|| filename2!="")
+		if (filename1 != "" || filename2 != "")
 		{
 			if (filename1 == filename2)
 				return true;
 			return false;
 		}
-		else if(filename1== filename2&& filename1==""){
-			if (img1->s() != img2->s()|| img1->r() != img2->r() || img1->t() != img2->t()) {
+		else if (filename1 == filename2 && filename1 == "") {
+			if (img1->s() != img2->s() || img1->r() != img2->r() || img1->t() != img2->t()) {
 				return false;
 			}
 			if (img1->getPixelFormat() != img2->getPixelFormat()) {
@@ -101,6 +103,7 @@ public:
 		for (auto& img : imgs) {
 			ImageSortKey key;
 			key.pixelFormat = img->getPixelFormat();
+
 			key.packing = img->getPacking();
 			auto& val = ism.find(key);
 			if (val != ism.end()) {
@@ -134,7 +137,7 @@ public:
 					return false;
 				}
 				});
-			
+
 		}
 	}
 	std::vector<osg::Image*> imgs;
@@ -154,14 +157,15 @@ public:
 		osg::StateSet* ss = geom.getStateSet();
 		osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom.asGeometry()->getTexCoordArray(0));
 		if (ss) {
-			osg::StateSet* newStateset = new osg::StateSet;
+			//osgViewer::Viewer viewer;
+			//viewer.setSceneData(&geom);
+			//viewer.run();
 			for (unsigned int i = 0; i < ss->getTextureAttributeList().size(); ++i)
 			{
 				osg::StateAttribute* sa = ss->getTextureAttribute(i, osg::StateAttribute::TEXTURE);
 				osg::Texture* texture = dynamic_cast<osg::Texture*>(sa);
 				if (texture)
 				{
-					osg::Texture* newTexture = new osg::Texture2D;
 					for (unsigned int j = 0; j < texture->getNumImages(); j++) {
 						osg::Image* img = texture->getImage(j);
 						const std::string filename = img->getFileName();
@@ -170,36 +174,140 @@ public:
 							auto& item = textureAtlas->imgUVRangeMap.find(filename);
 							if (item != textureAtlas->imgUVRangeMap.end()) {
 								UVRange uvRangle = item->second;
-								newTexture->setImage(j, textureAtlas->texture());
+								osg::ref_ptr<osg::Image> newImg = textureAtlas->texture();
+								texture->setImage(j, newImg);
 								for (unsigned int q = 0; q < texCoords->size(); ++q) {
 									osg::Vec2 coord = texCoords->at(q);
 									osg::Vec2 newCoord(uvRangle.startU + (uvRangle.endU - uvRangle.startU) * coord.x(), uvRangle.startV + (uvRangle.endV - uvRangle.startV) * coord.y());
+									//std::cout << coord.x() << "," << coord.y() << ";" << newCoord.x() << "," << newCoord.y() << std::endl;
 									texCoords->at(q) = newCoord;
 								}
-								geom.asGeometry()->setTexCoordArray(0, texCoords);
+								//geom.asGeometry()->setTexCoordArray(0, texCoords);
 								break;
 							}
 						}
 					}
-					newStateset->setTextureAttribute(i, newTexture);
 				}
 			}
-			geom.setStateSet(newStateset);
+
+			//osgViewer::Viewer viewer1;
+			//viewer1.setSceneData(&geom);
+			//viewer1.run();
 		}
 	}
 };
 class TextureOptimizer {
 public:
-	TextureOptimizer(osg::ref_ptr<osg::Node> node) {
+	TextureOptimizer(osg::ref_ptr<osg::Node> node, TextureType textureType) {
 		node->accept(tv);
 		tv.groupImages();
 		buildTextureAtlas();
 		TextureOptimizerResolve tos(textureAtlases);
 		node->accept(tos);
+
+		auto exportImage = [textureType](osg::ref_ptr<osg::Image>& img) {
+			img->flipVertical();
+			std::string data(reinterpret_cast<char const*>(img->data()));
+			const std::string filename = Stringify() << std::hex << hashString(data);
+			img->setFileName(filename);
+			if (textureType == PNG) {
+				std::ifstream fileExists(filename + ".png");
+				if (!fileExists.good()|| (fileExists.peek() == std::ifstream::traits_type::eof())) {
+					bool result = osgDB::writeImageFile(*img.get(), filename + ".png");
+					if(!result){
+						std::ifstream fileExistsJpg(filename + ".jpg");
+						if (!fileExistsJpg.good()|| (fileExistsJpg.peek() == std::ifstream::traits_type::eof()))
+							osgDB::writeImageFile(*img.get(), filename + ".jpg");
+						fileExistsJpg.close();
+					}
+				}
+				fileExists.close();
+			}
+			else if (textureType == JPG) {
+				const GLenum pixelFormat = img->getPixelFormat();
+				if (pixelFormat == GL_DEPTH_COMPONENT || pixelFormat == GL_LUMINANCE || pixelFormat == GL_ALPHA || img->getPixelFormat() == GL_RGB) {
+					std::ifstream fileExists(filename + ".jpg");
+					if (!fileExists.good()|| (fileExists.peek() == std::ifstream::traits_type::eof())) {
+						// Only cater for gray, alpha and RGB for now
+						bool result = osgDB::writeImageFile(*img.get(), filename + ".jpg");
+						if (!result) {
+							std::ifstream fileExistsPng(filename + ".png");
+							if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+								osgDB::writeImageFile(*img.get(), filename + ".png");
+							fileExistsPng.close();
+						}
+					}
+					fileExists.close();
+				}
+				else {
+					std::ifstream fileExistsPng(filename + ".png");
+					if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+						osgDB::writeImageFile(*img.get(), filename + ".png");
+					fileExistsPng.close();
+				}
+			}
+			else if (textureType == WEBP) {
+				std::ifstream fileExists(filename + ".webp");
+				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())){
+					bool result = osgDB::writeImageFile(*img.get(), filename + ".webp");
+					if (!result) {
+						std::ifstream fileExistsPng(filename + ".png");
+						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+							osgDB::writeImageFile(*img.get(), filename + ".png");
+						fileExistsPng.close();
+					}
+				}
+				fileExists.close();
+			}
+			else if (textureType == KTX2) {
+				std::ifstream fileExists(filename + ".ktx");
+				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())){
+					bool result = osgDB::writeImageFile(*img.get(), filename + ".ktx");
+					if (!result) {
+						std::ifstream fileExistsPng(filename + ".png");
+						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+							osgDB::writeImageFile(*img.get(), filename + ".png");
+						fileExistsPng.close();
+					}
+				}
+				fileExists.close();
+			}
+			else if (textureType == KTX) {
+				std::ifstream fileExists(filename + ".ktx");
+				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())) {
+					bool result = osgDB::writeImageFile(*img.get(), filename + ".ktx");
+					if (!result) {
+						std::ifstream fileExistsPng(filename + ".png");
+						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+							osgDB::writeImageFile(*img.get(), filename + ".png");
+						fileExistsPng.close();
+					}
+				}
+				fileExists.close();
+			}
+			else {
+				std::ifstream fileExists(filename + ".png");
+				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())) {
+					if (!(osgDB::writeImageFile(*img.get(), filename + ".png"))) {
+						osg::notify(osg::FATAL) << std::endl;
+					}
+				}
+				fileExists.close();
+			}
+			};
+
+		std::vector<std::future<void>> futures;
+		for (int i = 0; i < textureAtlases.size(); ++i) {
+			//exportImage(textureAtlases.at(i)->texture());
+			futures.push_back(std::async(std::launch::async, exportImage, textureAtlases.at(i)->texture()));
+		}
+		for (auto& future : futures) {
+			future.get();
+		}
 	}
 	void buildTextureAtlas() {
 		for (auto& item : tv.ism) {
-			while (item.second.size()!=0)
+			while (item.second.size() != 0)
 			{
 				TextureAtlas* ta = new TextureAtlas(TextureAtlasOptions(osg::Vec2(128, 128), item.first.pixelFormat, item.first.packing));
 				for (int i = 0; i < item.second.size(); ++i) {

@@ -147,6 +147,18 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
             }
         }
     }
+
+    TextureOptimizer* to = new TextureOptimizer(node, textureType);
+    osgUtil::StatsVisitor stats;
+    if (osg::getNotifyLevel() >= osg::INFO)
+    {
+        stats.reset();
+        node->accept(stats);
+        stats.totalUpStats();
+        OSG_NOTICE << std::endl << "Stats after:" << std::endl;
+        stats.print(osg::notify(osg::NOTICE));
+    }
+
     OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
 
 
@@ -180,17 +192,10 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     nc_node.unref_nodelete();
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
-    TextureOptimizer* to = new TextureOptimizer(copyNode);
-
-    osgUtil::StatsVisitor stats;
-    if (osg::getNotifyLevel() >= osg::INFO)
-    {
-        stats.reset();
-        copyNode->accept(stats);
-        stats.totalUpStats();
-        OSG_NOTICE << std::endl << "Stats after:" << std::endl;
-        stats.print(osg::notify(osg::NOTICE));
-    }
+    GeometryNodeVisitor gnv;
+    copyNode->accept(gnv);
+    TransformNodeVisitor tnv;
+    copyNode->accept(tnv);
     tinygltf::Model& gltfModel = convertOsg2Gltf(copyNode, options);
     copyNode.release();
     tinygltf::TinyGLTF writer;

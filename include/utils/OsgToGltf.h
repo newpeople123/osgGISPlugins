@@ -65,7 +65,9 @@ private:
 	}
 	bool pushStateSet(osg::StateSet* stateSet) {
 		osg::Texture* osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-		if (!osgTexture)
+		osg::StateSet::AttributeList list=stateSet->getAttributeList();
+		osg::Material* material = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+		if (!osgTexture&&!material)
 		{
 			return false;
 		}
@@ -222,9 +224,12 @@ private:
 				if (pbrMRMaterial || pbrSGMaterial) {
 					return _gltfUtils->textureCompression(_textureType, stateSet);
 				}
-				else {
+				else if(osgTexture){
 					//same as osgearth
 					return _gltfUtils->textureCompression(_textureType, stateSet, osgTexture);
+				}
+				else {
+					return _gltfUtils->textureCompression(_textureType, stateSet, osgMatrial);
 				}
 				};
 			if (osgMatrial)
@@ -385,7 +390,6 @@ private:
 			normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
 			texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
 			osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
-			batchIds->resize(positions->size());
 			if (!texCoords.valid())
 			{
 				// See if we have 3d texture coordinates and convert them to vec2
