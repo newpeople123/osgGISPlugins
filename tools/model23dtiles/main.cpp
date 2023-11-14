@@ -3,6 +3,7 @@
 #include <3dtiles/Output3DTiles.h>
 #include <osgDB/ReadFile>
 #include <iostream>
+#include <osg/ComputeBoundsVisitor>
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -52,6 +53,17 @@ int main(int argc, char** argv)
     }
 
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
+    osg::ComputeBoundsVisitor cbv;
+    node->accept(cbv);
+    const osg::BoundingBox boundingBox = cbv.getBoundingBox();
+    const osg::Vec3 center = (boundingBox._max + boundingBox._min) / 2;
+    osg::ref_ptr<osg::MatrixTransform> matrixNode = new osg::MatrixTransform;
+    osg::Matrixd mat;
+    mat.setTrans(-center);
+    matrixNode->setMatrix(mat);
+    matrixNode->addChild(node);
+
+
     if (node.valid()) {
 
         std::string textureFormat = "png", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.1", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
@@ -74,7 +86,7 @@ int main(int argc, char** argv)
             double lng = std::stod(longitude);
             double h = std::stod(height);
 
-            OsgNodeTo3DTiles(node, options, treeFormat, max, ratio, output, lng, lat, h);
+            OsgNodeTo3DTiles(matrixNode, options, treeFormat, max, ratio, output, lng, lat, h);
         }
         catch (const std::invalid_argument& e) {
             std::cerr << "invalid input: " << e.what() << std::endl;
