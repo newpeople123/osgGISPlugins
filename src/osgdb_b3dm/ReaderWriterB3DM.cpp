@@ -148,7 +148,15 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
         }
     }
 
+    //1
     TextureOptimizer* to = new TextureOptimizer(node, textureType);
+    delete to;
+    //2
+    GeometryNodeVisitor gnv;
+    node->accept(gnv);
+    //3
+    TransformNodeVisitor tnv;
+    node->accept(tnv);
     osgUtil::StatsVisitor stats;
     if (osg::getNotifyLevel() >= osg::INFO)
     {
@@ -192,10 +200,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     nc_node.unref_nodelete();
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
-    GeometryNodeVisitor gnv;
-    copyNode->accept(gnv);
-    TransformNodeVisitor tnv;
-    copyNode->accept(tnv);
+
     tinygltf::Model& gltfModel = convertOsg2Gltf(copyNode, options);
     copyNode.release();
     tinygltf::TinyGLTF writer;
@@ -333,14 +338,17 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     b3dm_buf.append(batch_json_string.begin(), batch_json_string.end());
     b3dm_buf.append(glb_buf);
     std::fstream fout(filename, std::ios::out | std::ios::binary);
-    std::stringstream compressionInput;
-    std::ostream* output = &fout;
+    if (fout.is_open()) {
+        std::stringstream compressionInput;
+        std::ostream* output = &fout;
 
-    output->write(b3dm_buf.data(), b3dm_buf.size());
-    output->write("\0\0\0", gltfDataPadding);
-    output->write("\0\0\0", padding);
-    fout.close();
-    //nc_node.unref_nodelete();
-    return WriteResult::FILE_SAVED;
+        output->write(b3dm_buf.data(), b3dm_buf.size());
+        output->write("\0\0\0", gltfDataPadding);
+        output->write("\0\0\0", padding);
+        fout.close();
+        //nc_node.unref_nodelete();
+        return WriteResult::FILE_SAVED;
+    }
+    return WriteResult::ERROR_IN_WRITING_FILE;
 }
 REGISTER_OSGPLUGIN(b3dm, ReaderWriterB3DM)

@@ -35,8 +35,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "E:\\Code\\2023\\Other\\data\\2.FBX", output = "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread4";
-    //std::string input = "", output = "";
+    std::string input = "E:\\Code\\2023\\Other\\data\\建筑+贴图.FBX", output = "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread6";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -55,7 +54,7 @@ int main(int argc, char** argv)
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     if (node.valid()) {
 
-        std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
+        std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "100000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
         while (arguments.read("-tf", textureFormat));
         while (arguments.read("-vf", vertexFormat));
         while (arguments.read("-t", treeFormat));
@@ -74,9 +73,7 @@ int main(int argc, char** argv)
             double lat = std::stod(latitude);
             double lng = std::stod(longitude);
             double h = std::stod(height);
-            osgUtil::Simplifier simplifier;
-            simplifier.setSampleRatio(ratio);
-            node->accept(simplifier);
+
             OsgNodeTo3DTiles(node, options, treeFormat, max, ratio, output, lng, lat, h);
         }
         catch (const std::invalid_argument& e) {

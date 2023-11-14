@@ -100,11 +100,12 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     //transform->addChild(&nc_node);;
     //transform->accept(osg2gltf);
     //transform->removeChild(&nc_node);
+    TextureOptimizer* to = new TextureOptimizer(copyNode, textureType);
+    delete to;
     GeometryNodeVisitor gnv;
     copyNode->accept(gnv);
     TransformNodeVisitor tnv;
     copyNode->accept(tnv);
-    TextureOptimizer* to = new TextureOptimizer(copyNode, textureType);
     copyNode->accept(osg2gltf);//if using osg to process external data
     tinygltf::Model gltfModel = osg2gltf.getGltf();
     copyNode.release();

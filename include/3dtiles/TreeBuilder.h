@@ -171,14 +171,14 @@ protected:
 	void buildHlod(osg::ref_ptr<TileNode> rootTreeNode) {
 		std::vector<std::vector<osg::ref_ptr<TileNode>>> levels;
 		convertTreeNode2Levels(rootTreeNode, levels);
-
-		auto func = [=](int i) {
+		double simpleRatio = this->_simpleRatio;
+		auto func = [&levels, &simpleRatio](int i) {
 			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
 			for (osg::ref_ptr<TileNode> treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren()) {
 					osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
 					osgUtil::Simplifier simplifier;
-					simplifier.setSampleRatio(_simpleRatio);
+					simplifier.setSampleRatio(simpleRatio);
 					lodModel->accept(simplifier);
 				}
 			}
@@ -190,11 +190,14 @@ protected:
 				if (treeNode->currentNodes->getNumChildren() == 0) {
 					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
 						osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
-						const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
+						//const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
+						const osg::BoundingBox childBoundingBox = getBoundingBox(childNode->currentNodes);
+
 						for (unsigned int l = 0; l < childNode->currentNodes->getNumChildren(); ++l) {
 							osg::ref_ptr<osg::Node> childNodeCurrentNode = childNode->currentNodes->getChild(l);
+							const osg::BoundingBox grandChildBoundingBox = getBoundingBox(childNodeCurrentNode);
 							if (childNodeCurrentNode.valid()) {
-								if (childNodeCurrentNode->getBound().radius() * 10 >= childBoudingSphere.radius()) {
+								if ((grandChildBoundingBox._max-grandChildBoundingBox._min).length() * 10 >= (childBoundingBox._max - childBoundingBox._min).length()) {
 									osg::ref_ptr<osg::Node> node = osg::clone(childNodeCurrentNode.get(), osg::CopyOp::DEEP_COPY_ALL);
 									treeNode->currentNodes->addChild(node);
 								}
@@ -204,12 +207,12 @@ protected:
 				}
 			}
 		}
-		for (int i = levels.size() - 1; i > -1; --i) {
-			futures.push_back(std::async(std::launch::async, func, i));
-		}
-		for (auto& future : futures) {
-			future.get();
-		}
+		//for (int i = levels.size() - 1; i > -1; --i) {
+		//	futures.push_back(std::async(std::launch::async, func, i));
+		//}
+		//for (auto& future : futures) {
+		//	future.get();
+		//}
 		computeBoundingVolume(rootTreeNode);
 
 		//hlodOptimizierProxy(rootTreeNode);

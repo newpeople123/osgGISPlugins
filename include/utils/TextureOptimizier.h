@@ -20,7 +20,7 @@ struct ImageSortKey
 		return packing < other.packing;
 	}
 };
-typedef std::map<ImageSortKey, std::vector<osg::Image*>> ImageSortMap;
+typedef std::map<ImageSortKey, std::vector<osg::ref_ptr<osg::Image>>> ImageSortMap;
 class TextureVisitor :public osg::NodeVisitor
 {
 public:
@@ -29,6 +29,20 @@ public:
 	}
 	void apply(osg::Node& node) {
 		osg::StateSet* ss = node.getStateSet();
+		osg::ref_ptr<osg::Geometry> geom = node.asGeometry();
+		if (geom.valid()) {
+			osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+			if (texCoords.valid()) {
+				for (unsigned int q = 0; q < texCoords->size(); ++q) {
+					osg::Vec2 coord = texCoords->at(q);
+					const double u = coord.x();
+					const double v = coord.y();
+					if (u > 1.0 || u < -1.0 || v>1.0 || v < -1.0) {
+						return;
+					}
+				}
+			}
+		}
 		if (ss) {
 			apply(*ss);
 		}
@@ -47,7 +61,7 @@ public:
 	}
 	void apply(osg::Texture& texture) {
 		for (unsigned int i = 0; i < texture.getNumImages(); i++) {
-			osg::Image* img = texture.getImage(i);
+			osg::ref_ptr<osg::Image> img = texture.getImage(i);
 			bool isAddToImgs = true;
 			for (int j = 0; j < imgs.size(); ++j) {
 				if (euqalImage(img, imgs.at(j))) {
@@ -61,7 +75,7 @@ public:
 			}
 		}
 	}
-	bool euqalImage(osg::Image* img1, osg::Image* img2) {
+	bool euqalImage(const osg::ref_ptr<osg::Image>& img1,const osg::ref_ptr<osg::Image>& img2) {
 		const std::string filename1 = img1->getFileName();
 		const std::string filename2 = img2->getFileName();
 
@@ -110,15 +124,15 @@ public:
 				val->second.push_back(img);
 			}
 			else {
-				std::vector<osg::Image*> images;
+				std::vector<osg::ref_ptr<osg::Image>> images;
 				images.push_back(img);
 				ism.insert(std::make_pair(key, images));
 			}
 		}
 
 		for (auto& pair : ism) {
-			std::vector<osg::Image*>& value = pair.second;
-			std::sort(value.begin(), value.end(), [](const osg::Image* img1, const osg::Image* img2) {
+			std::vector<osg::ref_ptr<osg::Image>>& value = pair.second;
+			std::sort(value.begin(), value.end(), [](const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2) {
 				if (img1->s() * img1->t() < img2->s() * img2->t()) {
 					return true;
 				}
@@ -140,13 +154,22 @@ public:
 
 		}
 	}
-	std::vector<osg::Image*> imgs;
+	std::vector<osg::ref_ptr<osg::Image>> imgs;
 	ImageSortMap ism;
-	~TextureVisitor() {};
-
+	~TextureVisitor() {
+		for (auto& img : imgs) {
+			img = nullptr;
+		}
+		for (auto& item : ism) {
+			for (auto& img : item.second) {
+				img = nullptr;
+			}
+		}
+	};
 private:
 
 };
+
 class TextureOptimizerResolve :public osg::NodeVisitor {
 	std::vector<TextureAtlas*> textureAtlases;
 public:
@@ -157,9 +180,6 @@ public:
 		osg::StateSet* ss = geom.getStateSet();
 		osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom.asGeometry()->getTexCoordArray(0));
 		if (ss) {
-			//osgViewer::Viewer viewer;
-			//viewer.setSceneData(&geom);
-			//viewer.run();
 			for (unsigned int i = 0; i < ss->getTextureAttributeList().size(); ++i)
 			{
 				osg::StateAttribute* sa = ss->getTextureAttribute(i, osg::StateAttribute::TEXTURE);
@@ -167,45 +187,50 @@ public:
 				if (texture)
 				{
 					for (unsigned int j = 0; j < texture->getNumImages(); j++) {
-						osg::Image* img = texture->getImage(j);
+						osg::ref_ptr<osg::Image> img = texture->getImage(j);
 						const std::string filename = img->getFileName();
 						for (int k = 0; k < textureAtlases.size(); ++k) {
 							TextureAtlas* textureAtlas = textureAtlases.at(k);
 							auto& item = textureAtlas->imgUVRangeMap.find(filename);
 							if (item != textureAtlas->imgUVRangeMap.end()) {
 								UVRange uvRangle = item->second;
-								osg::ref_ptr<osg::Image> newImg = textureAtlas->texture();
+								const osg::ref_ptr<osg::Image>& newImg = textureAtlas->texture();
 								texture->setImage(j, newImg);
 								for (unsigned int q = 0; q < texCoords->size(); ++q) {
 									osg::Vec2 coord = texCoords->at(q);
-									osg::Vec2 newCoord(uvRangle.startU + (uvRangle.endU - uvRangle.startU) * coord.x(), uvRangle.startV + (uvRangle.endV - uvRangle.startV) * coord.y());
-									//std::cout << coord.x() << "," << coord.y() << ";" << newCoord.x() << "," << newCoord.y() << std::endl;
+									const double oldU = coord.x();
+									const double oldV = coord.y();
+									double newU = uvRangle.startU + (uvRangle.endU - uvRangle.startU) * oldU;
+									double newV = uvRangle.startV + (uvRangle.endV - uvRangle.startV) * oldV;
+									if (oldU < 0) {
+										newU = -(uvRangle.startU + (uvRangle.endU - uvRangle.startU) * oldU * -1);
+									}
+									if (oldV < 0) {
+										newV = -(uvRangle.startV + (uvRangle.endV - uvRangle.startV) * oldV * -1);
+									}
+									osg::Vec2 newCoord(newU, newV);
 									texCoords->at(q) = newCoord;
 								}
-								//geom.asGeometry()->setTexCoordArray(0, texCoords);
+								img.release();
 								break;
 							}
 						}
 					}
 				}
 			}
-
-			//osgViewer::Viewer viewer1;
-			//viewer1.setSceneData(&geom);
-			//viewer1.run();
 		}
 	}
 };
 class TextureOptimizer {
 public:
 	TextureOptimizer(osg::ref_ptr<osg::Node> node, TextureType textureType) {
-		node->accept(tv);
-		tv.groupImages();
+		tv = new TextureVisitor;
+		node->accept(*tv);
+		tv->groupImages();
 		buildTextureAtlas();
 		TextureOptimizerResolve tos(textureAtlases);
 		node->accept(tos);
-
-		auto exportImage = [textureType](osg::ref_ptr<osg::Image>& img) {
+		auto exportImage = [textureType](const osg::ref_ptr<osg::Image>& img) {
 			img->flipVertical();
 			std::string data(reinterpret_cast<char const*>(img->data()));
 			const std::string filename = Stringify() << std::hex << hashString(data);
@@ -306,12 +331,13 @@ public:
 		}
 	}
 	void buildTextureAtlas() {
-		for (auto& item : tv.ism) {
+		for (auto& item : tv->ism) {
 			while (item.second.size() != 0)
 			{
 				TextureAtlas* ta = new TextureAtlas(TextureAtlasOptions(osg::Vec2(128, 128), item.first.pixelFormat, item.first.packing));
 				for (int i = 0; i < item.second.size(); ++i) {
-					int index = ta->addImage(generateUUID(), item.second.at(i));
+					osg::ref_ptr<osg::Image>& img = item.second.at(i);
+					int index = ta->addImage(img);
 					if (index != -1) {
 						item.second.erase(item.second.begin() + i);
 						i--;
@@ -323,8 +349,14 @@ public:
 			}
 		}
 	}
-	TextureVisitor tv;
+	TextureVisitor* tv;
 	std::vector<TextureAtlas*> textureAtlases;
+	~TextureOptimizer() {
+		delete tv;
+		for (auto& textureAtlas : textureAtlases) {
+			delete textureAtlas;
+		}
+	}
 private:
 };
 

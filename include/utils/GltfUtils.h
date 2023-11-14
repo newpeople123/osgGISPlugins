@@ -41,7 +41,6 @@ public:
 			for (unsigned int i = 0; i < positions->size(); ++i) {
 				positions->at(i) = positions->at(i) * mat;
 			}
-			drawable.asGeometry()->setVertexArray(positions);
 		}
 	}
 	void apply(osg::Group& group)
@@ -1010,7 +1009,7 @@ private:
 		sampler.wrapS = wrapS;
 		sampler.wrapT = wrapT;
 		//sampler.wrapR = wrapR;
-		sampler.minFilter = osgTexture->getFilter(osg::Texture::MIN_FILTER);
+		sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR; //osgTexture->getFilter(osg::Texture::MIN_FILTER);
 		sampler.magFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
 		int samplerIndex = -1;
 		for (int i = 0; i < _model.samplers.size(); ++i) {
@@ -1776,8 +1775,10 @@ public:
 		if (type == CompressionType::MESHOPT) {
 			geometryCompression("EXT_meshopt_compression", vco);
 		}
-		//1
-		mergeMeshes();
+		if (type == NONE) {
+			//1 TODO:support draco and meshoptimizer
+			mergeMeshes();
+		}
 		//2
 		mergeBuffers();
 		return true;

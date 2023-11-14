@@ -37,7 +37,7 @@ double getPixelSize(const double& distance, const double& radius) {
 /// <param name="radius"></param>
 /// <param name="hopePixelSize">20 pixels: visible;700 pixels: can see the outline clearly;1000 pixels : can see details clearly</param>
 /// <returns></returns>
-double getDistance(const double& radius, const double& hopePixelSize = 50.0f) {
+double getDistance(const double& radius, const double& hopePixelSize = 500.0f) {
 	//const double pixelSizeRatio = 100.0 / 3.0;
 	//const double pixelSize = hopePixelSize * pixelSizeRatio;
 
@@ -63,10 +63,10 @@ double getGeometricError(const TileNode& node) {
 	const double radius2 = (max - min).length() / 2;
 	//distance = getDistance(radius2);
 	if (node.level == 0) {
-		distance = getDistance(radius2);
+		distance = getDistance(radius);
 	}
 	else if (node.children->getNumChildren() > 0) {
-		distance = getDistance(radius2, 700.0);
+		distance = getDistance(radius);
 	}
 	geometricError = distance * CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight;
 	return geometricError;
@@ -130,13 +130,13 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 				tileset["root"]["children"].push_back(root);
 				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
-			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);
+			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError)*1.2;
 			tileset["root"]["geometricError"] = node.geometricError;
 		}
 		else {
 			if (node.currentNodes->getNumChildren()) {
-				tileset["geometricError"] = node.geometricError;
-				tileset["root"]["geometricError"] = tileset["geometricError"];
+				tileset["geometricError"] = node.geometricError*1.2;
+				tileset["root"]["geometricError"] = node.geometricError;
 				b3dmPath = output + "/root.b3dm";
 			}
 		}
@@ -165,8 +165,8 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 			tileset["root"]["children"].push_back(root);
 			maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 		}
-		tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);
-		tileset["root"]["geometricError"] = tileset["geometricError"];
+		tileset["root"]["geometricError"] = std::max(maxGeometricError, node.geometricError);
+		tileset["geometricError"] = std::max(maxGeometricError, node.geometricError) * 1.2;
 	}
 
 	std::ofstream tilesetFile(tilesetPath);
@@ -176,7 +176,9 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 
 		if (b3dmPath != "" && node.currentNodes->getNumChildren()) {
 			osg::ref_ptr<osg::Node> outputNode = node.currentNodes->asNode();
+			std::cout << b3dmPath << std::endl;
 			osgDB::writeNodeFile(*outputNode.get(), b3dmPath, option);
+			outputNode = nullptr;
 		}
 	}
 	std::vector<std::future<void>> futures;
