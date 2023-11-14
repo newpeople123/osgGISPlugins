@@ -12,7 +12,7 @@ public:
         rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
         buildHlod(rootTreeNode);
     }
-    QuadTreeBuilder(osg::ref_ptr<osg::Node> node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const double simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth,simpleRatio) {
+    QuadTreeBuilder(osg::ref_ptr<osg::Node> node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const double simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth-1,simpleRatio) {
         RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
         osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
         rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
@@ -57,7 +57,7 @@ protected:
                 return NULL;
             }
             bool isLeafNode = false;
-            if (triangleNumber <= _maxTriangleNumber || depth > _maxTreeDepth)
+            if (triangleNumber <= _maxTriangleNumber || depth >= _maxTreeDepth)
             {
                 isLeafNode = true;
             }

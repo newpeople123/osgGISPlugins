@@ -188,21 +188,40 @@ protected:
 			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
 			for (osg::ref_ptr<TileNode> treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren() == 0) {
+					int childrenCount = 0;
 					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
 						osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
 						//const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
-						const osg::BoundingBox childBoundingBox = getBoundingBox(childNode->currentNodes);
+						if (childNode->currentNodes != nullptr) {
+							const osg::BoundingBox childBoundingBox = getBoundingBox(childNode->currentNodes);
 
-						for (unsigned int l = 0; l < childNode->currentNodes->getNumChildren(); ++l) {
-							osg::ref_ptr<osg::Node> childNodeCurrentNode = childNode->currentNodes->getChild(l);
-							const osg::BoundingBox grandChildBoundingBox = getBoundingBox(childNodeCurrentNode);
-							if (childNodeCurrentNode.valid()) {
-								if ((grandChildBoundingBox._max-grandChildBoundingBox._min).length() * 10 >= (childBoundingBox._max - childBoundingBox._min).length()) {
-									osg::ref_ptr<osg::Node> node = osg::clone(childNodeCurrentNode.get(), osg::CopyOp::DEEP_COPY_ALL);
-									treeNode->currentNodes->addChild(node);
+							for (unsigned int l = 0; l < childNode->currentNodes->getNumChildren(); ++l) {
+								childrenCount++;
+								osg::ref_ptr<osg::Node> childNodeCurrentNode = childNode->currentNodes->getChild(l);
+								const osg::BoundingBox grandChildBoundingBox = getBoundingBox(childNodeCurrentNode);
+								if (childNodeCurrentNode.valid()) {
+									if ((grandChildBoundingBox._max - grandChildBoundingBox._min).length() * 10 >= (childBoundingBox._max - childBoundingBox._min).length()) {
+										osg::ref_ptr<osg::Node> node = osg::clone(childNodeCurrentNode.get(), osg::CopyOp::DEEP_COPY_ALL);
+										treeNode->currentNodes->addChild(node);
+									}
 								}
 							}
 						}
+					}
+					if (treeNode->currentNodes->getNumChildren() == childrenCount && childrenCount!=0) {
+						treeNode->currentNodes = nullptr;
+					}
+				}
+			}
+		}
+
+		for (int i = 0; i < levels.size(); ++i) {
+			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+			for (osg::ref_ptr<TileNode> treeNode : level) {
+				if (treeNode->currentNodes != nullptr) {
+					const unsigned int count = treeNode->currentNodes->getNumChildren();
+					if (count > 0) {
+						std::cout << "depth:" << treeNode->level << " x:" << treeNode->x << " y:" << treeNode->y << " z:" << treeNode->z << std::endl;
 					}
 				}
 			}

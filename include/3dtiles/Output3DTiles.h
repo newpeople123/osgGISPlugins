@@ -130,12 +130,12 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 				tileset["root"]["children"].push_back(root);
 				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
-			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError)*1.2;
+			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError) * 1.2;
 			tileset["root"]["geometricError"] = node.geometricError;
 		}
 		else {
-			if (node.currentNodes->getNumChildren()) {
-				tileset["geometricError"] = node.geometricError*1.2;
+			if (node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
+				tileset["geometricError"] = node.geometricError * 1.2;
 				tileset["root"]["geometricError"] = node.geometricError;
 				b3dmPath = output + "/root.b3dm";
 			}
@@ -148,7 +148,7 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 		tileset["root"]["geometricError"] = tileset["geometricError"];
 	}
 	else {
-		if (node.currentNodes->getNumChildren()) {
+		if (node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
 			tileset["root"]["content"]["uri"] = "L" + std::to_string(node.level - 1) + "_" + std::to_string(node.x) + "_" + std::to_string(node.y) + "_" + std::to_string(node.z) + ".b3dm";
 		}
 		double maxGeometricError = 0;
@@ -174,7 +174,7 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 		tilesetFile << tileset.dump();
 		tilesetFile.close();
 
-		if (b3dmPath != "" && node.currentNodes->getNumChildren()) {
+		if (b3dmPath != "" && node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
 			osg::ref_ptr<osg::Node> outputNode = node.currentNodes->asNode();
 			std::cout << b3dmPath << std::endl;
 			osgDB::writeNodeFile(*outputNode.get(), b3dmPath, option);
