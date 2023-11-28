@@ -173,7 +173,7 @@ private:
 class TextureOptimizerResolve :public osg::NodeVisitor {
 	std::vector<TextureAtlas*> textureAtlases;
 public:
-	TextureOptimizerResolve(std::vector<TextureAtlas*> textureAtlases) :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
+	TextureOptimizerResolve(std::vector<TextureAtlas*>& textureAtlases) :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
 		this->textureAtlases = textureAtlases;
 	}
 	void apply(osg::Drawable& geom) {

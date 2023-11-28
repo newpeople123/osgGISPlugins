@@ -415,8 +415,6 @@ private:
 						posMin.x() = osg::minimum(posMin.x(), v.x());
 						posMin.y() = osg::minimum(posMin.y(), v.y());
 						posMin.z() = osg::minimum(posMin.z(), v.z());
-					}
-					if (!v.isNaN()) {
 						posMax.x() = osg::maximum(posMax.x(), v.x());
 						posMax.y() = osg::maximum(posMax.y(), v.y());
 						posMax.z() = osg::maximum(posMax.z(), v.z());
@@ -498,8 +496,7 @@ private:
 		osg::ref_ptr<osg::PrimitiveSet> mergePrimitiveset = NULL;
 		const unsigned int numPrimitiveSets = geom->getNumPrimitiveSets();
 		for (unsigned i = 0; i < numPrimitiveSets; ++i) {
-			osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);
-			const GLenum mode = pset->getMode();
+			osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);;
 			osg::PrimitiveSet::Type type = pset->getType();
 			switch (type)
 			{
