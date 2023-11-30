@@ -26,18 +26,20 @@ const double CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
 const double CesiumMaxScreenSpaceError = 16.0;
 double getPixelSize(const double& distance, const double& radius) {
 
-	const double angularSize = osg::RadiansToDegrees(2.0 * atan(radius / distance));
+	//const double angularSize = osg::RadiansToDegrees(2.0 * atan(radius / distance));
+	const double angularSize = 2.0 * atan(radius / distance);
 	const double dpp = osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight;
 	double pixelSize = angularSize / dpp;
 	return pixelSize;
 }
+
 /// <summary>
 /// Calculate the distance between the model and the viewpoint based on the pixel size
 /// </summary>
 /// <param name="radius"></param>
 /// <param name="hopePixelSize">20 pixels: visible;700 pixels: can see the outline clearly;1000 pixels : can see details clearly</param>
 /// <returns></returns>
-double getDistance(const double& radius, const double& hopePixelSize = 500.0f) {
+double getDistance(const double& radius, const double& hopePixelSize = 25.0f) {
 	//const double pixelSizeRatio = 100.0 / 3.0;
 	//const double pixelSize = hopePixelSize * pixelSizeRatio;
 
@@ -46,7 +48,7 @@ double getDistance(const double& radius, const double& hopePixelSize = 500.0f) {
 	const double dpp = osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight;
 	const double angularSize = dpp * pixelSize;
 
-	double distance = radius / tan(osg::DegreesToRadians(angularSize) / 2);
+	double distance = radius / tan(angularSize / 2);
 	return distance;
 }
 double getGeometricError(const TileNode& node) {
@@ -61,7 +63,6 @@ double getGeometricError(const TileNode& node) {
 	const osg::Vec3 max = cbv.getBoundingBox()._max;
 	const osg::Vec3 min = cbv.getBoundingBox()._min;
 	const double radius2 = (max - min).length() / 2;
-	//distance = getDistance(radius2);
 	if (node.level == 0) {
 		distance = getDistance(radius);
 	}
@@ -130,12 +131,12 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 				tileset["root"]["children"].push_back(root);
 				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
-			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError) * 1.2;
+			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);// *1.2;
 			tileset["root"]["geometricError"] = node.geometricError;
 		}
 		else {
 			if (node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
-				tileset["geometricError"] = node.geometricError * 1.2;
+				tileset["geometricError"] = node.geometricError;// *1.2;
 				tileset["root"]["geometricError"] = node.geometricError;
 				b3dmPath = output + "/root.b3dm";
 			}
@@ -166,7 +167,7 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 			maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 		}
 		tileset["root"]["geometricError"] = std::max(maxGeometricError, node.geometricError);
-		tileset["geometricError"] = std::max(maxGeometricError, node.geometricError) * 1.2;
+		tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);// *1.2;
 	}
 
 	std::ofstream tilesetFile(tilesetPath);
