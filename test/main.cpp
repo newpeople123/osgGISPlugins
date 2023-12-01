@@ -459,7 +459,7 @@ void testTextureAtlas() {
     node = nullptr;
     osg::Node* node1 = node.get();
     node1 = NULL;
-    TextureOptimizer* to = new TextureOptimizer(node, JPG);
+    TextureOptimizer* to = new TextureOptimizer(node, JPG,4096);
     delete to;
     //osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
     //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
@@ -491,7 +491,7 @@ void testTextureAtlas() {
     //osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "dt002.jpg");
 
 
-    TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(128.0,128.0), GL_RGBA, 1));
+    TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(128.0,128.0), osg::Vec2(4096, 4096), GL_RGBA, 1));
     int a1 = textureAtlas->addImage(img1);
     int a2 = textureAtlas->addImage(img2);
     int a3 = textureAtlas->addImage(img3);
@@ -567,59 +567,24 @@ void createCube(osg::Vec3 offset,double scale,osg::Vec4 color,std::string filena
 
     osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
     option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
-    osgDB::writeNodeFile(*root.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\singleThread4\\"+filename, option);
+    osgDB::writeNodeFile(*root.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\newPixel\\"+filename, option);
 }
 void test() {
     osg::ref_ptr<osg::Node> node = osgDB::readRefNodeFile("E:\\Code\\2023\\Other\\data\\2.FBX");
     node = NULL;
 }
 
-const double CesiumCanvasClientWidth = 1920;
-const double CesiumCanvasClientHeight = 931;
-const double CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
-const double CesiumFrustumFov = osg::PI / 3;
-const double CesiumFrustumFovy = CesiumFrustumAspectRatio <= 1 ? CesiumFrustumFov : atan(tan(CesiumFrustumFov * 0.5) / CesiumFrustumAspectRatio) * 2.0;
-const double CesiumFrustumNear = 0.1;
-const double CesiumFrustumFar = 10000000000.0;
-const double CesiumCanvasViewportWidth = CesiumCanvasClientWidth;
-const double CesiumCanvasViewportHeight = CesiumCanvasClientHeight;
-const double CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
-const double CesiumMaxScreenSpaceError = 16.0;
-double getPixelSize(const double& distance, const double& radius) {
-
-    const double angularSize = 2.0 * atan(radius / distance);
-    const double dpp = osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight;
-    double pixelSize = angularSize / dpp;
-    return pixelSize;
-}
-
-double getPixelSize2(const double& distance, const double& radius) {
-    const double test1 = radius / distance;
-    const double test2 = CesiumCanvasViewportHeight / 2 / tan(CesiumFrustumFov / 2);
-
-    const double pixel1 = test1 * test2;
-
-    const double pixel2 = radius * CesiumCanvasViewportHeight / distance / 2 / tan(CesiumFrustumFov / 2);
-
-    const double test3 = tan(CesiumFrustumFov / 2);
-    const double pixel = test1 / test3 * CesiumCanvasViewportHeight / 2;
-    return pixel;
-}
 
 int main() {
     setlocale(LC_ALL, "en_US.UTF-8");
     //testOsgdb_webp();
     //testOsgdb_fbx();
     //testTextureAtlas();
-    //createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
-    //createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
-    //createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
-    //createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
-    //createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
-    double test = 165681.03749999995 * CesiumCanvasClientHeight / 83580.53439598522 / CesiumSSEDenominator;
-
-    const double pixel1 = getPixelSize(10000, 500);
-    const double pixel2 = getPixelSize2(10000, 500);
+    createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
+    createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
+    createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
+    createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
+    createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
 
     //test();
     //std::cout << 1 << std::endl;

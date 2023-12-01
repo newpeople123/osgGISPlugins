@@ -1766,6 +1766,7 @@ public:
 		default:
 			break;
 		}
+		mergeMeshes();
 		//KHR_draco_mesh_compression
 		if (type == CompressionType::DRACO) {
 			geometryCompression("KHR_draco_mesh_compression", vco);
@@ -1774,10 +1775,6 @@ public:
 		//EXT_meshopt_compression
 		if (type == CompressionType::MESHOPT) {
 			geometryCompression("EXT_meshopt_compression", vco);
-		}
-		if (type == NONE) {
-			//1 TODO:support draco and meshoptimizer
-			mergeMeshes();
 		}
 		//2
 		mergeBuffers();

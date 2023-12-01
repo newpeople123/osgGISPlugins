@@ -26,7 +26,7 @@ public:
 	TileNode* parentTreeNode;
 	int x, y, z;
 	std::string uuid;
-	double geometricError;
+	double upperGeometricError, lowerGeometricError;
 	std::vector<double> box;
 	std::vector<double> region;
 

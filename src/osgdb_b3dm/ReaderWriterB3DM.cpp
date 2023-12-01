@@ -84,6 +84,7 @@ void put_val(std::string& buf, T val) {
 tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options) const {
 
     bool embedImages = true, embedBuffers = true, prettyPrint = false, isBinary = true;
+    int textureMaxSize = 4096;
     std::string textureTypeStr, compressionTypeStr;
     TextureType textureType = TextureType::PNG;
     CompressionType comporessionType = CompressionType::NONE;
@@ -145,11 +146,14 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
                     comporessLevel = 1;
                 }
             }
+            else if (key == "textureMaxSize") {
+                textureMaxSize = std::atof(val.c_str());
+            }
         }
     }
 
     //1
-    TextureOptimizer* to = new TextureOptimizer(node, textureType);
+    TextureOptimizer* to = new TextureOptimizer(node, textureType,textureMaxSize);
     delete to;
     //2
     GeometryNodeVisitor gnv;

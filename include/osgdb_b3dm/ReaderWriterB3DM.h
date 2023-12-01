@@ -11,6 +11,7 @@ public:
         supportsOption("compressionType=<value>", "value enum values:draco、meshopt,default is none");
         supportsOption("batchId=<true/false>", "default is true");
         supportsOption("optimizer=<true/false>", "default is true");
+        supportsOption("textureMaxSize=<number>", "default is 4096.0");
         supportsOption("comporessLevel=<string>", "default is medium,value enum values:low、medium、high");
     }
     const char* className() const { return "b3dm reader/writer"; }

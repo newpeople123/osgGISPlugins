@@ -14,7 +14,7 @@
 //#define STB_IMAGE_WRITE_IMPLEMENTATION
 //#include <tinygltf/tiny_gltf.h>
 //#endif // !1
-
+double atlasMaxWidth = 4096.0, atlasMaxHeight = 4096.0;
 struct UVRange
 {
 	double startU, startV, endU, endV;
@@ -42,9 +42,9 @@ struct TextureAtlasNode
 	TextureAtlasNode* childNode1;
 	TextureAtlasNode* childNode2;
 	int imageIndex;
-	osg::Vec2 bottomLeft;
-	osg::Vec2 topRight;
-	TextureAtlasNode(osg::Vec2 bottomLeft = osg::Vec2(0.0, 0.0), osg::Vec2 topRight = osg::Vec2(0.0, 0.0),TextureAtlasNode* childNode1=NULL, TextureAtlasNode* childNode2=NULL, int imageIndex=-1) {
+	osg::Vec2 bottomLeft = osg::Vec2(0.0, 0.0);
+	osg::Vec2 topRight = osg::Vec2(0.0, 0.0);
+	explicit TextureAtlasNode(osg::Vec2 bottomLeft = osg::Vec2(0.0, 0.0), osg::Vec2 topRight = osg::Vec2(0.0, 0.0),TextureAtlasNode* childNode1=NULL, TextureAtlasNode* childNode2=NULL, int imageIndex=-1) {
 		this->childNode1 = childNode1;
 		this->childNode2 = childNode2;
 		this->imageIndex = imageIndex;
@@ -55,8 +55,6 @@ struct TextureAtlasNode
 		childNode1 = nullptr;
 		childNode2 = nullptr;
 		imageIndex = -1;
-		bottomLeft = osg::Vec2(0.0, 0.0);
-		topRight = osg::Vec2(0.0, 0.0);
 	}
 	~TextureAtlasNode()
 	{
@@ -71,11 +69,13 @@ int getIndex(TextureAtlas* atlas, osg::ref_ptr<osg::Image>& image);
 struct TextureAtlasOptions
 {
 	double borderWidthInPixels = 0.0;
-	osg::Vec2 initialSize = osg::Vec2(2048.0, 2048.0);
+	osg::Vec2 atlasMaxSize = osg::Vec2(4096.0, 4096.0);
+	osg::Vec2 imgMaxSize = osg::Vec2(4096.0, 4096.0);
 	GLenum pixelFormat = GL_RGB;
 	unsigned int packing = 1;
-	TextureAtlasOptions(osg::Vec2 initialSize, GLenum pixelFormat, unsigned int packing, double borderWidthInPixels = 0.0) {
-		this->initialSize = initialSize;
+	TextureAtlasOptions(osg::Vec2 atlasMaxSize, osg::Vec2 imgMaxSize, GLenum pixelFormat, unsigned int packing, double borderWidthInPixels = 0.0) {
+		this->atlasMaxSize = atlasMaxSize;
+		this->imgMaxSize = imgMaxSize;
 		this->pixelFormat = pixelFormat;
 		this->packing = packing;
 		this->borderWidthInPixels = borderWidthInPixels;
@@ -84,24 +84,21 @@ struct TextureAtlasOptions
 };
 class TextureAtlas {
 public:
-	TextureAtlas(TextureAtlasOptions options) {
+	explicit TextureAtlas(TextureAtlasOptions options) {
 		if (options.borderWidthInPixels < 0) {
 			OSG_FATAL << "TextureAtlas Error:borderWidthInPixels must be greater than or equal to zero. ";
 		}
-		if (options.initialSize.x() < 1.0 || options.initialSize.y() < 1.0) {
-			OSG_FATAL << "TextureAtlas Error:initialSize must be greater than zero. ";
-		}
+		atlasMaxWidth = options.atlasMaxSize.x();
+		atlasMaxHeight = options.atlasMaxSize.y();
+		this->_imgMaxSize = options.imgMaxSize;
 		this->_pixelFormat = options.pixelFormat;
 		this->_borderWidthInPixels = options.borderWidthInPixels;
 		this->_textureCoordinates.clear();
-		this->_initialSize = options.initialSize;
 		this->_root = NULL;
 		this->_packing = options.packing;
 	}
 	~TextureAtlas() {
-		if (this->_texture != NULL) {
-			this->_texture = NULL;
-		}
+		this->_texture = NULL;
 		if (_root) {
 			delete _root;
 			this->_root = NULL;
@@ -109,6 +106,7 @@ public:
 	}
 	int addImage(osg::ref_ptr<osg::Image>& image) {
 		if (image.valid()) {
+			resizeImage(image, this->_imgMaxSize);
 			if (image->getPixelFormat() != this->_pixelFormat || image->getPacking() != this->_packing) {
 				return -1;
 			}
@@ -120,7 +118,7 @@ public:
 			for (int i = 0; i < this->_textureCoordinates.size(); ++i) {
 				const UVRange uvRange = this->_textureCoordinates[i].uvRange;
 				std::string filename = imgNames.at(i);
-				auto& item = imgUVRangeMap.find(filename);
+				auto item = imgUVRangeMap.find(filename);
 				if (item != imgUVRangeMap.end()) {
 					item->second.endU = uvRange.endU;
 					item->second.endV = uvRange.endV;
@@ -136,7 +134,15 @@ public:
 		}
 		return -1;
 	}
-	
+	void resizeImage(osg::ref_ptr<osg::Image>& image,osg::Vec2 size) {
+		int currentWidth = image->s();
+		int currentHeight = image->t();
+		float scale = std::min(size.x() / currentWidth, size.y() / currentHeight);
+		if (scale < 1) {
+			image->scaleImage(static_cast<int>(currentWidth * scale), static_cast<int>(currentHeight * scale), image->r());
+		}
+	}
+
 	int borderWidthInPixels() {
 		return this->_borderWidthInPixels;
 	}
@@ -159,7 +165,8 @@ public:
 	GLenum _pixelFormat;
 	int _borderWidthInPixels;
 	std::vector<BoundingRectangle> _textureCoordinates;
-	osg::Vec2 _initialSize;
+	osg::Vec2 _initialSize = osg::Vec2(64.0, 64.0);
+	osg::Vec2 _imgMaxSize;
 	osg::ref_ptr<osg::Image> _texture;
 	unsigned int _packing;
 	std::map<std::string, UVRange> imgUVRangeMap;
@@ -185,7 +192,7 @@ bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& ima
 		const double atlasWidth = findNearestGreaterPowerOfTwo(oldAtlasWidth + image->s() + borderWidthInPixels);
 		const double atlasHeight = findNearestGreaterPowerOfTwo(oldAtlasHeight + image->t() + borderWidthInPixels);
 
-		if (atlasWidth > 4096 || atlasHeight > 4096) {
+		if (atlasWidth > atlasMaxWidth || atlasHeight > atlasMaxHeight) {
 			return false;
 		}
 		const double widthRatio = oldAtlasWidth / atlasWidth;

@@ -12,7 +12,8 @@
 #include <osg/CoordinateSystemNode>
 #include <osgUtil/CullVisitor>
 #include <future>
-
+const double InitialPixelSize = 25.0;
+const double DetailPixelSize = InitialPixelSize * 5;
 const double CesiumCanvasClientWidth = 1920;
 const double CesiumCanvasClientHeight = 931;
 const double CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
@@ -24,12 +25,11 @@ const double CesiumCanvasViewportWidth = CesiumCanvasClientWidth;
 const double CesiumCanvasViewportHeight = CesiumCanvasClientHeight;
 const double CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
 const double CesiumMaxScreenSpaceError = 16.0;
-double getPixelSize(const double& distance, const double& radius) {
+int getPixelSize(const double& distance, const double& radius) {
 
-	//const double angularSize = osg::RadiansToDegrees(2.0 * atan(radius / distance));
 	const double angularSize = 2.0 * atan(radius / distance);
 	const double dpp = osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight;
-	double pixelSize = angularSize / dpp;
+	int pixelSize = angularSize / dpp;
 	return pixelSize;
 }
 
@@ -37,13 +37,8 @@ double getPixelSize(const double& distance, const double& radius) {
 /// Calculate the distance between the model and the viewpoint based on the pixel size
 /// </summary>
 /// <param name="radius"></param>
-/// <param name="hopePixelSize">20 pixels: visible;700 pixels: can see the outline clearly;1000 pixels : can see details clearly</param>
 /// <returns></returns>
-double getDistance(const double& radius, const double& hopePixelSize = 25.0f) {
-	//const double pixelSizeRatio = 100.0 / 3.0;
-	//const double pixelSize = hopePixelSize * pixelSizeRatio;
-
-	const double pixelSize = hopePixelSize;
+double getDistance(const double& radius,const double& pixelSize) {
 
 	const double dpp = osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight;
 	const double angularSize = dpp * pixelSize;
@@ -51,46 +46,58 @@ double getDistance(const double& radius, const double& hopePixelSize = 25.0f) {
 	double distance = radius / tan(angularSize / 2);
 	return distance;
 }
-double getGeometricError(const TileNode& node) {
+double getUpperGeometricError(const TileNode& node) {
 
-	//osgUtil::CullVisitor* t = new osgUtil::CullVisitor;
-	//double pS = t->pixelSize(node.currentNodes->getBound().center(), node.currentNodes->getBound().radius());
 	double geometricError = 0.0;
 	double distance = 0.0;
-	const double radius = node.nodes->getBound().radius();
-	osg::ComputeBoundsVisitor cbv;
-	node.nodes->accept(cbv);
-	const osg::Vec3 max = cbv.getBoundingBox()._max;
-	const osg::Vec3 min = cbv.getBoundingBox()._min;
-	const double radius2 = (max - min).length() / 2;
-	if (node.level == 0) {
-		distance = getDistance(radius);
-	}
-	else if (node.children->getNumChildren() > 0) {
-		distance = getDistance(radius);
-	}
+	double radius = 0.0;
+	radius = node.nodes->getBound().radius();
+	if(node.level==0)
+		distance = getDistance(radius, InitialPixelSize);
+	else
+		distance = getDistance(radius, DetailPixelSize);
 	geometricError = distance * CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight;
 	return geometricError;
 }
-void getAllTreeNodesGeometricError(TileNode& node) {
-	for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
-		osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node.children->getChild(i));
-		getAllTreeNodesGeometricError(*child);
-	}
-	if (node.children->getNumChildren() == 0) {
-		if (node.level == 0) {
-			node.geometricError = getGeometricError(node);
-		}
-		else {
-			node.geometricError = 0.0;
+double getLowerGeometricError(const TileNode& node) {
+
+	double geometricError = 0.0;
+	double distance = 0.0;
+	double radius = 0.0;
+
+	int num = node.children->getNumChildren();
+	if (num > 0) {
+		for (int i = 0; i < num; ++i) {
+			osg::ref_ptr<osg::Node> child = node.children->getChild(i);
+			TileNode* childNode = dynamic_cast<TileNode*>(child.get());
+			double childRadius = childNode->nodes->getBound().radius();
+			if (childRadius > radius) {
+				radius = childRadius;
+			}
 		}
 	}
 	else {
-		double geometricError = std::max(getGeometricError(node), 0.0);
-		node.geometricError = geometricError;
+		return geometricError;
+	}
+	if (node.level == 0)
+		distance = getDistance(radius, InitialPixelSize);
+	else
+		distance = getDistance(radius, DetailPixelSize);
+	geometricError = distance * CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight;
+	return geometricError;
+}
+double getDistanceByGeometricError(double geometricError) {
+	return geometricError / (CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight);
+}
+void getTileNodeGeometricErrors(TileNode& node) {
+	node.upperGeometricError = getUpperGeometricError(node);
+	node.lowerGeometricError = getLowerGeometricError(node);
+	int num = node.children->getNumChildren();
+	for (int i = 0; i < num; ++i) {
+		TileNode* childNode = dynamic_cast<TileNode*>(node.children->getChild(i));
+		getTileNodeGeometricErrors(*childNode);
 	}
 }
-
 void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& option, const std::string& output, int level, std::vector<double> transform = std::vector<double>()) {
 
 	std::string childOutput = "", tilesetPath = "", b3dmPath = "";
@@ -117,7 +124,6 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 
 	if (level == 0) {
 		if (node.children->getNumChildren()) {
-			double maxGeometricError = 0.0;
 			for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 				osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node.children->getChild(i));
 				json root;
@@ -126,33 +132,31 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 				}
 				const std::string uri = std::to_string(child->level - 1) + "/" + "L" + std::to_string(child->level - 1) + "_" + std::to_string(child->x) + "_" + std::to_string(child->y) + "_" + std::to_string(child->z) + ".json";
 				root["content"]["uri"] = uri;
-				root["geometricError"] = child->geometricError;
+				root["geometricError"] = child->lowerGeometricError;
 				root["refine"] = child->refine;
 				tileset["root"]["children"].push_back(root);
-				maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 			}
-			tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);// *1.2;
-			tileset["root"]["geometricError"] = node.geometricError;
+			tileset["geometricError"] = node.upperGeometricError;
+			tileset["root"]["geometricError"] = node.lowerGeometricError;
 		}
 		else {
 			if (node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
-				tileset["geometricError"] = node.geometricError;// *1.2;
-				tileset["root"]["geometricError"] = node.geometricError;
+				tileset["geometricError"] = node.upperGeometricError;
+				tileset["root"]["geometricError"] = node.lowerGeometricError;
 				b3dmPath = output + "/root.b3dm";
 			}
 		}
 	}
 	else if (node.children->getNumChildren() == 0) {
 		tileset["root"]["content"]["uri"] = "L" + std::to_string(node.level - 1) + "_" + std::to_string(node.x) + "_" + std::to_string(node.y) + "_" + std::to_string(node.z) + ".b3dm";
-		tileset["geometricError"] = node.geometricError;
+		tileset["geometricError"] = node.upperGeometricError;
 		tileset["refine"] = node.refine;
-		tileset["root"]["geometricError"] = tileset["geometricError"];
+		tileset["root"]["geometricError"] = node.lowerGeometricError;
 	}
 	else {
 		if (node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
 			tileset["root"]["content"]["uri"] = "L" + std::to_string(node.level - 1) + "_" + std::to_string(node.x) + "_" + std::to_string(node.y) + "_" + std::to_string(node.z) + ".b3dm";
 		}
-		double maxGeometricError = 0;
 		for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 			osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node.children->getChild(i));
 			json root;
@@ -161,13 +165,12 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 			}
 			root["content"]["uri"] = "../" + std::to_string(child->level - 1) + "/" + "L" + std::to_string(child->level - 1) + "_" + std::to_string(child->x) + "_" + std::to_string(child->y) + "_" + std::to_string(child->z) + ".json";
 
-			root["geometricError"] = child->geometricError;
+			root["geometricError"] = child->lowerGeometricError;
 			root["refine"] = child->refine;
 			tileset["root"]["children"].push_back(root);
-			maxGeometricError = maxGeometricError > root["geometricError"] ? maxGeometricError : root["geometricError"];
 		}
-		tileset["root"]["geometricError"] = std::max(maxGeometricError, node.geometricError);
-		tileset["geometricError"] = std::max(maxGeometricError, node.geometricError);// *1.2;
+		tileset["root"]["geometricError"] = node.lowerGeometricError;
+		tileset["geometricError"] = node.upperGeometricError;
 	}
 
 	std::ofstream tilesetFile(tilesetPath);
@@ -177,7 +180,14 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 
 		if (b3dmPath != "" && node.currentNodes != nullptr && node.currentNodes->getNumChildren()) {
 			osg::ref_ptr<osg::Node> outputNode = node.currentNodes->asNode();
-			std::cout << b3dmPath << std::endl;
+			int pixelSize = 4096;
+			if (node.lowerGeometricError != 0.0) {
+				double distance = getDistanceByGeometricError(node.lowerGeometricError);
+				pixelSize = getPixelSize(distance, node.nodes->getBound().radius());;
+			}
+			//pixelSize = pixelSize < 64 ? 64 : pixelSize;
+			std::cout << "pixelSize:" << pixelSize << std::endl;
+			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
 			osgDB::writeNodeFile(*outputNode.get(), b3dmPath, option);
 			outputNode = nullptr;
 		}
@@ -205,7 +215,6 @@ void OsgNodeTo3DTiles(const osg::ref_ptr<osg::Node> osgNode, const osg::ref_ptr<
 			OctreeBuilder octb(osgNode, max, 8, ratio);
 			threeDTilesNode = octb.rootTreeNode;
 		}
-		getAllTreeNodesGeometricError(*threeDTilesNode.get());
 		osg::EllipsoidModel ellipsoidModel;
 		osg::Matrixd matrix;
 		ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), height, matrix);
@@ -213,6 +222,7 @@ void OsgNodeTo3DTiles(const osg::ref_ptr<osg::Node> osgNode, const osg::ref_ptr<
 		const double* ptr = matrix.ptr();
 		for (unsigned i = 0; i < 16; ++i)
 			rootTransform.push_back(*ptr++);
+		getTileNodeGeometricErrors(*threeDTilesNode.get());
 		outputTreeNode(*threeDTilesNode.get(), option, output, 0, rootTransform);
 	}
 }
