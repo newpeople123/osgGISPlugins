@@ -871,7 +871,7 @@ private:
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
 		//need to forbid filpVertical when use texture atlas 
 		//flipped->flipVertical();
-		//textureOptimize(flipped);
+		textureOptimizeSize(flipped);
 
 		std::string filename;
 		std::string ext = "png";
@@ -1119,7 +1119,7 @@ private:
 	}
 
 	//convert image size to the power of 2
-	void textureOptimize(osg::ref_ptr<osg::Image> img) {
+	void textureOptimizeSize(osg::ref_ptr<osg::Image> img) {
 		auto findNearestGreaterPowerOfTwo = [](int n) {
 			int powerOfTwo = 1;
 			while (powerOfTwo < n) {
