@@ -215,17 +215,6 @@ protected:
 			}
 		}
 
-		for (int i = 0; i < levels.size(); ++i) {
-			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
-			for (osg::ref_ptr<TileNode> treeNode : level) {
-				if (treeNode->currentNodes != nullptr) {
-					const unsigned int count = treeNode->currentNodes->getNumChildren();
-					if (count > 0) {
-						std::cout << "depth:" << treeNode->level << " x:" << treeNode->x << " y:" << treeNode->y << " z:" << treeNode->z << std::endl;
-					}
-				}
-			}
-		}
 		//for (int i = levels.size() - 1; i > -1; --i) {
 		//	futures.push_back(std::async(std::launch::async, func, i));
 		//}

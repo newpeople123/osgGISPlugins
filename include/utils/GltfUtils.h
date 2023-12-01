@@ -284,8 +284,6 @@ private:
 			std::cerr << "Unknown component type." << std::endl;
 			break;
 		}
-		if (accessor.count == 25)
-			std::cout << std::endl;
 		for (draco::PointIndex i(0); i < static_cast<uint32_t>(accessor.count); ++i)
 		{
 			attrActual->SetAttributeValue(attrActual->mapped_index(i), &values[i.value() * numComponents]);
@@ -870,7 +868,9 @@ private:
 		// Flip the image before writing
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
 		//need to forbid filpVertical when use texture atlas 
-		//flipped->flipVertical();
+		if (type == TextureType::KTX2 || TextureType::KTX) {
+			flipped->flipVertical();
+		}
 		textureOptimizeSize(flipped);
 
 		std::string filename;

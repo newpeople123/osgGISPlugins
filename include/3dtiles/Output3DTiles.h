@@ -186,7 +186,6 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 				pixelSize = getPixelSize(distance, node.nodes->getBound().radius());;
 			}
 			//pixelSize = pixelSize < 64 ? 64 : pixelSize;
-			std::cout << "pixelSize:" << pixelSize << std::endl;
 			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
 			osgDB::writeNodeFile(*outputNode.get(), b3dmPath, option);
 			outputNode = nullptr;

@@ -54,7 +54,7 @@ int main(int argc, char** argv)
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     if (node.valid()) {
 
-        std::string textureFormat = "jpg", vertexFormat = "m", treeFormat = "quad", maxTriangle = "100000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
+        std::string textureFormat = "ktx2", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
         while (arguments.read("-tf", textureFormat));
         while (arguments.read("-vf", vertexFormat));
         while (arguments.read("-t", treeFormat));
