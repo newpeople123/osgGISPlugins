@@ -13,7 +13,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有Pbr材质的fbx文件
 支持导出gltf/glb，暂不支持读取。在osgEarth的gltf的插件基础上，增加了纹理压缩和顶点压缩功能，支持webp、ktx2格式纹理；支持使用draco/meshopt对顶点、法线、纹理坐标进行压缩；同时支持对顶点绑定batchId。
 
 ## osgdb_b3dm
-支持导出b3dm，暂不支持读取。b3dm插件具有gltf插件的所有功能，同时能够导出UserData中的属性到b3dm中。
+支持导出b3dm，暂不支持读取。b3dm插件具有gltf插件的所有功能，同时能够导出UserData中的属性到b3dm中。支持纹理图集优化。
 
 ## osgdb_webp
 和osgEarth的webp插件一样。
@@ -31,7 +31,15 @@ osg的gis插件，能够读取、显示3dmax导出的具有Pbr材质的fbx文件
 #### 示例命令
 `b3dm2gltf.exe -i D:\test.b3dm -o D:\output.glb`
 ## model23dtiles
-将3D模型转换为3dtiles，支持四叉树和八叉树结构的3dtiles，支持webp/ktx2纹理压缩和draco压缩。   
+1、将3D模型转换为3dtiles；
+2、支持四叉树和八叉树结构的3dtiles；
+3、支持webp/ktx2纹理压缩；
+4、支持draco和meshoptimizer压缩；
+5、支持纹理合并(减少drawcall次数)；
+6、导出的3dtiles会带有模型的用户属性；
+7、导出的3dtiles是经过网格合并的；
+8、支持纹理图集；
+...
 这里的3D模型指的是fbx、obj、3ds等osg能够读取的三维模型，但是不包括倾斜摄影模型，倾斜摄影模型目前建议使用[https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles)。  
 ### 用法说明
 #### 命令行格式
@@ -49,7 +57,7 @@ model23dtiles.exe -i D:\test.fbx -ratio 0.6 -o D:\output -lat 30 -lng 116 -heigh
 model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 100
 ```
 #### 参数说明
-`-tf` 纹理压缩格式，可选值有：png、jpg、webp、ktx2，默认值为：png。  
+`-tf` 纹理压缩格式，可选值有：png、jpg、webp、ktx2，默认值为：jpg。  
 `-vf` 顶点压缩格式，可选的值有：draco、meshopt、none，默认值为：none，即不对顶点进行压缩。
 `draco_compression_level` draco压缩级别，可选的值为：low、medium、high，默认值为：medium。
 `-t` 3dtiles的组织结构，可以为四叉树或八叉树，可选的值有：quad、oc，默认值为：quad。  
@@ -64,15 +72,10 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 2、编译时需要修改根目录下的CMakeLists文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径  
 # 缺陷
 1、当前不支持b3dm、gltf/glb文件的导入；  
-2、webp插件无法导出灰度图；  
-3、ktx插件无法读取部分ktx 2.0版本的图片；  
-4、b3dm、gltf/glb文件暂不支持meshopt格式的顶点压缩；  
-5、model23tiles工具暂时不支持对小块纹理的合并优化处理。  
+2、ktx插件无法读取部分ktx 2.0版本的图片；  
 ...
 # 未来计划支持
-1、读取b3dm、gltf/glb；  
-2、增加对meshopt顶点压缩的支持；  
-3、增加model23tiles工具对小块纹理的合并优化处理。  
+1、读取b3dm、gltf/glb；    
 ...  
 **[简体中文](#简介) | English**
 
@@ -87,7 +90,7 @@ Based on the FBX2glTF plugin of OSG's FBX, reference was made to [FBX2glTF](http
 ## osgdb_gltf
 Supports exporting gltf/glb, but currently does not support reading. On the basis of osgEarth's gltf plugin, added texture compression and vertex compression functions, supporting webp and ktx2 format textures; Use Draco/Meshopt to compress vertices, normals, and texture coordinates; Simultaneously supports binding batchId to vertices.
 ## osgdb_b3dm
-Supports exporting b3dm, but currently does not support reading. The b3DM plugin has all the functions of the gltf plugin, and can also export attributes from UserData to b3DM.
+Supports exporting b3dm, but currently does not support reading. The b3DM plugin has all the functions of the gltf plugin, and can also export attributes from UserData to b3DM.Support textureAtlas.
 ## osgdb_webp
 Same as the webp plugin of osgEarth.
 ## osgdb_ktx
@@ -103,7 +106,15 @@ Convert b3dm files to gltf/glb.
 #### Examples
 `b3dm2gltf.exe -i D:\test.b3dm -o D:\output.glb`
 ## model23dtiles
-Convert the 3D model into 3D tiles, support quadtree and octree structured 3D tiles, support webp/ktx2 texture compression and draco compression.  
+1. Convert 3D models into 3tiles;
+2. 3D tiles that support quadtree and octree structures;
+3. Support webp/ktx2 texture compression;
+4. Support draco and meshopoptimizer compression;
+5. Support texture merging (reduce drawcalls);
+6. The exported 3dtiles will have the user attributes of the model;
+7. The exported 3dtiles are merged through grids;
+8. Support textureAtlas;
+...
 The 3D model here refers to 3D models that can be read by OSG such as FBX, OBJ, and 3ds, but does not include oblique photography models. Currently, it is recommended to use oblique photography models [https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles).
 ### Usage
 #### Command Line
@@ -120,7 +131,7 @@ model23dtiles.exe -i D:\test.fbx -ratio 0.6 -o D:\output -lat 30 -lng 116 -heigh
 model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 100
 ```
 #### Parameters
-`-tf` texture format,option values are png、jpg、webp、ktx2，default value is png.  
+`-tf` texture format,option values are png、jpg、webp、ktx2，default value is jpg.  
 `-vf` vertex format,option values are draco、meshopt、none,default is none.  
 `-t` tree format,option values are quad、oc,default is quad.  
 `draco_compression_level` draco comporession level,option values are low、medium、high,default is medium.
@@ -134,15 +145,10 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 2. When compiling, it is necessary to modify the CMAKE in the CMakeLists file in the root directory the value of CMAKE_TOOLCHAIN_FILE the variable is the local vcpkg tool path.
 # Defect
 1. Currently, importing b3dm and gltf/glb files is not supported;
-2. The webp plugin cannot export grayscale images;
-3. The ktx plugin cannot read some images from the ktx 2.0 version;
-4. The b3dm and gltf/glb files currently do not support vertex compression in the mesh format;
-5. The model23tiles tool currently does not support merging and optimizing small textures.  
+2. The ktx plugin cannot read some images from the ktx 2.0 version;
 ...
 # TO DO
 1. Read b3mm, gltf/glb;
-2. Increase support for mesh vertex compression;
-3. Add the model23tiles tool to merge and optimize small textures.  
 ...
 
 # About author  

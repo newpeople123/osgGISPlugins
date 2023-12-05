@@ -23,7 +23,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "D:\\nginx-1.22.1\\html\\3dtiles\\wuhu\\Data\\InstancedTile\\R3_InstancedTile+L2_1_0_0.b3dm", output = "D:\\nginx-1.22.1\\html\\3dtiles\\wuhu\\Data\\InstancedTile\\1.gltf";
+    std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 

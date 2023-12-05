@@ -84,11 +84,11 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
                 key = opt;
             }
 
-            if (key == "Version") {
-                if (val != "2.0") {
-                    isKtx2 = false;
-                }
-            }
+            //if (key == "Version") {
+            //    if (val != "2.0") {
+            //        isKtx2 = false;
+            //    }
+            //}
         }
     }
 
@@ -147,11 +147,11 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
                 key = opt;
             }
 
-            if (key == "Version") {
-                if (val != "2.0") {
-                    isKtx2 = false;
-                }
-            }
+            //if (key == "Version") {
+            //    if (val != "2.0") {
+            //        isKtx2 = false;
+            //    }
+            //}
         }
     }
 

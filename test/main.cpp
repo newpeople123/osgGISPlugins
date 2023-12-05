@@ -16,88 +16,12 @@
 #include <osgUtil/Optimizer>
 #include <osgDB/ConvertUTF>
 #include <codecvt>
+#include <osgGA/GUIEventAdapter>
+#include <osgViewer/ViewerEventHandlers>
+#include <utils/TextureAtlas.h>
+#include <utils/TextureOptimizier.h>
 using namespace std;
-/*
 
-
-    if (true) {
-
-        if (pNode) {
-            FbxProperty topProp = pNode->GetNextProperty(pNode->GetFirstProperty());
-            FbxPropertyFlags
-            FbxString ss;
-            while (topProp.IsValid())
-            {
-                FbxDataType dataType = topProp.GetPropertyDataType();
-                EFbxType eType = dataType.GetType();
-                switch (eType)
-                {
-                case fbxsdk::eFbxUndefined:
-                    break;
-                case fbxsdk::eFbxChar:
-                    break;
-                case fbxsdk::eFbxUChar:
-                    break;
-                case fbxsdk::eFbxShort:
-                    break;
-                case fbxsdk::eFbxUShort:
-                    break;
-                case fbxsdk::eFbxUInt:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<unsigned int>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxLongLong:
-                    break;
-                case fbxsdk::eFbxULongLong:
-                    break;
-                case fbxsdk::eFbxHalfFloat:
-                    break;
-                case fbxsdk::eFbxBool:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<bool>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxInt:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<int>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxFloat:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<float>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxDouble:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<double>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxDouble2:
-                    break;
-                case fbxsdk::eFbxDouble3:
-                    break;
-                case fbxsdk::eFbxDouble4:
-                    break;
-                case fbxsdk::eFbxDouble4x4:
-                    break;
-                case fbxsdk::eFbxEnum:
-                    break;
-                case fbxsdk::eFbxEnumM:
-                    break;
-                case fbxsdk::eFbxString:
-                    std::cout << pNode->GetName() << " propName:" << topProp.GetName() << "  " << "  " << topProp.Get<std::string>() << "--" << std::endl;
-                    break;
-                case fbxsdk::eFbxTime:
-                    break;
-                case fbxsdk::eFbxReference:
-                    break;
-                case fbxsdk::eFbxBlob:
-                    break;
-                case fbxsdk::eFbxDistance:
-                    break;
-                case fbxsdk::eFbxDateTime:
-                    break;
-                case fbxsdk::eFbxTypeCount:
-                    break;
-                default:
-                    break;
-                }
-                topProp = pNode->GetNextProperty(topProp);
-            }
-        }
-    }
-*/
 class MyGetValueVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
@@ -434,48 +358,242 @@ void testOsgdb_ktx() {
     osgDB::writeImageFile(*img.get(), "./osgdb_ktx_test.ktx");
 }
 
-void preview_img() {
-    osg::ref_ptr<osg::Image> image = osgDB::readImageFile("E://Code//2022//GIS//C++//anqing-data//output//FAC_jianchajing01.jpg");
+void preview_img(osg::ref_ptr<osg::Image>& image) {
+    //osg::ref_ptr<osg::Image> image = osgDB::readImageFile("E://Code//2022//GIS//C++//anqing-data//output//FAC_jianchajing01.jpg");
     
     if (image) {
         unsigned char bu1 = image->data()[0];
-        unsigned char bu2 = image->data()[1];
-        unsigned char bu3 = image->data()[2];
-        unsigned char bu4 = image->data()[1222];
-        unsigned char bu5 = image->data()[14222];
-        osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry;
-        osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
-        vertices->push_back(osg::Vec3(-1.0f, -1.0f, 0.0f));
-        vertices->push_back(osg::Vec3(1.0f, -1.0f, 0.0f));
-        vertices->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
-        vertices->push_back(osg::Vec3(-1.0f, 1.0f, 0.0f));
-        geometry->setVertexArray(vertices);
-        osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array;
-        texcoords->push_back(osg::Vec2(0.0f, 0.0f));
-        texcoords->push_back(osg::Vec2(1.0f, 0.0f));
-        texcoords->push_back(osg::Vec2(1.0f, 1.0f));
-        texcoords->push_back(osg::Vec2(0.0f, 1.0f));
-        geometry->setTexCoordArray(0, texcoords);
-        geometry->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
-        osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image);
-        osg::ref_ptr<osg::StateSet> stateset = geometry->getOrCreateStateSet();
-        stateset->setTextureAttributeAndModes(0, texture);
-        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
-        geode->addDrawable(geometry);
-        osg::ref_ptr<osg::Group> root = new osg::Group;
-        root->addChild(geode);
-        osgViewer::Viewer viewer;
-        viewer.setSceneData(root);
-        viewer.run();
+        //unsigned char bu2 = image->data()[1];
+        //unsigned char bu3 = image->data()[2];
+        //unsigned char bu4 = image->data()[1222];
+        //unsigned char bu5 = image->data()[14222];
+        //osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry;
+        //osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+        //vertices->push_back(osg::Vec3(-1.0f, -1.0f, 0.0f));
+        //vertices->push_back(osg::Vec3(1.0f, -1.0f, 0.0f));
+        //vertices->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
+        //vertices->push_back(osg::Vec3(-1.0f, 1.0f, 0.0f));
+        //geometry->setVertexArray(vertices);
+        //osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array;
+        //texcoords->push_back(osg::Vec2(0.0f, 0.0f));
+        //texcoords->push_back(osg::Vec2(1.0f, 0.0f));
+        //texcoords->push_back(osg::Vec2(1.0f, 1.0f));
+        //texcoords->push_back(osg::Vec2(0.0f, 1.0f));
+        //geometry->setTexCoordArray(0, texcoords);
+        //geometry->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
+        //osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image);
+        //osg::ref_ptr<osg::StateSet> stateset = geometry->getOrCreateStateSet();
+        //stateset->setTextureAttributeAndModes(0, texture);
+        //osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        //geode->addDrawable(geometry);
+        //osg::ref_ptr<osg::Group> root = new osg::Group;
+        //root->addChild(geode);
+        //osgViewer::Viewer viewer;
+        //viewer.setSceneData(root);
+        //viewer.run();
     }
     else {
         std::cerr << "Error:image is null!" << std::endl;
     }
+    image.release();
 }
+class TextureVisitor2 :public osg::NodeVisitor
+{
+public:
+    TextureVisitor2() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
+
+    }
+    void apply(osg::Node& node) {
+        osg::StateSet* ss = node.getStateSet();
+        osg::ref_ptr<osg::Geometry> geom = node.asGeometry();
+        if (geom.valid()) {
+            osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+            if (texCoords.valid()) {
+                for (unsigned int q = 0; q < texCoords->size(); ++q) {
+                    osg::Vec2 coord = texCoords->at(q);
+                    const double u = coord.x();
+                    const double v = coord.y();
+                    if (u > 1.0 || u < -1.0 || v>1.0 || v < -1.0) {
+                        return;
+                    }
+                }
+            }
+        }
+        if (ss) {
+            apply(*ss);
+        }
+        traverse(node);
+    }
+    void apply(osg::StateSet& stateset) {
+        for (unsigned int i = 0; i < stateset.getTextureAttributeList().size(); ++i)
+        {
+            osg::StateAttribute* sa = stateset.getTextureAttribute(i, osg::StateAttribute::TEXTURE);
+            osg::Texture* texture = dynamic_cast<osg::Texture*>(sa);
+            if (texture)
+            {
+                apply(*texture);
+            }
+        }
+    }
+    void apply(osg::Texture& texture) {
+        for (unsigned int i = 0; i < texture.getNumImages(); i++) {
+            osg::ref_ptr<osg::Image> img = texture.getImage(i);
+            if (img.valid()) {
+                unsigned char* data = img->data();
+                if (data != nullptr) {
+                    delete data;
+                }
+                int count = img->referenceCount();
+                for (int i = 0; i < count; ++i) {
+                    img.release();
+                }
+            }
+        }
+    }
+
+private:
+
+};
+void testTextureAtlas() {
+    osg::ref_ptr<osg::Node> node = osgDB::readRefNodeFile("E:\\Code\\2023\\Other\\data\\2.FBX");
+    node = nullptr;
+    osg::Node* node1 = node.get();
+    node1 = NULL;
+    TextureOptimizer* to = new TextureOptimizer(node, JPG,4096);
+    delete to;
+    //osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+    //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
+    //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\2.gltf", option);
+    TextureVisitor* tv2 = new TextureVisitor;
+    node->accept(*tv2);
+    delete tv2;
+    int count = node->referenceCount();
+    for (int i = 0; i < count; ++i)
+        node.release();
+    node = nullptr;
+    osgViewer::Viewer viewer1;
+    viewer1.setUpViewInWindow(100, 100, 800, 600); // (x, y, width, height)
+    viewer1.setSceneData(node.get());
+    viewer1.addEventHandler(new osgViewer::WindowSizeHandler);//全屏  快捷键f
+    viewer1.addEventHandler(new osgViewer::StatsHandler);//查看帧数 s
+    viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
+    viewer1.run();
+
+    const std::string basePath = "E:\\Code\\2023\\Other\\data\\芜湖水厂总装.fbm\\";
+    osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "440305A020GHJZA010.png");
+    osg::ref_ptr<osg::Image> img2 = osgDB::readImageFile(basePath + "ditieshuniu05.png");
+    osg::ref_ptr<osg::Image> img3 = osgDB::readImageFile(basePath + "f225c9bf0b1e3bae5076ad4b25fbdf9.png");
+    osg::ref_ptr<osg::Image> img4 = osgDB::readImageFile(basePath + "440305A003GHJZA001T008.png");
+    osg::ref_ptr<osg::Image> img5 = osgDB::readImageFile(basePath + "栏杆.png");
+    osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "栏杆2.png");
+
+    //osg::ref_ptr<osg::Image> img5 = osgDB::readImageFile(basePath + "concrete03.jpg");
+    //osg::ref_ptr<osg::Image> img6 = osgDB::readImageFile(basePath + "dt002.jpg");
+
+
+    TextureAtlas* textureAtlas = new TextureAtlas(TextureAtlasOptions(osg::Vec2(128.0,128.0), osg::Vec2(4096, 4096), GL_RGBA, 1));
+    int a1 = textureAtlas->addImage(img1);
+    int a2 = textureAtlas->addImage(img2);
+    int a3 = textureAtlas->addImage(img3);
+    int a4 = textureAtlas->addImage(img4);
+    int a5 = textureAtlas->addImage(img5);
+    int a6 = textureAtlas->addImage(img6);
+    //preview_img(textureAtlas->_texture.get());
+    //osgDB::writeImageFile(*textureAtlas->_texture.get(), "E:\\Code\\2023\\Other\\data\\test.jpg");
+    std::cout << std::endl;
+}
+void createCube(osg::Vec3 offset,double scale,osg::Vec4 color,std::string filename) {
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+    osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
+
+    // 创建顶点数组
+    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+    vertices->push_back(offset + osg::Vec3(-0.5, -0.5, -0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(0.5, -0.5, -0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(0.5, 0.5, -0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(-0.5, 0.5, -0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(-0.5, -0.5, 0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(0.5, -0.5, 0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(0.5, 0.5, 0.5) * scale);
+    vertices->push_back(offset + osg::Vec3(-0.5, 0.5, 0.5) * scale);
+
+    // 设置顶点数组
+    geometry->setVertexArray(vertices);
+
+    // 创建颜色数组
+    osg::ref_ptr<osg::Vec4Array> colors = new osg::Vec4Array;
+    colors->push_back(osg::Vec4(color)); // 红色
+    colors->push_back(osg::Vec4(color)); // 绿色
+    colors->push_back(osg::Vec4(color)); // 蓝色
+    colors->push_back(osg::Vec4(color)); // 黄色
+    colors->push_back(osg::Vec4(color)); // 洋红色
+    colors->push_back(osg::Vec4(color)); // 青色
+    colors->push_back(osg::Vec4(color)); // 白色
+    colors->push_back(osg::Vec4(color)); // 灰色
+
+    // 设置颜色数组
+    geometry->setColorArray(colors, osg::Array::BIND_PER_VERTEX);
+    // 创建四边形图元
+    osg::ref_ptr<osg::DrawElementsUInt> quad =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::QUADS, 0);
+    quad->push_back(0); quad->push_back(1); quad->push_back(2); quad->push_back(3);
+    quad->push_back(4); quad->push_back(5); quad->push_back(6); quad->push_back(7);
+    quad->push_back(0); quad->push_back(1); quad->push_back(5); quad->push_back(4);
+    quad->push_back(1); quad->push_back(2); quad->push_back(6); quad->push_back(5);
+    quad->push_back(2); quad->push_back(3); quad->push_back(7); quad->push_back(6);
+    quad->push_back(3); quad->push_back(0); quad->push_back(4); quad->push_back(7);
+    geometry->addPrimitiveSet(quad);
+    osgUtil::SmoothingVisitor sv;
+    geometry->accept(sv);
+    // 将Geometry添加到Geode
+    geode->addDrawable(geometry);
+
+    // 添加Material以启用顶点颜色
+    osg::ref_ptr<osg::Material> material = new osg::Material();
+    material->setColorMode(osg::Material::ColorMode::OFF);
+    geode->getOrCreateStateSet()->setAttributeAndModes(material, osg::StateAttribute::ON);
+
+    // 将Geode添加到场景图
+    osg::ref_ptr<osg::Group> root = new osg::Group();
+    root->addChild(geode);
+
+    //osgViewer::Viewer viewer1;
+    //viewer1.setUpViewInWindow(100, 100, 800, 600); // (x, y, width, height)
+    //viewer1.setSceneData(root.get());
+    //viewer1.addEventHandler(new osgViewer::WindowSizeHandler);//全屏  快捷键f
+    //viewer1.addEventHandler(new osgViewer::StatsHandler);//查看帧数 s
+    //viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
+    //viewer1.run();
+
+    osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
+    osgDB::writeNodeFile(*root.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\newPixel\\"+filename, option);
+}
+void test() {
+    osg::ref_ptr<osg::Node> node = osgDB::readRefNodeFile("E:\\Code\\2023\\Other\\data\\2.FBX");
+    node = NULL;
+}
+
+
 int main() {
+    setlocale(LC_ALL, "en_US.UTF-8");
     //testOsgdb_webp();
-    testOsgdb_fbx();
-    //preview_img();
+    //testOsgdb_fbx();
+    //testTextureAtlas();
+    createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
+    createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
+    createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
+    createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
+    createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
+
+    //test();
+    //std::cout << 1 << std::endl;
+    //std::cout << 2 << std::endl;
+    //std::cout << 3 << std::endl;
+
+    //const std::string basePath = "E:\\Code\\2023\\Other\\data\\芜湖水厂总装.fbm\\";
+    //osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "440305A020GHJZA010.png");
+    //preview_img(img1);
     //osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C:\\Users\\ecidi-cve\\Desktop\\1.jpg");
     //img->scaleImage(800, 600, 1);
     //osgDB::writeImageFile(*img.get(),"C:\\Users\\ecidi-cve\\Desktop\\2.jpg");

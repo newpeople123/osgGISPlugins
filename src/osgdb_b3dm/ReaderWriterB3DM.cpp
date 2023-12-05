@@ -3,6 +3,7 @@
 #include <osgUtil/Optimizer>
 #include <osg/MatrixTransform>
 #include <osgUtil/Statistics>
+#include <utils/TextureOptimizier.h>
 class UserDataVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
@@ -70,228 +71,6 @@ private:
     float _batchId = 0;
     std::vector<osg::ref_ptr<osg::UserDataContainer>> _userDatas;
 };
-
-class B3dmOptimizer :public osg::NodeVisitor {
-public:
-    B3dmOptimizer() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-    void apply(osg::MatrixTransform& xform)
-    {
-        osg::ref_ptr<osg::Group> replaceNode = new osg::Group;
-        for (unsigned int j = 0; j < xform.asGroup()->getNumChildren(); j++) {
-            replaceNode->addChild(xform.asGroup()->getChild(j));
-        }
-        apply(static_cast<osg::Group&>(*replaceNode.get()));
-        xform.asGroup()->removeChildren(0, xform.asGroup()->getNumChildren());
-        for (unsigned int j = 0; j < replaceNode->getNumChildren(); j++) {
-            xform.asGroup()->addChild(replaceNode->getChild(j));
-        }
-    }
-    void apply(osg::Group& group) {
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::MERGE_GEODES);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-        osgUtil::Optimizer::MergeGeometryVisitor mgv;
-        mgv.setTargetMaximumNumberOfVertices(10000000);//100w
-        group.accept(mgv);
-        for (unsigned int i = 0; i < group.getNumChildren(); i++) {
-            osg::ref_ptr<osg::Node> child = group.getChild(i);
-            if (typeid(*child.get()) == typeid(osg::MatrixTransform)) {
-                osg::ref_ptr<osg::Group> replaceChild = new osg::Group;
-                for (unsigned int j = 0; j < child->asGroup()->getNumChildren(); j++) {
-                    replaceChild->addChild(child->asGroup()->getChild(j));
-                }
-                apply(static_cast<osg::Group&>(*replaceChild.get()));
-                child->asGroup()->removeChildren(0, child->asGroup()->getNumChildren());
-                for (unsigned int j = 0; j < replaceChild->getNumChildren(); j++) {
-                    child->asGroup()->addChild(replaceChild->getChild(j));
-                }
-            }
-            else if (typeid(*child.get()) == typeid(osg::Group)) {
-                apply(static_cast<osg::Group&>(*child.get()));
-            }
-        }
-    }
-private:
-    osgUtil::Optimizer _optimizer;
-};
-
-class StateSetOptimizerVisitor : public osg::NodeVisitor {
-public:
-    StateSetOptimizerVisitor() : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
-
-    void apply(osg::Drawable& node) override {
-        osg::ref_ptr<osg::StateSet> stateSet = node.getStateSet();
-        bool isNewStateSet = true;
-        if (stateSet) {
-            test.push_back(stateSet);
-
-            for (auto& item : _geometryStateSets) {
-                if (areStateSetsEqual(item.first, stateSet)) {
-                    std::vector<osg::ref_ptr<osg::Drawable>>& s = item.second;
-                    s.push_back(node.asGeometry());
-                    isNewStateSet = false;
-                    break;
-                }
-            }
-            if (isNewStateSet) {
-                std::vector<osg::ref_ptr<osg::Drawable>> nodes;
-                nodes.push_back(node.asGeometry());
-                _geometryStateSets.insert(std::make_pair(stateSet, nodes));
-            }
-        }
-        traverse(node);
-    }
-    //void apply(osg::Geode& geode) override {
-    //    osg::ref_ptr<osg::StateSet> stateSet = geode.getStateSet();
-    //    bool isNewStateSet = true;
-    //    if (stateSet) {
-    //        for (auto& item : _geodeStateSets) {
-    //            if (areStateSetsEqual(item.first, stateSet)) {
-    //                std::vector<osg::ref_ptr<osg::Geode>>& s = item.second;
-    //                s.push_back(geode.asGeode());
-    //                isNewStateSet = false;
-    //                break;
-    //            }
-    //        }
-    //        if (isNewStateSet) {
-    //            std::vector<osg::ref_ptr<osg::Geode>> nodes;
-    //            nodes.push_back(geode.asGeode());
-    //            _geodeStateSets.insert(std::make_pair(stateSet, nodes));
-    //        }
-    //    }
-    //    traverse(geode);
-    //}
-    void sharedDuplicateState() {
-        for (auto item1 : _geometryStateSets) {
-            osg::StateSet* state = item1.first.get();
-            for (auto& item2 : item1.second) {
-                item2->setStateSet(state);
-            }
-        }
-        for (auto item1 : _geodeStateSets) {
-            osg::StateSet* state = item1.first.get();
-            for (auto& item2 : item1.second) {
-                item2->setStateSet(state);
-            }
-        }
-    }
-
-public:
-    std::map<osg::ref_ptr<osg::StateSet>, std::vector<osg::ref_ptr<osg::Drawable>>> _geometryStateSets;
-    std::map<osg::ref_ptr<osg::StateSet>, std::vector<osg::ref_ptr<osg::Geode>>> _geodeStateSets;
-    std::vector<osg::ref_ptr<osg::StateSet>> test;
-
-    bool areModeListEqual(const osg::StateSet::ModeList& modeList1, const osg::StateSet::ModeList& modeList2) {
-        if (modeList1.size() != modeList2.size()) {
-            return false;
-        }
-
-        for (const auto& mode : modeList1) {
-            osg::StateAttribute::GLModeValue value1 = mode.second;
-            osg::StateAttribute::GLModeValue value2 = modeList2.at(mode.first);
-
-            if (value1 != value2) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-    bool areImageEqual(const osg::Image* img1, const osg::Image* img2) {
-        if (!img1 || !img2) {
-            return false;
-        }
-        if (img1->getFileName() != img2->getFileName()) {
-            return false;
-        }
-        if (img1->getTotalDataSize() != img2->getTotalDataSize()) {
-            return false;
-        }
-        return true;
-    }
-    bool areTextureEqual(const osg::Texture* texure1, const osg::Texture* texure2) {
-        if (!texure1 || !texure2) {
-            return false;
-        }
-        if (texure1->getNumImages() != texure2->getNumImages()) {
-            return false;
-        }
-        if (texure1->getFilter(osg::Texture::MIN_FILTER)!= texure2->getFilter(osg::Texture::MIN_FILTER)) {
-            return false;
-        }
-        if (texure1->getFilter(osg::Texture::MAG_FILTER) != texure2->getFilter(osg::Texture::MAG_FILTER)) {
-            return false;
-        }
-        if (texure1->getWrap(osg::Texture::WRAP_S) != texure2->getWrap(osg::Texture::WRAP_S)) {
-            return false;
-        }
-        if (texure1->getWrap(osg::Texture::WRAP_T) != texure2->getWrap(osg::Texture::WRAP_T)) {
-            return false;
-        }
-        if (texure1->getWrap(osg::Texture::WRAP_R) != texure2->getWrap(osg::Texture::WRAP_R)) {
-            return false;
-        }
-        for (unsigned int i = 0; i < texure1->getNumImages(); i++) {
-            const osg::Image* img1 = texure1->getImage(i);
-            const osg::Image* img2 = texure2->getImage(i);
-            if (areImageEqual(img1, img2) == false) {
-                return false;
-            }
-        }
-        return true;
-    }
-    bool areAttributeListEqual(const osg::StateSet::AttributeList& attrList1, const osg::StateSet::AttributeList& attrList2) {
-        if (attrList1.size() != attrList2.size()) {
-            return false;
-        }
-
-        for (const auto& attributePair : attrList1) {
-            const osg::StateAttribute* attr1 = attributePair.second.first.get();
-            const osg::StateAttribute* attr2 = attrList2.at(attributePair.first).first.get();
-            if (!attr1 || !attr2) {
-                return false;
-            }
-            if (attr1->getType() != attr2->getType()) {
-                return false;
-            }
-            if (attr1->getType() == osg::StateAttribute::TEXTURE)
-            {
-                const osg::Texture* texure1 = attr1->asTexture();
-                const osg::Texture* texure2 = attr2->asTexture();
-                return areTextureEqual(texure1, texure2);
-            }
-
-        }
-
-        return true;
-    }
-    bool areStateSetsEqual(osg::StateSet* stateSet1, osg::StateSet* stateSet2) {
-        if (!stateSet1 || !stateSet2) {
-            return false;
-        }
-
-        if (areModeListEqual(stateSet1->getModeList(), stateSet2->getModeList()) == false) {
-            return false;
-        }
-
-        if (areAttributeListEqual(stateSet1->getAttributeList(), stateSet2->getAttributeList()) == false) {
-            return false;
-        }
-        if (stateSet1->getNumTextureAttributeLists() != stateSet2->getNumTextureAttributeLists()) {
-            return false;
-        }
-        for (unsigned int i = 0; i < stateSet1->getNumTextureAttributeLists(); i++) {
-            osg::Texture* texture1 = dynamic_cast<osg::Texture*>(stateSet1->getTextureAttribute(i, osg::StateAttribute::TEXTURE));
-            osg::Texture* texture2 = dynamic_cast<osg::Texture*>(stateSet2->getTextureAttribute(i, osg::StateAttribute::TEXTURE));
-            if (areTextureEqual(texture1, texture2) == false) {
-                return false;
-            }
-        }
-        // Compare other state parameters...
-
-        return true;
-    }
-};
 template<class T>
 void put_val(std::vector<unsigned char>& buf, T val) {
     buf.insert(buf.end(), (unsigned char*)&val, (unsigned char*)&val + sizeof(T));
@@ -305,6 +84,7 @@ void put_val(std::string& buf, T val) {
 tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options) const {
 
     bool embedImages = true, embedBuffers = true, prettyPrint = false, isBinary = true;
+    int textureMaxSize = 4096;
     std::string textureTypeStr, compressionTypeStr;
     TextureType textureType = TextureType::PNG;
     CompressionType comporessionType = CompressionType::NONE;
@@ -366,8 +146,31 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
                     comporessLevel = 1;
                 }
             }
+            else if (key == "textureMaxSize") {
+                textureMaxSize = std::atof(val.c_str());
+            }
         }
     }
+
+    //1
+    TextureOptimizer* to = new TextureOptimizer(node, textureType,textureMaxSize);
+    delete to;
+    //2
+    GeometryNodeVisitor gnv;
+    node->accept(gnv);
+    //3
+    TransformNodeVisitor tnv;
+    node->accept(tnv);
+    osgUtil::StatsVisitor stats;
+    if (osg::getNotifyLevel() >= osg::INFO)
+    {
+        stats.reset();
+        node->accept(stats);
+        stats.totalUpStats();
+        OSG_NOTICE << std::endl << "Stats after:" << std::endl;
+        stats.print(osg::notify(osg::NOTICE));
+    }
+
     OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
 
 
@@ -402,22 +205,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
 
-    StateSetOptimizerVisitor stateSetOptimize;
-    copyNode->accept(stateSetOptimize);
-    stateSetOptimize.sharedDuplicateState();
-
-    B3dmOptimizer b3dmOptimizer;
-    copyNode->accept(b3dmOptimizer);
-
-    osgUtil::StatsVisitor stats;
-    if (osg::getNotifyLevel() >= osg::INFO)
-    {
-        stats.reset();
-        copyNode->accept(stats);
-        stats.totalUpStats();
-        OSG_NOTICE << std::endl << "Stats after:" << std::endl;
-        stats.print(osg::notify(osg::NOTICE));
-    }
     tinygltf::Model& gltfModel = convertOsg2Gltf(copyNode, options);
     copyNode.release();
     tinygltf::TinyGLTF writer;
@@ -555,14 +342,17 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     b3dm_buf.append(batch_json_string.begin(), batch_json_string.end());
     b3dm_buf.append(glb_buf);
     std::fstream fout(filename, std::ios::out | std::ios::binary);
-    std::stringstream compressionInput;
-    std::ostream* output = &fout;
+    if (fout.is_open()) {
+        std::stringstream compressionInput;
+        std::ostream* output = &fout;
 
-    output->write(b3dm_buf.data(), b3dm_buf.size());
-    output->write("\0\0\0", gltfDataPadding);
-    output->write("\0\0\0", padding);
-    fout.close();
-    //nc_node.unref_nodelete();
-    return WriteResult::FILE_SAVED;
+        output->write(b3dm_buf.data(), b3dm_buf.size());
+        output->write("\0\0\0", gltfDataPadding);
+        output->write("\0\0\0", padding);
+        fout.close();
+        //nc_node.unref_nodelete();
+        return WriteResult::FILE_SAVED;
+    }
+    return WriteResult::ERROR_IN_WRITING_FILE;
 }
 REGISTER_OSGPLUGIN(b3dm, ReaderWriterB3DM)

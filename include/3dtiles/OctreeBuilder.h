@@ -7,29 +7,22 @@ class OctreeBuilder :public TreeBuilder
 {
 public:
 	OctreeBuilder(osg::ref_ptr<osg::Node> node) :TreeBuilder() {
-		RebuildDataNodeVisitor rdnv;
-		node->accept(rdnv);
-		osg::ref_ptr<osg::Group> group = rdnv.output;
-
-		osg::BoundingBox totalBoundingBox = getBoundingBox(group);
-		rootTreeNode = buildTree(totalBoundingBox, group);
+		RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+		osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+		rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
 		buildHlod(rootTreeNode);
 	}
-	OctreeBuilder(osg::ref_ptr<osg::Node> node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :TreeBuilder(maxTriangleNumber, maxTreeDepth, simpleRatio) {
-		RebuildDataNodeVisitor rdnv;
-		node->accept(rdnv);
-		osg::ref_ptr<osg::Group> group = rdnv.output;
-
-		osg::BoundingBox totalBoundingBox = getBoundingBox(group);
-		rootTreeNode = buildTree(totalBoundingBox, group);
-
+	OctreeBuilder(osg::ref_ptr<osg::Node> node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :TreeBuilder(maxTriangleNumber, maxTreeDepth-1, simpleRatio) {
+		RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+		osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+		rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
 		buildHlod(rootTreeNode);
 
 	}
 	~OctreeBuilder() {};
 
 protected:
-	osg::ref_ptr<TreeNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int x = 0, int y = 0, int z = 0, osg::ref_ptr<TreeNode> parent = nullptr, int depth = 0) {
+	osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int x = 0, int y = 0, int z = 0, osg::ref_ptr<TileNode> parent = nullptr, int depth = 0) {
 		if (total.valid()) {
 			int s[3];
 			osg::Vec3f extentSet[3] = {
@@ -56,36 +49,20 @@ protected:
 				}
 			}
 			unsigned int triangleNumber = 0;
-			for (unsigned int i = 0; i < childData->getNumChildren(); ++i) {
-				osg::ref_ptr<osg::Geode> geode = childData->getChild(i)->asGeode();
-				osg::ref_ptr<osg::Transform> transform = childData->getChild(i)->asTransform();
-				if (geode) {
-					TriangleNumberNodeVisitor tnnv;
-					geode->accept(tnnv);
-					triangleNumber += tnnv.count;
-				}
-				else if (transform) {
-					for (unsigned int j = 0; j < transform->getNumChildren(); ++j) {
-						osg::ref_ptr<osg::Geode> geode = transform->getChild(j)->asGeode();
-						if (geode) {
-							TriangleNumberNodeVisitor tnnv;
-							geode->accept(tnnv);
-							triangleNumber += tnnv.count;
-						}
-					}
-				}
-			}
+			TriangleNumberNodeVisitor tnnv;
+			childData->accept(tnnv);
+			triangleNumber += tnnv.count;
 			if (triangleNumber == 0) {
 				return NULL;
 			}
 			bool isLeafNode = false;
-			if (triangleNumber <= _maxTriangleNumber || depth > _maxTreeDepth)
+			if (triangleNumber <= _maxTriangleNumber || depth >= _maxTreeDepth)
 			{
 				isLeafNode = true;
 			}
 
 
-			osg::ref_ptr<TreeNode> root = new TreeNode;
+			osg::ref_ptr<TileNode> root = new TileNode;
 			root->parentTreeNode = parent;
 			root->level = depth;
 			root->x = x;
@@ -112,7 +89,7 @@ protected:
 
 							int id = s[0] + (2 * s[1]) + (4 * s[2]);
 
-							osg::ref_ptr<TreeNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x * 2 + s[0], root->y * 2 + s[1], root->z * 2 + s[2], root, depth + 1);
+							osg::ref_ptr<TileNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x * 2 + s[0], root->y * 2 + s[1], root->z * 2 + s[2], root, depth + 1);
 							if(childTreeNode!=NULL)
 								childNodes->addChild(childTreeNode);
 						}
@@ -121,7 +98,7 @@ protected:
 
 				for (unsigned int i = 0; i < childNodes->getNumChildren(); ++i)
 				{
-					osg::ref_ptr<TreeNode> childTreeNode = dynamic_cast<TreeNode *>(childNodes->getChild(i));
+					osg::ref_ptr<TileNode> childTreeNode = dynamic_cast<TileNode *>(childNodes->getChild(i));
 					if (childTreeNode->children->getNumChildren() > 0 || childTreeNode->currentNodes->getNumChildren() > 0) {
 						root->children->addChild(childTreeNode);
 						for (unsigned int j = 0; j < childTreeNode->nodes->getNumChildren(); j++) {

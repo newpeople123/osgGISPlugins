@@ -23,8 +23,46 @@
 #include <osgDB/FileNameUtils>
 #include <ktx/ktx.h>
 #include <meshoptimizer.h>
+#include <osg/MatrixTransform>
+//#include <utils/TextureAtlas.h>
+class GeometryNodeVisitor :public osg::NodeVisitor {
+public:
+	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
 
+	};
+	void apply(osg::Drawable& drawable) {
+		osg::MatrixList matrixList = drawable.getWorldMatrices();
+		osg::Matrixd mat;
+		for (const osg::Matrixd& matrix : matrixList) {
+			mat = mat * matrix;
+		}
+		if (mat != osg::Matrixd::identity()) {
+			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
+			for (unsigned int i = 0; i < positions->size(); ++i) {
+				positions->at(i) = positions->at(i) * mat;
+			}
+		}
+	}
+	void apply(osg::Group& group)
+	{
+		traverse(group);
+	}
 
+};
+class TransformNodeVisitor :public osg::NodeVisitor {
+public:
+	TransformNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+	void apply(osg::Group& group)
+	{
+		traverse(group);
+	}
+	void apply(osg::Transform& mtransform) {
+		//TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
+		//mtransform.accept(tnv);
+		mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
+		apply(static_cast<osg::Group&>(mtransform));
+	};
+};
 struct Stringify
 {
 	operator std::string() const
@@ -42,7 +80,7 @@ struct Stringify
 protected:
 	std::stringstream buf;
 };
-unsigned hashString(const std::string& input)
+unsigned hashString(const std::string input)
 {
 	const unsigned int m = 0x5bd1e995;
 	const int r = 24;
@@ -246,8 +284,6 @@ private:
 			std::cerr << "Unknown component type." << std::endl;
 			break;
 		}
-		if (accessor.count == 25)
-			std::cout << std::endl;
 		for (draco::PointIndex i(0); i < static_cast<uint32_t>(accessor.count); ++i)
 		{
 			attrActual->SetAttributeValue(attrActual->mapped_index(i), &values[i.value() * numComponents]);
@@ -796,6 +832,10 @@ private:
 		if (osgTexture->getNumImages() < 1) {
 			return -1;
 		}
+		osg::ref_ptr<osg::Image> osgImage = osgTexture->getImage(0);
+		if (!osgImage.valid()) {
+			return -1;
+		}
 		for (unsigned int i = 0; i < _textures.size(); i++)
 		{
 			const osg::Texture* existTexture = _textures[i].get();
@@ -806,7 +846,7 @@ private:
 			osg::Texture::FilterMode existMinFilter = existTexture->getFilter(osg::Texture::MIN_FILTER);
 			osg::Texture::FilterMode existMaxFilter = existTexture->getFilter(osg::Texture::MAG_FILTER);
 
-			const std::string newPathName = osgTexture->getImage(0)->getFileName();
+			const std::string newPathName = osgImage->getFileName();
 			osg::Texture::WrapMode newWrapS = osgTexture->getWrap(osg::Texture::WRAP_S);
 			osg::Texture::WrapMode newWrapT = osgTexture->getWrap(osg::Texture::WRAP_T);
 			osg::Texture::WrapMode newWrapR = osgTexture->getWrap(osg::Texture::WRAP_R);
@@ -823,16 +863,15 @@ private:
 				return i;
 			}
 		}
-		osg::ref_ptr<osg::Image> osgImage = osgTexture->getImage(0);
-		if (!osgImage.valid()) {
-			return -1;
-		}
 		int index = _model.textures.size();
 		_textures.push_back(osgTexture);
 		// Flip the image before writing
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
-		flipped->flipVertical();
-		textureOptimize(flipped, 2);
+		//need to forbid filpVertical when use texture atlas 
+		//if (type == TextureType::KTX2 || type == TextureType::KTX) {
+		//	flipped->flipVertical();
+		//}
+		textureOptimizeSize(flipped);
 
 		std::string filename;
 		std::string ext = "png";
@@ -867,10 +906,11 @@ private:
 		// If the image has a filename try to hash it so we only write out one copy of it.  
 		if (!osgImage->getFileName().empty())
 		{
-			filename = Stringify() << std::hex << hashString(osgImage->getFileName()) << "." << ext;
-			//filename = std::string(osgImage->getFileName()) + "." + ext;
-			osgDB::writeImageFile(*flipped.get(), Stringify() << std::hex << hashString(osgImage->getFileName()) << ".png");
-			if (!osgDB::fileExists(filename))
+			std::string data(reinterpret_cast<char const*>(osgImage->data()));
+			filename = Stringify() << std::hex << hashString(data); 
+			filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + "." + ext;
+			std::ifstream fileExists(filename);
+			if ((!fileExists.good())|| (fileExists.peek() == std::ifstream::traits_type::eof()))
 			{
 				if (type == TextureType::KTX) {
 					osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
@@ -881,13 +921,24 @@ private:
 				}
 				else {
 					if (!(osgDB::writeImageFile(*flipped.get(), filename))) {
-						osg::notify(osg::FATAL) << std::endl;
+						mimeType = "image/png";
+						filename = Stringify() << std::hex << hashString(data) << ".png";
+						std::ifstream fileExistsPng(filename);
+						if ((!fileExistsPng.good()) || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+						{
+							if (!(osgDB::writeImageFile(*flipped.get(), filename))) {
+								osg::notify(osg::FATAL) << std::endl;
+							}
+						}
+						fileExistsPng.close();
 					}
 				}
 			}
+			fileExists.close();
 		}
 		else
 		{
+			std::ifstream fileExists(filename);
 			// Otherwise just find a filename that doesn't exist
 			int fileNameInc = 0;
 			do
@@ -896,7 +947,8 @@ private:
 				ss << fileNameInc << "." << ext;
 				filename = ss.str();
 				fileNameInc++;
-			} while (osgDB::fileExists(filename));
+			} while (fileExists.good());
+			fileExists.close();
 			if (type == TextureType::KTX) {
 				osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
 				option->setOptionString("Version=" + ktxVersion);
@@ -958,9 +1010,19 @@ private:
 		sampler.wrapS = wrapS;
 		sampler.wrapT = wrapT;
 		//sampler.wrapR = wrapR;
-		sampler.minFilter = osgTexture->getFilter(osg::Texture::MIN_FILTER);
+		sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR; //osgTexture->getFilter(osg::Texture::MIN_FILTER);
 		sampler.magFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
-		_model.samplers.push_back(sampler);
+		int samplerIndex = -1;
+		for (int i = 0; i < _model.samplers.size(); ++i) {
+			const tinygltf::Sampler existSampler = _model.samplers.at(i);
+			if (existSampler.wrapR == sampler.wrapR && existSampler.wrapT == sampler.wrapT && existSampler.minFilter == sampler.minFilter && existSampler.magFilter == sampler.magFilter) {
+				samplerIndex = i;
+			}
+		}
+		if (samplerIndex == -1) {
+			samplerIndex = _model.samplers.size();
+			_model.samplers.push_back(sampler);
+		}
 		// Add the texture
 		tinygltf::Texture texture;
 		if (type == TextureType::KTX2)
@@ -983,7 +1045,7 @@ private:
 		else {
 			texture.source = index;
 		}
-		texture.sampler = index;
+		texture.sampler = samplerIndex;
 		_model.textures.push_back(texture);
 		return index;
 	}
@@ -1056,25 +1118,22 @@ private:
 			gltfMaterial.extensions["KHR_materials_emissive_strength"] = tinygltf::Value(obj);
 		}
 	}
+
 	//convert image size to the power of 2
-	void textureOptimize(osg::ref_ptr<osg::Image> img, int type) {
-		switch (type)
-		{
-		case 0://256*256
-			img->scaleImage(256, 256, 1);
-			break;
-		case 1://512*512
-			img->scaleImage(512, 512, 1);
-			break;
-		case 2://1024*1024
-			img->scaleImage(1024, 1024, 1);
-			break;
-		case 3://2048*2048
-			img->scaleImage(2048, 2048, 1);
-			break;
-		default:
-			break;
-		}
+	void textureOptimizeSize(osg::ref_ptr<osg::Image> img) {
+		auto findNearestGreaterPowerOfTwo = [](int n) {
+			int powerOfTwo = 1;
+			while (powerOfTwo < n) {
+				powerOfTwo <<= 1;
+			}
+			return powerOfTwo;
+			};
+
+		const int oldS = img->s();
+		const int oldR = img->t();
+		const int newS = findNearestGreaterPowerOfTwo(oldS);
+		const int newR = findNearestGreaterPowerOfTwo(oldR);
+		img->scaleImage(newS, newR, 1);
 	}
 	void mergeBuffers() {
 		tinygltf::Buffer totalBuffer;
@@ -1144,6 +1203,309 @@ private:
 			fallbackBuffer.extensions.insert(std::make_pair("EXT_meshopt_compression", tinygltf::Value(bufferMeshoptExtension)));
 			_model.buffers.push_back(fallbackBuffer);
 		}
+	}
+	void mergeMeshes() {
+		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
+		for (auto& mesh : _model.meshes) {
+			if (mesh.primitives.size() > 0) {
+				auto& item = materialPrimitiveMap.find(mesh.primitives[0].material);
+				if (item != materialPrimitiveMap.end()) {
+					item->second.push_back(mesh.primitives[0]);
+				}
+				else {
+					std::vector<tinygltf::Primitive> primitives;
+					primitives.push_back(mesh.primitives[0]);
+					materialPrimitiveMap.insert(std::make_pair(mesh.primitives[0].material, primitives));
+				}
+			}
+		}
+		
+		std::vector<tinygltf::Accessor> accessors;
+		std::vector<tinygltf::BufferView> bufferViews;
+		std::vector<tinygltf::Buffer> buffers;
+		std::vector<tinygltf::Primitive> primitives;
+		for (auto& image : _model.images) {
+			tinygltf::BufferView bufferView = _model.bufferViews[image.bufferView];
+			tinygltf::Buffer buffer = _model.buffers[bufferView.buffer];
+
+			bufferView.buffer = buffers.size();
+			image.bufferView = bufferViews.size();
+			bufferViews.push_back(bufferView);
+			buffers.push_back(buffer);
+		}
+
+		for (const auto& pair : materialPrimitiveMap) {
+			tinygltf::Accessor totalIndicesAccessor;
+			totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
+			tinygltf::BufferView totalIndicesBufferView;
+			tinygltf::Buffer totalIndicesBuffer;
+
+			tinygltf::BufferView totalNormalsBufferView;
+			tinygltf::Buffer totalNormalsBuffer;
+			tinygltf::Accessor totalNormalsAccessor;
+
+			tinygltf::BufferView totalVerticesBufferView;
+			tinygltf::Buffer totalVerticesBuffer;
+			tinygltf::Accessor totalVerticesAccessor;
+
+			tinygltf::BufferView totalTexcoordsBufferView;
+			tinygltf::Buffer totalTexcoordsBuffer;
+			tinygltf::Accessor totalTexcoordsAccessor;
+
+			tinygltf::BufferView totalBatchIdsBufferView;
+			tinygltf::Buffer totalBatchIdsBuffer;
+			tinygltf::Accessor totalBatchIdsAccessor;
+
+			tinygltf::BufferView totalColorsBufferView;
+			tinygltf::Buffer totalColorsBuffer;
+			tinygltf::Accessor totalColorsAccessor;
+
+
+			tinygltf::Primitive totalPrimitive;
+			totalPrimitive.mode = 4;//triangles
+			totalPrimitive.material = pair.first;
+
+			unsigned int count = 0;
+
+			for (const auto& prim : pair.second) {
+				tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+				totalIndicesAccessor = oldIndicesAccessor;
+				tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
+				totalVerticesAccessor = oldVerticesAccessor;
+				auto& normalAttr = prim.attributes.find("NORMAL");
+				if (normalAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
+					totalNormalsAccessor = oldNormalsAccessor;
+				}
+				auto& texAttr = prim.attributes.find("TEXCOORD_0");
+				if (texAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
+					totalTexcoordsAccessor = oldTexcoordsAccessor;
+				}
+				auto& batchidAttr = prim.attributes.find("_BATCHID");
+				if (batchidAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
+					totalBatchIdsAccessor = oldBatchIdsAccessor;
+				}
+				auto& colorAttr = prim.attributes.find("COLOR_0");
+				if (colorAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
+					totalColorsAccessor = oldColorsAccessor;
+				}
+
+				const tinygltf::Accessor accessor = _model.accessors[prim.indices];
+				if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+					totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+					break;
+				}
+				count += accessor.count;
+				if (count > std::numeric_limits<unsigned short>::max()) {
+					totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+					break;
+				}
+			}
+
+			totalIndicesAccessor.count = 0;
+			totalVerticesAccessor.count = 0;
+			totalNormalsAccessor.count = 0;
+			totalTexcoordsAccessor.count = 0;
+			totalBatchIdsAccessor.count = 0;
+			totalColorsAccessor.count = 0;
+
+			auto reindexBufferAndBvAndAccessor = [&](tinygltf::Accessor accessor,tinygltf::BufferView& tBv,tinygltf::Buffer& tBuffer,tinygltf::Accessor& newAccessor,unsigned int sum=0,bool isIndices=false) {
+				tinygltf::BufferView& bv = _model.bufferViews[accessor.bufferView];
+				tinygltf::Buffer& buffer = _model.buffers[bv.buffer];
+
+				tBv.byteStride = bv.byteStride;
+				tBv.target = bv.target;
+				if(accessor.componentType!=newAccessor.componentType){
+					if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT && accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+						unsigned short* oldIndicesChar = (unsigned short*)&buffer.data[0];
+						std::vector<unsigned int> indices;
+						for (size_t i = 0; i < accessor.count; ++i) {
+							unsigned short ushortVal = *oldIndicesChar++;
+							unsigned int uintVal = (unsigned int)(ushortVal + sum);
+							indices.push_back(uintVal);
+						}		
+						unsigned char* indicesUChar = (unsigned char*)&indices[0];
+						const unsigned int size = bv.byteLength * 2;
+						for (unsigned int k = 0; k < size; ++k) {
+							tBuffer.data.push_back(*indicesUChar++);
+						}
+						tBv.byteLength += bv.byteLength * 2;
+					}
+
+				}
+				else {
+					if (isIndices) {
+						if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+							unsigned int* oldIndicesChar = (unsigned int*)&buffer.data[0];
+							std::vector<unsigned int> indices;
+							for (unsigned int i = 0; i < accessor.count; ++i) {
+								unsigned int oldUintVal = *oldIndicesChar++;
+								unsigned int uintVal = oldUintVal + sum;
+								indices.push_back(uintVal);
+							}
+							unsigned char* indicesUChar = (unsigned char*)&indices[0];
+							const unsigned int size = bv.byteLength;
+							for (unsigned int i = 0; i < size; ++i) {
+								tBuffer.data.push_back(*indicesUChar++);
+							}
+						}
+						else {
+							unsigned short* oldIndicesChar = (unsigned short*)&buffer.data[0];
+							std::vector<unsigned short> indices;
+							for (size_t i = 0; i < accessor.count; ++i) {
+								unsigned short oldUshortVal = *oldIndicesChar++;
+								unsigned short ushortVal = oldUshortVal + sum;
+								indices.push_back(ushortVal);
+							}
+							unsigned char* indicesUChar = (unsigned char*)&indices[0];
+							const unsigned int size = bv.byteLength;
+							for (size_t i = 0; i < size; ++i) {
+								tBuffer.data.push_back(*indicesUChar++);
+							}
+						}
+					}
+					else {
+						tBuffer.data.insert(tBuffer.data.end(), buffer.data.begin(), buffer.data.end());
+					}
+					tBv.byteLength += bv.byteLength;
+				}
+				newAccessor.count += accessor.count;
+
+				if (accessor.minValues.size()) {
+					if (newAccessor.minValues.size() == accessor.minValues.size()) {
+						for (int k = 0; k < newAccessor.minValues.size(); ++k) {
+							newAccessor.minValues[k] = osg::minimum(newAccessor.minValues[k], accessor.minValues[k]);
+							newAccessor.maxValues[k] = osg::maximum(newAccessor.maxValues[k], accessor.maxValues[k]);
+						}
+					}
+					else {
+						newAccessor.minValues = accessor.minValues;
+						newAccessor.maxValues = accessor.maxValues;
+					}
+				}
+			};
+
+			unsigned int sum = 0;
+			for (const auto& prim : pair.second) {
+
+				tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
+				reindexBufferAndBvAndAccessor(oldVerticesAccessor, totalVerticesBufferView, totalVerticesBuffer, totalVerticesAccessor);
+
+				tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+				reindexBufferAndBvAndAccessor(oldIndicesAccessor, totalIndicesBufferView, totalIndicesBuffer, totalIndicesAccessor, sum, true);
+				sum += oldVerticesAccessor.count;
+
+				auto& normalAttr = prim.attributes.find("NORMAL");
+				if (normalAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
+					reindexBufferAndBvAndAccessor(oldNormalsAccessor, totalNormalsBufferView, totalNormalsBuffer, totalNormalsAccessor);
+				}
+				auto& texAttr = prim.attributes.find("TEXCOORD_0");
+				if (texAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
+					reindexBufferAndBvAndAccessor(oldTexcoordsAccessor, totalTexcoordsBufferView, totalTexcoordsBuffer, totalTexcoordsAccessor);
+				}
+				auto& batchidAttr = prim.attributes.find("_BATCHID");
+				if (batchidAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
+					reindexBufferAndBvAndAccessor(oldBatchIdsAccessor, totalBatchIdsBufferView, totalBatchIdsBuffer, totalBatchIdsAccessor);
+				}
+				auto& colorAttr = prim.attributes.find("COLOR_0");
+				if (colorAttr != prim.attributes.end()) {
+					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
+					reindexBufferAndBvAndAccessor(oldColorsAccessor, totalColorsBufferView, totalColorsBuffer, totalColorsAccessor);
+				}
+
+
+				//TODO:1、merge buffer and reindex buffer
+				//TODO:2、merge bufferView and reindex bufferView
+				//TODO:3、merge accessor and reindex accessor
+			}
+
+			totalIndicesBufferView.buffer = buffers.size();
+			totalIndicesAccessor.bufferView = bufferViews.size();
+			buffers.push_back(totalIndicesBuffer);
+			bufferViews.push_back(totalIndicesBufferView);
+			totalPrimitive.indices = accessors.size();
+			accessors.push_back(totalIndicesAccessor);
+
+			totalVerticesBufferView.buffer = buffers.size();
+			totalVerticesAccessor.bufferView = bufferViews.size();
+			buffers.push_back(totalVerticesBuffer);
+			bufferViews.push_back(totalVerticesBufferView);
+			totalPrimitive.attributes.insert(std::make_pair("POSITION", accessors.size()));
+			accessors.push_back(totalVerticesAccessor);
+
+			if (totalNormalsAccessor.count) {
+				totalNormalsBufferView.buffer = buffers.size();
+				totalNormalsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalNormalsBuffer);
+				bufferViews.push_back(totalNormalsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("NORMAL", accessors.size()));
+				accessors.push_back(totalNormalsAccessor);
+			}
+
+			if (totalTexcoordsAccessor.count) {
+				totalTexcoordsBufferView.buffer = buffers.size();
+				totalTexcoordsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalTexcoordsBuffer);
+				bufferViews.push_back(totalTexcoordsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("TEXCOORD_0", accessors.size()));
+				accessors.push_back(totalTexcoordsAccessor);
+			}
+
+			if (totalBatchIdsAccessor.count) {
+				totalBatchIdsBufferView.buffer = buffers.size();
+				totalBatchIdsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalBatchIdsBuffer);
+				bufferViews.push_back(totalBatchIdsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("_BATCHID", accessors.size()));
+				accessors.push_back(totalBatchIdsAccessor);
+			}
+
+			if (totalColorsAccessor.count) {
+				totalColorsBufferView.buffer = buffers.size();
+				totalColorsAccessor.bufferView = bufferViews.size();
+				buffers.push_back(totalColorsBuffer);
+				bufferViews.push_back(totalColorsBufferView);
+				totalPrimitive.attributes.insert(std::make_pair("COLOR_0", accessors.size()));
+				accessors.push_back(totalColorsAccessor);
+			}
+
+			primitives.push_back(totalPrimitive);
+		}
+
+
+		_model.buffers.clear();
+		_model.bufferViews.clear();
+		_model.accessors.clear();
+		_model.buffers = buffers;
+		_model.bufferViews = bufferViews;
+		_model.accessors = accessors;
+
+		tinygltf::Mesh totalMesh;
+		totalMesh.primitives = primitives;
+		//for (auto& mesh : _model.meshes) {
+		//	if (mesh.primitives.size() > 0) {
+		//		totalMesh.primitives.push_back(mesh.primitives[0]);
+		//	}
+		//}
+
+
+		_model.nodes.clear();
+		tinygltf::Node node;
+		node.mesh = 0;
+		_model.nodes.push_back(node);
+		_model.meshes.clear();
+		_model.meshes.push_back(totalMesh);
+		_model.scenes[0].nodes.clear();
+		_model.scenes[0].nodes.push_back(0);
+
+
+
 	}
 public:
 	GltfUtils(tinygltf::Model& model) :_model(model) {
@@ -1313,26 +1675,76 @@ public:
 
 			gltfMaterial.extensions["KHR_materials_pbrSpecularGlossiness"] = tinygltf::Value(obj);
 		}
+		json matJson;
+		tinygltf::SerializeGltfMaterial(gltfMaterial, matJson);
+		for (int i = 0; i < _model.materials.size(); ++i) {
+			json existMatJson;
+			tinygltf::SerializeGltfMaterial(_model.materials.at(i), existMatJson);
+			if (matJson == existMatJson) {
+				return i;
+			}
+		}
 		const int materialIndex = _model.materials.size();
 		_model.materials.push_back(gltfMaterial);
 		return materialIndex;
 	}
 	int textureCompression(const TextureType& type, const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Texture>& texture) {
+		if (texture) {
+			tinygltf::Material mat;
+			mat.pbrMetallicRoughness.baseColorTexture.index = getOrCreateGltfTexture(texture, type);
+			mat.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
+			mat.pbrMetallicRoughness.baseColorFactor = { 1.0,1.0,1.0,1.0 };
+			mat.pbrMetallicRoughness.metallicFactor = 0.0;
+			mat.pbrMetallicRoughness.roughnessFactor = 1.0;
+			mat.doubleSided = ((stateSet->getMode(GL_CULL_FACE) & osg::StateAttribute::ON) == 0);
 
-		tinygltf::Material mat;
-		mat.pbrMetallicRoughness.baseColorTexture.index = getOrCreateGltfTexture(texture, type);
-		mat.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
-		mat.pbrMetallicRoughness.baseColorFactor = { 1.0,1.0,1.0,1.0 };
-		mat.pbrMetallicRoughness.metallicFactor = 0.0;
-		mat.pbrMetallicRoughness.roughnessFactor = 1.0;
-		mat.doubleSided = ((stateSet->getMode(GL_CULL_FACE) & osg::StateAttribute::ON) == 0);
-
-		if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON) {
-			mat.alphaMode = "BLEND";
+			if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON) {
+				mat.alphaMode = "BLEND";
+			}
+			json matJson;
+			tinygltf::SerializeGltfMaterial(mat, matJson);
+			for (int i = 0; i < _model.materials.size(); ++i) {
+				json existMatJson;
+				tinygltf::SerializeGltfMaterial(_model.materials.at(i), existMatJson);
+				if (matJson == existMatJson) {
+					return i;
+				}
+			}
+			const int materialIndex = _model.materials.size();
+			_model.materials.push_back(mat);
+			return materialIndex;
 		}
-		const int materialIndex = _model.materials.size();
-		_model.materials.push_back(mat);
-		return materialIndex;
+		return -1;
+	}
+	int textureCompression(const TextureType& type, const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Material>& material) {
+		if (material) {
+			tinygltf::Material mat;
+			mat.pbrMetallicRoughness.baseColorTexture.index = -1;
+			mat.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
+			const osg::Vec4 baseColor = material->getDiffuse(osg::Material::FRONT_AND_BACK);
+			mat.pbrMetallicRoughness.baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
+			mat.pbrMetallicRoughness.metallicFactor = 0.0;
+			mat.pbrMetallicRoughness.roughnessFactor = 1.0;
+			mat.doubleSided = ((stateSet->getMode(GL_CULL_FACE) & osg::StateAttribute::ON) == 0);
+
+			if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON) {
+				mat.alphaMode = "BLEND";
+			}
+			json matJson;
+			tinygltf::SerializeGltfMaterial(mat, matJson);
+			for (int i = 0; i < _model.materials.size(); ++i) {
+				json existMatJson;
+				tinygltf::SerializeGltfMaterial(_model.materials.at(i), existMatJson);
+				if (matJson == existMatJson) {
+					return i;
+				}
+			}
+
+			const int materialIndex = _model.materials.size();
+			_model.materials.push_back(mat);
+			return materialIndex;
+		}
+		return -1;
 	}
 	bool geometryCompresstion(const CompressionType& type,const int vertexComporessLevel) {
 		VertexCompressionOptions vco;
@@ -1355,6 +1767,7 @@ public:
 		default:
 			break;
 		}
+		mergeMeshes();
 		//KHR_draco_mesh_compression
 		if (type == CompressionType::DRACO) {
 			geometryCompression("KHR_draco_mesh_compression", vco);
@@ -1364,7 +1777,8 @@ public:
 		if (type == CompressionType::MESHOPT) {
 			geometryCompression("EXT_meshopt_compression", vco);
 		}
-		//mergeBuffers();
+		//2
+		mergeBuffers();
 		return true;
 	}
 
