@@ -234,7 +234,8 @@ public:
 		auto exportImage = [textureType](const osg::ref_ptr<osg::Image>& img) {
 			img->flipVertical();
 			std::string data(reinterpret_cast<char const*>(img->data()));
-			const std::string filename = Stringify() << std::hex << hashString(data);
+			std::string filename = Stringify() << std::hex << hashString(data);
+			filename += "-" + std::to_string(img->s()) + "-" + std::to_string(img->t());
 			img->setFileName(filename);
 			if (textureType == PNG) {
 				std::ifstream fileExists(filename + ".png");
@@ -275,8 +276,10 @@ public:
 			else if (textureType == WEBP) {
 				std::ifstream fileExists(filename + ".webp");
 				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())){
+					img->flipVertical();
 					bool result = osgDB::writeImageFile(*img.get(), filename + ".webp");
 					if (!result) {
+						img->flipVertical();
 						std::ifstream fileExistsPng(filename + ".png");
 						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
 							osgDB::writeImageFile(*img.get(), filename + ".png");

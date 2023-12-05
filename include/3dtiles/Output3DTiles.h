@@ -194,8 +194,8 @@ void outputTreeNode(const TileNode& node, const osg::ref_ptr<osgDB::Options>& op
 	std::vector<std::future<void>> futures;
 	for (unsigned int i = 0; i < node.children->getNumChildren(); ++i) {
 		osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node.children->getChild(i));
-		futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
-		//outputTreeNode(*child.get(), option, output, level + 1);
+		//futures.push_back(std::async(std::launch::async, outputTreeNode, *child.get(), option, output, level + 1, std::vector<double>()));
+		outputTreeNode(*child.get(), option, output, level + 1);
 
 	}
 	for (auto& future : futures) {

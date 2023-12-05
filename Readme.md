@@ -13,7 +13,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有Pbr材质的fbx文件
 支持导出gltf/glb，暂不支持读取。在osgEarth的gltf的插件基础上，增加了纹理压缩和顶点压缩功能，支持webp、ktx2格式纹理；支持使用draco/meshopt对顶点、法线、纹理坐标进行压缩；同时支持对顶点绑定batchId。
 
 ## osgdb_b3dm
-支持导出b3dm，暂不支持读取。b3dm插件具有gltf插件的所有功能，同时能够导出UserData中的属性到b3dm中。
+支持导出b3dm，暂不支持读取。b3dm插件具有gltf插件的所有功能，同时能够导出UserData中的属性到b3dm中。支持纹理图集优化。
 
 ## osgdb_webp
 和osgEarth的webp插件一样。
@@ -38,6 +38,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有Pbr材质的fbx文件
 5、支持纹理合并(减少drawcall次数)；
 6、导出的3dtiles会带有模型的用户属性；
 7、导出的3dtiles是经过网格合并的；
+8、支持纹理图集；
 ...
 这里的3D模型指的是fbx、obj、3ds等osg能够读取的三维模型，但是不包括倾斜摄影模型，倾斜摄影模型目前建议使用[https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles)。  
 ### 用法说明
@@ -60,7 +61,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-vf` 顶点压缩格式，可选的值有：draco、meshopt、none，默认值为：none，即不对顶点进行压缩。
 `draco_compression_level` draco压缩级别，可选的值为：low、medium、high，默认值为：medium。
 `-t` 3dtiles的组织结构，可以为四叉树或八叉树，可选的值有：quad、oc，默认值为：quad。  
-`-max` b3dm文件所包含的三角面的最大数量，默认值为:100000。  
+`-max` b3dm文件所包含的三角面的最大数量，默认值为:40000。  
 `-ratio` 3dtiles中间节点的简化比例，默认值为：0.5。  
 `-lat` 纬度  
 `-lng` 经度  
@@ -74,9 +75,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 2、ktx插件无法读取部分ktx 2.0版本的图片；  
 ...
 # 未来计划支持
-1、读取b3dm、gltf/glb；  
-2、增加对meshopt顶点压缩的支持；  
-3、增加model23tiles工具对小块纹理的合并优化处理。  
+1、读取b3dm、gltf/glb；    
 ...  
 **[简体中文](#简介) | English**
 
@@ -91,7 +90,7 @@ Based on the FBX2glTF plugin of OSG's FBX, reference was made to [FBX2glTF](http
 ## osgdb_gltf
 Supports exporting gltf/glb, but currently does not support reading. On the basis of osgEarth's gltf plugin, added texture compression and vertex compression functions, supporting webp and ktx2 format textures; Use Draco/Meshopt to compress vertices, normals, and texture coordinates; Simultaneously supports binding batchId to vertices.
 ## osgdb_b3dm
-Supports exporting b3dm, but currently does not support reading. The b3DM plugin has all the functions of the gltf plugin, and can also export attributes from UserData to b3DM.
+Supports exporting b3dm, but currently does not support reading. The b3DM plugin has all the functions of the gltf plugin, and can also export attributes from UserData to b3DM.Support textureAtlas.
 ## osgdb_webp
 Same as the webp plugin of osgEarth.
 ## osgdb_ktx
@@ -114,6 +113,7 @@ Convert b3dm files to gltf/glb.
 5. Support texture merging (reduce drawcalls);
 6. The exported 3dtiles will have the user attributes of the model;
 7. The exported 3dtiles are merged through grids;
+8. Support textureAtlas;
 ...
 The 3D model here refers to 3D models that can be read by OSG such as FBX, OBJ, and 3ds, but does not include oblique photography models. Currently, it is recommended to use oblique photography models [https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles).
 ### Usage
@@ -135,7 +135,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-vf` vertex format,option values are draco、meshopt、none,default is none.  
 `-t` tree format,option values are quad、oc,default is quad.  
 `draco_compression_level` draco comporession level,option values are low、medium、high,default is medium.
-`-max` the maximum number of triangles contained in the b3dm node.default value is 100000.  
+`-max` the maximum number of triangles contained in the b3dm node.default value is 40000.  
 `-ratio` Simplified ratio of intermediate nodes.default is 0.5.  
 `-lat` latitude  
 `-lng` longitude  
@@ -149,8 +149,6 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 ...
 # TO DO
 1. Read b3mm, gltf/glb;
-2. Increase support for mesh vertex compression;
-3. Add the model23tiles tool to merge and optimize small textures.  
 ...
 
 # About author  

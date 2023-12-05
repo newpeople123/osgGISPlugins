@@ -868,9 +868,9 @@ private:
 		// Flip the image before writing
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
 		//need to forbid filpVertical when use texture atlas 
-		if (type == TextureType::KTX2 || TextureType::KTX) {
-			flipped->flipVertical();
-		}
+		//if (type == TextureType::KTX2 || type == TextureType::KTX) {
+		//	flipped->flipVertical();
+		//}
 		textureOptimizeSize(flipped);
 
 		std::string filename;
@@ -907,7 +907,8 @@ private:
 		if (!osgImage->getFileName().empty())
 		{
 			std::string data(reinterpret_cast<char const*>(osgImage->data()));
-			filename = Stringify() << std::hex << hashString(data) << "." << ext;
+			filename = Stringify() << std::hex << hashString(data); 
+			filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + "." + ext;
 			std::ifstream fileExists(filename);
 			if ((!fileExists.good())|| (fileExists.peek() == std::ifstream::traits_type::eof()))
 			{

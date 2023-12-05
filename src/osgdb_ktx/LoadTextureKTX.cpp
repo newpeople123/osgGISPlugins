@@ -10,6 +10,7 @@
 #include <ktx/texture.h>
 #include <ktx/gl_format.h>
 #include <osgdb_ktx/LoadTextureKTX.h>
+#include <thread>
 
 static inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 {
@@ -413,7 +414,12 @@ namespace osg
 				ktxBasisParams params = { 0 };
 				params.structSize = sizeof(params);
 				params.compressionLevel = KTX_ETC1S_DEFAULT_COMPRESSION_LEVEL;
-				params.uastc = KTX_FALSE; params.threadCount = 1;
+				params.uastc = KTX_FALSE; 
+                unsigned int numThreads = std::thread::hardware_concurrency() / 2;
+                if (numThreads == 0) {
+                    numThreads = 2;
+                }
+                params.threadCount = numThreads;
 				result = ktxTexture2_CompressBasisEx((ktxTexture2*)texture, &params);
 				if (result != KTX_SUCCESS)
 				{
