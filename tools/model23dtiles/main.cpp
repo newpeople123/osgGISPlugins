@@ -50,7 +50,7 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
-
+    input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     if (node.valid()) {
 
