@@ -27,23 +27,25 @@
 //#include <utils/TextureAtlas.h>
 class GeometryNodeVisitor :public osg::NodeVisitor {
 public:
-	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+	{
+	}
 
-	};
-	void apply(osg::Drawable& drawable) {
-		osg::MatrixList matrixList = drawable.getWorldMatrices();
+	void apply(osg::Drawable& drawable) override {
+		const osg::MatrixList matrix_list = drawable.getWorldMatrices();
 		osg::Matrixd mat;
-		for (const osg::Matrixd& matrix : matrixList) {
+		for (const osg::Matrixd& matrix : matrix_list) {
 			mat = mat * matrix;
 		}
 		if (mat != osg::Matrixd::identity()) {
-			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
-			for (unsigned int i = 0; i < positions->size(); ++i) {
-				positions->at(i) = positions->at(i) * mat;
+			const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
+			for (auto& i : *positions)
+			{
+				i = i * mat;
 			}
 		}
 	}
-	void apply(osg::Group& group)
+	void apply(osg::Group& group) override
 	{
 		traverse(group);
 	}
@@ -51,12 +53,15 @@ public:
 };
 class TransformNodeVisitor :public osg::NodeVisitor {
 public:
-	TransformNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-	void apply(osg::Group& group)
+	TransformNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+
+	void apply(osg::Group& group) override
 	{
 		traverse(group);
 	}
-	void apply(osg::Transform& mtransform) {
+
+	void apply(osg::Transform& mtransform) override
+	{
 		//TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
 		//mtransform.accept(tnv);
 		mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
@@ -67,29 +72,30 @@ struct Stringify
 {
 	operator std::string() const
 	{
-		std::string result;
-		result = buf.str();
+		std::string result = buf.str();
 		return result;
 	}
 
 	template<typename T>
 	Stringify& operator << (const T& val) { buf << val; return (*this); }
 
-	Stringify& operator << (const Stringify& val) { buf << (std::string)val; return (*this); }
+	Stringify& operator << (const Stringify& val) { buf << static_cast<std::string>(val); return (*this); }
 
 protected:
 	std::stringstream buf;
 };
-unsigned hashString(const std::string input)
+
+inline unsigned hashString(const std::string& input)
 {
-	const unsigned int m = 0x5bd1e995;
-	const int r = 24;
-	unsigned int len = input.length();
+	constexpr unsigned int m = 0x5bd1e995;
+	unsigned int len;
+	len = input.length();
 	const char* data = input.c_str();
 	unsigned int h = m ^ len; // using "m" as the seed.
 
 	while (len >= 4)
 	{
+		constexpr int r = 24;
 		unsigned int k = *(unsigned int*)data;
 		k *= m;
 		k ^= k >> r;
@@ -173,7 +179,7 @@ public:
 
 	};
 private:
-	draco::GeometryAttribute::Type GetTypeFromAttributeName(const std::string& name) {
+	static draco::GeometryAttribute::Type GetTypeFromAttributeName(const std::string& name) {
 		if (name == "POSITION")
 		{
 			return draco::GeometryAttribute::Type::POSITION;
@@ -208,7 +214,8 @@ private:
 		}
 		return draco::GeometryAttribute::Type::GENERIC;
 	}
-	draco::DataType GetDataType(const tinygltf::Accessor& accessor)
+
+	static draco::DataType GetDataType(const tinygltf::Accessor& accessor)
 	{
 		switch (accessor.componentType)
 		{
@@ -221,7 +228,8 @@ private:
 		}
 		return draco::DataType::DT_INVALID;
 	}
-	size_t CalculateNumComponents(const tinygltf::Accessor& accessor) {
+
+	static size_t CalculateNumComponents(const tinygltf::Accessor& accessor) {
 		switch (accessor.type) {
 		case TINYGLTF_TYPE_SCALAR:
 			return 1;
@@ -238,18 +246,19 @@ private:
 	}
 	template<typename T>
 	int InitializePointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, tinygltf::Accessor& accessor) {
-		auto numComponents = CalculateNumComponents(accessor);
-		auto stride = sizeof(T) * numComponents;
+		const auto numComponents = CalculateNumComponents(accessor);
+		const auto stride = sizeof(T) * numComponents;
 
-		auto buffer1 = std::make_unique<draco::DataBuffer>();
+		const auto buffer1 = std::make_unique<draco::DataBuffer>();
 		draco::GeometryAttribute atrribute;
-		atrribute.Init(GetTypeFromAttributeName(attributeName), &*buffer1, numComponents, GetDataType(accessor), accessor.normalized, stride, 0);
+		atrribute.Init(GetTypeFromAttributeName(attributeName), &*buffer1, numComponents, GetDataType(accessor),
+		               accessor.normalized, stride, 0);
 		dracoMesh.set_num_points(static_cast<unsigned int>(accessor.count));
-		int attId = dracoMesh.AddAttribute(atrribute, true, dracoMesh.num_points());
-		auto attrActual = dracoMesh.attribute(attId);
+		const int attId = dracoMesh.AddAttribute(atrribute, true, dracoMesh.num_points());
+		const auto attrActual = dracoMesh.attribute(attId);
 
-		auto& bufferView = _model.bufferViews[accessor.bufferView];
-		auto& buffer = _model.buffers[bufferView.buffer];
+		const auto& bufferView = _model.bufferViews[accessor.bufferView];
+		const auto& buffer = _model.buffers[bufferView.buffer];
 		std::vector<T> values;
 
 		const void* data_ptr = buffer.data.data() + bufferView.byteOffset;
@@ -257,31 +266,31 @@ private:
 
 		switch (accessor.componentType) {
 		case TINYGLTF_COMPONENT_TYPE_BYTE:
-			values.assign(reinterpret_cast<const int8_t*>(data_ptr),
-				reinterpret_cast<const int8_t*>(data_ptr) + accessor.count * numComponents);
+			values.assign(static_cast<const int8_t*>(data_ptr),
+				static_cast<const int8_t*>(data_ptr) + accessor.count * numComponents);
 			break;
 		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-			values.assign(reinterpret_cast<const uint8_t*>(data_ptr),
-				reinterpret_cast<const uint8_t*>(data_ptr) + accessor.count * numComponents);
+			values.assign(static_cast<const uint8_t*>(data_ptr),
+				static_cast<const uint8_t*>(data_ptr) + accessor.count * numComponents);
 			break;
 		case TINYGLTF_COMPONENT_TYPE_SHORT:
-			values.assign(reinterpret_cast<const int16_t*>(data_ptr),
-				reinterpret_cast<const int16_t*>(data_ptr) + accessor.count * numComponents);
+			values.assign(static_cast<const int16_t*>(data_ptr),
+				static_cast<const int16_t*>(data_ptr) + accessor.count * numComponents);
 			break;
 		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-			values.assign(reinterpret_cast<const uint16_t*>(data_ptr),
-				reinterpret_cast<const uint16_t*>(data_ptr) + accessor.count * numComponents);
+			values.assign(static_cast<const uint16_t*>(data_ptr),
+				static_cast<const uint16_t*>(data_ptr) + accessor.count * numComponents);
 			break;
 		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-			values.assign(reinterpret_cast<const uint32_t*>(data_ptr),
-				reinterpret_cast<const uint32_t*>(data_ptr) + accessor.count * numComponents);
+			values.assign(static_cast<const uint32_t*>(data_ptr),
+				static_cast<const uint32_t*>(data_ptr) + accessor.count * numComponents);
 			break;
 		case TINYGLTF_COMPONENT_TYPE_FLOAT:
 			values.assign(reinterpret_cast<const float*>(data_ptr),
 				reinterpret_cast<const float*>(data_ptr) + accessor.count * numComponents);
 			break;
 		default:
-			std::cerr << "Unknown component type." << std::endl;
+			std::cerr << "Unknown component type." << '\n';
 			break;
 		}
 		for (draco::PointIndex i(0); i < static_cast<uint32_t>(accessor.count); ++i)
@@ -294,7 +303,7 @@ private:
 		}
 		else if (dracoMesh.num_points() != accessor.count)
 		{
-			std::cerr << "Inconsistent points count." << std::endl;
+			std::cerr << "Inconsistent points count." << '\n';
 		}
 
 		return attId;
@@ -323,8 +332,9 @@ private:
 		//options.PositionQuantizationBits = 0.0;
 		setDracoEncoderOptions(encoder, vco);
 
-		for (int j = 0; j < mesh.primitives.size(); j++) {
-			const auto& primitive = mesh.primitives.at(j);
+		for (auto& j : mesh.primitives)
+		{
+			const auto& primitive = j;
 			tinygltf::Value::Object dracoExtensionObj;
 
 			tinygltf::Value::Object dracoExtensionAttrObj;
@@ -437,25 +447,28 @@ private:
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:attId = InitializePointAttribute<uint16_t>(dracoMesh, attribute.first, attributeAccessor); break;
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:attId = InitializePointAttribute<uint32_t>(dracoMesh, attribute.first, attributeAccessor); break;
 				case TINYGLTF_COMPONENT_TYPE_FLOAT:attId = InitializePointAttribute<float>(dracoMesh, attribute.first, attributeAccessor); break;
-				default:std::cerr << "Unknown component type." << std::endl; break;
+				default:std::cerr << "Unknown component type." << '\n'; break;
 				}
 
 				bufferViewsToRemove.emplace(accessor.bufferView);
 				attributeAccessor.bufferView = -1;
 				attributeAccessor.byteOffset = 0;
 				_model.accessors[attribute.second] = attributeAccessor;
-				dracoExtensionAttrObj.insert(std::make_pair(attribute.first, tinygltf::Value((int)dracoMesh.attribute(attId)->unique_id())));
+				dracoExtensionAttrObj.insert(std::make_pair(attribute.first,
+				                                            tinygltf::Value(
+					                                            static_cast<int>(dracoMesh.attribute(attId)->
+						                                            unique_id()))));
 
 			}
 
-			if (primitive.targets.size() > 0) {
+			if (!primitive.targets.empty()) {
 				encoder.SetEncodingMethod(draco::MESH_SEQUENTIAL_ENCODING);
 			}
 
 			draco::EncoderBuffer encoderBuffer;
 			const draco::Status status = encoder.EncodeMeshToBuffer(dracoMesh, &encoderBuffer);
 			if (!status.ok()) {
-				std::cerr << "Failed to encode the mesh: " << status.error_msg() << std::endl;
+				std::cerr << "Failed to encode the mesh: " << status.error_msg() << '\n';
 			}
 
 			draco::Decoder decoder;
@@ -463,7 +476,7 @@ private:
 			decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
 			auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
 			if (!decodeResult.ok()) {
-				std::cerr << "Draco failed to decode mesh" << std::endl;
+				std::cerr << "Draco failed to decode mesh" << '\n';
 			}
 			if (primitive.indices != -1) {
 				tinygltf::Accessor encodedIndexAccessor(_model.accessors[primitive.indices]);
@@ -478,14 +491,14 @@ private:
 			}
 			dracoExtensionObj.insert(std::make_pair("attributes", dracoExtensionAttrObj));
 
-			_model.buffers.push_back(tinygltf::Buffer());
+			_model.buffers.emplace_back();
 			tinygltf::Buffer& gltfBuffer = _model.buffers.back();
 			int bufferId = _model.buffers.size() - 1;
 			gltfBuffer.data.resize(encoderBuffer.size());
 			const char* dracoBuffer = encoderBuffer.data();
 			for (unsigned int i = 0; i < encoderBuffer.size(); ++i)
 				gltfBuffer.data[i] = *dracoBuffer++;
-			_model.bufferViews.push_back(tinygltf::BufferView());
+			_model.bufferViews.emplace_back();
 			tinygltf::BufferView& bv = _model.bufferViews.back();
 			int id = _model.bufferViews.size() - 1;
 			bv.buffer = bufferId;
@@ -495,14 +508,15 @@ private:
 
 			tinygltf::Primitive resultPrimitive(primitive);
 			resultPrimitive.extensions.insert(std::make_pair("KHR_draco_mesh_compression", tinygltf::Value(dracoExtensionObj)));
-			mesh.primitives.at(j) = resultPrimitive;
+			j = resultPrimitive;
 
 
 
 		}
 
 	}
-	void CompressMeshByMeshopt(tinygltf::Mesh& mesh, const VertexCompressionOptions& vco) {
+	void CompressMeshByMeshopt(tinygltf::Mesh& mesh, const VertexCompressionOptions& vco) const
+	{
 		// 1、Indexing
 		// 2、Vertex cache optimization
 		// 3、Overdraw optimization
@@ -510,22 +524,22 @@ private:
 		// 5、Vertex quantization
 		// 6、Vertex/index buffer compression
 
-		for (int j = 0; j < mesh.primitives.size(); ++j) {
-			const auto& primitive = mesh.primitives.at(j);
+		for (const auto& primitive : mesh.primitives)
+		{
 			tinygltf::Value::Object meshoptExtensionObj;
 			if (primitive.indices != -1) {
-				tinygltf::Accessor indicesAccessor = _model.accessors[primitive.indices];
-				tinygltf::BufferView indicesBufferView = _model.bufferViews[indicesAccessor.bufferView];
+				const tinygltf::Accessor indicesAccessor = _model.accessors[primitive.indices];
+				const tinygltf::BufferView indicesBufferView = _model.bufferViews[indicesAccessor.bufferView];
 				tinygltf::Buffer indicesBuffer = _model.buffers[indicesBufferView.buffer];
 			}
 			for (const auto& attribute : primitive.attributes) {
 				const auto& accessor = _model.accessors[attribute.second];
-				tinygltf::Accessor attributeAccessor(accessor);
+				const tinygltf::Accessor attributeAccessor(accessor);
 				tinygltf::BufferView& bufferView = _model.bufferViews[attributeAccessor.bufferView];
 				tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
-				auto getEncodeVertexBuffer = [&accessor](tinygltf::Accessor attributeAccessor, tinygltf::Model& model, int num = 3)->std::vector<unsigned char> {
-					tinygltf::BufferView bufferView = model.bufferViews[attributeAccessor.bufferView];
-					tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+				auto getEncodeVertexBuffer = [&accessor](const tinygltf::Accessor& attributeAccessor, tinygltf::Model& model, int num = 3)->std::vector<unsigned char> {
+					const tinygltf::BufferView bufferView = model.bufferViews[attributeAccessor.bufferView];
+					const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
 					size_t bufferSize;
 					switch (accessor.componentType)
 					{
@@ -541,12 +555,12 @@ private:
 					std::vector<unsigned char> vbuf(bufferSize);
 					switch (accessor.componentType)
 					{
-					case TINYGLTF_COMPONENT_TYPE_BYTE: vbuf.resize(meshopt_encodeVertexBuffer(&vbuf[0], vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(int8_t) * num)); break;
-					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:vbuf.resize(meshopt_encodeVertexBuffer(&vbuf[0], vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(uint8_t) * num)); break;
-					case TINYGLTF_COMPONENT_TYPE_SHORT:vbuf.resize(meshopt_encodeVertexBuffer(&vbuf[0], vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(int16_t) * num)); break;
-					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:vbuf.resize(meshopt_encodeVertexBuffer(&vbuf[0], vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(uint16_t) * num)); break;
-					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:vbuf.resize(meshopt_encodeVertexBuffer(&vbuf[0], vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(uint32_t) * num)); break;
-					default:vbuf.resize(meshopt_encodeVertexBuffer(&vbuf[0], vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(float) * num)); break;
+					case TINYGLTF_COMPONENT_TYPE_BYTE: vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(int8_t) * num)); break;
+					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(uint8_t) * num)); break;
+					case TINYGLTF_COMPONENT_TYPE_SHORT:vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(int16_t) * num)); break;
+					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(uint16_t) * num)); break;
+					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(uint32_t) * num)); break;
+					default:vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, sizeof(float) * num)); break;
 					}
 					return vbuf;
 					};
@@ -580,34 +594,34 @@ private:
 
 					meshoptExtensionObj = tinygltf::Value::Object();
 					meshoptExtensionObj.insert(std::make_pair("buffer", tinygltf::Value((int)bufferView.buffer)));
-					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value((int)vbuf.size())));
+					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value(static_cast<int>(vbuf.size()))));
 					switch (accessor.componentType)
 					{
 					case TINYGLTF_COMPONENT_TYPE_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int8_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int8_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint8_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint8_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int16_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int16_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint16_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint16_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint32_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint32_t)) * 3)));
 						break;
 					default:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(float) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(float)) * 3)));
 						break;
 					}
-					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value((int)attributeAccessor.count)));
-					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value((std::string)"ATTRIBUTES")));
+					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value(static_cast<int>(attributeAccessor.count))));
+					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value(static_cast<std::string>("ATTRIBUTES"))));
 					bufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", tinygltf::Value(meshoptExtensionObj)));
 
 					if (primitive.indices != -1) {
-						tinygltf::Accessor& indicesAccessor = _model.accessors[primitive.indices];
+						const tinygltf::Accessor& indicesAccessor = _model.accessors[primitive.indices];
 						tinygltf::BufferView& indicesBufferView = _model.bufferViews[indicesAccessor.bufferView];
 						tinygltf::Buffer& indicesBuffer = _model.buffers[indicesBufferView.buffer];
 
@@ -628,20 +642,20 @@ private:
 						std::vector<unsigned char> ibuf(meshopt_encodeIndexBufferBound(indicesAccessor.count, indicesAccessor.count));
 
 						if (stride == 2) {
-							ibuf.resize(meshopt_encodeIndexBuffer(&ibuf[0], ibuf.size(), reinterpret_cast<const uint16_t*>(indicesBuffer.data.data()), indicesAccessor.count));
+							ibuf.resize(meshopt_encodeIndexBuffer(ibuf.data(), ibuf.size(), reinterpret_cast<const uint16_t*>(indicesBuffer.data.data()), indicesAccessor.count));
 						}
 						else
 						{
-							ibuf.resize(meshopt_encodeIndexBuffer(&ibuf[0], ibuf.size(), reinterpret_cast<const uint32_t*>(indicesBuffer.data.data()), indicesAccessor.count));
+							ibuf.resize(meshopt_encodeIndexBuffer(ibuf.data(), ibuf.size(), reinterpret_cast<const uint32_t*>(indicesBuffer.data.data()), indicesAccessor.count));
 						}
 						indicesBuffer.data.resize(ibuf.size());
 						for (unsigned int i = 0; i < ibuf.size(); ++i)
 							indicesBuffer.data[i] = ibuf[i];
 
 						meshoptExtensionObj.insert(std::make_pair("buffer", tinygltf::Value((int)indicesBufferView.buffer)));
-						meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value((int)ibuf.size())));
-						meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value((int)indicesAccessor.count)));
-						meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value((std::string)"TRIANGLES")));
+						meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value(static_cast<int>(ibuf.size()))));
+						meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value(static_cast<int>(indicesAccessor.count))));
+						meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value(static_cast<std::string>("TRIANGLES"))));
 						indicesBufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", tinygltf::Value(meshoptExtensionObj)));
 					}
 				}
@@ -652,30 +666,30 @@ private:
 						buffer.data[i] = vbuf[i];
 					meshoptExtensionObj = tinygltf::Value::Object();
 					meshoptExtensionObj.insert(std::make_pair("buffer", tinygltf::Value((int)bufferView.buffer)));
-					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value((int)vbuf.size())));
+					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value(static_cast<int>(vbuf.size()))));
 					switch (accessor.componentType)
 					{
 					case TINYGLTF_COMPONENT_TYPE_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int8_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int8_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint8_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint8_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int16_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int16_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint16_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint16_t)) * 3)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint32_t) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint32_t)) * 3)));
 						break;
 					default:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(float) * 3)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(float)) * 3)));
 						break;
 					}
-					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value((int)attributeAccessor.count)));
-					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value((std::string)"ATTRIBUTES")));
+					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value(static_cast<int>(attributeAccessor.count))));
+					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value(static_cast<std::string>("ATTRIBUTES"))));
 					bufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", tinygltf::Value(meshoptExtensionObj)));
 				}
 				else if (attribute.first == "TEXCOORD_0") {
@@ -685,30 +699,30 @@ private:
 						buffer.data[i] = vbuf[i];
 					meshoptExtensionObj = tinygltf::Value::Object();
 					meshoptExtensionObj.insert(std::make_pair("buffer", tinygltf::Value((int)bufferView.buffer)));
-					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value((int)vbuf.size())));
+					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value(static_cast<int>(vbuf.size()))));
 					switch (accessor.componentType)
 					{
 					case TINYGLTF_COMPONENT_TYPE_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int8_t) * 2)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int8_t)) * 2)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint8_t) * 2)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint8_t)) * 2)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int16_t) * 2)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int16_t)) * 2)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint16_t) * 2)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint16_t)) * 2)));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint32_t) * 2)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint32_t)) * 2)));
 						break;
 					default:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(float) * 2)));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(float)) * 2)));
 						break;
 					}
-					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value((int)attributeAccessor.count)));
-					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value((std::string)"ATTRIBUTES")));
+					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value(static_cast<int>(attributeAccessor.count))));
+					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value(static_cast<std::string>("ATTRIBUTES"))));
 					bufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", tinygltf::Value(meshoptExtensionObj)));
 				}
 				else if (attribute.first == "_BATCHID") {
@@ -718,36 +732,37 @@ private:
 						buffer.data[i] = vbuf[i];
 					meshoptExtensionObj = tinygltf::Value::Object();
 					meshoptExtensionObj.insert(std::make_pair("buffer", tinygltf::Value((int)bufferView.buffer)));
-					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value((int)vbuf.size())));
+					meshoptExtensionObj.insert(std::make_pair("byteLength", tinygltf::Value(static_cast<int>(vbuf.size()))));
 					switch (accessor.componentType)
 					{
 					case TINYGLTF_COMPONENT_TYPE_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int8_t))));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int8_t)))));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint8_t))));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint8_t)))));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(int16_t))));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(int16_t)))));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint16_t))));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint16_t)))));
 						break;
 					case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(uint32_t))));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(uint32_t)))));
 						break;
 					default:
-						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value((int)sizeof(float))));
+						meshoptExtensionObj.insert(std::make_pair("byteStride", tinygltf::Value(static_cast<int>(sizeof(float)))));
 						break;
 					}
-					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value((int)attributeAccessor.count)));
-					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value((std::string)"ATTRIBUTES")));
+					meshoptExtensionObj.insert(std::make_pair("count", tinygltf::Value(static_cast<int>(attributeAccessor.count))));
+					meshoptExtensionObj.insert(std::make_pair("mode", tinygltf::Value(static_cast<std::string>("ATTRIBUTES"))));
 					bufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", tinygltf::Value(meshoptExtensionObj)));
 				}
 			}
 		}
 	}
-	void setDracoEncoderOptions(draco::Encoder& encoder, const VertexCompressionOptions& options) {
+
+	static void setDracoEncoderOptions(draco::Encoder& encoder, const VertexCompressionOptions& options) {
 		encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, options.PositionQuantizationBits);
 		encoder.SetAttributeQuantization(draco::GeometryAttribute::TEX_COORD, options.TexCoordQuantizationBits);
 		encoder.SetAttributeQuantization(draco::GeometryAttribute::NORMAL, options.NormalQuantizationBits);
@@ -765,7 +780,6 @@ private:
 				std::unordered_set<int> bufferViewsToRemove;
 
 				CompressMeshByDraco(mesh, bufferViewsToRemove, vco);
-				//TODO:this can be simplified such as meshopt
 				std::vector<int> bufferViewsToRemoveVector(bufferViewsToRemove.begin(), bufferViewsToRemove.end());
 				for (int i = 0; i < bufferViewsToRemoveVector.size(); ++i) {
 					int bufferViewId = bufferViewsToRemoveVector.at(i);
@@ -794,7 +808,6 @@ private:
 							auto dracoExtension = primitive.extensions.find(extensionName);
 							if (dracoExtension != primitive.extensions.end()) {
 								auto dracoBufferViewId = dracoExtension->second.Get("bufferView").GetNumberAsInt();
-								dracoExtension->second.Get("attributes");
 
 								tinygltf::Value::Object obj;
 								obj.insert(std::make_pair("bufferView", tinygltf::Value(dracoBufferViewId - 1)));
@@ -826,7 +839,7 @@ private:
 		return false;
 	}
 	int getOrCreateGltfTexture(osg::Texture* osgTexture, const TextureType& type) {
-		if (osgTexture == NULL) {
+		if (osgTexture == nullptr) {
 			return -1;
 		}
 		if (osgTexture->getNumImages() < 1) {
@@ -864,7 +877,7 @@ private:
 			}
 		}
 		int index = _model.textures.size();
-		_textures.push_back(osgTexture);
+		_textures.emplace_back(osgTexture);
 		// Flip the image before writing
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
 		//need to forbid filpVertical when use texture atlas 
@@ -908,26 +921,32 @@ private:
 		{
 			std::string data(reinterpret_cast<char const*>(osgImage->data()));
 			filename = Stringify() << std::hex << hashString(data); 
-			filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + "." + ext;
+			const GLenum pixelFormat = osgImage->getPixelFormat();
+			if (ext=="jpg"&&pixelFormat != GL_ALPHA && pixelFormat != GL_RGB) {
+				filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + ".png";
+			}
+			else {
+				filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + "." + ext;
+			}
 			std::ifstream fileExists(filename);
 			if ((!fileExists.good())|| (fileExists.peek() == std::ifstream::traits_type::eof()))
 			{
 				if (type == TextureType::KTX) {
 					osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
 					option->setOptionString("Version=" + ktxVersion);
-					if (!(osgDB::writeImageFile(*flipped.get(), filename, option.get()))) {
-						osg::notify(osg::FATAL) << std::endl;
+					if (!(osgDB::writeImageFile(*flipped, filename, option.get()))) {
+						osg::notify(osg::FATAL) << '\n';
 					}
 				}
 				else {
-					if (!(osgDB::writeImageFile(*flipped.get(), filename))) {
+					if (!(osgDB::writeImageFile(*flipped, filename))) {
 						mimeType = "image/png";
 						filename = Stringify() << std::hex << hashString(data) << ".png";
 						std::ifstream fileExistsPng(filename);
 						if ((!fileExistsPng.good()) || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
 						{
-							if (!(osgDB::writeImageFile(*flipped.get(), filename))) {
-								osg::notify(osg::FATAL) << std::endl;
+							if (!(osgDB::writeImageFile(*flipped, filename))) {
+								osg::notify(osg::FATAL) << '\n';
 							}
 						}
 						fileExistsPng.close();
@@ -952,13 +971,13 @@ private:
 			if (type == TextureType::KTX) {
 				osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
 				option->setOptionString("Version=" + ktxVersion);
-				if (!(osgDB::writeImageFile(*flipped.get(), filename, option.get()))) {
-					osg::notify(osg::FATAL) << std::endl;
+				if (!(osgDB::writeImageFile(*flipped, filename, option.get()))) {
+					osg::notify(osg::FATAL) << '\n';
 				}
 			}
 			else {
-				if (!(osgDB::writeImageFile(*flipped.get(), filename))) {
-					osg::notify(osg::FATAL) << std::endl;
+				if (!(osgDB::writeImageFile(*flipped, filename))) {
+					osg::notify(osg::FATAL) << '\n';
 				}
 			}
 		}
@@ -1027,16 +1046,16 @@ private:
 		tinygltf::Texture texture;
 		if (type == TextureType::KTX2)
 		{
-			_model.extensionsRequired.push_back("KHR_texture_basisu");
-			_model.extensionsUsed.push_back("KHR_texture_basisu");
+			_model.extensionsRequired.emplace_back("KHR_texture_basisu");
+			_model.extensionsUsed.emplace_back("KHR_texture_basisu");
 			texture.source = -1;
 			tinygltf::Value::Object ktxExtensionObj;
 			ktxExtensionObj.insert(std::make_pair("source", index));
 			texture.extensions.insert(std::make_pair("KHR_texture_basisu", tinygltf::Value(ktxExtensionObj)));
 		}
 		else if (type == TextureType::WEBP) {
-			_model.extensionsRequired.push_back("EXT_texture_webp");
-			_model.extensionsUsed.push_back("EXT_texture_webp");
+			_model.extensionsRequired.emplace_back("EXT_texture_webp");
+			_model.extensionsUsed.emplace_back("EXT_texture_webp");
 			texture.source = -1;
 			tinygltf::Value::Object webpExtensionObj;
 			webpExtensionObj.insert(std::make_pair("source", index));
@@ -1050,17 +1069,17 @@ private:
 		return index;
 	}
 	void setGeneralGltfMaterialProperties(tinygltf::Material& gltfMaterial, const osg::ref_ptr<GltfMaterial>& material, const TextureType& type) {
-		osg::ref_ptr<osg::Texture2D> normalTexture = material->normalTexture;
+		const osg::ref_ptr<osg::Texture2D> normalTexture = material->normalTexture;
 		if (normalTexture) {
 			gltfMaterial.normalTexture.index = getOrCreateGltfTexture(normalTexture, type);
 			gltfMaterial.normalTexture.texCoord = 0;
 		}
-		osg::ref_ptr<osg::Texture2D> occlusionTexture = material->occlusionTexture;
+		const osg::ref_ptr<osg::Texture2D> occlusionTexture = material->occlusionTexture;
 		if (occlusionTexture) {
 			gltfMaterial.occlusionTexture.index = getOrCreateGltfTexture(occlusionTexture, type);
 			gltfMaterial.occlusionTexture.texCoord = 0;
 		}
-		osg::ref_ptr<osg::Texture2D> emissiveTexture = material->emissiveTexture;
+		const osg::ref_ptr<osg::Texture2D> emissiveTexture = material->emissiveTexture;
 		if (emissiveTexture) {
 			gltfMaterial.emissiveTexture.index = getOrCreateGltfTexture(emissiveTexture, type);
 			gltfMaterial.emissiveTexture.texCoord = 0;
@@ -1070,8 +1089,8 @@ private:
 		gltfMaterial.emissiveFactor.push_back(material->emissiveFactor[2]);
 
 		if (material->enable_KHR_materials_clearcoat) {
-			_model.extensionsRequired.push_back("KHR_materials_clearcoat");
-			_model.extensionsUsed.push_back("KHR_materials_clearcoat");
+			_model.extensionsRequired.emplace_back("KHR_materials_clearcoat");
+			_model.extensionsUsed.emplace_back("KHR_materials_clearcoat");
 
 			tinygltf::Value::Object obj;
 			obj.insert(std::make_pair("clearcoatFactor", tinygltf::Value(material->clearcoatFactor)));
@@ -1095,8 +1114,8 @@ private:
 		}
 
 		if (material->enable_KHR_materials_anisotropy) {
-			_model.extensionsRequired.push_back("KHR_materials_anisotropy");
-			_model.extensionsUsed.push_back("KHR_materials_anisotropy");
+			_model.extensionsRequired.emplace_back("KHR_materials_anisotropy");
+			_model.extensionsUsed.emplace_back("KHR_materials_anisotropy");
 
 			tinygltf::Value::Object obj;
 			obj.insert(std::make_pair("anisotropyStrength", tinygltf::Value(material->anisotropyStrength)));
@@ -1110,8 +1129,8 @@ private:
 		}
 
 		if (material->enable_KHR_materials_emissive_strength) {
-			_model.extensionsRequired.push_back("KHR_materials_emissive_strength");
-			_model.extensionsUsed.push_back("KHR_materials_emissive_strength");
+			_model.extensionsRequired.emplace_back("KHR_materials_emissive_strength");
+			_model.extensionsUsed.emplace_back("KHR_materials_emissive_strength");
 
 			tinygltf::Value::Object obj;
 			obj.insert(std::make_pair("emissiveStrength", tinygltf::Value(material->emissiveStrength)));
@@ -1120,7 +1139,7 @@ private:
 	}
 
 	//convert image size to the power of 2
-	void textureOptimizeSize(osg::ref_ptr<osg::Image> img) {
+	static void textureOptimizeSize(const osg::ref_ptr<osg::Image>& img) {
 		auto findNearestGreaterPowerOfTwo = [](int n) {
 			int powerOfTwo = 1;
 			while (powerOfTwo < n) {
@@ -1135,7 +1154,8 @@ private:
 		const int newR = findNearestGreaterPowerOfTwo(oldR);
 		img->scaleImage(newS, newR, 1);
 	}
-	void mergeBuffers() {
+	void mergeBuffers() const
+	{
 		tinygltf::Buffer totalBuffer;
 		tinygltf::Buffer fallbackBuffer;
 		fallbackBuffer.name = "fallback";
@@ -1158,7 +1178,7 @@ private:
 				bufferView.extensions.clear();
 				bufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", newMeshoptExtension));
 				//4-byte aligned 
-				int needAdd = 4 - byteOffset % 4;
+				const int needAdd = 4 - byteOffset % 4;
 				if (needAdd % 4 != 0) {
 					for (int i = 0; i < needAdd; ++i) {
 						totalBuffer.data.push_back(0);
@@ -1170,7 +1190,7 @@ private:
 				bufferView.byteOffset = fallbackByteOffset;
 				fallbackByteOffset += bufferView.byteLength;
 				//4-byte aligned 
-				int fallbackNeedAdd = 4 - fallbackByteOffset % 4;
+				const int fallbackNeedAdd = 4 - fallbackByteOffset % 4;
 				if (fallbackNeedAdd != 0) {
 					for (int i = 0; i < fallbackNeedAdd; ++i) {
 						fallbackByteOffset++;
@@ -1185,7 +1205,7 @@ private:
 				byteOffset += bufferView.byteLength;
 
 				//4-byte aligned 
-				int needAdd = 4 - byteOffset % 4;
+				const int needAdd = 4 - byteOffset % 4;
 				if (needAdd % 4 != 0) {
 					for (int i = 0; i < needAdd; ++i) {
 						totalBuffer.data.push_back(0);
@@ -1204,10 +1224,11 @@ private:
 			_model.buffers.push_back(fallbackBuffer);
 		}
 	}
-	void mergeMeshes() {
+	void mergeMeshes() const
+	{
 		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
 		for (auto& mesh : _model.meshes) {
-			if (mesh.primitives.size() > 0) {
+			if (!mesh.primitives.empty()) {
 				auto& item = materialPrimitiveMap.find(mesh.primitives[0].material);
 				if (item != materialPrimitiveMap.end()) {
 					item->second.push_back(mesh.primitives[0]);
@@ -1312,7 +1333,7 @@ private:
 			totalBatchIdsAccessor.count = 0;
 			totalColorsAccessor.count = 0;
 
-			auto reindexBufferAndBvAndAccessor = [&](tinygltf::Accessor accessor,tinygltf::BufferView& tBv,tinygltf::Buffer& tBuffer,tinygltf::Accessor& newAccessor,unsigned int sum=0,bool isIndices=false) {
+			auto reindexBufferAndBvAndAccessor = [&](const tinygltf::Accessor& accessor,tinygltf::BufferView& tBv,tinygltf::Buffer& tBuffer,tinygltf::Accessor& newAccessor,unsigned int sum=0,bool isIndices=false) {
 				tinygltf::BufferView& bv = _model.bufferViews[accessor.bufferView];
 				tinygltf::Buffer& buffer = _model.buffers[bv.buffer];
 
@@ -1320,14 +1341,14 @@ private:
 				tBv.target = bv.target;
 				if(accessor.componentType!=newAccessor.componentType){
 					if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT && accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-						unsigned short* oldIndicesChar = (unsigned short*)&buffer.data[0];
+						unsigned short* oldIndicesChar = (unsigned short*)buffer.data.data();
 						std::vector<unsigned int> indices;
 						for (size_t i = 0; i < accessor.count; ++i) {
 							unsigned short ushortVal = *oldIndicesChar++;
 							unsigned int uintVal = (unsigned int)(ushortVal + sum);
 							indices.push_back(uintVal);
 						}		
-						unsigned char* indicesUChar = (unsigned char*)&indices[0];
+						unsigned char* indicesUChar = (unsigned char*)indices.data();
 						const unsigned int size = bv.byteLength * 2;
 						for (unsigned int k = 0; k < size; ++k) {
 							tBuffer.data.push_back(*indicesUChar++);
@@ -1339,28 +1360,28 @@ private:
 				else {
 					if (isIndices) {
 						if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-							unsigned int* oldIndicesChar = (unsigned int*)&buffer.data[0];
+							unsigned int* oldIndicesChar = (unsigned int*)buffer.data.data();
 							std::vector<unsigned int> indices;
 							for (unsigned int i = 0; i < accessor.count; ++i) {
 								unsigned int oldUintVal = *oldIndicesChar++;
 								unsigned int uintVal = oldUintVal + sum;
 								indices.push_back(uintVal);
 							}
-							unsigned char* indicesUChar = (unsigned char*)&indices[0];
+							unsigned char* indicesUChar = (unsigned char*)indices.data();
 							const unsigned int size = bv.byteLength;
 							for (unsigned int i = 0; i < size; ++i) {
 								tBuffer.data.push_back(*indicesUChar++);
 							}
 						}
 						else {
-							unsigned short* oldIndicesChar = (unsigned short*)&buffer.data[0];
+							unsigned short* oldIndicesChar = (unsigned short*)buffer.data.data();
 							std::vector<unsigned short> indices;
 							for (size_t i = 0; i < accessor.count; ++i) {
 								unsigned short oldUshortVal = *oldIndicesChar++;
 								unsigned short ushortVal = oldUshortVal + sum;
 								indices.push_back(ushortVal);
 							}
-							unsigned char* indicesUChar = (unsigned char*)&indices[0];
+							unsigned char* indicesUChar = (unsigned char*)indices.data();
 							const unsigned int size = bv.byteLength;
 							for (size_t i = 0; i < size; ++i) {
 								tBuffer.data.push_back(*indicesUChar++);
@@ -1374,7 +1395,7 @@ private:
 				}
 				newAccessor.count += accessor.count;
 
-				if (accessor.minValues.size()) {
+				if (!accessor.minValues.empty()) {
 					if (newAccessor.minValues.size() == accessor.minValues.size()) {
 						for (int k = 0; k < newAccessor.minValues.size(); ++k) {
 							newAccessor.minValues[k] = osg::minimum(newAccessor.minValues[k], accessor.minValues[k]);
@@ -1418,11 +1439,6 @@ private:
 					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
 					reindexBufferAndBvAndAccessor(oldColorsAccessor, totalColorsBufferView, totalColorsBuffer, totalColorsAccessor);
 				}
-
-
-				//TODO:1、merge buffer and reindex buffer
-				//TODO:2、merge bufferView and reindex bufferView
-				//TODO:3、merge accessor and reindex accessor
 			}
 
 			totalIndicesBufferView.buffer = buffers.size();
@@ -1519,7 +1535,7 @@ public:
 		}
 
 		osg::Material* material = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-		GltfPbrMetallicRoughnessMaterial* pbrMRMaterial = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(material);
+		auto pbrMRMaterial = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(material);
 		if (pbrMRMaterial) {
 			setGeneralGltfMaterialProperties(gltfMaterial, pbrMRMaterial, type);
 
@@ -1538,8 +1554,8 @@ public:
 
 #pragma region Extensions
 			if (pbrMRMaterial->enable_KHR_materials_ior) {
-				_model.extensionsRequired.push_back("KHR_materials_ior");
-				_model.extensionsUsed.push_back("KHR_materials_ior");
+				_model.extensionsRequired.emplace_back("KHR_materials_ior");
+				_model.extensionsUsed.emplace_back("KHR_materials_ior");
 
 				tinygltf::Value::Object obj;
 				obj.insert(std::make_pair("ior", tinygltf::Value(pbrMRMaterial->ior)));
@@ -1547,15 +1563,15 @@ public:
 			}
 
 			if (pbrMRMaterial->enable_KHR_materials_sheen) {
-				_model.extensionsRequired.push_back("KHR_materials_sheen");
-				_model.extensionsUsed.push_back("KHR_materials_sheen");
+				_model.extensionsRequired.emplace_back("KHR_materials_sheen");
+				_model.extensionsUsed.emplace_back("KHR_materials_sheen");
 
 				tinygltf::Value::Object obj;
 
 				tinygltf::Value::Array sheenColorFactor;
-				sheenColorFactor.push_back(tinygltf::Value(pbrMRMaterial->sheenColorFactor[0]));
-				sheenColorFactor.push_back(tinygltf::Value(pbrMRMaterial->sheenColorFactor[1]));
-				sheenColorFactor.push_back(tinygltf::Value(pbrMRMaterial->sheenColorFactor[2]));
+				sheenColorFactor.emplace_back(pbrMRMaterial->sheenColorFactor[0]);
+				sheenColorFactor.emplace_back(pbrMRMaterial->sheenColorFactor[1]);
+				sheenColorFactor.emplace_back(pbrMRMaterial->sheenColorFactor[2]);
 				obj.insert(std::make_pair("sheenColorFactor", tinygltf::Value(sheenColorFactor)));
 				obj.insert(std::make_pair("sheenRoughnessFactor", tinygltf::Value(pbrMRMaterial->sheenRoughnessFactor)));
 
@@ -1573,15 +1589,15 @@ public:
 			}
 
 			if (pbrMRMaterial->enable_KHR_materials_volume) {
-				_model.extensionsRequired.push_back("KHR_materials_volume");
-				_model.extensionsUsed.push_back("KHR_materials_volume");
+				_model.extensionsRequired.emplace_back("KHR_materials_volume");
+				_model.extensionsUsed.emplace_back("KHR_materials_volume");
 
 				tinygltf::Value::Object obj;
 
 				tinygltf::Value::Array attenuationColor;
-				attenuationColor.push_back(tinygltf::Value(pbrMRMaterial->attenuationColor[0]));
-				attenuationColor.push_back(tinygltf::Value(pbrMRMaterial->attenuationColor[1]));
-				attenuationColor.push_back(tinygltf::Value(pbrMRMaterial->attenuationColor[2]));
+				attenuationColor.emplace_back(pbrMRMaterial->attenuationColor[0]);
+				attenuationColor.emplace_back(pbrMRMaterial->attenuationColor[1]);
+				attenuationColor.emplace_back(pbrMRMaterial->attenuationColor[2]);
 				obj.insert(std::make_pair("attenuationColor", tinygltf::Value(attenuationColor)));
 				obj.insert(std::make_pair("sheenRoughnessFactor", tinygltf::Value(pbrMRMaterial->thicknessFactor)));
 				obj.insert(std::make_pair("attenuationDistance", tinygltf::Value(pbrMRMaterial->attenuationDistance)));
@@ -1596,15 +1612,15 @@ public:
 			}
 
 			if (pbrMRMaterial->enable_KHR_materials_specular) {
-				_model.extensionsRequired.push_back("KHR_materials_specular");
-				_model.extensionsUsed.push_back("KHR_materials_specular");
+				_model.extensionsRequired.emplace_back("KHR_materials_specular");
+				_model.extensionsUsed.emplace_back("KHR_materials_specular");
 
 				tinygltf::Value::Object obj;
 
 				tinygltf::Value::Array specularColorFactor;
-				specularColorFactor.push_back(tinygltf::Value(pbrMRMaterial->specularColorFactor[0]));
-				specularColorFactor.push_back(tinygltf::Value(pbrMRMaterial->specularColorFactor[1]));
-				specularColorFactor.push_back(tinygltf::Value(pbrMRMaterial->specularColorFactor[2]));
+				specularColorFactor.emplace_back(pbrMRMaterial->specularColorFactor[0]);
+				specularColorFactor.emplace_back(pbrMRMaterial->specularColorFactor[1]);
+				specularColorFactor.emplace_back(pbrMRMaterial->specularColorFactor[2]);
 				obj.insert(std::make_pair("specularColorFactor", tinygltf::Value(specularColorFactor)));
 				obj.insert(std::make_pair("specularFactor", tinygltf::Value(pbrMRMaterial->specularFactor)));
 
@@ -1622,8 +1638,8 @@ public:
 			}
 
 			if (pbrMRMaterial->enable_KHR_materials_transmission) {
-				_model.extensionsRequired.push_back("KHR_materials_transmission");
-				_model.extensionsUsed.push_back("KHR_materials_transmission");
+				_model.extensionsRequired.emplace_back("KHR_materials_transmission");
+				_model.extensionsUsed.emplace_back("KHR_materials_transmission");
 
 				tinygltf::Value::Object obj;
 
@@ -1643,22 +1659,22 @@ public:
 			GltfPbrSpecularGlossinessMaterial* pbrSGMaterial = dynamic_cast<GltfPbrSpecularGlossinessMaterial*>(material);
 			setGeneralGltfMaterialProperties(gltfMaterial, pbrSGMaterial, type);
 
-			_model.extensionsRequired.push_back("KHR_materials_pbrSpecularGlossiness");
-			_model.extensionsUsed.push_back("KHR_materials_pbrSpecularGlossiness");
+			_model.extensionsRequired.emplace_back("KHR_materials_pbrSpecularGlossiness");
+			_model.extensionsUsed.emplace_back("KHR_materials_pbrSpecularGlossiness");
 
 			tinygltf::Value::Object obj;
 
 			tinygltf::Value::Array specularFactor;
-			specularFactor.push_back(tinygltf::Value(pbrSGMaterial->specularFactor[0]));
-			specularFactor.push_back(tinygltf::Value(pbrSGMaterial->specularFactor[1]));
-			specularFactor.push_back(tinygltf::Value(pbrSGMaterial->specularFactor[2]));
+			specularFactor.emplace_back(pbrSGMaterial->specularFactor[0]);
+			specularFactor.emplace_back(pbrSGMaterial->specularFactor[1]);
+			specularFactor.emplace_back(pbrSGMaterial->specularFactor[2]);
 			obj.insert(std::make_pair("specularFactor", tinygltf::Value(specularFactor)));
 
 			tinygltf::Value::Array diffuseFactor;
-			diffuseFactor.push_back(tinygltf::Value(pbrSGMaterial->diffuseFactor[0]));
-			diffuseFactor.push_back(tinygltf::Value(pbrSGMaterial->diffuseFactor[1]));
-			diffuseFactor.push_back(tinygltf::Value(pbrSGMaterial->diffuseFactor[2]));
-			diffuseFactor.push_back(tinygltf::Value(pbrSGMaterial->diffuseFactor[3]));
+			diffuseFactor.emplace_back(pbrSGMaterial->diffuseFactor[0]);
+			diffuseFactor.emplace_back(pbrSGMaterial->diffuseFactor[1]);
+			diffuseFactor.emplace_back(pbrSGMaterial->diffuseFactor[2]);
+			diffuseFactor.emplace_back(pbrSGMaterial->diffuseFactor[3]);
 			obj.insert(std::make_pair("diffuseFactor", tinygltf::Value(diffuseFactor)));
 
 			obj.insert(std::make_pair("glossinessFactor", tinygltf::Value(pbrSGMaterial->glossinessFactor)));

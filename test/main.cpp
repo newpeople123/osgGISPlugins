@@ -226,69 +226,6 @@ osg::ref_ptr<osg::Node> tesslatorGeometry()
     return matTransNode.get();
 }
 
-class B3dmOptimizer :public osg::NodeVisitor {
-public:
-    B3dmOptimizer() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-    void apply(osg::MatrixTransform& xform)
-    {
-        osg::ref_ptr<osg::Group> replaceNode = new osg::Group;
-        for (unsigned int j = 0; j < xform.asGroup()->getNumChildren(); j++) {
-            replaceNode->addChild(xform.asGroup()->getChild(j));
-        }
-        apply(static_cast<osg::Group&>(*replaceNode.get()));
-        xform.asGroup()->removeChildren(0, xform.asGroup()->getNumChildren());
-        for (unsigned int j = 0; j < replaceNode->getNumChildren(); j++) {
-            xform.asGroup()->addChild(replaceNode->getChild(j));
-        }
-    }
-    void apply(osg::Group& group) {
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::MERGE_GEODES);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::INDEX_MESH);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-        osgUtil::Optimizer::MergeGeometryVisitor mgv;
-        mgv.setTargetMaximumNumberOfVertices(10000000);//100w
-        group.accept(mgv);
-        for (unsigned int i = 0; i < group.getNumChildren(); i++) {
-            osg::ref_ptr<osg::Node> child = group.getChild(i);
-            if (typeid(*child.get()) == typeid(osg::MatrixTransform)) {
-                osg::ref_ptr<osg::Group> replaceChild = new osg::Group;
-                for (unsigned int j = 0; j < child->asGroup()->getNumChildren(); j++) {
-                    replaceChild->addChild(child->asGroup()->getChild(j));
-                }
-                apply(static_cast<osg::Group&>(*replaceChild.get()));
-                child->asGroup()->removeChildren(0, child->asGroup()->getNumChildren());
-                for (unsigned int j = 0; j < replaceChild->getNumChildren(); j++) {
-                    child->asGroup()->addChild(replaceChild->getChild(j));
-                }
-            }
-            else if (typeid(*child.get()) == typeid(osg::Group)) {
-                apply(static_cast<osg::Group&>(*child.get()));
-            }
-        }
-    }
-private:
-    osgUtil::Optimizer _optimizer;
-};
-inline std::string utf8_to_gbk(const std::string& str)
-{
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
-    std::wstring tmp_wstr = conv.from_bytes(str);
-    //GBK locale name in windows
-    const char* GBK_LOCALE_NAME = ".936";
-    std::wstring_convert<std::codecvt_byname<wchar_t, char, mbstate_t>> convert(new std::codecvt_byname<wchar_t, char, mbstate_t>(GBK_LOCALE_NAME));
-    return convert.to_bytes(tmp_wstr);
-}
-
-inline std::string gbk_to_utf8(const std::string& str)
-{
-    //GBK locale name in windows
-    const char* GBK_LOCALE_NAME = ".936";
-    std::wstring_convert<std::codecvt_byname<wchar_t, char, mbstate_t>> convert(new std::codecvt_byname<wchar_t, char, mbstate_t>(GBK_LOCALE_NAME));
-    std::wstring tmp_wstr = convert.from_bytes(str);
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> cv2;
-    return cv2.to_bytes(tmp_wstr);
-}
 void testOsgdb_fbx() {
     clock_t start, end;
     start = clock();
@@ -403,26 +340,11 @@ public:
     TextureVisitor2() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
 
     }
-    void apply(osg::Node& node) {
-        osg::StateSet* ss = node.getStateSet();
-        osg::ref_ptr<osg::Geometry> geom = node.asGeometry();
-        if (geom.valid()) {
-            osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
-            if (texCoords.valid()) {
-                for (unsigned int q = 0; q < texCoords->size(); ++q) {
-                    osg::Vec2 coord = texCoords->at(q);
-                    const double u = coord.x();
-                    const double v = coord.y();
-                    if (u > 1.0 || u < -1.0 || v>1.0 || v < -1.0) {
-                        return;
-                    }
-                }
-            }
+    void apply(osg::Texture& texture) {
+        for (unsigned int i = 0; i < texture.getNumImages(); i++) {
+            osg::ref_ptr<osg::Image> img = texture.getImage(i);
+            std::cout << img->getOrigin() << std::endl;
         }
-        if (ss) {
-            apply(*ss);
-        }
-        traverse(node);
     }
     void apply(osg::StateSet& stateset) {
         for (unsigned int i = 0; i < stateset.getTextureAttributeList().size(); ++i)
@@ -435,23 +357,14 @@ public:
             }
         }
     }
-    void apply(osg::Texture& texture) {
-        for (unsigned int i = 0; i < texture.getNumImages(); i++) {
-            osg::ref_ptr<osg::Image> img = texture.getImage(i);
-            if (img.valid()) {
-                unsigned char* data = img->data();
-                if (data != nullptr) {
-                    delete data;
-                }
-                int count = img->referenceCount();
-                for (int i = 0; i < count; ++i) {
-                    img.release();
-                }
-            }
+    void apply(osg::Node& node) {
+        osg::StateSet* ss = node.getStateSet();
+        osg::ref_ptr<osg::Geometry> geom = node.asGeometry();
+        if (ss) {
+            apply(*ss);
         }
+        traverse(node);
     }
-
-private:
 
 };
 void testTextureAtlas() {
@@ -579,12 +492,16 @@ int main() {
     setlocale(LC_ALL, "en_US.UTF-8");
     //testOsgdb_webp();
     //testOsgdb_fbx();
-    //testTextureAtlas();
-    createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
-    createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
-    createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
-    createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
-    createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
+ 
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("E:\\Code\\2023\\Other\\data\\龙翔桥站厅.fbx");
+    TextureVisitor2 tv2;
+    node->accept(tv2);
+
+    //createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
+    //createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
+    //createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
+    //createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
+    //createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
 
     //test();
     //std::cout << 1 << std::endl;

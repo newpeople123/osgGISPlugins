@@ -252,7 +252,7 @@ public:
 			}
 			else if (textureType == JPG) {
 				const GLenum pixelFormat = img->getPixelFormat();
-				if (pixelFormat == GL_DEPTH_COMPONENT || pixelFormat == GL_LUMINANCE || pixelFormat == GL_ALPHA || img->getPixelFormat() == GL_RGB) {
+				if (pixelFormat == GL_ALPHA || pixelFormat == GL_RGB) {
 					std::ifstream fileExists(filename + ".jpg");
 					if (!fileExists.good()|| (fileExists.peek() == std::ifstream::traits_type::eof())) {
 						// Only cater for gray, alpha and RGB for now
@@ -327,8 +327,8 @@ public:
 
 		std::vector<std::future<void>> futures;
 		for (int i = 0; i < textureAtlases.size(); ++i) {
-			//exportImage(textureAtlases.at(i)->texture());
-			futures.push_back(std::async(std::launch::async, exportImage, textureAtlases.at(i)->texture()));
+			exportImage(textureAtlases.at(i)->texture());
+			//futures.push_back(std::async(std::launch::async, exportImage, textureAtlases.at(i)->texture()));
 		}
 		for (auto& future : futures) {
 			future.get();
