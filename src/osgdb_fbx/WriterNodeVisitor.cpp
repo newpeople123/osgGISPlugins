@@ -35,46 +35,27 @@ class PrimitiveIndexWriter : public osg::PrimitiveIndexFunctor
 public:
     PrimitiveIndexWriter(const osg::Geometry* geo,
                          ListTriangle&        listTriangles,
-                         unsigned int         drawable_n,
-                         unsigned int         material) :
-        _drawable_n(drawable_n),
-        _listTriangles(listTriangles),
-        _modeCache(0),
-        _hasNormalCoords(geo->getNormalArray() != NULL),
-        _hasTexCoords(geo->getTexCoordArray(0) != NULL),
-        _geo(geo),
-        _lastFaceIndex(0),
-        _material(material),
-        _curNormalIndex(0),
-        _normalBinding(osg::Geometry::BIND_OFF),
-        _mesh(0)
-    {
-        _normalBinding = geo->getNormalBinding();
-        if (!geo->getNormalArray() || geo->getNormalArray()->getNumElements()==0)
-        {
-            _normalBinding = osg::Geometry::BIND_OFF;        // Turn off binding if there is no normal data
-        }
-        reset();
-    }
+                         const unsigned int         drawable_n,
+                         const unsigned int         material);
 
     void reset() { _curNormalIndex = 0; }
 
-    unsigned int getNextFaceIndex() { return _lastFaceIndex; }
+    unsigned int getNextFaceIndex() const { return _lastFaceIndex; }
 
-    virtual void setVertexArray(unsigned int, const osg::Vec2*) {}
+    void setVertexArray(unsigned int, const osg::Vec2*) override {}
 
-    virtual void setVertexArray(unsigned int, const osg::Vec3*) {}
+    void setVertexArray(unsigned int, const osg::Vec3*) override {}
 
-    virtual void setVertexArray(unsigned int, const osg::Vec4*) {}
+    void setVertexArray(unsigned int, const osg::Vec4*) override {}
 
-    virtual void setVertexArray(unsigned int, const osg::Vec2d*) {}
+    void setVertexArray(unsigned int, const osg::Vec2d*) override {}
 
-    virtual void setVertexArray(unsigned int, const osg::Vec3d*) {}
+    void setVertexArray(unsigned int, const osg::Vec3d*) override {}
 
-    virtual void setVertexArray(unsigned int, const osg::Vec4d*) {}
+    void setVertexArray(unsigned int, const osg::Vec4d*) override {}
 
     // operator for triangles
-    void writeTriangle(unsigned int i1, unsigned int i2, unsigned int i3)
+    void writeTriangle(const unsigned int i1, const unsigned int i2, const unsigned int i3)
     {
         Triangle triangle;
         triangle.t1 = i1;
@@ -91,16 +72,16 @@ public:
             triangle.normalIndex3 = _curNormalIndex;
         }
         triangle.material = _material;
-        _listTriangles.push_back(std::make_pair(triangle, _drawable_n));
+        _listTriangles.emplace_back(triangle, _drawable_n);
     }
 
-    virtual void begin(GLenum mode)
+    virtual void begin(const GLenum mode)
     {
         _modeCache = mode;
         _indexCache.clear();
     }
 
-    virtual void vertex(unsigned int vert)
+    virtual void vertex(const unsigned int vert)
     {
         _indexCache.push_back(vert);
     }
@@ -113,25 +94,25 @@ public:
         }
     }
 
-    virtual void drawArrays(GLenum mode, GLint first, GLsizei count);
+    void drawArrays(GLenum mode, GLint first, GLsizei count) override;
 
-    virtual void drawElements(GLenum mode, GLsizei count, const GLubyte* indices)
+    void drawElements(const GLenum mode, const GLsizei count, const GLubyte* indices) override
     {
         drawElementsImplementation<GLubyte>(mode, count, indices);
     }
 
-    virtual void drawElements(GLenum mode, GLsizei count, const GLushort* indices)
+    void drawElements(const GLenum mode, const GLsizei count, const GLushort* indices) override
     {
         drawElementsImplementation<GLushort>(mode, count, indices);
     }
 
-    virtual void drawElements(GLenum mode, GLsizei count, const GLuint* indices)
+    void drawElements(const GLenum mode, const GLsizei count, const GLuint* indices) override
     {
         drawElementsImplementation<GLuint>(mode, count, indices);
     }
 
 protected:
-    template <typename T> void drawElementsImplementation(GLenum mode, GLsizei count, const T* indices)
+    template <typename T> void drawElementsImplementation(const GLenum mode, GLsizei count, const T* indices)
     {
         if (indices==0 || count==0) return;
 
@@ -219,7 +200,29 @@ private:
     FbxMesh*            _mesh;
 };
 
-void PrimitiveIndexWriter::drawArrays(GLenum mode,GLint first,GLsizei count)
+PrimitiveIndexWriter::PrimitiveIndexWriter(const osg::Geometry* geo, ListTriangle& listTriangles,
+	const unsigned drawable_n, const unsigned material):
+	_drawable_n(drawable_n),
+	_listTriangles(listTriangles),
+	_modeCache(0),
+	_hasNormalCoords(geo->getNormalArray() != nullptr),
+	_hasTexCoords(geo->getTexCoordArray(0) != nullptr),
+	_geo(geo),
+	_lastFaceIndex(0),
+	_material(material),
+	_curNormalIndex(0),
+	_normalBinding(osg::Geometry::BIND_OFF),
+	_mesh(nullptr)
+{
+	_normalBinding = geo->getNormalBinding();
+	if (!geo->getNormalArray() || geo->getNormalArray()->getNumElements()==0)
+	{
+		_normalBinding = osg::Geometry::BIND_OFF;        // Turn off binding if there is no normal data
+	}
+	reset();
+}
+
+void PrimitiveIndexWriter::drawArrays(const GLenum mode, const GLint first, const GLsizei count)
 {
     unsigned int pos=first;
     switch (mode)
@@ -264,7 +267,7 @@ void PrimitiveIndexWriter::drawArrays(GLenum mode,GLint first,GLsizei count)
     case GL_LINE_STRIP:
     case GL_LINE_LOOP:
     default:
-        OSG_WARN << "WriterNodeVisitor :: can't handle mode " << mode << std::endl;
+        OSG_WARN << "WriterNodeVisitor :: can't handle mode " << mode << '\n';
         break;
     }
     if (_normalBinding == osg::Geometry::BIND_PER_PRIMITIVE_SET) ++_curNormalIndex;
@@ -277,23 +280,22 @@ WriterNodeVisitor::Material::Material(WriterNodeVisitor& writerNodeVisitor,
                                       const osg::Texture* tex,
                                       FbxManager* pSdkManager,
                                       const osgDB::ReaderWriter::Options * options,
-                                      int index) :
-    _fbxMaterial(NULL),
-    _fbxTexture(NULL),
+                                      const int index) :
+    _fbxMaterial(nullptr),
+    _fbxTexture(nullptr),
     _index(index),
-    _osgImage(NULL)
+    _osgImage(nullptr)
 {
     osg::Vec4 diffuse(1,1,1,1),
               ambient(0.2,0.2,0.2,1),
               specular(0,0,0,1),
               emission(1,1,1,1);
 
-    float shininess(0);
-    float transparency(0);
-
     if (mat)
     {
-        assert(stateset);
+	    float transparency(0);
+	    float shininess(0);
+	    assert(stateset);
         diffuse = mat->getDiffuse(osg::Material::FRONT);
         ambient = mat->getAmbient(osg::Material::FRONT);
         specular = mat->getSpecular(osg::Material::FRONT);
@@ -305,15 +307,15 @@ WriterNodeVisitor::Material::Material(WriterNodeVisitor& writerNodeVisitor,
         if (attribute)
         {
             assert(dynamic_cast<const osg::CullFace*>(attribute));
-            osg::CullFace::Mode mode = static_cast<const osg::CullFace*>(attribute)->getMode();
+            const osg::CullFace::Mode mode = dynamic_cast<const osg::CullFace*>(attribute)->getMode();
             if (mode == osg::CullFace::FRONT)
             {
-                OSG_WARN << "FBX Writer: Reversed face (culled FRONT) not supported yet." << std::endl;
+                OSG_WARN << "FBX Writer: Reversed face (culled FRONT) not supported yet." << '\n';
             }
             else if (mode != osg::CullFace::BACK)
             {
                 assert(mode == osg::CullFace::FRONT_AND_BACK);
-                OSG_WARN << "FBX Writer: Invisible face (culled FRONT_AND_BACK) not supported yet." << std::endl;
+                OSG_WARN << "FBX Writer: Invisible face (culled FRONT_AND_BACK) not supported yet." << '\n';
             }
         }
 
@@ -372,7 +374,7 @@ WriterNodeVisitor::Material::Material(WriterNodeVisitor& writerNodeVisitor,
 int WriterNodeVisitor::processStateSet(const osg::StateSet* ss)
 {
     //OSG_ALWAYS << "Trying Adding " << ss->getAttribute(osg::StateAttribute::MATERIAL)->getName() << std::endl;
-    MaterialMap::iterator itr = _materialMap.find(MaterialMap::key_type(ss));
+    const MaterialMap::iterator itr = _materialMap.find(MaterialMap::key_type(ss));
     if (itr != _materialMap.end())
     {
         if (itr->second.getIndex() < 0)
@@ -385,7 +387,7 @@ int WriterNodeVisitor::processStateSet(const osg::StateSet* ss)
 
     if (mat || tex)
     {
-        int matNum = _lastMaterialIndex;
+	    const int matNum = _lastMaterialIndex;
         _materialMap.insert(MaterialMap::value_type(MaterialMap::key_type(ss),
             Material(*this, _externalWriter, ss, mat, tex, _pSdkManager, _options, matNum)));
         ++_lastMaterialIndex;
@@ -394,10 +396,10 @@ int WriterNodeVisitor::processStateSet(const osg::StateSet* ss)
     return -1;
 }
 
-unsigned int addPolygon(MapIndices & index_vert, unsigned int vertIndex, unsigned int normIndex, unsigned int drawableNum)
+unsigned int addPolygon(MapIndices & index_vert, const unsigned int vertIndex, const unsigned int normIndex, const unsigned int drawableNum)
 {
     VertexIndex vert(vertIndex, drawableNum, normIndex);
-    MapIndices::iterator itIndex = index_vert.find(vert);
+    const MapIndices::iterator itIndex = index_vert.find(vert);
     if (itIndex == index_vert.end())
     {
         unsigned int indexMesh = index_vert.size();
@@ -407,7 +409,7 @@ unsigned int addPolygon(MapIndices & index_vert, unsigned int vertIndex, unsigne
     return itIndex->second;
 }
 
-void addPolygon(FbxMesh * mesh, MapIndices & index_vert, const Triangle & tri, unsigned int drawableNum)
+void addPolygon(FbxMesh * mesh, MapIndices & index_vert, const Triangle & tri, const unsigned int drawableNum)
 {
     mesh->AddPolygon(addPolygon(index_vert, tri.t1, tri.normalIndex1, drawableNum));
     mesh->AddPolygon(addPolygon(index_vert, tri.t2, tri.normalIndex2, drawableNum));
@@ -429,14 +431,14 @@ WriterNodeVisitor::setLayerTextureAndMaterial(FbxMesh* mesh)
     lTextureDiffuseLayer->GetDirectArray().SetCount(_lastMaterialIndex);
     lMaterialLayer->mDirectArray->SetCount(_lastMaterialIndex);
 
-    for (MaterialMap::iterator it = _materialMap.begin(); it != _materialMap.end(); ++it)
+    for (auto& it : _materialMap)
     {
-        if (it->second.getIndex() != -1)
+        if (it.second.getIndex() != -1)
         {
-            FbxSurfaceMaterial* lMaterial = it->second.getFbxMaterial();
-            FbxFileTexture* lTexture = it->second.getFbxTexture();
-            lTextureDiffuseLayer->GetDirectArray().SetAt(it->second.getIndex(), lTexture);
-            lMaterialLayer->mDirectArray->SetAt(it->second.getIndex(), lMaterial);
+            FbxSurfaceMaterial* lMaterial = it.second.getFbxMaterial();
+            FbxFileTexture* lTexture = it.second.getFbxTexture();
+            lTextureDiffuseLayer->GetDirectArray().SetAt(it.second.getIndex(), lTexture);
+            lMaterialLayer->mDirectArray->SetAt(it.second.getIndex(), lMaterial);
         }
     }
     mesh->GetLayer(0)->SetMaterials(lMaterialLayer);
@@ -445,8 +447,8 @@ WriterNodeVisitor::setLayerTextureAndMaterial(FbxMesh* mesh)
 
 void
 WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryList,
-                                                  MapIndices&       index_vert,
-                                                  bool              texcoords,
+                                                  const MapIndices&       index_vert,
+                                                  const bool              texcoords,
                                                   FbxMesh*         mesh)
 {
     mesh->InitControlPoints(index_vert.size());
@@ -466,11 +468,11 @@ WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryLi
         mesh->GetLayer(0)->SetUVs(lUVDiffuseLayer, FbxLayerElement::eTextureDiffuse);
     }
 
-    for (MapIndices::iterator it = index_vert.begin(); it != index_vert.end(); ++it)
+    for (auto& it : index_vert)
     {
-        const osg::Geometry* pGeometry = geometryList[it->first.drawableIndex];
-        unsigned int vertexIndex = it->first.vertexIndex;
-        unsigned int normalIndex = it->first.normalIndex;
+        const osg::Geometry* pGeometry = geometryList[it.first.drawableIndex];
+        const unsigned int vertexIndex = it.first.vertexIndex;
+        const unsigned int normalIndex = it.first.normalIndex;
 
         const osg::Array * basevecs = pGeometry->getVertexArray();
         assert(basevecs);
@@ -482,22 +484,22 @@ WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryLi
         FbxVector4 vertex;
         if (basevecs->getType() == osg::Array::Vec3ArrayType)
         {
-            const osg::Vec3  & vec = (*static_cast<const osg::Vec3Array  *>(basevecs))[vertexIndex];
+            const osg::Vec3  & vec = (*dynamic_cast<const osg::Vec3Array  *>(basevecs))[vertexIndex];
             vertex.Set(vec.x(), vec.y(), vec.z());
         }
         else if (basevecs->getType() == osg::Array::Vec3dArrayType)
         {
-            const osg::Vec3d & vec = (*static_cast<const osg::Vec3dArray *>(basevecs))[vertexIndex];
+            const osg::Vec3d & vec = (*dynamic_cast<const osg::Vec3dArray *>(basevecs))[vertexIndex];
             vertex.Set(vec.x(), vec.y(), vec.z());
         }
         else
         {
-            OSG_NOTIFY(osg::FATAL) << "Vertex array is not Vec3 or Vec3d. Not implemented" << std::endl;
+            OSG_NOTIFY(osg::FATAL) << "Vertex array is not Vec3 or Vec3d. Not implemented" << '\n';
             throw "Vertex array is not Vec3 or Vec3d. Not implemented";
             //_succeeded = false;
             //return;
         }
-        mesh->SetControlPointAt(vertex, it->second);
+        mesh->SetControlPointAt(vertex, it.second);
 
 
         const osg::Array * basenormals = pGeometry->getNormalArray();
@@ -507,17 +509,17 @@ WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryLi
             FbxVector4 normal;
             if (basenormals->getType() == osg::Array::Vec3ArrayType)
             {
-                const osg::Vec3  & vec = (*static_cast<const osg::Vec3Array  *>(basenormals))[normalIndex];
+                const osg::Vec3  & vec = (*dynamic_cast<const osg::Vec3Array  *>(basenormals))[normalIndex];
                 normal.Set(vec.x(), vec.y(), vec.z(), 0);
             }
             else if (basenormals->getType() == osg::Array::Vec3dArrayType)
             {
-                const osg::Vec3d & vec = (*static_cast<const osg::Vec3dArray *>(basenormals))[normalIndex];
+                const osg::Vec3d & vec = (*dynamic_cast<const osg::Vec3dArray *>(basenormals))[normalIndex];
                 normal.Set(vec.x(), vec.y(), vec.z(), 0);
             }
             else
             {
-                OSG_NOTIFY(osg::FATAL) << "Normal array is not Vec3 or Vec3d. Not implemented" << std::endl;
+                OSG_NOTIFY(osg::FATAL) << "Normal array is not Vec3 or Vec3d. Not implemented" << '\n';
                 throw "Normal array is not Vec3 or Vec3d. Not implemented";
                 //_succeeded = false;
                 //return;
@@ -529,7 +531,7 @@ WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryLi
             //case osg::Geometry::BIND_PER_VERTEX:
             //    break;
             //}
-            lLayerElementNormal->GetDirectArray().SetAt(it->second, normal);
+            lLayerElementNormal->GetDirectArray().SetAt(it.second, normal);
         }
 
         if (texcoords)
@@ -540,23 +542,23 @@ WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryLi
                 FbxVector2 texcoord;
                 if (basetexcoords->getType() == osg::Array::Vec2ArrayType)
                 {
-                    const osg::Vec2 & vec = (*static_cast<const osg::Vec2Array *>(basetexcoords))[vertexIndex];
+                    const osg::Vec2 & vec = (*dynamic_cast<const osg::Vec2Array *>(basetexcoords))[vertexIndex];
                     texcoord.Set(vec.x(), vec.y());
                 }
                 else if (basetexcoords->getType() == osg::Array::Vec2dArrayType)
                 {
-                    const osg::Vec2d & vec = (*static_cast<const osg::Vec2dArray *>(basetexcoords))[vertexIndex];
+                    const osg::Vec2d & vec = (*dynamic_cast<const osg::Vec2dArray *>(basetexcoords))[vertexIndex];
                     texcoord.Set(vec.x(), vec.y());
                 }
                 else
                 {
-                    OSG_NOTIFY(osg::FATAL) << "Texture coords array is not Vec2 or Vec2d. Not implemented" << std::endl;
+                    OSG_NOTIFY(osg::FATAL) << "Texture coords array is not Vec2 or Vec2d. Not implemented" << '\n';
                     throw "Texture coords array is not Vec2 or Vec2d. Not implemented";
                     //_succeeded = false;
                     //return;
                 }
 
-                lUVDiffuseLayer->GetDirectArray().SetAt(it->second, texcoord);
+                lUVDiffuseLayer->GetDirectArray().SetAt(it.second, texcoord);
             }
         }
     }
@@ -565,7 +567,7 @@ WriterNodeVisitor::setControlPointAndNormalsAndUV(const GeometryList& geometryLi
 void WriterNodeVisitor::buildFaces(const std::string& name,
                                    const GeometryList& geometryList,
                                    ListTriangle&     listTriangles,
-                                   bool              texcoords)
+                                   const bool              texcoords)
 {
     MapIndices index_vert;
     FbxMesh* mesh = FbxMesh::Create(_pSdkManager, name.c_str());
@@ -603,15 +605,15 @@ void WriterNodeVisitor::buildFaces(const std::string& name,
     _listTriangles.clear();
     _texcoords = false;
     _drawableNum = 0;
-    for (MaterialMap::iterator it = _materialMap.begin(); it != _materialMap.end(); ++it)
-        it->second.setIndex(-1);
+    for (auto& it : _materialMap)
+	    it.second.setIndex(-1);
     _lastMaterialIndex = 0;
 }
 
 void WriterNodeVisitor::createListTriangle(const osg::Geometry* geo,
                                            ListTriangle&        listTriangles,
                                            bool&                texcoords,
-                                           unsigned int         drawable_n)
+                                           const unsigned int         drawable_n)
 {
     unsigned int nbVertices = 0;
     {
@@ -636,7 +638,7 @@ void WriterNodeVisitor::createListTriangle(const osg::Geometry* geo,
 
     if (nbVertices==0) return;
 
-    int material = processStateSet(_currentStateSet.get());
+    const int material = processStateSet(_currentStateSet.get());
 
     PrimitiveIndexWriter pif(geo, listTriangles, drawable_n, material);
     for (unsigned int iPrimSet = 0; iPrimSet < geo->getNumPrimitiveSets(); ++iPrimSet) //Fill the Triangle List
@@ -674,7 +676,7 @@ void WriterNodeVisitor::apply(osg::Group& node)
 
         traverse(node);
 
-        if (_listTriangles.size() > 0)
+        if (!_listTriangles.empty())
             buildFaces(node.getName(), _geometryList, _listTriangles, _texcoords);
 
         _curFbxNode = parent;

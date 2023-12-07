@@ -40,13 +40,13 @@ int main(int argc, char** argv)
     while (arguments.read("-o", output));
 
     if (input == "") {
-        std::cout << "input file can not be null!" << std::endl;
+        std::cout << "input file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
 
     if (output == "") {
-        std::cout << "output file can not be null!" << std::endl;
+        std::cout << "output file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
@@ -77,14 +77,14 @@ int main(int argc, char** argv)
             OsgNodeTo3DTiles(node, options, treeFormat, max, ratio, output, lng, lat, h);
         }
         catch (const std::invalid_argument& e) {
-            std::cerr << "invalid input: " << e.what() << std::endl;
+            std::cerr << "invalid input: " << e.what() << '\n';
         }
         catch (const std::out_of_range& e) {
-            std::cerr << "value out of range: " << e.what() << std::endl;
+            std::cerr << "value out of range: " << e.what() << '\n';
         }
 
     }
     else {
-        std::cout << "Error:can not read 3d model file!" << std::endl;
+        std::cout << "Error:can not read 3d model file!" << '\n';
     }
 }

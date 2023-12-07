@@ -25,21 +25,22 @@ public:
 
     ReaderWriterKTX();
 
-    virtual const char* className() const;
+    const char* className() const override;
 
-    virtual ReadResult readObject(std::istream& fin, const osgDB::ReaderWriter::Options* options) const
+    ReadResult readObject(std::istream& fin, const osgDB::ReaderWriter::Options* options) const override
     {
         return readImage(fin, options);
     }
-    
-    virtual ReadResult readImage(std::istream& fin,const osgDB::ReaderWriter::Options* =NULL) const;
 
-    virtual ReadResult readObject(const std::string& file, const osgDB::ReaderWriter::Options* options) const
+    ReadResult readImage(std::istream& fin,const osgDB::ReaderWriter::Options* = nullptr) const override;
+
+    ReadResult readObject(const std::string& file, const osgDB::ReaderWriter::Options* options) const override
     {
         return readImage(file, options);
     }
-    virtual ReadResult readImage(const std::string& path, const Options* options) const;
-    virtual WriteResult writeImage(const osg::Image &image, const std::string& file, const osgDB::ReaderWriter::Options* options) const;
-    virtual WriteResult writeImage(const osg::Image& image, std::ostream& fout, const Options* options) const;
+
+    ReadResult readImage(const std::string& path, const Options* options) const override;
+    WriteResult writeImage(const osg::Image &image, const std::string& file, const osgDB::ReaderWriter::Options* options) const override;
+    WriteResult writeImage(const osg::Image& image, std::ostream& fout, const Options* options) const override;
 };
 REGISTER_OSGPLUGIN(ktx, ReaderWriterKTX)

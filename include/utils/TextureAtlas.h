@@ -94,14 +94,14 @@ public:
 		this->_pixelFormat = options.pixelFormat;
 		this->_borderWidthInPixels = options.borderWidthInPixels;
 		this->_textureCoordinates.clear();
-		this->_root = NULL;
+		this->_root = nullptr;
 		this->_packing = options.packing;
 	}
 	~TextureAtlas() {
-		this->_texture = NULL;
+		this->_texture = nullptr;
 		if (_root) {
 			delete _root;
-			this->_root = NULL;
+			this->_root = nullptr;
 		}
 	}
 	int addImage(osg::ref_ptr<osg::Image>& image) {
@@ -134,16 +134,18 @@ public:
 		}
 		return -1;
 	}
-	void resizeImage(osg::ref_ptr<osg::Image>& image,osg::Vec2 size) {
-		int currentWidth = image->s();
-		int currentHeight = image->t();
-		float scale = std::min(size.x() / currentWidth, size.y() / currentHeight);
+
+	static void resizeImage(const osg::ref_ptr<osg::Image>& image,osg::Vec2 size) {
+		const int currentWidth = image->s();
+		const int currentHeight = image->t();
+		const float scale = std::min(size.x() / currentWidth, size.y() / currentHeight);
 		if (scale < 1) {
-			image->scaleImage(static_cast<int>(currentWidth * scale), static_cast<int>(currentHeight * scale), image->r());
+			image->scaleImage(static_cast<int>(scale * currentWidth), static_cast<int>(scale * currentHeight), image->r());
 		}
 	}
 
-	int borderWidthInPixels() {
+	int borderWidthInPixels() const
+	{
 		return this->_borderWidthInPixels;
 	}
 	auto& textureCoordinates() {
@@ -152,13 +154,15 @@ public:
 	auto& texture() {
 		return this->_texture;
 	}
-	auto numberOfImages() {
+	auto numberOfImages() const
+	{
 		return this->_textureCoordinates.size();
 	}
 	auto& root() {
 		return this->_root;
 	}
-	GLenum pixelFormat() {
+	GLenum pixelFormat() const
+	{
 		return this->_pixelFormat;
 	}
 	TextureAtlasNode* _root;
@@ -173,7 +177,7 @@ public:
 	std::vector<std::string> imgNames;
 };
 
-bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& image) {
+inline bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& image) {
 	const int numImages = textureAtlas->numberOfImages();
 	const int borderWidthInPixels = textureAtlas->borderWidthInPixels();
 
@@ -189,8 +193,8 @@ bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& ima
 		const double oldAtlasWidth = textureAtlas->texture()->s();
 		const double oldAtlasHeight = textureAtlas->texture()->t();
 		//TO DO:seartch max useful storage
-		const double atlasWidth = findNearestGreaterPowerOfTwo(oldAtlasWidth + image->s() + borderWidthInPixels);
-		const double atlasHeight = findNearestGreaterPowerOfTwo(oldAtlasHeight + image->t() + borderWidthInPixels);
+		const double atlasWidth = findNearestGreaterPowerOfTwo(image->s() + oldAtlasWidth + borderWidthInPixels);
+		const double atlasHeight = findNearestGreaterPowerOfTwo(image->t() + oldAtlasHeight + borderWidthInPixels);
 
 		if (atlasWidth > atlasMaxWidth || atlasHeight > atlasMaxHeight) {
 			return false;
@@ -216,7 +220,7 @@ bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& ima
 
 		}
 
-		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+		const osg::ref_ptr<osg::Image> newTexture = new osg::Image;
 		newTexture->allocateImage(atlasWidth, atlasHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
 		/*for (int imgY = 0; imgY < textureAtlas->_texture->t(); ++imgY) {
 			for (int imgX = 0; imgX < textureAtlas->_texture->s(); ++imgX) {
@@ -247,7 +251,7 @@ bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& ima
 		if (textureAtlas->_texture.valid()) {
 			textureAtlas->_texture.release();
 		}
-		osg::ref_ptr<osg::Image> newTexture = new osg::Image;
+		const osg::ref_ptr<osg::Image> newTexture = new osg::Image;
 		newTexture->setFileName(generateUUID());
 		newTexture->allocateImage(initialWidth, initialHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
 		textureAtlas->_texture = newTexture;
@@ -257,12 +261,12 @@ bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& ima
 }
 
 TextureAtlasNode* findNode(TextureAtlas* textureAtlas, TextureAtlasNode* node, osg::ref_ptr<osg::Image>& image) {
-	if (node == NULL) {
-		return NULL;
+	if (node == nullptr) {
+		return nullptr;
 	}
-	if (node->childNode1 == NULL && node->childNode2 == NULL) {
+	if (node->childNode1 == nullptr && node->childNode2 == nullptr) {
 		if (node->imageIndex != -1) {
-			return NULL;
+			return nullptr;
 		}
 
 		const double nodeWidth = node->topRight.x() - node->bottomLeft.x();
@@ -270,7 +274,7 @@ TextureAtlasNode* findNode(TextureAtlas* textureAtlas, TextureAtlasNode* node, o
 		const double widthDifference = nodeWidth - image->s();
 		const double heightDifference = nodeHeight - image->t();
 		if (widthDifference < 0 || heightDifference < 0) {
-			return NULL;
+			return nullptr;
 		}
 
 		if (widthDifference == 0 && heightDifference == 0) {
@@ -299,12 +303,13 @@ TextureAtlasNode* findNode(TextureAtlas* textureAtlas, TextureAtlasNode* node, o
 	}
 	return findNode(textureAtlas, node->childNode2, image);
 }
-bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image>& image, int index) {
+
+inline bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image>& image, int index) {
 	//if (index == 0) {
 	//	resizeAtlas(textureAtlas, image);
 	//}
 	TextureAtlasNode* node = findNode(textureAtlas, textureAtlas->root(), image);
-	if (node != NULL) {
+	if (node != nullptr) {
 		node->imageIndex = index;
 
 		const double atlasWidth = textureAtlas->_texture->s();
@@ -315,7 +320,7 @@ bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image>& image, int i
 		const double y = node->bottomLeft.y() / atlasHeight;
 		const double w = nodeWidth / atlasWidth;
 		const double h = nodeHeight / atlasHeight;
-		textureAtlas->textureCoordinates().push_back(BoundingRectangle(x, y, w, h));
+		textureAtlas->textureCoordinates().emplace_back(x, y, w, h);
 		textureAtlas->texture()->copySubImage(node->bottomLeft.x(), node->bottomLeft.y(), 0, image.get());
 		//for (int imgY = 0; imgY < image->t(); ++imgY) {
 		//	for (int imgX = 0; imgX < image->s(); ++imgX) {
@@ -336,8 +341,9 @@ bool addImage(TextureAtlas* textureAtlas, osg::ref_ptr<osg::Image>& image, int i
 	}
 	return true;
 }
-int getIndex(TextureAtlas* atlas,osg::ref_ptr<osg::Image>& image) {
-	if (atlas == NULL) {
+
+inline int getIndex(TextureAtlas* atlas,osg::ref_ptr<osg::Image>& image) {
+	if (atlas == nullptr) {
 		return -1;
 	}
 	const int index = atlas->numberOfImages();

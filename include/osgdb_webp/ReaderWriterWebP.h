@@ -50,26 +50,26 @@ class ReaderWriterWebP : public osgDB::ReaderWriter
 public:
     ReaderWriterWebP();
 
-    ~ReaderWriterWebP();
+    ~ReaderWriterWebP() override;
 
-    virtual const char* className() const;
+    const char* className() const override;
 
-    virtual ReadResult readObject(const std::string& file, const osgDB::ReaderWriter::Options* options) const;
+    ReadResult readObject(const std::string& file, const osgDB::ReaderWriter::Options* options) const override;
 
-    virtual ReadResult readObject(std::istream& fin, const Options* options) const;
+    ReadResult readObject(std::istream& fin, const Options* options) const override;
 
-    virtual ReadResult readImage(const std::string& file, const osgDB::ReaderWriter::Options* options) const;
+    ReadResult readImage(const std::string& file, const osgDB::ReaderWriter::Options* options) const override;
 
-    virtual ReadResult readImage(std::istream& fin, const Options* options) const;
+    ReadResult readImage(std::istream& fin, const Options* options) const override;
 
-    virtual WriteResult writeObject(const osg::Object& object, const std::string& file, const osgDB::ReaderWriter::Options* options) const;
+    WriteResult writeObject(const osg::Object& object, const std::string& file, const osgDB::ReaderWriter::Options* options) const override;
 
-    virtual WriteResult writeObject(const osg::Object& object, std::ostream& fout, const Options* options) const;
+    WriteResult writeObject(const osg::Object& object, std::ostream& fout, const Options* options) const override;
 
-    virtual WriteResult writeImage(const osg::Image& img, const std::string& fileName, const osgDB::ReaderWriter::Options* options) const;
+    WriteResult writeImage(const osg::Image& img, const std::string& fileName, const osgDB::ReaderWriter::Options* options) const override;
 
     static int ostream_writer(const uint8_t* data, size_t data_size,
         const WebPPicture* const pic);
 
-    WriteResult writeImage(const osg::Image& img, std::ostream& fout, const Options* options) const;
+    WriteResult writeImage(const osg::Image& img, std::ostream& fout, const Options* options) const override;
 };

@@ -17,10 +17,10 @@ static osg::Matrix transpose(const osg::Matrix& b)
 	return mat;
 }
 
-osg::ref_ptr<osg::Vec3Array> getPointsPolarCorner(const osg::ref_ptr<osg::Vec3Array>& vertPos, osg::Vec3& ptStart, osg::Vec3& ptEnd)
+inline osg::ref_ptr<osg::Vec3Array> getPointsPolarCorner(const osg::ref_ptr<osg::Vec3Array>& vertPos, osg::Vec3& ptStart, osg::Vec3& ptEnd)
 {
 	osg::ref_ptr<osg::Vec3Array> ptPollar = new osg::Vec3Array;
-	if (!vertPos.valid() || vertPos->size() < 1)
+	if (!vertPos.valid() || vertPos->empty())
 	{
 		return ptPollar;
 	}
@@ -67,7 +67,7 @@ osg::ref_ptr<osg::Vec3Array> getPointsPolarCorner(const osg::ref_ptr<osg::Vec3Ar
 	return ptPollar;
 }
 
-void calcPlaneEquation(const osg::Vec3& ptStart, const osg::Vec3& ptEnd, float& A, float& B, float& C, float& D)
+inline void calcPlaneEquation(const osg::Vec3& ptStart, const osg::Vec3& ptEnd, float& A, float& B, float& C, float& D)
 {
 	osg::Vec3 ptCenter = (ptEnd + ptStart) / 2.0;
 	osg::Vec3 vDir = ptEnd - ptStart;
@@ -79,23 +79,22 @@ void calcPlaneEquation(const osg::Vec3& ptStart, const osg::Vec3& ptEnd, float& 
 	D = -(ptCenter.x() * A + ptCenter.y() * B + ptCenter.z() * C);
 }
 
-osg::Vec3 pointProjectToPlane(const osg::Vec3& pt, float A, float B, float C, float D)
+inline osg::Vec3 pointProjectToPlane(const osg::Vec3& pt, float A, float B, float C, float D)
 {
 	float t = (A * pt.x() + B * pt.y() + C * pt.z() + D) / (A * A + B * B + C * C);
-	return osg::Vec3(pt.x() - A * t, pt.y() - B * t, pt.z() - C * t);
+	return {pt.x() - A * t, pt.y() - B * t, pt.z() - C * t};
 }
 
-osg::Vec3 pointProjectToLine(const osg::Vec3& pt, const osg::Vec3& ptonline, const osg::Vec3& linedir)
+inline osg::Vec3 pointProjectToLine(const osg::Vec3& pt, const osg::Vec3& ptonline, const osg::Vec3& linedir)
 {
-	osg::Vec3 retpt;
-	float cosangl = (pt - ptonline) * linedir;
-	retpt = ptonline + (linedir * cosangl);
+	const float cosangl = (pt - ptonline) * linedir;
+	const osg::Vec3 retpt = ptonline + (linedir * cosangl);
 	return retpt;
 }
 
-bool getRangePoint(const osg::ref_ptr<osg::Vec3Array>& vertPos, osg::Vec3& ptmax, osg::Vec3& ptmin)
+inline bool getRangePoint(const osg::ref_ptr<osg::Vec3Array>& vertPos, osg::Vec3& ptmax, osg::Vec3& ptmin)
 {
-	if (!vertPos.valid() || vertPos->size() < 1)
+	if (!vertPos.valid() || vertPos->empty())
 	{
 		return false;
 	}
@@ -114,39 +113,38 @@ bool getRangePoint(const osg::ref_ptr<osg::Vec3Array>& vertPos, osg::Vec3& ptmax
 	return true;
 }
 
-osg::ref_ptr<osg::Vec3Array> GetOBBCorner(osg::ref_ptr<osg::Vec3Array>& vertPos)
+inline osg::ref_ptr<osg::Vec3Array> GetOBBCorner(const osg::ref_ptr<osg::Vec3Array>& vertPos)
 {
 	osg::ref_ptr<osg::Vec3Array> retArr = new osg::Vec3Array;
 	osg::Vec3 ptStart, ptEnd;
-	osg::ref_ptr<osg::Vec3Array> ptPollar;
 	//std::vector<osg::Vec3> ptPollar;
-	ptPollar = getPointsPolarCorner(vertPos, ptStart, ptEnd);
-	if (ptPollar->size() < 1)
+	const osg::ref_ptr<osg::Vec3Array> ptPollar = getPointsPolarCorner(vertPos, ptStart, ptEnd);
+	if (ptPollar->empty())
 	{
 		return retArr;
 	}
-	float A, B, C, D;
-	A = B = C = D = 0.0;
+	float B, C, D;
+	float A = B = C = D = 0.0;
 	calcPlaneEquation(ptStart, ptEnd, A, B, C, D);
 
-	osg::ref_ptr<osg::Vec3Array> projectpts = new osg::Vec3Array;;
+	const osg::ref_ptr<osg::Vec3Array> projectpts = new osg::Vec3Array;;
 	for (osg::Vec3Array::size_type i = 0; i < ptPollar->size(); i++)
 	{
 		projectpts->push_back(pointProjectToPlane(ptPollar->at(i), A, B, C, D));
 	}
 
-	osg::Vec3 vHlfDir = (ptEnd - ptStart) / 2.0;
+	const osg::Vec3 vHlfDir = (ptEnd - ptStart) / 2.0;
 	osg::Vec3 ptymax, ptymin;
 	getPointsPolarCorner(projectpts, ptymax, ptymin);
 
 
 	osg::Vec3 vnor = ptymax - ptymin;
-	osg::Vec3 ptycenter = (ptymax + ptymin) / 2.0;
+	const osg::Vec3 ptycenter = (ptymax + ptymin) / 2.0;
 	vnor = vnor ^ vHlfDir;
 	vnor.normalize();
 	//calcPlaneEquation(ptymax, ptymin, A, B, C, D);
 
-	osg::ref_ptr<osg::Vec3Array> project2d1 = new osg::Vec3Array;;
+	const osg::ref_ptr<osg::Vec3Array> project2d1 = new osg::Vec3Array;;
 	for (osg::Vec3Array::size_type i = 0; i < projectpts->size(); i++)
 	{
 		project2d1->push_back(pointProjectToLine(projectpts->at(i), ptycenter, vnor));
@@ -154,7 +152,7 @@ osg::ref_ptr<osg::Vec3Array> GetOBBCorner(osg::ref_ptr<osg::Vec3Array>& vertPos)
 
 	osg::Vec3 ptzmax, ptzmin;
 	getPointsPolarCorner(project2d1, ptzmax, ptzmin);
-	osg::Vec3 ptzcenter = (ptzmax + ptzmin) / 2.0;
+	const osg::Vec3 ptzcenter = (ptzmax + ptzmin) / 2.0;
 
 
 	retArr->push_back(ptymax + ptzcenter - ptzmax + vHlfDir);
@@ -175,9 +173,8 @@ osg::ref_ptr<osg::Vec3Array> GetOBBCorner(osg::ref_ptr<osg::Vec3Array>& vertPos)
 	return retArr;
 }
 
-static osg::Matrix _getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> vertPos)
+static osg::Matrix _getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array>& vertPos)
 {
-	int i;
 	osg::Matrix Cov;
 
 	double S1[3];
@@ -189,8 +186,8 @@ static osg::Matrix _getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> vert
 	S2[0][2] = S2[1][2] = S2[2][2] = 0.0;
 
 	// get center of mass
-	int vertCount = vertPos->size();
-	for (i = 0; i < vertCount; i++)
+	const int vertCount = vertPos->size();
+	for (int i = 0; i < vertCount; i++)
 	{
 		S1[0] += (*vertPos)[i].x();
 		S1[1] += (*vertPos)[i].y();
@@ -204,14 +201,14 @@ static osg::Matrix _getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> vert
 		S2[1][2] += (*vertPos)[i].y() * (*vertPos)[i].z();
 	}
 
-	float n = (float)vertCount;
+	const float n = static_cast<float>(vertCount);
 	// now get covariances
-	Cov(0, 0) = (float)(S2[0][0] - S1[0] * S1[0] / n) / n;
-	Cov(1, 1) = (float)(S2[1][1] - S1[1] * S1[1] / n) / n;
-	Cov(2, 2) = (float)(S2[2][2] - S1[2] * S1[2] / n) / n;
-	Cov(0, 1) = (float)(S2[0][1] - S1[0] * S1[1] / n) / n;
-	Cov(1, 2) = (float)(S2[1][2] - S1[1] * S1[2] / n) / n;
-	Cov(0, 2) = (float)(S2[0][2] - S1[0] * S1[2] / n) / n;
+	Cov(0, 0) = static_cast<float>(S2[0][0] - S1[0] * S1[0] / n) / n;
+	Cov(1, 1) = static_cast<float>(S2[1][1] - S1[1] * S1[1] / n) / n;
+	Cov(2, 2) = static_cast<float>(S2[2][2] - S1[2] * S1[2] / n) / n;
+	Cov(0, 1) = static_cast<float>(S2[0][1] - S1[0] * S1[1] / n) / n;
+	Cov(1, 2) = static_cast<float>(S2[1][2] - S1[1] * S1[2] / n) / n;
+	Cov(0, 2) = static_cast<float>(S2[0][2] - S1[0] * S1[2] / n) / n;
 	Cov(1, 0) = Cov(0, 1);
 	Cov(2, 0) = Cov(0, 2);
 	Cov(2, 1) = Cov(1, 2);
@@ -233,16 +230,14 @@ static float& _getElement(osg::Vec3& point, int index)
 
 static void _getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a)
 {
-	int n = 3;
-	int j, iq, ip, i;
-	double tresh, theta, tau, t, sm, s, h, g, c;
-	int nrot;
+	const int n = 3;
+	int j, iq, ip;
+	double tresh, t;
 	osg::Vec3 b;
 	osg::Vec3 z;
-	osg::Matrix v;
 	osg::Vec3 d;
 
-	v = osg::Matrix::identity();
+	osg::Matrix v = osg::Matrix::identity();
 	for (ip = 0; ip < n; ip++)
 	{
 		_getElement(b, ip) = a(ip, ip);// a.m[ip + 4 * ip];
@@ -250,11 +245,11 @@ static void _getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a)
 		_getElement(z, ip) = 0.0;
 	}
 
-	nrot = 0;
+	int nrot = 0;
 
-	for (i = 0; i < 50; i++)
+	for (int i = 0; i < 50; i++)
 	{
-		sm = 0.0;
+		double sm = 0.0;
 		for (ip = 0; ip < n; ip++) for (iq = ip + 1; iq < n; iq++) sm += fabs((a(ip, iq)));
 		if (false/*fabs(sm) < FLT_EPSILON*/)
 		{
@@ -273,9 +268,9 @@ static void _getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a)
 		{
 			for (iq = ip + 1; iq < n; iq++)
 			{
-				g = 100.0 * fabs(a(ip, iq)/*a.m[ip + iq * 4]*/);
-				float dmip = _getElement(d, ip);
-				float dmiq = _getElement(d, iq);
+				double g = 100.0 * fabs(a(ip, iq)/*a.m[ip + iq * 4]*/);
+				const float dmip = _getElement(d, ip);
+				const float dmiq = _getElement(d, iq);
 
 				if (i > 3 && fabs(dmip) + g == fabs(dmip) && fabs(dmiq) + g == fabs(dmiq))
 				{
@@ -283,25 +278,25 @@ static void _getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a)
 				}
 				else if (fabs(a(ip, iq)) > tresh)
 				{
-					h = dmiq - dmip;
+					double h = dmiq - dmip;
 					if (fabs(h) + g == fabs(h))
 					{
 						t = (a(ip, iq)) / h;
 					}
 					else
 					{
-						theta = 0.5 * h / (a(ip, iq));
+						const double theta = 0.5 * h / (a(ip, iq));
 						t = 1.0 / (fabs(theta) + sqrt(1.0 + theta * theta));
 						if (theta < 0.0) t = -t;
 					}
-					c = 1.0 / sqrt(1 + t * t);
-					s = t * c;
-					tau = s / (1.0 + c);
+					const double c = 1.0 / sqrt(1 + t * t);
+					const double s = t * c;
+					const double tau = s / (1.0 + c);
 					h = t * a(ip, iq);
-					_getElement(z, ip) -= (float)h;
-					_getElement(z, iq) += (float)h;
-					_getElement(d, ip) -= (float)h;
-					_getElement(d, iq) += (float)h;
+					_getElement(z, ip) -= static_cast<float>(h);
+					_getElement(z, iq) += static_cast<float>(h);
+					_getElement(d, ip) -= static_cast<float>(h);
+					_getElement(d, iq) += static_cast<float>(h);
 					a(ip, iq) = 0.0;
 					for (j = 0; j < ip; j++) { ROTATE(a, j, ip, j, iq); }
 					for (j = ip + 1; j < iq; j++) { ROTATE(a, ip, j, j, iq); }
@@ -327,24 +322,22 @@ static void _getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a)
 	return;
 }
 
-static osg::Matrix _getOBBOrientation(osg::ref_ptr<osg::Vec3Array> vertPos)
+static osg::Matrix _getOBBOrientation(const osg::ref_ptr<osg::Vec3Array>& vertPos)
 {
-	osg::Matrix Cov;
-
-	if (vertPos->size() <= 0)
+	if (vertPos->empty())
 		return osg::Matrix::identity();
 
-	Cov = _getConvarianceMatrix(vertPos);
+	const osg::Matrix Cov = _getConvarianceMatrix(vertPos);
 
 	// now get eigenvectors
-	osg::Matrix Evecs;
-	osg::Vec3 Evals;
-	_getEigenVectors(&Evecs, &Evals, Cov);
+	osg::Matrix evecs;
+	osg::Vec3 evals;
+	_getEigenVectors(&evecs, &evals, Cov);
 
-	Evecs = transpose(Evecs);
+	evecs = transpose(evecs);
 	//Evecs.transpose();
 
-	return Evecs;
+	return evecs;
 }
 
 class  OBB
@@ -365,7 +358,7 @@ public:
 
 		reset();
 
-		int num = verts->size();
+		const int num = verts->size();
 		osg::Matrix matTransform = _getOBBOrientation(verts);
 
 		matTransform = transpose(matTransform);
@@ -651,7 +644,7 @@ public:
         popMatrix();
     }
 
-    inline void pushMatrix(osg::Matrix& matrix) { _matrixStack.push_back(matrix); }
+    inline void pushMatrix(const osg::Matrix& matrix) { _matrixStack.push_back(matrix); }
 
     inline void popMatrix() { _matrixStack.pop_back(); }
     void applyBoundingBox(const osg::ref_ptr<osg::Vec3Array>& vertices)

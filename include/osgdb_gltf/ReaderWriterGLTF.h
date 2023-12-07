@@ -18,9 +18,9 @@ public:
 
     }
 
-    const char* className() const { return "GLTF reader/writer"; }
+    const char* className() const override { return "GLTF reader/writer"; }
 
-    virtual ReadResult readObject(const std::string& filename, const Options* options) const
+    ReadResult readObject(const std::string& filename, const Options* options) const override
     {
         return readNode(filename, options);
     }
@@ -30,7 +30,7 @@ public:
         return writeNode(node, filename, options);
     }
 
-    virtual ReadResult readNode(const std::string& filename, const Options*) const;
-    virtual WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const;
+    ReadResult readNode(const std::string& filename, const Options*) const override;
+    WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const override;
 };
 #endif // !READERWRITERGLTF_H

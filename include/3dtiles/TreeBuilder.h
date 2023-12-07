@@ -31,11 +31,12 @@ public:
 	std::vector<double> region;
 
 	std::string refine;
-	TileNode() {
+	TileNode(): level(0), x(0), y(0), z(0), upperGeometricError(0), lowerGeometricError(0)
+	{
 		nodes = new osg::Group;
 		children = new osg::Group;
 		currentNodes = new osg::Group;
-		parentTreeNode = NULL;
+		parentTreeNode = nullptr;
 		uuid = generateUUID();
 		refine = "REPLACE";
 	}
@@ -47,15 +48,16 @@ public:
 	unsigned int count = 0;
 	TriangleNumberNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
 
-	void apply(osg::Drawable& drawable) {
+	void apply(osg::Drawable& drawable) override
+	{
 		if (drawable.asGeometry())
 		{
-			osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+			const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 			for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i) {
 				osg::ref_ptr<osg::DrawArrays> drawArrays = dynamic_cast<osg::DrawArrays*>(geom->getPrimitiveSet(i));
 				if (drawArrays) {
-					GLenum mode = drawArrays->getMode();
-					unsigned int triangleNumber = drawArrays->getCount();
+					const GLenum mode = drawArrays->getMode();
+					const unsigned int triangleNumber = drawArrays->getCount();
 					switch (mode)
 					{
 					case GL_TRIANGLES:
@@ -89,7 +91,8 @@ public:
 		}
 	}
 
-	void apply(osg::Group& group) {
+	void apply(osg::Group& group) override
+	{
 		traverse(group);
 	};
 private:
@@ -99,7 +102,8 @@ class RebuildDataNodeVisitorResolve :public osg::NodeVisitor {
 public:
 	RebuildDataNodeVisitorResolve() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
 	osg::ref_ptr<osg::Group> output = new osg::Group;
-	void apply(osg::Drawable& drawable) {
+	void apply(osg::Drawable& drawable) override
+	{
 		if(drawable.asGeometry())
 			output->addChild(&drawable);
 	};
@@ -107,7 +111,8 @@ public:
 	//	osg::Geode* copyGeode = new osg::Geode;
 	//	output->addChild(copyGeode);
 	//};
-	void apply(osg::Group& group) {
+	void apply(osg::Group& group) override
+	{
 		traverse(group);
 	};
 };
@@ -116,7 +121,7 @@ public:
 class RebuildDataNodeVisitor {
 public:
 	osg::ref_ptr<osg::Group> output;
-	RebuildDataNodeVisitor(osg::ref_ptr<osg::Node> node)  {
+	RebuildDataNodeVisitor(const osg::ref_ptr<osg::Node>& node)  {
 		GeometryNodeVisitor gnv;
 		node->accept(gnv);
 		TransformNodeVisitor tnv;
@@ -132,28 +137,35 @@ class TreeBuilder :public osg::Object
 {
 public:
 	osg::ref_ptr<TileNode> rootTreeNode = new TileNode;
-	TreeBuilder(const TreeBuilder& node, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY) {};
+	TreeBuilder(const TreeBuilder& node, const osg::CopyOp& = osg::CopyOp::SHALLOW_COPY): _maxTriangleNumber(0),
+	                                                                                      _maxTreeDepth(0),
+	                                                                                      _maxLevel(0),
+	                                                                                      _simpleRatio(0)
+	{
+	}
+
 	TreeBuilder() :_maxTriangleNumber(40000), _maxTreeDepth(8), _maxLevel(0), _simpleRatio(0.5f) {
-	};
+	}
+
 	TreeBuilder(const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :_maxTriangleNumber(maxTriangleNumber), _maxTreeDepth(maxTreeDepth), _maxLevel(0), _simpleRatio(simpleRatio) {
-	};
-	TreeBuilder(osg::ref_ptr<osg::Group> node) :_maxTriangleNumber(40000), _maxTreeDepth(8), _maxLevel(0), _simpleRatio(0.5f) {
-	};
-	TreeBuilder(osg::ref_ptr<osg::Group> node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :_maxTriangleNumber(maxTriangleNumber), _maxTreeDepth(maxTreeDepth), _maxLevel(0), _simpleRatio(simpleRatio) {
-	};
-	~TreeBuilder() {}
-	virtual Object* cloneType() const { return new TreeBuilder(); }
-	virtual Object* clone(const osg::CopyOp& copyop) const { return new TreeBuilder(*this, copyop); }
-	virtual const char* libraryName() const { return "osgGisPluginsTools"; }
-	virtual const char* className() const { return "model23dtiles"; }
+	}
+	TreeBuilder(const osg::ref_ptr<osg::Group>& node) :_maxTriangleNumber(40000), _maxTreeDepth(8), _maxLevel(0), _simpleRatio(0.5f) {
+	}
+	TreeBuilder(const osg::ref_ptr<osg::Group>& node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :_maxTriangleNumber(maxTriangleNumber), _maxTreeDepth(maxTreeDepth), _maxLevel(0), _simpleRatio(simpleRatio) {
+	}
+	~TreeBuilder() override {}
+	Object* cloneType() const override { return new TreeBuilder(); }
+	Object* clone(const osg::CopyOp& copyop) const override { return new TreeBuilder(*this, copyop); }
+	const char* libraryName() const override { return "osgGisPluginsTools"; }
+	const char* className() const override { return "model23dtiles"; }
 protected:
 	//todo:create quadtree or octree
 	//virtual osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int parentX = 0, int parentY = 0, int parentZ = 0, osg::ref_ptr<TileNode> parent = nullptr, int depth = 0);
-	void convertTreeNode2Levels(osg::ref_ptr<TileNode> rootTreeNode, std::vector<std::vector<osg::ref_ptr<TileNode>>>& levels) {
+	static void convertTreeNode2Levels(const osg::ref_ptr<TileNode>& rootTreeNode, std::vector<std::vector<osg::ref_ptr<TileNode>>>& levels) {
 		std::queue<osg::ref_ptr<TileNode>> q;
 		q.push(rootTreeNode);
 		while (!q.empty()) {
-			int size = q.size();
+			const int size = q.size();
 			std::vector<osg::ref_ptr<TileNode>> level;
 			for (int i = 0; i < size; i++) {
 				osg::ref_ptr<TileNode> node = q.front();
@@ -168,15 +180,15 @@ protected:
 			levels.push_back(level);
 		}
 	}
-	void buildHlod(osg::ref_ptr<TileNode> rootTreeNode) {
+	void buildHlod(const osg::ref_ptr<TileNode>& rootTreeNode) {
 		std::vector<std::vector<osg::ref_ptr<TileNode>>> levels;
 		convertTreeNode2Levels(rootTreeNode, levels);
 		double simpleRatio = this->_simpleRatio;
 		auto func = [&levels, &simpleRatio](int i) {
-			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
-			for (osg::ref_ptr<TileNode> treeNode : level) {
+			const std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+			for (const osg::ref_ptr<TileNode>& treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren()) {
-					osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
+					const osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
 					osgUtil::Simplifier simplifier;
 					simplifier.setSampleRatio(simpleRatio);
 					lodModel->accept(simplifier);
@@ -186,11 +198,11 @@ protected:
 		std::vector<std::future<void>> futures;
 		for (int i = levels.size() - 1; i > -1; --i) {
 			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
-			for (osg::ref_ptr<TileNode> treeNode : level) {
+			for (const osg::ref_ptr<TileNode>& treeNode : level) {
 				if (treeNode->currentNodes->getNumChildren() == 0) {
 					int childrenCount = 0;
 					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
-						osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
+						const osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
 						//const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
 						if (childNode->currentNodes != nullptr) {
 							const osg::BoundingBox childBoundingBox = getBoundingBox(childNode->currentNodes);
@@ -225,7 +237,8 @@ protected:
 
 		//hlodOptimizierProxy(rootTreeNode);
 	}
-	osg::BoundingBox getBoundingBox(osg::ref_ptr<osg::Node> node) {
+
+	static osg::BoundingBox getBoundingBox(const osg::ref_ptr<osg::Node>& node) {
 		osg::ComputeBoundsVisitor cbbv;
 		node->accept(cbbv);
 		return cbbv.getBoundingBox();
@@ -237,7 +250,8 @@ protected:
 	int _maxLevel;
 	double _simpleRatio;
 private:
-	osg::ref_ptr<osg::Group> hlodOptimizier(osg::ref_ptr<osg::Group> nodes) {
+	osg::ref_ptr<osg::Group> hlodOptimizier(const osg::ref_ptr<osg::Group>& nodes) const
+	{
 		std::map<osg::Matrixd, osg::ref_ptr<osg::MatrixTransform>> transformMap;
 		osg::Matrixd identityMatrix;
 		for (unsigned i = 0; i < rootTreeNode->nodes->getNumChildren(); ++i) {
@@ -280,7 +294,7 @@ private:
 		}
 		return result;
 	}
-	void hlodOptimizierProxy(osg::ref_ptr<TileNode> rootTreeNode) {
+	void hlodOptimizierProxy(const osg::ref_ptr<TileNode>& rootTreeNode) {
 		for (unsigned int i = 0; i < rootTreeNode->children->getNumChildren(); ++i) {
 			hlodOptimizierProxy(dynamic_cast<TileNode*>(rootTreeNode->children->getChild(i)));
 		}
@@ -288,7 +302,8 @@ private:
 		rootTreeNode->currentNodes = hlodOptimizier(rootTreeNode->currentNodes);
 
 	}
-	void computeBoundingVolume(osg::ref_ptr<TileNode> treeNode) {
+
+	static void computeBoundingVolume(const osg::ref_ptr<TileNode>& treeNode) {
 		if (treeNode->nodes->getNumChildren()) {
 			//ComputeObbBoundsVisitor computeObbBoundsVisitor;
 			//treeNode->nodes->accept(computeObbBoundsVisitor);

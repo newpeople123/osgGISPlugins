@@ -64,7 +64,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readImage(std::istream& fin, c
 
         WebPDecoderConfig config;
         WebPInitDecoderConfig(&config);
-        int status = WebPGetFeatures((const uint8_t*)vp8_buffer, (uint32_t)size_of_vp8_image_data, &config.input);
+        int status = WebPGetFeatures(reinterpret_cast<const uint8_t*>(vp8_buffer), static_cast<uint32_t>(size_of_vp8_image_data), &config.input);
         if (status == VP8_STATUS_OK)
         {
 
@@ -100,7 +100,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readImage(std::istream& fin, c
 
             config.output.is_external_memory = 1;
 
-            status = WebPDecode((const uint8_t*)vp8_buffer, (uint32_t)size_of_vp8_image_data, &config);
+            status = WebPDecode(reinterpret_cast<const uint8_t*>(vp8_buffer), static_cast<uint32_t>(size_of_vp8_image_data), &config);
         }
         delete[] vp8_buffer;
     }
@@ -137,7 +137,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeObject(const osg::Object
 
 osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& img, const std::string& fileName, const osgDB::ReaderWriter::Options* options) const
 {
-    std::string ext = osgDB::getFileExtension(fileName);
+	const std::string ext = osgDB::getFileExtension(fileName);
     if (!acceptsExtension(ext))
         return WriteResult::FILE_NOT_HANDLED;
 
@@ -154,8 +154,8 @@ int ReaderWriterWebP::ostream_writer(const uint8_t* data, size_t data_size,
     const WebPPicture* const pic)
 {
 
-    std::ostream* const out = (std::ostream*)pic->custom_ptr;
-    return data_size ? (int)out->write((const char*)data, data_size).tellp() : 1;
+    std::ostream* const out = static_cast<std::ostream*>(pic->custom_ptr);
+    return data_size ? static_cast<int>(out->write(reinterpret_cast<const char*>(data), data_size).tellp()) : 1;
 }
 
 osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& img, std::ostream& fout, const Options* options) const
@@ -262,7 +262,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
         }
 
         picture.writer = ReaderWriterWebP::ostream_writer;
-        picture.custom_ptr = (void*)&fout;
+        picture.custom_ptr = static_cast<void*>(&fout);
         if (!WebPEncode(&config, &picture))
         {
             return WriteResult::ERROR_IN_WRITING_FILE;
@@ -282,7 +282,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
         }
 
         picture.writer = ReaderWriterWebP::ostream_writer;
-        picture.custom_ptr = (void*)&fout;
+        picture.custom_ptr = static_cast<void*>(&fout);
         if (!WebPEncode(&config, &picture))
         {
             return WriteResult::ERROR_IN_WRITING_FILE;

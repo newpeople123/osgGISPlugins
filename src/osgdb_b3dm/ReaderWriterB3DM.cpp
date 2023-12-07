@@ -8,16 +8,16 @@ class UserDataVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
     UserDataVisitor(json& item) :_item(item) {};
-    virtual void apply(bool value) { _item.push_back(value); }
-    virtual void apply(char value) { _item.push_back(value); }
-    virtual void apply(unsigned char value) { _item.push_back(value);  }
-    virtual void apply(short value) { _item.push_back(value); }
-    virtual void apply(unsigned short value) { _item.push_back(value); }
-    virtual void apply(int value) { _item.push_back(value); }
-    virtual void apply(unsigned int value) { _item.push_back(value); }
-    virtual void apply(float value) { _item.push_back(value); }
-    virtual void apply(double value) { _item.push_back(value); }
-    virtual void apply(const std::string& value) { _item.push_back(value); }
+    void apply(bool value) override { _item.push_back(value); }
+    void apply(char value) override { _item.push_back(value); }
+    void apply(unsigned char value) override { _item.push_back(value);  }
+    void apply(short value) override { _item.push_back(value); }
+    void apply(unsigned short value) override { _item.push_back(value); }
+    void apply(int value) override { _item.push_back(value); }
+    void apply(unsigned int value) override { _item.push_back(value); }
+    void apply(float value) override { _item.push_back(value); }
+    void apply(double value) override { _item.push_back(value); }
+    void apply(const std::string& value) override { _item.push_back(value); }
     //virtual void apply(const osg::Vec2f& value) { OSG_NOTICE << " Vec2f " << value; }
     //virtual void apply(const osg::Vec3f& value) { OSG_NOTICE << " Vec3f " << value; }
     //virtual void apply(const osg::Vec4f& value) { OSG_NOTICE << " Vec4f " << value; }
@@ -35,33 +35,42 @@ private:
 class BatchIdVisitor :public osg::NodeVisitor {
 public:
     BatchIdVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-    virtual void apply(osg::Node& node) {
+
+    void apply(osg::Node& node) override
+    {
         traverse(node);
     };
-    virtual void apply(osg::Group& group) {
+
+    void apply(osg::Group& group) override
+    {
         traverse(group);
     };
-    virtual void apply(osg::Geode& geode) {
+
+    void apply(osg::Geode& geode) override
+    {
         traverse(geode);
         if (geode.getNumDrawables() > 0) {
-            osg::ref_ptr<osg::UserDataContainer> udc = geode.getUserDataContainer();
+	        const osg::ref_ptr<osg::UserDataContainer> udc = geode.getUserDataContainer();
             _userDatas.push_back(udc);
             _batchId++;
         }
     };
-    virtual void apply(osg::Drawable& drawable) {
+
+    void apply(osg::Drawable& drawable) override
+    {
         osg::Geometry* geom = drawable.asGeometry();
-        osg::Vec3Array* positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
-        osg::ref_ptr<osg::FloatArray> batchIds = new osg::FloatArray;
+        const osg::Vec3Array* positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
+        const osg::ref_ptr<osg::FloatArray> batchIds = new osg::FloatArray;
         batchIds->assign(positions->size(), _batchId);
-        osg::Array* vertexAttrib = geom->getVertexAttribArray(0);
+        const osg::Array* vertexAttrib = geom->getVertexAttribArray(0);
         if (vertexAttrib) {
             OSG_WARN << "Waring: geometry's VertexAttribArray(0 channel) is not Null,it will be overwritten!" << std::endl;
         }
 
         geom->setVertexAttribArray(0, batchIds, osg::Array::BIND_PER_VERTEX);
     };
-    float getBatchId() {
+    float getBatchId() const
+    {
         return _batchId;
     };
     std::vector<osg::ref_ptr<osg::UserDataContainer>> getUserDatas() {
@@ -73,7 +82,7 @@ private:
 };
 template<class T>
 void put_val(std::vector<unsigned char>& buf, T val) {
-    buf.insert(buf.end(), (unsigned char*)&val, (unsigned char*)&val + sizeof(T));
+    buf.insert(buf.end(), static_cast<unsigned char*>(&val), static_cast<unsigned char*>(&val) + sizeof(T));
 }
 
 template<class T>
@@ -81,17 +90,19 @@ void put_val(std::string& buf, T val) {
     buf.append((unsigned char*)&val, (unsigned char*)&val + sizeof(T));
 }
 
-tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options) const {
+tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options)
+{
 
     bool embedImages = true, embedBuffers = true, prettyPrint = false, isBinary = true;
     int textureMaxSize = 4096;
-    std::string textureTypeStr, compressionTypeStr;
     TextureType textureType = TextureType::PNG;
-    CompressionType comporessionType = CompressionType::NONE;
+    CompressionType comporession_type = CompressionType::NONE;
     int comporessLevel = 1;
     if (options)
     {
-        std::istringstream iss(options->getOptionString());
+	    std::string compressionTypeStr;
+	    std::string textureTypeStr;
+	    std::istringstream iss(options->getOptionString());
         std::string opt;
         while (iss >> opt)
         {
@@ -129,10 +140,10 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
             {
                 compressionTypeStr = osgDB::convertToLowerCase(val);
                 if (compressionTypeStr == "draco") {
-                    comporessionType = CompressionType::DRACO;
+                    comporession_type = CompressionType::DRACO;
                 }
                 else if (compressionTypeStr == "meshopt") {
-                    comporessionType = CompressionType::MESHOPT;
+                    comporession_type = CompressionType::MESHOPT;
                 }
             }
             else if (key == "comporessLevel") {
@@ -171,7 +182,7 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
         stats.print(osg::notify(osg::NOTICE));
     }
 
-    OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
+    OsgToGltf osg2gltf(textureType, comporession_type, comporessLevel);
 
 
     // GLTF uses a +X=right +y=up -z=forward coordinate system,but if using osg to process external data does not require this
@@ -199,9 +210,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     std::string ext = osgDB::getLowerCaseFileExtension(filename);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
     osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
-    nc_node.ref();
     osg::ref_ptr<osg::Node> copyNode = osg::clone(nc_node.asNode(), osg::CopyOp::DEEP_COPY_ALL);//(osg::Node*)(nc_node.clone(osg::CopyOp::DEEP_COPY_ALL));
-    nc_node.unref_nodelete();
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
 

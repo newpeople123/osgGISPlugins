@@ -14,8 +14,9 @@ public:
         supportsOption("textureMaxSize=<number>", "default is 4096.0");
         supportsOption("comporessLevel=<string>", "default is medium,value enum values:low、medium、high");
     }
-    const char* className() const { return "b3dm reader/writer"; }
-    virtual ReadResult readObject(const std::string& filename, const Options* options) const
+    const char* className() const override { return "b3dm reader/writer"; }
+
+    ReadResult readObject(const std::string& filename, const Options* options) const override
     {
         return readNode(filename, options);
     }
@@ -25,8 +26,8 @@ public:
         return writeNode(node, filename, options);
     }
 
-    virtual ReadResult readNode(const std::string& filename, const Options*) const;
-    virtual WriteResult writeNode(const osg::Node& node, const std::string& filename, const Options*) const;
-    tinygltf::Model convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options) const;
+    ReadResult readNode(const std::string& filename, const Options*) const override;
+    WriteResult writeNode(const osg::Node& node, const std::string& filename, const Options*) const override;
+    static tinygltf::Model convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options);
 };
 #endif // !READERWRITERB3DM_H
