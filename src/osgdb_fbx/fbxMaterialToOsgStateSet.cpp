@@ -514,6 +514,36 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			mat->roughnessFactor = 0.8;
 		}
 	}
+	else
+	{
+		FbxProperty diffuseProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse);
+		if (diffuseProperty.IsValid()) {
+			FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
+			FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
+			osg::ref_ptr<GltfPbrMetallicRoughnessMaterial> mat = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(pOsgMat.get());
+			if(diffuseFactorProperty.IsValid())
+			{
+				FbxDouble diffuseFactor = diffuseFactorProperty.Get<FbxDouble>();
+				osg::Vec4 color(
+					static_cast<float>(diffuseColor[0] * diffuseFactor),
+					static_cast<float>(diffuseColor[1] * diffuseFactor),
+					static_cast<float>(diffuseColor[2] * diffuseFactor),
+					static_cast<float>(1.0 * diffuseFactor));
+				pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, color);
+				mat->baseColorFactor = { color[0],color[1],color[2],color[3] };
+			}else
+			{
+				osg::Vec4 color(
+					static_cast<float>(diffuseColor[0]),
+					static_cast<float>(diffuseColor[1]),
+					static_cast<float>(diffuseColor[2]),
+					static_cast<float>(1.0));
+				pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, color);
+				mat->baseColorFactor = { color[0],color[1],color[2],color[3] };
+
+			}
+		}
+	}
 
 	if (_lightmapTextures)
 	{

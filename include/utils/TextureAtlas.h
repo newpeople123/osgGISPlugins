@@ -58,10 +58,9 @@ struct TextureAtlasNode
 	}
 	~TextureAtlasNode()
 	{
-		if(childNode1)
-			delete childNode1;
-		if (childNode2)
-			delete childNode2;
+		delete childNode1;
+
+		delete childNode2;
 	}
 };
 class TextureAtlas;
@@ -80,7 +79,7 @@ struct TextureAtlasOptions
 		this->packing = packing;
 		this->borderWidthInPixels = borderWidthInPixels;
 	}
-	TextureAtlasOptions() {}
+	TextureAtlasOptions() = default;
 };
 class TextureAtlas {
 public:
@@ -112,23 +111,25 @@ public:
 			}
 			int index = -1;
 			index = getIndex(this, image);
-			if (index != -1) {
-				imgNames.push_back(image->getFileName());
-			}
-			for (int i = 0; i < this->_textureCoordinates.size(); ++i) {
-				const UVRange uvRange = this->_textureCoordinates[i].uvRange;
-				std::string filename = imgNames.at(i);
-				auto item = imgUVRangeMap.find(filename);
-				if (item != imgUVRangeMap.end()) {
-					item->second.endU = uvRange.endU;
-					item->second.endV = uvRange.endV;
-					item->second.startU = uvRange.startU;
-					item->second.startV = uvRange.startV;
 
+			if (index != -1) {
+				imgNames.push_back(osgDB::convertStringFromUTF8toCurrentCodePage(image->getFileName()));
+				for (int i = 0; i < this->_textureCoordinates.size(); ++i) {
+					const UVRange uvRange = this->_textureCoordinates[i].uvRange;
+					std::string filename = imgNames.at(i);
+					auto item = imgUVRangeMap.find(filename);
+					if (item != imgUVRangeMap.end()) {
+						item->second.endU = uvRange.endU;
+						item->second.endV = uvRange.endV;
+						item->second.startU = uvRange.startU;
+						item->second.startV = uvRange.startV;
+
+					}
+					else {
+						imgUVRangeMap.insert(std::make_pair(filename, uvRange));
+					}
 				}
-				else {
-					imgUVRangeMap.insert(std::make_pair(filename, uvRange));
-				}
+				imgs.push_back(image);
 			}
 			return index;
 		}
@@ -175,6 +176,7 @@ public:
 	unsigned int _packing;
 	std::map<std::string, UVRange> imgUVRangeMap;
 	std::vector<std::string> imgNames;
+	std::vector<osg::ref_ptr<osg::Image>> imgs;
 };
 
 inline bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Image>& image) {

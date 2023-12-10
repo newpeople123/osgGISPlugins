@@ -44,7 +44,7 @@ public:
 		setTraversalMode(TRAVERSE_ALL_CHILDREN);
 		setNodeMaskOverride(~0);
 
-		_model.scenes.push_back(tinygltf::Scene());
+		_model.scenes.emplace_back();
 		tinygltf::Scene& scene = _model.scenes.back();
 		_model.defaultScene = 0;
 	}
@@ -72,13 +72,14 @@ private:
 			return false;
 		}
 
-		_ssStack.push_back(stateSet);
+		_ssStack.emplace_back(stateSet);
 		return true;
 	}
 	void popStateSet() {
 		_ssStack.pop_back();
 	}
-	unsigned getBytesInDataType(GLenum dataType)
+
+	static unsigned getBytesInDataType(GLenum dataType)
 	{
 		return
 			dataType == GL_BYTE || dataType == GL_UNSIGNED_BYTE ? 1 :
@@ -86,7 +87,8 @@ private:
 			dataType == GL_INT || dataType == GL_UNSIGNED_INT || dataType == GL_FLOAT ? 4 :
 			0;
 	}
-	unsigned getBytesPerElement(const osg::Array* data)
+
+	static unsigned getBytesPerElement(const osg::Array* data)
 	{
 		return data->getDataSize() * getBytesInDataType(data->getDataType());
 	}
@@ -103,7 +105,7 @@ private:
 		if (a != _buffers.end())
 			return a->second;
 
-		_model.buffers.push_back(tinygltf::Buffer());
+		_model.buffers.emplace_back();
 		tinygltf::Buffer& buffer = _model.buffers.back();
 		int id = _model.buffers.size() - 1;
 		_buffers[data] = id;
@@ -131,7 +133,7 @@ private:
 			else
 				bufferId = getOrCreateBuffer(data);
 
-			_model.bufferViews.push_back(tinygltf::BufferView());
+			_model.bufferViews.emplace_back();
 			tinygltf::BufferView& bv = _model.bufferViews.back();
 
 			int id = _model.bufferViews.size() - 1;
@@ -160,7 +162,7 @@ private:
 		if (bv == _bufferViews.end())
 			return -1;
 
-		_model.accessors.push_back(tinygltf::Accessor());
+		_model.accessors.emplace_back();
 		tinygltf::Accessor& accessor = _model.accessors.back();
 		int accessorId = _model.accessors.size() - 1;
 		prim.attributes[attr] = accessorId;
@@ -190,7 +192,7 @@ private:
 			osg::DrawElements* de = dynamic_cast<osg::DrawElements*>(pset);
 			if (de)
 			{
-				_model.accessors.push_back(tinygltf::Accessor());
+				_model.accessors.emplace_back();
 				tinygltf::Accessor& idxAccessor = _model.accessors.back();
 				prim.indices = _model.accessors.size() - 1;
 
@@ -273,7 +275,7 @@ private:
 				}
 				int index = setGltfMaterial();
 				if (index != -1) {
-					_textures.push_back(osgTexture);
+					_textures.emplace_back(osgTexture);
 					return index;
 				}
 			}
@@ -304,7 +306,7 @@ private:
 			popStateSet();
 		}
 
-		_model.nodes.push_back(tinygltf::Node());
+		_model.nodes.emplace_back();
 		tinygltf::Node& gnode = _model.nodes.back();
 		int id = _model.nodes.size() - 1;
 		const std::string nodeName = node.getName();
@@ -348,7 +350,7 @@ private:
 		{
 			apply(static_cast<osg::Node&>(drawable));
 
-			osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
+			const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 			bool pushedStateSet = false;
 			if (ss.valid())
 			{
@@ -357,7 +359,7 @@ private:
 
 			osg::Geometry* geom = drawable.asGeometry();
 
-			_model.meshes.push_back(tinygltf::Mesh());
+			_model.meshes.emplace_back();
 			tinygltf::Mesh& mesh = _model.meshes.back();
 			_model.nodes.back().mesh = _model.meshes.size() - 1;
 
@@ -389,7 +391,7 @@ private:
 			positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 			normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
 			texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
-			osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
+			const osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 			if (!texCoords.valid())
 			{
 				// See if we have 3d texture coordinates and convert them to vec2
@@ -426,7 +428,7 @@ private:
 				getOrCreateBufferView(normals, GL_ARRAY_BUFFER_ARB);
 			}
 
-			osg::ref_ptr<osg::Vec4Array> colors = dynamic_cast<osg::Vec4Array*>(geom->getColorArray());
+			const osg::ref_ptr<osg::Vec4Array> colors = dynamic_cast<osg::Vec4Array*>(geom->getColorArray());
 			if (colors.valid())
 			{
 				getOrCreateBufferView(colors, GL_ARRAY_BUFFER_ARB);
@@ -438,26 +440,24 @@ private:
 
 				osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(i);
 
-				mesh.primitives.push_back(tinygltf::Primitive());
+				mesh.primitives.emplace_back();
 				tinygltf::Primitive& primitive = mesh.primitives.back();
 
-				int currentMaterial = getCurrentMaterial();
+				const int currentMaterial = getCurrentMaterial();
 				if (currentMaterial >= 0)
 				{
 					// Cesium may crash if using texture without texCoords
 					// gltf_validator will report it as errors
 					// ThreeJS seems to be fine though
-					// TODO: check if the material actually has any texture in it
-					// TODO: the material should not be added if not used anywhere
-					if (texCoords.valid()) {
-						primitive.material = currentMaterial;
+					primitive.material = currentMaterial;
+					if(texCoords.valid())
 						getOrCreateBufferView(texCoords.get(), GL_ARRAY_BUFFER_ARB);
-					}
+					
 				}
 
 				primitive.mode = pset->getMode();
 				if (positions.valid()) {
-					int a = getOrCreateAccessor(positions, pset, primitive, "POSITION");
+					const int a = getOrCreateAccessor(positions, pset, primitive, "POSITION");
 					if (a > -1) {
 						// record min/max for position array (required):
 						tinygltf::Accessor& posacc = _model.accessors[a];

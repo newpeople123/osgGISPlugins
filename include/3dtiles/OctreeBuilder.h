@@ -7,13 +7,13 @@ class OctreeBuilder :public TreeBuilder
 {
 public:
 	OctreeBuilder(const osg::ref_ptr<osg::Node>& node) :TreeBuilder() {
-		const RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+		const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
 		const osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
 		rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
 		buildHlod(rootTreeNode);
 	}
 	OctreeBuilder(const osg::ref_ptr<osg::Node>& node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :TreeBuilder(maxTriangleNumber, maxTreeDepth-1, simpleRatio) {
-		const RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+		const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
 		const osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
 		rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
 		buildHlod(rootTreeNode);

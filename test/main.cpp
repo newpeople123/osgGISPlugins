@@ -493,9 +493,19 @@ int main() {
     //testOsgdb_webp();
     //testOsgdb_fbx();
  
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("E:\\Code\\2023\\Other\\data\\龙翔桥站厅.fbx");
-    TextureVisitor2 tv2;
-    node->accept(tv2);
+ //   osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("D:\\Data\\龙翔桥站厅.FBX");
+ //   osgViewer::Viewer viewer1;
+	//viewer1.setUpViewInWindow(100, 100, 800, 600); // (x, y, width, height)
+	//viewer1.setSceneData(node.get());
+	//viewer1.addEventHandler(new osgViewer::WindowSizeHandler);//全屏  快捷键f
+	//viewer1.addEventHandler(new osgViewer::StatsHandler);//查看帧数 s
+	//viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
+	//viewer1.run();
+ //   osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+ //   option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
+ //   osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\3dtiles\\1.gltf", option);
+ //   TextureVisitor2 tv2;
+ //   node->accept(tv2);
 
     //createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
     //createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
@@ -508,9 +518,12 @@ int main() {
     //std::cout << 2 << std::endl;
     //std::cout << 3 << std::endl;
 
-    //const std::string basePath = "E:\\Code\\2023\\Other\\data\\芜湖水厂总装.fbm\\";
-    //osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "440305A020GHJZA010.png");
-    //preview_img(img1);
+    const std::string basePath = "D:\\Data\\3\\DTD0709017.png";
+    osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile("fe2da2f2.jpg");
+    preview_img(img1);
+    img1->flipVertical();
+    preview_img(img1);
+
     //osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C:\\Users\\ecidi-cve\\Desktop\\1.jpg");
     //img->scaleImage(800, 600, 1);
     //osgDB::writeImageFile(*img.get(),"C:\\Users\\ecidi-cve\\Desktop\\2.jpg");

@@ -16,6 +16,67 @@
 #include <utils/CustomSimplify.h>
 #include <utils/UUID.h>
 #include <utils/GltfUtils.h>
+std::vector<std::string> filenames;
+double getFileSize(const std::string& filename) {
+	const std::string realFilename = osgDB::convertStringFromUTF8toCurrentCodePage(filename);
+	const auto it = std::find(filenames.begin(), filenames.end(), realFilename);
+
+	if (it != filenames.end()) {
+		return 0;
+	}
+	filenames.push_back(realFilename);
+	std::ifstream file(realFilename, std::ios::binary | std::ios::ate);
+	if (!file.is_open()) {
+		// 处理文件无法打开的情况
+		std::cerr << "Error opening file: " << realFilename << std::endl;
+		return -1;
+	}
+
+	const std::streampos fileSize = file.tellg(); // 获取当前位置，即文件大小
+	file.close();
+
+	const double fileSizeB = static_cast<double>(fileSize);
+	const double fileSizeKB = fileSizeB / 1024.0;
+	const double fileSizeMB = fileSizeKB / 1024.0;
+	return fileSizeMB;
+}
+class ComputeTextureSizeVisitor :public osg::NodeVisitor
+{
+public:
+	ComputeTextureSizeVisitor() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
+
+	}
+	void apply(osg::Node& node) override
+	{
+		osg::StateSet* ss = node.getStateSet();
+		if (ss) {
+			apply(*ss);
+		}
+		traverse(node);
+	}
+	void apply(osg::StateSet& stateset) {
+		for (unsigned int i = 0; i < stateset.getTextureAttributeList().size(); ++i)
+		{
+			osg::StateAttribute* sa = stateset.getTextureAttribute(i, osg::StateAttribute::TEXTURE);
+			osg::Texture* texture = dynamic_cast<osg::Texture*>(sa);
+			if (texture)
+			{
+				apply(*texture);
+			}
+		}
+	}
+	void apply(osg::Texture& texture) {
+		for (unsigned int i = 0; i < texture.getNumImages(); i++) {
+			osg::ref_ptr<osg::Image> img = texture.getImage(i);
+			//const unsigned int totalSize = img->getTotalDataSize();
+			//const float dataSizeMB = totalSize / 1024.0f / 1024.0f;
+			//size += dataSizeMB;
+			size += getFileSize(img->getFileName());
+		}
+	}
+	int size = 0;
+
+};
 class TileNode :public osg::Node
 {
 public:
@@ -40,6 +101,7 @@ public:
 		uuid = generateUUID();
 		refine = "REPLACE";
 	}
+	double size;
 };
 
 class TriangleNumberNodeVisitor :public osg::NodeVisitor
@@ -98,9 +160,9 @@ public:
 private:
 
 };
-class RebuildDataNodeVisitorResolve :public osg::NodeVisitor {
+class RebuildDataNodeVisitor :public osg::NodeVisitor {
 public:
-	RebuildDataNodeVisitorResolve() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+	RebuildDataNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
 	osg::ref_ptr<osg::Group> output = new osg::Group;
 	void apply(osg::Drawable& drawable) override
 	{
@@ -117,18 +179,92 @@ public:
 	};
 };
 
+class GroupByTextureVisitor:public osg::NodeVisitor
+{
+public:
+	GroupByTextureVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+	void apply(osg::Drawable& drawable) override {
+		const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+		const osg::ref_ptr<osg::StateSet> stateset = geom->getStateSet();
+		if(stateset.valid())
+		{
+			const unsigned int textureSize = stateset->getTextureAttributeList().size();
+			if (textureSize != 0) {
+				for (unsigned int i = 0; i < textureSize; ++i)
+				{
+					osg::StateAttribute* sa = stateset->getTextureAttribute(i, osg::StateAttribute::TEXTURE);
+					osg::Texture* texture = dynamic_cast<osg::Texture*>(sa);
+					if (texture)
+					{
+						const unsigned int numImages = texture->getNumImages();
+						if (numImages != 0) {
+							for (unsigned int j = 0; j < numImages; j++) {
+								const osg::ref_ptr<osg::Image> img = texture->getImage(j);
+								std::string filename = img->getFileName();
+								if (!filename.empty())
+									filename = osgDB::convertStringFromUTF8toCurrentCodePage(filename);
+								auto& item = textureGeometryMap.find(filename);
+								if (item != textureGeometryMap.end())
+								{
+									item->second->addChild(geom);
+								}
+								else
+								{
+									osg::ref_ptr<osg::Group> group = new osg::Group;
+									group->addChild(geom);
+									textureGeometryMap.insert(std::make_pair(filename, group));
+								}
+							}
+						}else
+						{
+							noTextureGeometry->addChild(geom);
+						}
+					}
+					else
+					{
+						noTextureGeometry->addChild(geom);
 
-class RebuildDataNodeVisitor {
+					}
+				}
+			}else
+			{
+				noTextureGeometry->addChild(geom);
+			}
+		}else
+		{
+			noTextureGeometry->addChild(geom);
+		}
+	}
+	void apply(osg::Group& group) override
+	{
+		traverse(group);
+	}
+	std::map<std::string, osg::ref_ptr<osg::Group>> textureGeometryMap;
+	osg::ref_ptr<osg::Group> noTextureGeometry = new osg::Group;
+};
+
+class RebuildDataNodeVisitorProxy {
 public:
 	osg::ref_ptr<osg::Group> output;
-	RebuildDataNodeVisitor(const osg::ref_ptr<osg::Node>& node)  {
+	RebuildDataNodeVisitorProxy(const osg::ref_ptr<osg::Node>& node)  {
 		GeometryNodeVisitor gnv;
 		node->accept(gnv);
 		TransformNodeVisitor tnv;
 		node->accept(tnv);
-		RebuildDataNodeVisitorResolve rdnvr;
+		RebuildDataNodeVisitor rdnvr;
 		node->accept(rdnvr);
 		output = rdnvr.output;
+		//GroupByTextureVisitor gbtv;
+		//node->accept(gbtv);
+		//output = new osg::Group;
+		//for (auto& item:gbtv.textureGeometryMap)
+		//{
+		//	output->addChild(item.second);
+		//}
+		//for(int i=0;i<gbtv.noTextureGeometry->getNumChildren();++i)
+		//{
+		//	output->addChild(gbtv.noTextureGeometry->getChild((i)));
+		//}
 	};
 
 };
@@ -153,13 +289,12 @@ public:
 	}
 	TreeBuilder(const osg::ref_ptr<osg::Group>& node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :_maxTriangleNumber(maxTriangleNumber), _maxTreeDepth(maxTreeDepth), _maxLevel(0), _simpleRatio(simpleRatio) {
 	}
-	~TreeBuilder() override {}
+	~TreeBuilder() override = default;
 	Object* cloneType() const override { return new TreeBuilder(); }
 	Object* clone(const osg::CopyOp& copyop) const override { return new TreeBuilder(*this, copyop); }
 	const char* libraryName() const override { return "osgGisPluginsTools"; }
 	const char* className() const override { return "model23dtiles"; }
 protected:
-	//todo:create quadtree or octree
 	//virtual osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int parentX = 0, int parentY = 0, int parentZ = 0, osg::ref_ptr<TileNode> parent = nullptr, int depth = 0);
 	static void convertTreeNode2Levels(const osg::ref_ptr<TileNode>& rootTreeNode, std::vector<std::vector<osg::ref_ptr<TileNode>>>& levels) {
 		std::queue<osg::ref_ptr<TileNode>> q;
@@ -196,36 +331,39 @@ protected:
 			}
 			};
 		std::vector<std::future<void>> futures;
-		for (int i = levels.size() - 1; i > -1; --i) {
-			std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
-			for (const osg::ref_ptr<TileNode>& treeNode : level) {
-				if (treeNode->currentNodes->getNumChildren() == 0) {
-					int childrenCount = 0;
-					for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
-						const osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
-						//const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
-						if (childNode->currentNodes != nullptr) {
-							const osg::BoundingBox childBoundingBox = getBoundingBox(childNode->currentNodes);
+		//for (int i = levels.size() - 1; i > -1; --i) {
+		//	std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+		//	for (const osg::ref_ptr<TileNode>& treeNode : level) {
+		//		if (treeNode->currentNodes->getNumChildren() == 0) {
+		//			int childrenCount = 0;
+		//			for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
+		//				const osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
+		//				//const osg::BoundingSphere& childBoudingSphere = childNode->currentNodes->getBound();
+		//				if (childNode->currentNodes != nullptr) {
+		//					const osg::BoundingBox childBoundingBox = getBoundingBox(childNode->currentNodes);
 
-							for (unsigned int l = 0; l < childNode->currentNodes->getNumChildren(); ++l) {
-								childrenCount++;
-								osg::ref_ptr<osg::Node> childNodeCurrentNode = childNode->currentNodes->getChild(l);
-								const osg::BoundingBox grandChildBoundingBox = getBoundingBox(childNodeCurrentNode);
-								if (childNodeCurrentNode.valid()) {
-									if ((grandChildBoundingBox._max - grandChildBoundingBox._min).length() * 10 >= (childBoundingBox._max - childBoundingBox._min).length()) {
-										osg::ref_ptr<osg::Node> node = osg::clone(childNodeCurrentNode.get(), osg::CopyOp::DEEP_COPY_ALL);
-										treeNode->currentNodes->addChild(node);
-									}
-								}
-							}
-						}
-					}
-					if (treeNode->currentNodes->getNumChildren() == childrenCount && childrenCount!=0) {
-						treeNode->currentNodes = nullptr;
-					}
-				}
-			}
-		}
+		//					for (unsigned int l = 0; l < childNode->currentNodes->getNumChildren(); ++l) {
+		//						childrenCount++;
+		//						osg::ref_ptr<osg::Node> childNodeCurrentNode = childNode->currentNodes->getChild(l);
+		//						const osg::BoundingBox grandChildBoundingBox = getBoundingBox(childNodeCurrentNode);
+		//						if (childNodeCurrentNode.valid()) {
+		//							if ((grandChildBoundingBox._max - grandChildBoundingBox._min).length() * 10 >= (childBoundingBox._max - childBoundingBox._min).length()) {
+		//								osg::ref_ptr<osg::Node> node = osg::clone(childNodeCurrentNode.get(), osg::CopyOp::DEEP_COPY_ALL);
+		//								treeNode->currentNodes->addChild(node);
+		//							}
+		//						}
+		//					}
+		//					ComputeTextureSizeVisitor ctsv;
+		//					treeNode->currentNodes->accept(ctsv);
+		//					treeNode->size = ctsv.size;
+		//				}
+		//			}
+		//			if (treeNode->currentNodes->getNumChildren() == childrenCount && childrenCount!=0) {
+		//				treeNode->currentNodes = nullptr;
+		//			}
+		//		}
+		//	}
+		//}
 
 		//for (int i = levels.size() - 1; i > -1; --i) {
 		//	futures.push_back(std::async(std::launch::async, func, i));

@@ -35,22 +35,22 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "", output = "";
+    std::string input = "D:\\Data\\龙翔桥站厅.FBX", output = "D:\\nginx-1.24.0\\html\\3dtiles\\test8";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
-    if (input == "") {
+    if (input.empty()) {
         std::cout << "input file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
 
-    if (output == "") {
+    if (output.empty()) {
         std::cout << "output file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
-    input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+    //input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     if (node.valid()) {
 

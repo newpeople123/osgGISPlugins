@@ -7,13 +7,13 @@ class QuadTreeBuilder:public TreeBuilder
 {
 public:
     QuadTreeBuilder(const osg::ref_ptr<osg::Node>& node) :TreeBuilder() {
-	    const RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+	    const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
 	    const osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
         rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
         buildHlod(rootTreeNode);
     }
     QuadTreeBuilder(const osg::ref_ptr<osg::Node>& node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const double simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth-1,simpleRatio) {
-	    const RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
+	    const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
 	    const osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
         rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
         buildHlod(rootTreeNode);
@@ -56,11 +56,15 @@ protected:
             if (triangleNumber == 0) {
                 return nullptr;
             }
+
+            ComputeTextureSizeVisitor ctsv;
+            childData->accept(ctsv);
             bool isLeafNode = false;
-            if (triangleNumber <= _maxTriangleNumber || depth >= _maxTreeDepth)
-            {
-                isLeafNode = true;
-            }
+            const unsigned int num = childData->getNumChildren();
+            if ((triangleNumber <= _maxTriangleNumber && ctsv.size <= 20) || depth >= _maxTreeDepth || num == 1)
+			{
+				isLeafNode = true;
+			}
 
 
             osg::ref_ptr<TileNode> root = new TileNode;
@@ -111,10 +115,10 @@ protected:
                 for (unsigned int i = 0; i < childData->getNumChildren(); ++i)
                 {
                     const osg::ref_ptr<osg::Node>& obj = childData->getChild(i);
-
                     root->nodes->addChild(obj);
                     root->currentNodes->addChild(obj);
                 }
+                root->size = ctsv.size;
             }
 
             return root;

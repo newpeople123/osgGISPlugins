@@ -24,6 +24,9 @@
 #include <ktx/ktx.h>
 #include <meshoptimizer.h>
 #include <osg/MatrixTransform>
+
+#include "osgViewer/Viewer"
+
 //#include <utils/TextureAtlas.h>
 class GeometryNodeVisitor :public osg::NodeVisitor {
 public:
@@ -32,6 +35,11 @@ public:
 	}
 
 	void apply(osg::Drawable& drawable) override {
+		const osg::ref_ptr<osg::Vec4Array> colors = dynamic_cast<osg::Vec4Array*>(drawable.asGeometry()->getColorArray());
+		if(colors.valid())
+		{
+			std::cout << "\n";
+		}
 		const osg::MatrixList matrix_list = drawable.getWorldMatrices();
 		osg::Matrixd mat;
 		for (const osg::Matrixd& matrix : matrix_list) {
@@ -286,8 +294,8 @@ private:
 				static_cast<const uint32_t*>(data_ptr) + accessor.count * numComponents);
 			break;
 		case TINYGLTF_COMPONENT_TYPE_FLOAT:
-			values.assign(reinterpret_cast<const float*>(data_ptr),
-				reinterpret_cast<const float*>(data_ptr) + accessor.count * numComponents);
+			values.assign(static_cast<const float*>(data_ptr),
+				static_cast<const float*>(data_ptr) + accessor.count * numComponents);
 			break;
 		default:
 			std::cerr << "Unknown component type." << '\n';
@@ -838,6 +846,46 @@ private:
 		}
 		return false;
 	}
+
+	void preview_img(osg::ref_ptr<osg::Image>& image) {
+		//osg::ref_ptr<osg::Image> image = osgDB::readImageFile("E://Code//2022//GIS//C++//anqing-data//output//FAC_jianchajing01.jpg");
+
+		if (image) {
+			unsigned char bu1 = image->data()[0];
+			//unsigned char bu2 = image->data()[1];
+			//unsigned char bu3 = image->data()[2];
+			//unsigned char bu4 = image->data()[1222];
+			//unsigned char bu5 = image->data()[14222];
+			osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry;
+			osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+			vertices->push_back(osg::Vec3(-1.0f, -1.0f, 0.0f));
+			vertices->push_back(osg::Vec3(1.0f, -1.0f, 0.0f));
+			vertices->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
+			vertices->push_back(osg::Vec3(-1.0f, 1.0f, 0.0f));
+			geometry->setVertexArray(vertices);
+			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array;
+			texcoords->push_back(osg::Vec2(0.0f, 0.0f));
+			texcoords->push_back(osg::Vec2(1.0f, 0.0f));
+			texcoords->push_back(osg::Vec2(1.0f, 1.0f));
+			texcoords->push_back(osg::Vec2(0.0f, 1.0f));
+			geometry->setTexCoordArray(0, texcoords);
+			geometry->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
+			osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image);
+			osg::ref_ptr<osg::StateSet> stateset = geometry->getOrCreateStateSet();
+			stateset->setTextureAttributeAndModes(0, texture);
+			osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+			geode->addDrawable(geometry);
+			osg::ref_ptr<osg::Group> root = new osg::Group;
+			root->addChild(geode);
+			osgViewer::Viewer viewer;
+			viewer.setSceneData(root);
+			viewer.run();
+		}
+		else {
+			std::cerr << "Error:image is null!" << std::endl;
+		}
+		//image.release();
+	}
 	int getOrCreateGltfTexture(osg::Texture* osgTexture, const TextureType& type) {
 		if (osgTexture == nullptr) {
 			return -1;
@@ -882,14 +930,13 @@ private:
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
 		//need to forbid filpVertical when use texture atlas 
 		//if (type == TextureType::KTX2 || type == TextureType::KTX) {
-		//	flipped->flipVertical();
 		//}
 		textureOptimizeSize(flipped);
 
 		std::string filename;
 		std::string ext = "png";
 		std::string ktxVersion = "2.0";
-		std::string mimeType = "";
+		std::string mimeType;
 		switch (type)
 		{
 		case TextureType::KTX:
@@ -919,18 +966,26 @@ private:
 		// If the image has a filename try to hash it so we only write out one copy of it.  
 		if (!osgImage->getFileName().empty())
 		{
-			std::string data(reinterpret_cast<char const*>(osgImage->data()));
-			filename = Stringify() << std::hex << hashString(data); 
-			const GLenum pixelFormat = osgImage->getPixelFormat();
+
+			std::string data(reinterpret_cast<char const*>(flipped->data()));
+			filename = Stringify() << std::hex << hashString(data);
+			filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->r());
+			const GLenum pixelFormat = flipped->getPixelFormat();
 			if (ext=="jpg"&&pixelFormat != GL_ALPHA && pixelFormat != GL_RGB) {
-				filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + ".png";
+				filename += ".png";
 			}
 			else {
-				filename += "-" + std::to_string(osgImage->s()) + "-" + std::to_string(osgImage->t()) + "." + ext;
+				filename += "." + ext;
 			}
-			std::ifstream fileExists(filename);
+			std::ifstream fileExists("./"+filename);
 			if ((!fileExists.good())|| (fileExists.peek() == std::ifstream::traits_type::eof()))
 			{
+				if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
+					flipped->flipVertical();
+				if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
+				{
+					flipped->setOrigin(osg::Image::TOP_LEFT);
+				}
 				if (type == TextureType::KTX) {
 					osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
 					option->setOptionString("Version=" + ktxVersion);
