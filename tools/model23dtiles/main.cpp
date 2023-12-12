@@ -35,7 +35,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "D:\\Data\\龙翔桥站厅.FBX", output = "D:\\nginx-1.24.0\\html\\3dtiles\\test8";
+    std::string input = R"(E:\Code\2023\Other\data\龙翔桥站厅.FBX)", output = "D:\\nginx-1.22.1\\html\\3dtiles\\test2";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 

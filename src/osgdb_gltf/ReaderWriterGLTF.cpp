@@ -99,7 +99,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     //transform->addChild(&nc_node);;
     //transform->accept(osg2gltf);
     //transform->removeChild(&nc_node);
-    TextureOptimizer* to = new TextureOptimizer(copyNode, textureType,2048);
+    TextureOptimizerProxy* to = new TextureOptimizerProxy(copyNode, textureType,2048);
     delete to;
     GeometryNodeVisitor gnv;
     copyNode->accept(gnv);

@@ -847,45 +847,6 @@ private:
 		return false;
 	}
 
-	void preview_img(osg::ref_ptr<osg::Image>& image) {
-		//osg::ref_ptr<osg::Image> image = osgDB::readImageFile("E://Code//2022//GIS//C++//anqing-data//output//FAC_jianchajing01.jpg");
-
-		if (image) {
-			unsigned char bu1 = image->data()[0];
-			//unsigned char bu2 = image->data()[1];
-			//unsigned char bu3 = image->data()[2];
-			//unsigned char bu4 = image->data()[1222];
-			//unsigned char bu5 = image->data()[14222];
-			osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry;
-			osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
-			vertices->push_back(osg::Vec3(-1.0f, -1.0f, 0.0f));
-			vertices->push_back(osg::Vec3(1.0f, -1.0f, 0.0f));
-			vertices->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
-			vertices->push_back(osg::Vec3(-1.0f, 1.0f, 0.0f));
-			geometry->setVertexArray(vertices);
-			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array;
-			texcoords->push_back(osg::Vec2(0.0f, 0.0f));
-			texcoords->push_back(osg::Vec2(1.0f, 0.0f));
-			texcoords->push_back(osg::Vec2(1.0f, 1.0f));
-			texcoords->push_back(osg::Vec2(0.0f, 1.0f));
-			geometry->setTexCoordArray(0, texcoords);
-			geometry->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
-			osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image);
-			osg::ref_ptr<osg::StateSet> stateset = geometry->getOrCreateStateSet();
-			stateset->setTextureAttributeAndModes(0, texture);
-			osg::ref_ptr<osg::Geode> geode = new osg::Geode;
-			geode->addDrawable(geometry);
-			osg::ref_ptr<osg::Group> root = new osg::Group;
-			root->addChild(geode);
-			osgViewer::Viewer viewer;
-			viewer.setSceneData(root);
-			viewer.run();
-		}
-		else {
-			std::cerr << "Error:image is null!" << std::endl;
-		}
-		//image.release();
-	}
 	int getOrCreateGltfTexture(osg::Texture* osgTexture, const TextureType& type) {
 		if (osgTexture == nullptr) {
 			return -1;
@@ -969,7 +930,7 @@ private:
 
 			std::string data(reinterpret_cast<char const*>(flipped->data()));
 			filename = Stringify() << std::hex << hashString(data);
-			filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->r());
+			filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->t());
 			const GLenum pixelFormat = flipped->getPixelFormat();
 			if (ext=="jpg"&&pixelFormat != GL_ALPHA && pixelFormat != GL_RGB) {
 				filename += ".png";

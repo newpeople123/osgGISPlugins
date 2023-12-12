@@ -372,7 +372,7 @@ void testTextureAtlas() {
     node = nullptr;
     osg::Node* node1 = node.get();
     node1 = NULL;
-    TextureOptimizer* to = new TextureOptimizer(node, JPG,4096);
+    TextureOptimizerProxy* to = new TextureOptimizerProxy(node, JPG,4096);
     delete to;
     //osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
     //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");

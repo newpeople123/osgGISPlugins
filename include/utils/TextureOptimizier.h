@@ -1,10 +1,9 @@
 #ifndef OSG_GIS_PLUGINS_TEXTURE_OPTIMIZIER_H
 #define OSG_GIS_PLUGINS_TEXTURE_OPTIMIZIER_H 1
+#include <future>
 #include <osg/NodeVisitor>
 #include <osg/Texture>
 #include <utils/TextureAtlas.h>
-#include <future>
-#include <osgViewer/Viewer>
 struct ImageSortKey
 {
 	GLenum pixelFormat;
@@ -61,6 +60,9 @@ public:
 		}
 	}
 	void apply(osg::Texture& texture) {
+		const osg::Texture::WrapMode wrapS = texture.getWrap(osg::Texture::WRAP_S);
+		const osg::Texture::WrapMode wrapT = texture.getWrap(osg::Texture::WRAP_T);
+
 		for (unsigned int i = 0; i < texture.getNumImages(); i++) {
 			osg::ref_ptr<osg::Image> img = texture.getImage(i);
 			bool isAddToImgs = true;
@@ -171,10 +173,10 @@ private:
 
 };
 
-class TextureOptimizerResolve :public osg::NodeVisitor {
+class TextureOptimizer :public osg::NodeVisitor {
 	std::vector<TextureAtlas*> textureAtlases;
 public:
-	explicit TextureOptimizerResolve(const std::vector<TextureAtlas*>& textureAtlases) :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
+	explicit TextureOptimizer(const std::vector<TextureAtlas*>& textureAtlases) :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
 		this->textureAtlases = textureAtlases;
 	}
 	void apply(osg::Drawable& geom) override
@@ -197,9 +199,17 @@ public:
 						{
 							const double u = q.x();
 							const double v = q.y();
-							if (u > 1.0 || u < -1.0 || v>1.0 || v < -1.0) {
+							if (u > 1.0 || v>1.0 ) {
 								isRepeat = true;
 								break;
+							}
+							if(u<0.0||v<0.0){
+								double tolerance = 0.00001;
+								if(abs(u)> tolerance ||abs(v)> tolerance)
+								{
+									isRepeat = true;
+									break;
+								}
 							}
 						}
 						if(!isRepeat) {
@@ -211,20 +221,19 @@ public:
 									const osg::ref_ptr<osg::Image>& newImg = textureAtlas->texture();
 									texture->setImage(j, newImg);
 
-
 									for (auto& q : *texCoords)
 									{
 										osg::Vec2 coord = q;
-										const double oldU = coord.x();
-										const double oldV = coord.y();
-										double newU = uvRangle.startU + (uvRangle.endU - uvRangle.startU) * oldU;
-										double newV = uvRangle.startV + (uvRangle.endV - uvRangle.startV) * oldV;
-										if (oldU < 0) {
-											newU = -newU;
-										}
-										if (oldV < 0) {
-											newV = -newV;
-										}
+										const double oldU = abs(coord.x());
+										const double oldV = abs(coord.y());
+										const double newU = uvRangle.startU + (uvRangle.endU - uvRangle.startU) * oldU;
+										const double newV = uvRangle.startV + (uvRangle.endV - uvRangle.startV) * oldV;
+										//if (oldU < 0) {
+										//	newU = -(uvRangle.startU - (uvRangle.endU - uvRangle.startU) * oldU);
+										//}
+										//if (oldV < 0) {
+										//	newV = -(uvRangle.startV - (uvRangle.endV - uvRangle.startV) * oldV);
+										//}
 										const osg::Vec2 newCoord(newU, newV);
 										q = newCoord;
 									}
@@ -239,18 +248,18 @@ public:
 		}
 	}
 };
-class TextureOptimizer {
+class TextureOptimizerProxy {
 public:
-	TextureOptimizer(const TextureOptimizer& other)
+	TextureOptimizerProxy(const TextureOptimizerProxy& other)
 		: tv(new TextureVisitor(*(other.tv))), textureAtlases(copyTextureAtlases(other.textureAtlases)) {
 	}
-	TextureOptimizer(const osg::ref_ptr<osg::Node>& node, TextureType textureType,double textureMaxSize) {
+	TextureOptimizerProxy(const osg::ref_ptr<osg::Node>& node, TextureType textureType,double textureMaxSize) {
 		this->textureMaxSize = textureMaxSize;
 		tv = new TextureVisitor;
 		node->accept(*tv);
 		tv->groupImages();
 		buildTextureAtlas();
-		TextureOptimizerResolve tos(textureAtlases);
+		TextureOptimizer tos(textureAtlases);
 		node->accept(tos);
 		auto exportImage = [textureType](const osg::ref_ptr<osg::Image>& img) {
 			//filename += "-" + std::to_string(img->s()) + "-" + std::to_string(img->t());
@@ -263,7 +272,7 @@ public:
 
 			std::string data(reinterpret_cast<char const*>(img->data()));
 			std::string filename = Stringify() << std::hex << hashString(data);
-			filename += "-w" + std::to_string(img->s()) + "-h" + std::to_string(img->r());
+			filename += "-w" + std::to_string(img->s()) + "-h" + std::to_string(img->t());
 			img->setFileName(filename);
 			if (textureType == PNG) {
 				std::ifstream fileExists(filename + ".png");
@@ -375,7 +384,7 @@ public:
 		for (auto& item : tv->ism) {
 			while (!item.second.empty())
 			{
-				TextureAtlas* ta = new TextureAtlas(TextureAtlasOptions(osg::Vec2(1024, 1024), osg::Vec2(textureMaxSize, textureMaxSize), item.first.pixelFormat, item.first.packing));
+				TextureAtlas* ta = new TextureAtlas(TextureAtlasOptions(osg::Vec2(4096.0, 4096.0), osg::Vec2(textureMaxSize, textureMaxSize), item.first.pixelFormat, item.first.packing));
 				for (int i = 0; i < item.second.size(); ++i) {
 					osg::ref_ptr<osg::Image>& img = item.second.at(i);
 					const int index = ta->addImage(img);
@@ -393,13 +402,13 @@ public:
 	double textureMaxSize;
 	TextureVisitor* tv;
 	std::vector<TextureAtlas*> textureAtlases;
-	~TextureOptimizer() {
+	~TextureOptimizerProxy() {
 		delete tv;
 		for (const auto& textureAtlas : textureAtlases) {
 			delete textureAtlas;
 		}
 	}
-	TextureOptimizer& operator=(const TextureOptimizer& other) {
+	TextureOptimizerProxy& operator=(const TextureOptimizerProxy& other) {
 		if (this != &other) {
 			delete tv;
 			for (const auto& textureAtlas : textureAtlases) {
