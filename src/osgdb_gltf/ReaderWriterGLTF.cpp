@@ -1,6 +1,7 @@
 #include <osgdb_gltf/ReaderWriterGLTF.h>
 #include <osg/MatrixTransform>
 #include <utils/TextureOptimizier.h>
+#include <osgDB/FileNameUtils>
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const {
 

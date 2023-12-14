@@ -229,7 +229,7 @@ osg::ref_ptr<osg::Node> tesslatorGeometry()
 void testOsgdb_fbx() {
     clock_t start, end;
     start = clock();
-    string filename = "D:\\Data\\芜湖水厂总装1.fbx";
+    string filename = R"(E:\Code\2023\Other\data\芜湖水厂总装1.fbx)";
     osg::setNotifyLevel(osg::ALWAYS);
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
     //TraverseMaterials(node);
@@ -247,7 +247,7 @@ void testOsgdb_fbx() {
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-draco.gltf", option);
     
     option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none");
-    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\1.gltf", option);
+    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\1.b3dm", option);
 
     //osgUtil::SmoothingVisitor smoothVisitor;
     //node->accept(smoothVisitor);
@@ -518,12 +518,7 @@ int main() {
     //std::cout << 2 << std::endl;
     //std::cout << 3 << std::endl;
 
-    const std::string basePath = "D:\\Data\\3\\DTD0709017.png";
-    osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile("fe2da2f2.jpg");
-    preview_img(img1);
-    img1->flipVertical();
-    preview_img(img1);
-
+    testOsgdb_fbx();
     //osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C:\\Users\\ecidi-cve\\Desktop\\1.jpg");
     //img->scaleImage(800, 600, 1);
     //osgDB::writeImageFile(*img.get(),"C:\\Users\\ecidi-cve\\Desktop\\2.jpg");

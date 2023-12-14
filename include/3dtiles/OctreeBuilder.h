@@ -6,17 +6,17 @@
 class OctreeBuilder :public TreeBuilder
 {
 public:
-	OctreeBuilder(const osg::ref_ptr<osg::Node>& node) :TreeBuilder() {
+	OctreeBuilder(const osg::ref_ptr<osg::Node>& node) {
 		const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
-		const osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+		const osg::BoundingBox totalBoundingBox = GetBoundingBox(rdnv->output);
 		rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
-		buildHlod(rootTreeNode);
+		//buildHlod(rootTreeNode);
 	}
-	OctreeBuilder(const osg::ref_ptr<osg::Node>& node, const unsigned int maxTriangleNumber, const int maxTreeDepth, const double simpleRatio) :TreeBuilder(maxTriangleNumber, maxTreeDepth-1, simpleRatio) {
+	OctreeBuilder(const osg::ref_ptr<osg::Node>& node, const unsigned int maxTriangleNumber, const int maxTreeDepth) :TreeBuilder(maxTriangleNumber, maxTreeDepth-1) {
 		const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
-		const osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+		const osg::BoundingBox totalBoundingBox = GetBoundingBox(rdnv->output);
 		rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
-		buildHlod(rootTreeNode);
+		//buildHlod(rootTreeNode);
 
 	}
 	~OctreeBuilder() override;
@@ -36,7 +36,7 @@ protected:
 			{
 				const osg::ref_ptr<osg::Node>& obj = inputRoot->getChild(i);
 				osg::MatrixList matrixList = obj->getWorldMatrices();
-				osg::BoundingBox childBox = getBoundingBox(obj);
+				osg::BoundingBox childBox = GetBoundingBox(obj);
 				if (total.contains(childBox._min) && total.contains(childBox._max))
 					childData->addChild(obj);
 				else if (total.intersects(childBox))

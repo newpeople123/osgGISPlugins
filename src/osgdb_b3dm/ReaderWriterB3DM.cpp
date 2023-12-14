@@ -89,7 +89,48 @@ template<class T>
 void put_val(std::string& buf, T val) {
     buf.append((unsigned char*)&val, (unsigned char*)&val + sizeof(T));
 }
+class ForcedReleaseTextureVisitor :public osg::NodeVisitor
+{
+public:
+    ForcedReleaseTextureVisitor() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
 
+    }
+    void apply(osg::Node& node) override
+    {
+        osg::StateSet* ss = node.getStateSet();
+        if (ss) {
+            apply(*ss);
+        }
+        traverse(node);
+    }
+    void apply(osg::StateSet& stateset) {
+        for (unsigned int i = 0; i < stateset.getTextureAttributeList().size(); ++i)
+        {
+            osg::StateAttribute* sa = stateset.getTextureAttribute(i, osg::StateAttribute::TEXTURE);
+            osg::Texture* texture = dynamic_cast<osg::Texture*>(sa);
+            if (texture)
+            {
+                apply(*texture);
+            }
+        }
+    }
+    void apply(osg::Texture& texture) {
+        const osg::Texture::WrapMode wrapS = texture.getWrap(osg::Texture::WRAP_S);
+        const osg::Texture::WrapMode wrapT = texture.getWrap(osg::Texture::WRAP_T);
+
+        for (unsigned int i = 0; i < texture.getNumImages(); i++) {
+            osg::ref_ptr<osg::Image> img = texture.getImage(i);
+            if(img.valid())
+            {
+                img = nullptr;
+            }
+        }
+    }
+    ~ForcedReleaseTextureVisitor() override
+    {
+    }
+
+};
 tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options)
 {
 
@@ -100,9 +141,9 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
     int comporessLevel = 1;
     if (options)
     {
-	    std::string compressionTypeStr;
-	    std::string textureTypeStr;
-	    std::istringstream iss(options->getOptionString());
+        std::string compressionTypeStr;
+        std::string textureTypeStr;
+        std::istringstream iss(options->getOptionString());
         std::string opt;
         while (iss >> opt)
         {
@@ -164,8 +205,10 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
     }
 
     //1
-    TextureOptimizerProxy* to = new TextureOptimizerProxy(node, textureType,textureMaxSize);
-    delete to;
+    {
+        TextureOptimizerProxy* to = new TextureOptimizerProxy(node, textureType, textureMaxSize);
+        delete to;
+    }
     //2
     GeometryNodeVisitor gnv;
     node->accept(gnv);
@@ -181,21 +224,21 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
         OSG_NOTICE << std::endl << "Stats after:" << std::endl;
         stats.print(osg::notify(osg::NOTICE));
     }
+    tinygltf::Model gltfModel;
+    {
+        OsgToGltf osg2gltf(textureType, comporession_type, comporessLevel);
 
-    OsgToGltf osg2gltf(textureType, comporession_type, comporessLevel);
 
+        // GLTF uses a +X=right +y=up -z=forward coordinate system,but if using osg to process external data does not require this
+        //osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
+        //transform->setMatrix(osg::Matrixd::rotate(osg::Vec3d(0.0, 0.0, 1.0), osg::Vec3d(0.0, 1.0, 0.0)));
+        //transform->addChild(&nc_node);;
+        //transform->accept(osg2gltf);
+        //transform->removeChild(&nc_node);
 
-    // GLTF uses a +X=right +y=up -z=forward coordinate system,but if using osg to process external data does not require this
-    //osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
-    //transform->setMatrix(osg::Matrixd::rotate(osg::Vec3d(0.0, 0.0, 1.0), osg::Vec3d(0.0, 1.0, 0.0)));
-    //transform->addChild(&nc_node);;
-    //transform->accept(osg2gltf);
-    //transform->removeChild(&nc_node);
-
-    node->accept(osg2gltf);//if using osg to process external data
-    tinygltf::Model gltfModel = osg2gltf.getGltf();
-    tinygltf::TinyGLTF writer;
-
+        node->accept(osg2gltf);//if using osg to process external data
+        gltfModel = osg2gltf.getGltf();
+    }
     return gltfModel;
 }
 osgDB::ReaderWriter::ReadResult ReaderWriterB3DM::readNode(const std::string& filenameInit,
@@ -208,27 +251,40 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     const std::string& filename,
     const Options* options) const {
     std::string ext = osgDB::getLowerCaseFileExtension(filename);
-    if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
+    if (!acceptsExtension(ext)) 
+        return WriteResult::FILE_NOT_HANDLED;
     osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
     osg::ref_ptr<osg::Node> copyNode = osg::clone(nc_node.asNode(), osg::CopyOp::DEEP_COPY_ALL);//(osg::Node*)(nc_node.clone(osg::CopyOp::DEEP_COPY_ALL));
     BatchIdVisitor batchidVisitor;
     copyNode->accept(batchidVisitor);
-
-    tinygltf::Model& gltfModel = convertOsg2Gltf(copyNode, options);
-    copyNode.release();
-    tinygltf::TinyGLTF writer;
+    osg::Vec3 center = copyNode->getBound().center();
     std::ostringstream gltfBuf;
-    writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, true, true);
+    {
+        osg::ref_ptr<osg::MatrixTransform> translateTransform = new osg::MatrixTransform;
+        translateTransform->setMatrix(osg::Matrix::translate(-center));
+        translateTransform->addChild(copyNode);
+        tinygltf::Model gltfModel = convertOsg2Gltf(translateTransform, options);// , osgDB::getStrippedName(filename));
+        ForcedReleaseTextureVisitor frtv;
+        copyNode->accept(frtv);
+        copyNode = nullptr;
+        translateTransform = nullptr;
+        tinygltf::TinyGLTF writer;
+        writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, true, true);
+    }
 
     std::string glb_buf = gltfBuf.str();
     int gltfDataPadding = 4 - (glb_buf.length() % 4);
     if (gltfDataPadding == 4) gltfDataPadding = 0;
-
+    center = center * osg::Matrixd::rotate(osg::PI_2, osg::Vec3(1, 0, 0));
     std::string b3dm_buf;
     const unsigned int batchIdCount = batchidVisitor.getBatchId();
     std::string feature_json_string;
     feature_json_string += "{\"BATCH_LENGTH\":";
     feature_json_string += std::to_string(batchIdCount);
+    feature_json_string += ",\"RTC_CENTER\":[";
+    feature_json_string += std::to_string(center.x()) + ",";
+    feature_json_string += std::to_string(center.y()) + ",";
+    feature_json_string += std::to_string(center.z()) + "]";
     feature_json_string += "}";
     while ((feature_json_string.size() + 28) % 8 != 0) {
         feature_json_string.push_back(' ');
@@ -359,7 +415,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
         output->write("\0\0\0", gltfDataPadding);
         output->write("\0\0\0", padding);
         fout.close();
-        //nc_node.unref_nodelete();
         return WriteResult::FILE_SAVED;
     }
     return WriteResult::ERROR_IN_WRITING_FILE;

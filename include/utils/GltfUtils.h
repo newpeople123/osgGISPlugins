@@ -10,7 +10,6 @@
 #include <draco/compression/expert_encode.h>
 #include <draco/compression/mesh/mesh_encoder.h>
 #include <draco/compression/mesh/mesh_edgebreaker_encoder.h>
-#include <draco/compression/mesh/mesh_sequential_encoder.h>
 #include <unordered_set>
 #include <osg/Material>
 #include <utils/GltfPbrMetallicRoughnessMaterial.h>
@@ -20,14 +19,9 @@
 #include <osgDB/WriteFile>
 #include <osgDB/ReadFile>
 #include <osgDB/ConvertUTF>
-#include <osgDB/FileNameUtils>
-#include <ktx/ktx.h>
 #include <meshoptimizer.h>
 #include <osg/MatrixTransform>
 
-#include "osgViewer/Viewer"
-
-//#include <utils/TextureAtlas.h>
 class GeometryNodeVisitor :public osg::NodeVisitor {
 public:
 	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
@@ -36,17 +30,13 @@ public:
 
 	void apply(osg::Drawable& drawable) override {
 		const osg::ref_ptr<osg::Vec4Array> colors = dynamic_cast<osg::Vec4Array*>(drawable.asGeometry()->getColorArray());
-		if(colors.valid())
-		{
-			std::cout << "\n";
-		}
 		const osg::MatrixList matrix_list = drawable.getWorldMatrices();
 		osg::Matrixd mat;
 		for (const osg::Matrixd& matrix : matrix_list) {
 			mat = mat * matrix;
 		}
+		const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
 		if (mat != osg::Matrixd::identity()) {
-			const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
 			for (auto& i : *positions)
 			{
 				i = i * mat;
@@ -59,6 +49,7 @@ public:
 	}
 
 };
+
 class TransformNodeVisitor :public osg::NodeVisitor {
 public:
 	TransformNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
@@ -523,7 +514,7 @@ private:
 		}
 
 	}
-	void CompressMeshByMeshopt(tinygltf::Mesh& mesh, const VertexCompressionOptions& vco) const
+	void CompressMeshByMeshopt(const tinygltf::Mesh& mesh, const VertexCompressionOptions& vco) const
 	{
 		// 1、Indexing
 		// 2、Vertex cache optimization
@@ -545,7 +536,7 @@ private:
 				const tinygltf::Accessor attributeAccessor(accessor);
 				tinygltf::BufferView& bufferView = _model.bufferViews[attributeAccessor.bufferView];
 				tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
-				auto getEncodeVertexBuffer = [&accessor](const tinygltf::Accessor& attributeAccessor, tinygltf::Model& model, int num = 3)->std::vector<unsigned char> {
+				auto getEncodeVertexBuffer = [&accessor](const tinygltf::Accessor& attributeAccessor, const tinygltf::Model& model, int num = 3)->std::vector<unsigned char> {
 					const tinygltf::BufferView bufferView = model.bufferViews[attributeAccessor.bufferView];
 					const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
 					size_t bufferSize;
@@ -847,8 +838,8 @@ private:
 		return false;
 	}
 
-	int getOrCreateGltfTexture(osg::Texture* osgTexture, const TextureType& type) {
-		if (osgTexture == nullptr) {
+	int getOrCreateGltfTexture(osg::ref_ptr<osg::Texture> osgTexture, const TextureType& type) {
+		if (!osgTexture.valid()) {
 			return -1;
 		}
 		if (osgTexture->getNumImages() < 1) {
@@ -887,17 +878,10 @@ private:
 		}
 		int index = _model.textures.size();
 		_textures.emplace_back(osgTexture);
-		// Flip the image before writing
-		osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
-		//need to forbid filpVertical when use texture atlas 
-		//if (type == TextureType::KTX2 || type == TextureType::KTX) {
-		//}
-		textureOptimizeSize(flipped);
-
 		std::string filename;
+		std::string mimeType;
 		std::string ext = "png";
 		std::string ktxVersion = "2.0";
-		std::string mimeType;
 		switch (type)
 		{
 		case TextureType::KTX:
@@ -924,29 +908,73 @@ private:
 		default:
 			break;
 		}
-		// If the image has a filename try to hash it so we only write out one copy of it.  
-		if (!osgImage->getFileName().empty())
+		// Flip the image before writing
 		{
+			osg::ref_ptr< osg::Image > flipped = new osg::Image(*osgImage);
+			//need to forbid filpVertical when use texture atlas 
+			//if (type == TextureType::KTX2 || type == TextureType::KTX) {
+			//}
+			textureOptimizeSize(flipped);
 
-			std::string data(reinterpret_cast<char const*>(flipped->data()));
-			filename = Stringify() << std::hex << hashString(data);
-			filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->t());
-			const GLenum pixelFormat = flipped->getPixelFormat();
-			if (ext=="jpg"&&pixelFormat != GL_ALPHA && pixelFormat != GL_RGB) {
-				filename += ".png";
-			}
-			else {
-				filename += "." + ext;
-			}
-			std::ifstream fileExists("./"+filename);
-			if ((!fileExists.good())|| (fileExists.peek() == std::ifstream::traits_type::eof()))
+			// If the image has a filename try to hash it so we only write out one copy of it.  
+			if (!osgImage->getFileName().empty())
 			{
-				if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
-					flipped->flipVertical();
-				if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
-				{
-					flipped->setOrigin(osg::Image::TOP_LEFT);
+
+				std::string data(reinterpret_cast<char const*>(flipped->data()));
+				filename = Stringify() << std::hex << hashString(data);
+				filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->t());
+				const GLenum pixelFormat = flipped->getPixelFormat();
+				if (ext == "jpg" && pixelFormat != GL_ALPHA && pixelFormat != GL_RGB) {
+					filename += ".png";
 				}
+				else {
+					filename += "." + ext;
+				}
+				bool isFileExists = osgDB::fileExists("./" + filename);
+				if (!isFileExists)
+				{
+					if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
+						flipped->flipVertical();
+					if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
+					{
+						flipped->setOrigin(osg::Image::TOP_LEFT);
+					}
+					if (type == TextureType::KTX) {
+						osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+						option->setOptionString("Version=" + ktxVersion);
+						if (!(osgDB::writeImageFile(*flipped, filename, option.get()))) {
+							osg::notify(osg::FATAL) << '\n';
+						}
+					}
+					else {
+						if (!(osgDB::writeImageFile(*flipped, filename))) {
+							mimeType = "image/png";
+							filename = Stringify() << std::hex << hashString(data);
+							filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->t());
+							filename += ".png";
+							std::ifstream fileExistsPng(filename);
+							if ((!fileExistsPng.good()) || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+							{
+								if (!(osgDB::writeImageFile(*flipped, filename))) {
+									osg::notify(osg::FATAL) << '\n';
+								}
+							}
+							fileExistsPng.close();
+						}
+					}
+				}
+			}
+			else
+			{
+				// Otherwise just find a filename that doesn't exist
+				int fileNameInc = 0;
+				do
+				{
+					std::stringstream ss;
+					ss << fileNameInc << "." << ext;
+					filename = ss.str();
+					fileNameInc++;
+				} while (osgDB::fileExists("./" + filename));
 				if (type == TextureType::KTX) {
 					osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
 					option->setOptionString("Version=" + ktxVersion);
@@ -956,71 +984,36 @@ private:
 				}
 				else {
 					if (!(osgDB::writeImageFile(*flipped, filename))) {
-						mimeType = "image/png";
-						filename = Stringify() << std::hex << hashString(data) << ".png";
-						std::ifstream fileExistsPng(filename);
-						if ((!fileExistsPng.good()) || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
-						{
-							if (!(osgDB::writeImageFile(*flipped, filename))) {
-								osg::notify(osg::FATAL) << '\n';
-							}
-						}
-						fileExistsPng.close();
+						osg::notify(osg::FATAL) << '\n';
 					}
-				}
-			}
-			fileExists.close();
-		}
-		else
-		{
-			std::ifstream fileExists(filename);
-			// Otherwise just find a filename that doesn't exist
-			int fileNameInc = 0;
-			do
-			{
-				std::stringstream ss;
-				ss << fileNameInc << "." << ext;
-				filename = ss.str();
-				fileNameInc++;
-			} while (fileExists.good());
-			fileExists.close();
-			if (type == TextureType::KTX) {
-				osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
-				option->setOptionString("Version=" + ktxVersion);
-				if (!(osgDB::writeImageFile(*flipped, filename, option.get()))) {
-					osg::notify(osg::FATAL) << '\n';
-				}
-			}
-			else {
-				if (!(osgDB::writeImageFile(*flipped, filename))) {
-					osg::notify(osg::FATAL) << '\n';
 				}
 			}
 		}
 
 		tinygltf::Image image;
 		//image.name = osgDB::convertStringFromCurrentCodePageToUTF8(osgDB::getSimpleFileName(osgImage->getFileName()));if defined image by buffer,name must be not defined;
-		std::ifstream file(filename, std::ios::binary);
-		std::vector<unsigned char> imageData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
 		tinygltf::BufferView gltfBufferView;
 		int bufferViewIndex = -1;
 		bufferViewIndex = static_cast<int>(_model.bufferViews.size());
 		gltfBufferView.buffer = _model.buffers.size();
 		gltfBufferView.byteOffset = 0;
-		gltfBufferView.byteLength = static_cast<int>(imageData.size());
+		{
+			std::ifstream file("./" + filename, std::ios::binary);
+			std::vector<unsigned char> imageData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+			gltfBufferView.byteLength = static_cast<int>(imageData.size());
+			tinygltf::Buffer gltfBuffer;
+			gltfBuffer.data = imageData;
+			_model.buffers.push_back(gltfBuffer);
+			file.close();
+		}
 		gltfBufferView.target = TINYGLTF_TEXTURE_TARGET_TEXTURE2D;
 		gltfBufferView.name = filename;
 		_model.bufferViews.push_back(gltfBufferView);
 
-		tinygltf::Buffer gltfBuffer;
-		gltfBuffer.data = imageData;
-		_model.buffers.push_back(gltfBuffer);
-
 		image.mimeType = mimeType;
 		image.bufferView = bufferViewIndex; //_model.bufferViews.size() the only bufferView in this model
 		_model.images.push_back(image);
-		file.close();
 		//remove(filename.c_str());
 
 		// Add the sampler
@@ -1748,7 +1741,8 @@ public:
 		}
 		return -1;
 	}
-	int textureCompression(const TextureType& type, const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Material>& material) {
+	int textureCompression(const TextureType& type, const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Material>& material) const
+	{
 		if (material) {
 			tinygltf::Material mat;
 			mat.pbrMetallicRoughness.baseColorTexture.index = -1;

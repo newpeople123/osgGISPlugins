@@ -1,8 +1,12 @@
 #include <osg/ArgumentParser>
-#include <3dtiles/QuadTreeBuilder.h>
-#include <3dtiles/Output3DTiles.h>
+#include <3dtiles/Write3DTiles.h>
 #include <osgDB/ReadFile>
 #include <iostream>
+
+#include "osgDB/FileUtils"
+#include <3dtiles/OctreeBuilder.h>
+#include <3dtiles/QuadTreeBuilder.h>
+
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -35,7 +39,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = R"(E:\Code\2023\Other\data\龙翔桥站厅.FBX)", output = "D:\\nginx-1.22.1\\html\\3dtiles\\old-hlod";
+    std::string input = R"(E:\Code\2023\Other\data\龙翔桥站厅.FBX)", output = "D:\\nginx-1.22.1\\html\\3dtiles\\new-hlod1";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -74,7 +78,25 @@ int main(int argc, char** argv)
             double lng = std::stod(longitude);
             double h = std::stod(height);
 
-            OsgNodeTo3DTiles(node, options, treeFormat, max, ratio, output, lng, lat, h);
+            osgDB::makeDirectory(output);
+            osg::ref_ptr<TileNode> threeDTilesNode;
+            if (treeFormat == "quad") {
+                const QuadTreeBuilder qtb(node, max, 8);
+                threeDTilesNode = qtb.rootTreeNode;
+            }
+            else {
+                const OctreeBuilder octb(node, max, 8);
+                threeDTilesNode = octb.rootTreeNode;
+            }
+            const osg::EllipsoidModel ellipsoidModel;
+            osg::Matrixd matrix;
+            ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, matrix);
+            std::vector<double> rootTransform;
+            const double* ptr = matrix.ptr();
+            for (unsigned i = 0; i < 16; ++i)
+                rootTransform.push_back(*ptr++);
+            Write3DTiles(threeDTilesNode, options, output, rootTransform);
+
         }
         catch (const std::invalid_argument& e) {
             std::cerr << "invalid input: " << e.what() << '\n';

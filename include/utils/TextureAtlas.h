@@ -58,9 +58,10 @@ struct TextureAtlasNode
 	}
 	~TextureAtlasNode()
 	{
-		delete childNode1;
-
-		delete childNode2;
+		if(childNode1)
+			delete childNode1;
+		if (childNode2)
+			delete childNode2;
 	}
 };
 class TextureAtlas;
@@ -231,7 +232,7 @@ inline bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Imag
 		}*/
 		newTexture->copySubImage(0, 0, 0, textureAtlas->_texture.get());
 
-		newTexture->setFileName(textureAtlas->_texture->getFileName());
+		//newTexture->setFileName(textureAtlas->_texture->getFileName());
 		if (textureAtlas->_texture.valid()) {
 			textureAtlas->_texture = nullptr;
 		}
@@ -254,7 +255,7 @@ inline bool resizeAtlas(TextureAtlas* textureAtlas, const osg::ref_ptr<osg::Imag
 			textureAtlas->_texture.release();
 		}
 		const osg::ref_ptr<osg::Image> newTexture = new osg::Image;
-		newTexture->setFileName(generateUUID());
+		//newTexture->setFileName(generateUUID());
 		newTexture->allocateImage(initialWidth, initialHeight, 1, textureAtlas->pixelFormat(), GL_UNSIGNED_BYTE);
 		textureAtlas->_texture = newTexture;
 		textureAtlas->_root = new TextureAtlasNode(osg::Vec2(borderWidthInPixels, borderWidthInPixels), osg::Vec2(initialWidth, initialHeight));

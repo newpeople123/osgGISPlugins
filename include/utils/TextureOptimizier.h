@@ -168,8 +168,7 @@ public:
 		for (auto& item : ism) {
 			std::fill(item.second.begin(), item.second.end(), nullptr);
 		}
-	};
-private:
+	}
 
 };
 
@@ -204,7 +203,7 @@ public:
 								break;
 							}
 							if(u<0.0||v<0.0){
-								double tolerance = 0.00001;
+								const double tolerance = 0.00001;
 								if(abs(u)> tolerance ||abs(v)> tolerance)
 								{
 									isRepeat = true;
@@ -237,7 +236,7 @@ public:
 										const osg::Vec2 newCoord(newU, newV);
 										q = newCoord;
 									}
-									img.release();
+									img = nullptr;
 									break;
 								}
 							}
@@ -275,90 +274,79 @@ public:
 			filename += "-w" + std::to_string(img->s()) + "-h" + std::to_string(img->t());
 			img->setFileName(filename);
 			if (textureType == PNG) {
-				std::ifstream fileExists(filename + ".png");
-				if (!fileExists.good()|| (fileExists.peek() == std::ifstream::traits_type::eof())) {
+				const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+				if (!isFileExistPng) {
 					bool result = osgDB::writeImageFile(*img, filename + ".png");
 					if(!result){
-						std::ifstream fileExistsJpg(filename + ".jpg");
-						if (!fileExistsJpg.good()|| (fileExistsJpg.peek() == std::ifstream::traits_type::eof()))
+						const bool isFileExistJpg = osgDB::fileExists("./" + filename + ".jpg");
+						if (!isFileExistJpg)
 							osgDB::writeImageFile(*img, filename + ".jpg");
-						fileExistsJpg.close();
 					}
 				}
-				fileExists.close();
 			}
 			else if (textureType == JPG) {
 				const GLenum pixelFormat = img->getPixelFormat();
 				if (pixelFormat == GL_ALPHA || pixelFormat == GL_RGB) {
-					std::ifstream fileExists(filename + ".jpg");
-					if (!fileExists.good()|| (fileExists.peek() == std::ifstream::traits_type::eof())) {
+					const bool isFileExistJpg = osgDB::fileExists("./" + filename + ".jpg");
+					if (!isFileExistJpg) {
 						// Only cater for gray, alpha and RGB for now
 						bool result = osgDB::writeImageFile(*img, filename + ".jpg");
 						if (!result) {
-							std::ifstream fileExistsPng(filename + ".png");
-							if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+							const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+							if (!isFileExistPng)
 								osgDB::writeImageFile(*img, filename + ".png");
-							fileExistsPng.close();
 						}
 					}
-					fileExists.close();
 				}
 				else {
-					std::ifstream fileExistsPng(filename + ".png");
-					if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+					const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+					if (!isFileExistPng)
 						osgDB::writeImageFile(*img, filename + ".png");
-					fileExistsPng.close();
 				}
 			}
 			else if (textureType == WEBP) {
-				std::ifstream fileExists(filename + ".webp");
-				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())){
+				const bool isFileExistWebp = osgDB::fileExists("./" + filename + ".webp");
+				if (!isFileExistWebp){
 					img->flipVertical();
 					bool result = osgDB::writeImageFile(*img, filename + ".webp");
 					if (!result) {
 						img->flipVertical();
-						std::ifstream fileExistsPng(filename + ".png");
-						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+						const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+						if (!isFileExistPng)
 							osgDB::writeImageFile(*img, filename + ".png");
-						fileExistsPng.close();
 					}
 				}
-				fileExists.close();
 			}
 			else if (textureType == KTX2) {
-				std::ifstream fileExists(filename + ".ktx");
-				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())){
+				const bool isFileExistKtx2 = osgDB::fileExists("./" + filename + ".ktx");
+				if (!isFileExistKtx2){
 					bool result = osgDB::writeImageFile(*img, filename + ".ktx");
 					if (!result) {
-						std::ifstream fileExistsPng(filename + ".png");
-						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+						const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+						if (!isFileExistPng)
 							osgDB::writeImageFile(*img, filename + ".png");
-						fileExistsPng.close();
 					}
 				}
-				fileExists.close();
 			}
 			else if (textureType == KTX) {
-				std::ifstream fileExists(filename + ".ktx");
-				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())) {
+				const bool isFileExistKtx = osgDB::fileExists("./" + filename + ".ktx");
+				if (!isFileExistKtx) {
 					bool result = osgDB::writeImageFile(*img, filename + ".ktx");
 					if (!result) {
-						std::ifstream fileExistsPng(filename + ".png");
-						if (!fileExistsPng.good() || (fileExistsPng.peek() == std::ifstream::traits_type::eof()))
+						const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+						if (!isFileExistPng)
 							osgDB::writeImageFile(*img, filename + ".png");
-						fileExistsPng.close();
 					}
 				}
-				fileExists.close();
 			}
 			else {
 				std::ifstream fileExists(filename + ".png");
-				if (!fileExists.good() || (fileExists.peek() == std::ifstream::traits_type::eof())) {
+				const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
+				if (!isFileExistPng){
 					if (!(osgDB::writeImageFile(*img, filename + ".png"))) {
 						osg::notify(osg::FATAL) << std::endl;
 					}
 				}
-				fileExists.close();
 			}
 			};
 
@@ -403,14 +391,16 @@ public:
 	TextureVisitor* tv;
 	std::vector<TextureAtlas*> textureAtlases;
 	~TextureOptimizerProxy() {
-		delete tv;
+		if (tv)
+			delete tv;
 		for (const auto& textureAtlas : textureAtlases) {
 			delete textureAtlas;
 		}
 	}
 	TextureOptimizerProxy& operator=(const TextureOptimizerProxy& other) {
 		if (this != &other) {
-			delete tv;
+			if(tv)
+				delete tv;
 			for (const auto& textureAtlas : textureAtlases) {
 				delete textureAtlas;
 			}
