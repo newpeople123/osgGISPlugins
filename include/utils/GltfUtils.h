@@ -922,6 +922,9 @@ private:
 
 				std::string data(reinterpret_cast<char const*>(flipped->data()));
 				filename = Stringify() << std::hex << hashString(data);
+				//std::hash<unsigned char> hasher;
+				//std::size_t hashValue = hasher(*flipped->data());
+				//filename = std::to_string(hashValue);
 				filename += "-w" + std::to_string(flipped->s()) + "-h" + std::to_string(flipped->t());
 				const GLenum pixelFormat = flipped->getPixelFormat();
 				if (ext == "jpg" && pixelFormat != GL_ALPHA && pixelFormat != GL_RGB) {

@@ -60,9 +60,6 @@ public:
 		}
 	}
 	void apply(osg::Texture& texture) {
-		const osg::Texture::WrapMode wrapS = texture.getWrap(osg::Texture::WRAP_S);
-		const osg::Texture::WrapMode wrapT = texture.getWrap(osg::Texture::WRAP_T);
-
 		for (unsigned int i = 0; i < texture.getNumImages(); i++) {
 			osg::ref_ptr<osg::Image> img = texture.getImage(i);
 			bool isAddToImgs = true;
@@ -75,7 +72,6 @@ public:
 			}
 			if (isAddToImgs)
 			{
-				//img->flipVertical();
 				imgs.push_back(img);
 			}
 		}
@@ -271,7 +267,11 @@ public:
 
 			std::string data(reinterpret_cast<char const*>(img->data()));
 			std::string filename = Stringify() << std::hex << hashString(data);
+			//std::hash<unsigned char> hasher;
+			//std::size_t hashValue = hasher(*img->data());
+			//filename = std::to_string(hashValue);
 			filename += "-w" + std::to_string(img->s()) + "-h" + std::to_string(img->t());
+			//std::cout<< " " << filename << std::endl;
 			img->setFileName(filename);
 			if (textureType == PNG) {
 				const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");

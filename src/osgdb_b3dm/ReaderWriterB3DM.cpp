@@ -199,7 +199,7 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
                 }
             }
             else if (key == "textureMaxSize") {
-                textureMaxSize = std::atof(val.c_str());
+                textureMaxSize = std::atoi(val.c_str());
             }
         }
     }
@@ -250,6 +250,8 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     const osg::Node& node,
     const std::string& filename,
     const Options* options) const {
+
+
     std::string ext = osgDB::getLowerCaseFileExtension(filename);
     if (!acceptsExtension(ext)) 
         return WriteResult::FILE_NOT_HANDLED;

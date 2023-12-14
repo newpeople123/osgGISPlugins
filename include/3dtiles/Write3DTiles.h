@@ -35,7 +35,7 @@ inline double GetFileSize(const std::string& filename) {
 	const std::streampos fileSize = file.tellg(); // 获取当前位置，即文件大小
 	file.close();
 
-	const double fileSizeB = static_cast<double>(fileSize);
+	const double fileSizeB = fileSize;
 	const double fileSizeKB = fileSizeB / 1024.0;
 	const double fileSizeMB = fileSizeKB / 1024.0;
 	return fileSizeMB;
@@ -141,7 +141,6 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 				b3dmPath = output + "/root.b3dm";
 		}
 		if (!b3dmPath.empty() && tileNode->currentNodes != nullptr && tileNode->currentNodes->getNumChildren()) {
-			const int pixelSize = tileNode->singleTextureMaxSize;
 
 			//int pixelSize1 = 4096;
 			//if (tileNode->lowerGeometricError != 0.0) {
@@ -153,6 +152,15 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 			//	}
 			//}
 			//std::cout << b3dmPath << "   " << pixelSize << std::endl;
+			if (tileNode->lowerGeometricError != 0.0) {
+				const double distance = GetDistanceByGeometricError(tileNode->lowerGeometricError);
+				tileNode->singleTextureMaxSize = GetPixelSize(distance, tileNode->nodes->getBound().radius());
+			}
+			else
+			{
+				tileNode->singleTextureMaxSize = 4096;
+			}
+			const int pixelSize = tileNode->singleTextureMaxSize;
 			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
 			osgDB::writeNodeFile(*tileNode->currentNodes, b3dmPath, option);
 		}
@@ -207,26 +215,21 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 			}
 			if (treeNode->currentNodes != nullptr && treeNode->currentNodes->getNumChildren()) {
 				GetTileNodeGeometricErrors(treeNode);
-				if (treeNode->lowerGeometricError != 0.0) {
-					const double distance = GetDistanceByGeometricError(treeNode->lowerGeometricError);
-					treeNode->singleTextureMaxSize = GetPixelSize(distance, treeNode->nodes->getBound().radius());
-				}else
-				{
-					treeNode->singleTextureMaxSize = 4096;
-				}
 			}
-			//WriteB3DM(treeNode, output, option);
+			//osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
+			//WriteB3DM(treeNode, output, copyOption);
 		}
 		std::vector<std::future<void>> futures;
 		for (const osg::ref_ptr<TileNode>& treeNode : level) {
+			osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
 			if(!isLoadB3dmDll)
 			{
-				WriteB3DM(treeNode, output, option);
+				WriteB3DM(treeNode, output, copyOption);
 				isLoadB3dmDll = true;
 			}
 			else
 			{
-				futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, option));
+				futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, copyOption));
 			}
 		}
 		for (auto& future : futures) {
