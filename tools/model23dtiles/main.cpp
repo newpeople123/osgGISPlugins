@@ -39,7 +39,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = R"(D:\Data\芜湖水厂总装.FBX)", output = R"(D:\nginx-1.24.0\html\3dtiles\new-hlod1)";
+    std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 

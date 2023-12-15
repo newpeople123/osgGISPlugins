@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.12)
 add_compile_options("/utf-8")#编译器启用utf8编码支持，否则文件路径含有中文时会乱码
 # 设置CMAKE_TOLLCHAIN_FILE 将vcpkg.cmake的路径赋值给CMAKE_TOOLCHAIN_FILE变量。必须在project函数之前设置
-set(CMAKE_TOOLCHAIN_FILE D:/vcpkg/scripts/buildsystems/vcpkg.cmake)
+set(CMAKE_TOOLCHAIN_FILE E:/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake)
 set(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 
