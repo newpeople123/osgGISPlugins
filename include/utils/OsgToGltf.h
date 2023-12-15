@@ -675,8 +675,7 @@ class OsgToGltf :public osg::NodeVisitor {
 						osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
 						for (unsigned int i = 0; i < numIndices; ++i)
 						{
-							unsigned int index = drawElementsUShort->at(i);
-							indices->push_back(index);
+							indices->push_back(drawElementsUShort->at(i));
 						}
 						std::vector<unsigned int> remap(positions->size());
 						size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(remap.data(), &(*indices)[0], indices->size(), positions->size(),

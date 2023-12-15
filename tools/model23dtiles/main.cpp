@@ -38,7 +38,8 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-    std::string input = "", output = "";
+    std::string input = R"(E:\Code\2023\Other\data\龙翔桥站厅.FBX)", output = R"(D:\nginx-1.22.1\html\3dtiles\new-hlod5)";
+    //std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -53,7 +54,7 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
-    input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+    //input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
 
     if (node.valid()) {

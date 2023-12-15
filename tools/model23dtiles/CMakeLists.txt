@@ -9,7 +9,8 @@ include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${CMAKE_CURRENT_SOURCE_
 #查找OpenSceneGraph库的核心组件
 #-----
 find_package(OpenSceneGraph 3.6.5 REQUIRED osg osgDB osgUtil osgGA osgViewer osgText osgAnimation)
-#find_path(TINYGLTF_INCLUDE_DIRS "tiny_gltf.h")
+find_package(meshoptimizer CONFIG REQUIRED)
+target_link_libraries(${TOOL_NAME} meshoptimizer::meshoptimizer)
 if (OPENSCENEGRAPH_FOUND)
     include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
     if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")

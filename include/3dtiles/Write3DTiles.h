@@ -12,6 +12,7 @@
 #include <osgViewer/Viewer>
 #include "GeometricError.h"
 #include <osgDB/WriteFile>
+#include "utils/SimplifyIndices.h"
 
 using namespace nlohmann;
 
@@ -149,6 +150,12 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 			//{
 			//	tileNode->singleTextureMaxSize = 4096;
 			//}
+			const osg::ref_ptr<osg::Node> lodModel = tileNode->currentNodes.get();
+			//osgUtil::Simplifier simplifier;
+			//simplifier.setSampleRatio(0.5);
+			//lodModel->accept(simplifier);
+			SimplifyGeometryNodeVisitor sgnv;
+			lodModel->accept(sgnv);
 			const int pixelSize = tileNode->singleTextureMaxSize;
 			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
 			osgDB::writeNodeFile(*tileNode->currentNodes, b3dmPath, option);
@@ -165,9 +172,11 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 		for (const osg::ref_ptr<TileNode>& treeNode : level) {
 			if (treeNode->currentNodes->getNumChildren()) {
 				const osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
-				osgUtil::Simplifier simplifier;
-				simplifier.setSampleRatio(simpleRatio);
-				lodModel->accept(simplifier);
+				//osgUtil::Simplifier simplifier;
+				//simplifier.setSampleRatio(simpleRatio);
+				//lodModel->accept(simplifier);
+				SimplifyGeometryNodeVisitor sgnv;
+				lodModel->accept(sgnv);
 			}
 		}
 		};
