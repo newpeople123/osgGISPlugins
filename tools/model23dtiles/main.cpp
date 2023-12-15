@@ -38,7 +38,6 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-
     std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
@@ -54,8 +53,9 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
-    //input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+    ////input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
+
     if (node.valid()) {
 
         std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";

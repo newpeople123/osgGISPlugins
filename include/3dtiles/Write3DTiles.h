@@ -9,7 +9,7 @@
 #include <osgDB/FileUtils>
 #include <osgDB/Options>
 #include <osgUtil/Simplifier>
-
+#include <osgViewer/Viewer>
 #include "GeometricError.h"
 #include <osgDB/WriteFile>
 
@@ -141,25 +141,14 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 				b3dmPath = output + "/root.b3dm";
 		}
 		if (!b3dmPath.empty() && tileNode->currentNodes != nullptr && tileNode->currentNodes->getNumChildren()) {
-
-			//int pixelSize1 = 4096;
 			//if (tileNode->lowerGeometricError != 0.0) {
 			//	const double distance = GetDistanceByGeometricError(tileNode->lowerGeometricError);
-			//	pixelSize1 = GetPixelSize(distance, tileNode->nodes->getBound().radius());
-			//	if(pixelSize!=pixelSize1)
-			//	{
-			//		std::cout << std::endl;
-			//	}
+			//	tileNode->singleTextureMaxSize = GetPixelSize(distance, tileNode->nodes->getBound().radius());
 			//}
-			//std::cout << b3dmPath << "   " << pixelSize << std::endl;
-			if (tileNode->lowerGeometricError != 0.0) {
-				const double distance = GetDistanceByGeometricError(tileNode->lowerGeometricError);
-				tileNode->singleTextureMaxSize = GetPixelSize(distance, tileNode->nodes->getBound().radius());
-			}
-			else
-			{
-				tileNode->singleTextureMaxSize = 4096;
-			}
+			//else
+			//{
+			//	tileNode->singleTextureMaxSize = 4096;
+			//}
 			const int pixelSize = tileNode->singleTextureMaxSize;
 			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
 			osgDB::writeNodeFile(*tileNode->currentNodes, b3dmPath, option);
@@ -186,6 +175,7 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 	for (int i = levels.size() - 1; i > -1; --i) {
 		std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
 		for (osg::ref_ptr<TileNode>& treeNode : level) {
+
 			if (treeNode->currentNodes->getNumChildren() == 0) {
 				int childrenCount = 0;
 				for (unsigned int j = 0; j < treeNode->children->getNumChildren(); ++j) {
@@ -199,8 +189,7 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 							const osg::BoundingBox grandChildBoundingBox = GetBoundingBox(childNodeCurrentNode);
 							if (childNodeCurrentNode.valid()) {
 								if ((grandChildBoundingBox._max - grandChildBoundingBox._min).length() * 10 >= (childBoundingBox._max - childBoundingBox._min).length()) {
-									osg::ref_ptr<osg::Node> node= childNodeCurrentNode.get();
-									treeNode->currentNodes->addChild(node);
+									treeNode->currentNodes->addChild(childNodeCurrentNode);
 								}
 							}
 						}
@@ -213,8 +202,30 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 					treeNode->currentNodes = nullptr;
 				}
 			}
+			GetTileNodeGeometricErrors(treeNode);
 			if (treeNode->currentNodes != nullptr && treeNode->currentNodes->getNumChildren()) {
-				GetTileNodeGeometricErrors(treeNode);
+				if (treeNode->lowerGeometricError != 0.0) {
+					const double distance = GetDistanceByGeometricError(treeNode->lowerGeometricError);
+					treeNode->singleTextureMaxSize = GetPixelSize(distance, treeNode->nodes->getBound().radius());
+					//treeNode->singleTextureMaxSize = 4096;
+				}
+				else
+				{
+					treeNode->singleTextureMaxSize = 4096;
+				}
+				//if(treeNode->singleTextureMaxSize == 4096)
+				//{
+				//	treeNode->refine = "ADD";
+				//	const unsigned int currentNodeNum = treeNode->currentNodes->getNumChildren();
+				//	const unsigned int childrenNum = treeNode->children->getNumChildren();
+				//	for (unsigned int j = 0; j < childrenNum; ++j) {
+				//		const osg::ref_ptr<TileNode> childNode = dynamic_cast<TileNode*>(treeNode->children->getChild(j));
+				//		for (unsigned int k = 0; k < currentNodeNum; k++)
+				//		{
+				//			childNode->currentNodes->removeChild(treeNode->currentNodes->getChild(k));
+				//		}
+				//	}
+				//}
 			}
 			//osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
 			//WriteB3DM(treeNode, output, copyOption);
@@ -236,13 +247,33 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 			future.get();
 		}
 	}
-
+	//for (int i = levels.size() - 1; i > -1; --i) {
+	//	std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+	//	std::vector<std::future<void>> futures;
+	//	for (osg::ref_ptr<TileNode>& treeNode : level) {
+	//		GetTileNodeGeometricErrors(treeNode);
+	//		osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
+	//		if (!isLoadB3dmDll)
+	//		{
+	//			WriteB3DM(treeNode, output, copyOption);
+	//			isLoadB3dmDll = true;
+	//		}
+	//		else
+	//		{
+	//			futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, copyOption));
+	//		}
+	//	}
+	//	for (auto& future : futures) {
+	//		future.get();
+	//	}
+	//}
 	ComputeBoundingVolume(rootTreeNode);
 
 }
 
 inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& output, const std::vector<double>&
 	                         transform = std::vector<double>()) {
+
 	std::string tilesetPath;
 	if (node->level != 0) {
 		std::string childOutput;
@@ -324,7 +355,7 @@ inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& 
 	for (unsigned int i = 0; i < node->children->getNumChildren(); ++i) {
 		osg::ref_ptr<TileNode> child = dynamic_cast<TileNode*>(node->children->getChild(i));
 		futures.push_back(std::async(std::launch::async, WriteTileset, child, output, std::vector<double>()));
-		//WriteTileset(*child, option, output);
+		//WriteTileset(child, output);
 
 	}
 	for (auto& future : futures) {

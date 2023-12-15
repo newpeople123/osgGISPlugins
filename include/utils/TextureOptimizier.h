@@ -340,7 +340,6 @@ public:
 				}
 			}
 			else {
-				std::ifstream fileExists(filename + ".png");
 				const bool isFileExistPng = osgDB::fileExists("./" + filename + ".png");
 				if (!isFileExistPng){
 					if (!(osgDB::writeImageFile(*img, filename + ".png"))) {
@@ -361,8 +360,8 @@ public:
 			//{
 			//	exportImage(textureAtlase->texture());
 			//}
-			exportImage(textureAtlase->texture());
-			//futures.push_back(std::async(std::launch::async, exportImage, textureAtlases.at(i)->texture()));
+			//exportImage(textureAtlase->texture());
+			futures.push_back(std::async(std::launch::async, exportImage, textureAtlase->texture()));
 		}
 		for (auto& future : futures) {
 			future.get();
