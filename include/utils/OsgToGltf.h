@@ -326,8 +326,13 @@ class OsgToGltf :public osg::NodeVisitor {
 	}
 	void apply(osg::Drawable& drawable) override
 	{
-		if (drawable.asGeometry())
+		osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+		if (geom.valid())
 		{
+			if (geom->getNumPrimitiveSets() == 0)
+			{
+				return;
+			}
 			apply(static_cast<osg::Node&>(drawable));
 
 			const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
@@ -336,8 +341,6 @@ class OsgToGltf :public osg::NodeVisitor {
 			{
 				pushedStateSet = pushStateSet(ss.get());
 			}
-
-			osg::Geometry* geom = drawable.asGeometry();
 
 			_model.meshes.emplace_back();
 			tinygltf::Mesh& mesh = _model.meshes.back();

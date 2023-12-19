@@ -126,7 +126,7 @@ inline void ConvertTreeNode2Levels(const osg::ref_ptr<TileNode>& rootTreeNode, s
 	}
 }
 
-inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option)
+inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option,const double simpleRatio)
 {
 	if (tileNode.valid()) {
 		std::string b3dmPath;
@@ -142,20 +142,8 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 				b3dmPath = output + "/root.b3dm";
 		}
 		if (!b3dmPath.empty() && tileNode->currentNodes != nullptr && tileNode->currentNodes->getNumChildren()) {
-			//if (tileNode->lowerGeometricError != 0.0) {
-			//	const double distance = GetDistanceByGeometricError(tileNode->lowerGeometricError);
-			//	tileNode->singleTextureMaxSize = GetPixelSize(distance, tileNode->nodes->getBound().radius());
-			//}
-			//else
-			//{
-			//	tileNode->singleTextureMaxSize = 4096;
-			//}
-			const osg::ref_ptr<osg::Node> lodModel = tileNode->currentNodes.get();
-			//osgUtil::Simplifier simplifier;
-			//simplifier.setSampleRatio(0.5);
-			//lodModel->accept(simplifier);
-			SimplifyGeometryNodeVisitor sgnv;
-			lodModel->accept(sgnv);
+			SimplifyGeometryNodeVisitor sgnv(simpleRatio);
+			tileNode->currentNodes->accept(sgnv);
 			const int pixelSize = tileNode->singleTextureMaxSize;
 			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
 			osgDB::writeNodeFile(*tileNode->currentNodes, b3dmPath, option);
@@ -163,10 +151,9 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 	}
 }
 
-inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option) {
+inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option, const double simpleRatio) {
 	std::vector<std::vector<osg::ref_ptr<TileNode>>> levels;
 	ConvertTreeNode2Levels(rootTreeNode, levels);
-	double simpleRatio = 0.5;
 	auto func = [&levels, &simpleRatio](int i) {
 		const std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
 		for (const osg::ref_ptr<TileNode>& treeNode : level) {
@@ -175,7 +162,7 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 				//osgUtil::Simplifier simplifier;
 				//simplifier.setSampleRatio(simpleRatio);
 				//lodModel->accept(simplifier);
-				SimplifyGeometryNodeVisitor sgnv;
+				SimplifyGeometryNodeVisitor sgnv(simpleRatio);
 				lodModel->accept(sgnv);
 			}
 		}
@@ -244,12 +231,12 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 			osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
 			if(!isLoadB3dmDll)
 			{
-				WriteB3DM(treeNode, output, copyOption);
+				WriteB3DM(treeNode, output, copyOption, simpleRatio);
 				isLoadB3dmDll = true;
 			}
 			else
 			{
-				futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, copyOption));
+				futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, copyOption, simpleRatio));
 			}
 		}
 		for (auto& future : futures) {
@@ -372,8 +359,8 @@ inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& 
 	}
 }
 
-inline void Write3DTiles(const osg::ref_ptr<TileNode>& node, const osg::ref_ptr<osgDB::Options>& option, const std::string& output, std::vector<double> transform = std::vector<double>()) {
-	BuildHlodAndWriteB3DM(node, output, option);
+inline void Write3DTiles(const osg::ref_ptr<TileNode>& node, const osg::ref_ptr<osgDB::Options>& option, const std::string& output, const double simpleRatio, std::vector<double> transform = std::vector<double>()) {
+	BuildHlodAndWriteB3DM(node, output, option, simpleRatio);
 	WriteTileset(node, output, transform);
 }
 #endif // !OSG_GIS_PLUGINS_WRITE3DTILES_H

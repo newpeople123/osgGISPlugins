@@ -5,20 +5,20 @@
 #include "osgUtil/Optimizer"
 
 class SimplifyGeometryNodeVisitor :public osg::NodeVisitor {
+	double _simpleRatio = 1.0;
 public:
-	SimplifyGeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+	SimplifyGeometryNodeVisitor(double simpleRatio) :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _simpleRatio(simpleRatio)
 	{
 	}
 
 	void apply(osg::Drawable& drawable) override {
-		const double simplifyRadio = 0.5;
-		osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+		const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 		osgUtil::Optimizer optimizer;
 		optimizer.optimize(geom, osgUtil::Optimizer::INDEX_MESH);
 		const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		const unsigned int num = geom->getNumPrimitiveSets();
 		if (num > 0) {
-			for (unsigned int kk = 0; kk < num; ++kk) {
+			for (unsigned int kk = 0; kk < geom->getNumPrimitiveSets(); ++kk) {
 				osg::ref_ptr<osg::DrawElements> drawElements = dynamic_cast<osg::DrawElements*>(geom->getPrimitiveSet(kk));
 				if (drawElements.valid() && positions.valid()) {
 					const unsigned int numIndices = drawElements->getNumIndices();
@@ -42,24 +42,24 @@ public:
 						}
 						osg::ref_ptr<osg::UShortArray> destination = new osg::UShortArray;
 						destination->resize(numIndices);
-						const size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), (size_t)(numIndices * simplifyRadio), 0.05f);
-						osg::ref_ptr<osg::UShortArray> newIndices = new osg::UShortArray;
-						if (newLength > destination->size())
-						{
-							std::cout << std::endl;
-						}
-						for (size_t i = 0; i < (size_t)newLength; ++i)
-						{
-							newIndices->push_back(destination->at(i));
-						}
-						if (newLength ==0)
-						{
-							geom->setPrimitiveSet(kk, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, newIndices->size(), nullptr));//&(*newIndices)[0])
-						}else
+						const size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), 0.05f);
+						if (newLength>0) {
+							osg::ref_ptr<osg::UShortArray> newIndices = new osg::UShortArray;
+
+							for (size_t i = 0; i < static_cast<size_t>(newLength); ++i)
+							{
+								newIndices->push_back(destination->at(i));
+							}
 							geom->setPrimitiveSet(kk, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));//&(*newIndices)[0])
+						}
+						else
+						{
+							geom->removePrimitiveSet(kk);
+							kk--;
+						}
 					}
 					else {
-						osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(kk));
+						const osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(kk));
 						osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
 						for (unsigned int i = 0; i < numIndices; ++i)
 						{
@@ -67,22 +67,20 @@ public:
 						}
 						osg::ref_ptr<osg::UIntArray> destination = new osg::UIntArray;
 						destination->resize(numIndices);
-						const size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), (size_t)(numIndices * simplifyRadio), 0.05f);
+						const size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), 0.05f);
 						osg::ref_ptr<osg::UIntArray> newIndices = new osg::UIntArray;
-						if(newLength>destination->size())
-						{
-							std::cout << std::endl;
-						}
-						for (size_t i = 0; i < (size_t)newLength; ++i)
-						{
-							newIndices->push_back(destination->at(i));
-						}
-						if (newLength == 0)
-						{
-							geom->setPrimitiveSet(kk, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, newIndices->size(), nullptr));//&(*newIndices)[0])
+						if (newLength>0) {
+							for (size_t i = 0; i < static_cast<size_t>(newLength); ++i)
+							{
+								newIndices->push_back(destination->at(i));
+							}
+							geom->setPrimitiveSet(kk, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
 						}
 						else
-						geom->setPrimitiveSet(kk, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
+						{
+							geom->removePrimitiveSet(kk);
+							kk--;
+						}
 					}
 
 				}
