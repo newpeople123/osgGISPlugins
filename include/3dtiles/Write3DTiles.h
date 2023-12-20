@@ -222,10 +222,10 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 				//		}
 				//	}
 				//}
-			}
-			if (!enableMultiThreading) {
-				osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
-				WriteB3DM(treeNode, output, copyOption, simpleRatio);
+				if (!enableMultiThreading) {
+					osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
+					WriteB3DM(treeNode, output, copyOption, simpleRatio);
+				}
 			}
 		}
 		if (enableMultiThreading) {
@@ -346,7 +346,7 @@ inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& 
 		tileset["geometricError"] = node->upperGeometricError;
 	}
 
-	std::ofstream tilesetFile(tilesetPath);
+	osgDB::ofstream tilesetFile(tilesetPath.c_str());
 	if (tilesetFile.is_open()) {
 		tilesetFile << tileset.dump();
 		tilesetFile.close();

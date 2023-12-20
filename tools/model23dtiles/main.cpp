@@ -38,7 +38,7 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-    //std::string input = R"(E:\Code\2023\Other\data\建筑+贴图.fbx)", output = R"(E:\Code\2023\Other\data\建筑+贴图\1.b3dm)";
+    //std::string input = R"(E:\Code\2023\Other\data\建筑+贴图.fbx)", output = R"(E:\Code\2023\Other\data\建筑+贴图2)";
     //osgDB::ofstream fout(output.c_str(), std::ios::out | std::ios::binary);
     //if (fout.is_open()) {
     //    std::cout << std::endl;
