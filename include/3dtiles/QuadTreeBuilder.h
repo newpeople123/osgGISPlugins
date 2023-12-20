@@ -36,7 +36,6 @@ protected:
             for (unsigned int i = 0; i < inputRoot->getNumChildren(); ++i)
             {
                 const osg::ref_ptr<osg::Node>& obj = inputRoot->getChild(i);
-                obj->dirtyBound();
                 osg::BoundingBox childBox = GetBoundingBox(obj);
                 if (total.contains(childBox._min) && total.contains(childBox._max))
                     childData->addChild(obj);

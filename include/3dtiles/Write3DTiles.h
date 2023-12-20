@@ -113,7 +113,7 @@ inline void ConvertTreeNode2Levels(const osg::ref_ptr<TileNode>& rootTreeNode, s
 		const int size = q.size();
 		std::vector<osg::ref_ptr<TileNode>> level;
 		for (int i = 0; i < size; i++) {
-			osg::ref_ptr<TileNode> node= q.front();
+			osg::ref_ptr<TileNode> node = q.front();
 			q.pop();
 			level.push_back(node);
 
@@ -126,7 +126,7 @@ inline void ConvertTreeNode2Levels(const osg::ref_ptr<TileNode>& rootTreeNode, s
 	}
 }
 
-inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option,const double simpleRatio)
+inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option, const double simpleRatio)
 {
 	if (tileNode.valid()) {
 		std::string b3dmPath;
@@ -151,7 +151,7 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 	}
 }
 
-inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option, const double simpleRatio) {
+inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option, const double simpleRatio, const bool enableMultiThreading) {
 	std::vector<std::vector<osg::ref_ptr<TileNode>>> levels;
 	ConvertTreeNode2Levels(rootTreeNode, levels);
 	auto func = [&levels, &simpleRatio](int i) {
@@ -223,24 +223,28 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 				//	}
 				//}
 			}
-			//osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
-			//WriteB3DM(treeNode, output, copyOption);
-		}
-		std::vector<std::future<void>> futures;
-		for (const osg::ref_ptr<TileNode>& treeNode : level) {
-			osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
-			if(!isLoadB3dmDll)
-			{
+			if (!enableMultiThreading) {
+				osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
 				WriteB3DM(treeNode, output, copyOption, simpleRatio);
-				isLoadB3dmDll = true;
-			}
-			else
-			{
-				futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, copyOption, simpleRatio));
 			}
 		}
-		for (auto& future : futures) {
-			future.get();
+		if (enableMultiThreading) {
+			std::vector<std::future<void>> futures;
+			for (const osg::ref_ptr<TileNode>& treeNode : level) {
+				osg::ref_ptr<osgDB::Options> copyOption = new osgDB::Options(option->getOptionString());
+				if (!isLoadB3dmDll)
+				{
+					WriteB3DM(treeNode, output, copyOption, simpleRatio);
+					isLoadB3dmDll = true;
+				}
+				else
+				{
+					futures.push_back(std::async(std::launch::async, WriteB3DM, treeNode, output, copyOption, simpleRatio));
+				}
+			}
+			for (auto& future : futures) {
+				future.get();
+			}
 		}
 	}
 	//for (int i = levels.size() - 1; i > -1; --i) {
@@ -268,7 +272,7 @@ inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, co
 }
 
 inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& output, const std::vector<double>&
-	                         transform = std::vector<double>()) {
+	transform = std::vector<double>()) {
 
 	std::string tilesetPath;
 	if (node->level != 0) {
@@ -359,8 +363,8 @@ inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& 
 	}
 }
 
-inline void Write3DTiles(const osg::ref_ptr<TileNode>& node, const osg::ref_ptr<osgDB::Options>& option, const std::string& output, const double simpleRatio, std::vector<double> transform = std::vector<double>()) {
-	BuildHlodAndWriteB3DM(node, output, option, simpleRatio);
+inline void Write3DTiles(const osg::ref_ptr<TileNode>& node, const osg::ref_ptr<osgDB::Options>& option, const std::string& output, const double simpleRatio, const bool enableMultiThreading, std::vector<double> transform = std::vector<double>()) {
+	BuildHlodAndWriteB3DM(node, output, option, simpleRatio, enableMultiThreading);
 	WriteTileset(node, output, transform);
 }
 #endif // !OSG_GIS_PLUGINS_WRITE3DTILES_H

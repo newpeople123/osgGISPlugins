@@ -75,7 +75,7 @@ public:
 class RebuildDataNodeVisitor :public osg::NodeVisitor {
 public:
 	RebuildDataNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
-	osg::ref_ptr<osg::Group> output = new osg::Group;
+	osg::ref_ptr<osg::Group> output = new osg::MatrixTransform;
 	void apply(osg::Drawable& drawable) override
 	{
 		if(drawable.asGeometry())

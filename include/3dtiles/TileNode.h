@@ -6,11 +6,27 @@
 #include <osg/Group>
 #include <osg/ComputeBoundsVisitor>
 
-osg::BoundingBox GetBoundingBox(const osg::ref_ptr<osg::Node>& node) {
+inline osg::BoundingBox GetBoundingBox(const osg::ref_ptr<osg::Node>& node) {
 	osg::ComputeBoundsVisitor cbbv;
 	node->accept(cbbv);
 	return cbbv.getBoundingBox();
 }
+//inline osg::BoundingBox GetGroupBoundingBox1(const osg::ref_ptr<osg::Group>& group) {
+//	const unsigned int num = group->getNumChildren();
+//	osg::BoundingBox box;
+//	for (unsigned int i = 0; i < num; ++i) {
+//		osg::ref_ptr<osg::Node> node = group->getChild(i);
+//		const osg::MatrixList matrix_list = node->getWorldMatrices();
+//		osg::Matrixd mat;
+//		for (const osg::Matrixd& matrix : matrix_list) {
+//			mat = mat * matrix;
+//		}
+//		osg::ComputeBoundsVisitor cbbv;
+//		node->accept(cbbv);
+//		box.expandBy(cbbv.getBoundingBox());
+//	}
+//	return  box;
+//}
 class TileNode :public osg::Node
 {
 public:

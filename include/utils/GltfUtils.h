@@ -23,12 +23,15 @@
 #include <osg/MatrixTransform>
 
 class GeometryNodeVisitor :public osg::NodeVisitor {
+	bool _recomputeBoundingBox;
 public:
-	GeometryNodeVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+	GeometryNodeVisitor(const bool recomputeBoundingBox = true) :_recomputeBoundingBox(recomputeBoundingBox), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
 	{
 	}
 
 	void apply(osg::Drawable& drawable) override {
+		if(_recomputeBoundingBox)
+			drawable.dirtyBound();
 		const osg::ref_ptr<osg::Vec4Array> colors = dynamic_cast<osg::Vec4Array*>(drawable.asGeometry()->getColorArray());
 		const osg::MatrixList matrix_list = drawable.getWorldMatrices();
 		osg::Matrixd mat;

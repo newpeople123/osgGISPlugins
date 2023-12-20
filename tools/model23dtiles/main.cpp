@@ -10,7 +10,6 @@
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
-    //system("chcp 65001");
     SetConsoleOutputCP(CP_UTF8);
 #else
     setlocale(LC_ALL, "en_US.UTF-8");
@@ -29,7 +28,8 @@ int main(int argc, char** argv)
     arguments.getApplicationUsage()->addCommandLineOption("-lat <number>", "datum point's latitude");
     arguments.getApplicationUsage()->addCommandLineOption("-lng <number>", "datum point's longitude");
     arguments.getApplicationUsage()->addCommandLineOption("-height <number>", "datum point's height");
-    arguments.getApplicationUsage()->addCommandLineOption("-draco_compression_level <low/medium/hight>", "draco compression level");
+    arguments.getApplicationUsage()->addCommandLineOption("-comporessLevel <low/medium/hight>", "draco compression level");
+    arguments.getApplicationUsage()->addCommandLineOption("-multi_threading <true/false>", "Is multithreading enabled");
     arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters");
 
     // if user request help write it out to cout.
@@ -38,7 +38,11 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-    //std::string input = R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)", output = R"(D:\nginx-1.22.1\html\3dtiles\new-hlod6)";
+    //std::string input = R"(E:\Code\2023\Other\data\建筑+贴图.fbx)", output = R"(E:\Code\2023\Other\data\建筑+贴图\1.b3dm)";
+    //osgDB::ofstream fout(output.c_str(), std::ios::out | std::ios::binary);
+    //if (fout.is_open()) {
+    //    std::cout << std::endl;
+    //}
     std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
@@ -55,14 +59,18 @@ int main(int argc, char** argv)
         return 0;
     }
     input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+    output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
+
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     osg::ref_ptr<osg::MatrixTransform> matrixTransformNode = new osg::MatrixTransform;
-    matrixTransformNode->setMatrix(osg::Matrix::translate(-node->getBound().center()));
+    osg::BoundingBox box = GetBoundingBox(node);
+    const osg::Vec3 center = -osg::Vec3(node->getBound().center().x(), node->getBound().center().y(), box.zMin());
+    matrixTransformNode->setMatrix(osg::Matrix::translate(center));
     matrixTransformNode->addChild(node);
     node=matrixTransformNode;
     if (node.valid()) {
 
-        std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel="high";
+        std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel = "high", multiThreading = "false";
         while (arguments.read("-tf", textureFormat));
         while (arguments.read("-vf", vertexFormat));
         while (arguments.read("-t", treeFormat));
@@ -72,6 +80,7 @@ int main(int argc, char** argv)
         while (arguments.read("-lng", longitude));
         while (arguments.read("-height", height));
         while (arguments.read("-comporessLevel", comporessLevel));
+        while (arguments.read("-multi_threading", multiThreading));
         osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
         std::string optionStr = "textureType=" + textureFormat + " compressionType=" + vertexFormat + " comporessLevel=" + comporessLevel;
         options->setOptionString(optionStr);
@@ -92,6 +101,11 @@ int main(int argc, char** argv)
                 const OctreeBuilder octb(node, max, 8);
                 threeDTilesNode = octb.rootTreeNode;
             }
+            bool multi_threading = false;
+            if(multiThreading=="true")
+            {
+                multi_threading = true;
+            }
             const osg::EllipsoidModel ellipsoidModel;
             osg::Matrixd matrix;
             ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, matrix);
@@ -99,7 +113,7 @@ int main(int argc, char** argv)
             const double* ptr = matrix.ptr();
             for (unsigned i = 0; i < 16; ++i)
                 rootTransform.push_back(*ptr++);
-            Write3DTiles(threeDTilesNode, options, output, ratio, rootTransform);
+            Write3DTiles(threeDTilesNode, options, output, ratio, multi_threading, rootTransform);
 
         }
         catch (const std::invalid_argument& e) {

@@ -210,7 +210,7 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
         delete to;
     }
     //2
-    GeometryNodeVisitor gnv;
+    GeometryNodeVisitor gnv(false);
     node->accept(gnv);
     //3
     TransformNodeVisitor tnv;
@@ -408,7 +408,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
     b3dm_buf.append(feature_json_string.begin(), feature_json_string.end());
     b3dm_buf.append(batch_json_string.begin(), batch_json_string.end());
     b3dm_buf.append(glb_buf);
-    std::fstream fout(filename, std::ios::out | std::ios::binary);
+    osgDB::ofstream fout(filename.c_str(), std::ios::out | std::ios::binary);
     if (fout.is_open()) {
         std::stringstream compressionInput;
         std::ostream* output = &fout;
