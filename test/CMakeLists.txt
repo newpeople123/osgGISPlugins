@@ -6,6 +6,8 @@ ADD_EXECUTABLE(${TEST_NAME} ${DIR_SRCS})
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
 include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+find_package(meshoptimizer CONFIG REQUIRED)
+target_link_libraries(${TEST_NAME} meshoptimizer::meshoptimizer)
 #查找OpenSceneGraph库的核心组件
 #-----
 find_package(OpenSceneGraph 3.6.5 REQUIRED osg osgDB osgUtil osgGA osgViewer osgText osgAnimation)

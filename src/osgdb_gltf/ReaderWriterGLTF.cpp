@@ -1,6 +1,7 @@
 #include <osgdb_gltf/ReaderWriterGLTF.h>
 #include <osg/MatrixTransform>
 #include <utils/TextureOptimizier.h>
+#include <osgDB/FileNameUtils>
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const {
 
@@ -15,13 +16,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
     bool embedImages = false, embedBuffers = false, prettyPrint = false, isBinary = ext == "glb";
-    std::string textureTypeStr, compressionTypeStr;
     TextureType textureType = TextureType::PNG;
     CompressionType comporessionType = CompressionType::NONE;
     int comporessLevel = 1;
     if (options)
     {
-        std::istringstream iss(options->getOptionString());
+	    std::string compressionTypeStr;
+	    std::string textureTypeStr;
+	    std::istringstream iss(options->getOptionString());
         std::string opt;
         while (iss >> opt)
         {
@@ -91,16 +93,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 
     OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
     osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
-    nc_node.ref();
     osg::ref_ptr<osg::Node> copyNode = osg::clone(nc_node.asNode(), osg::CopyOp::DEEP_COPY_ALL);//(osg::Node*)(nc_node.clone(osg::CopyOp::DEEP_COPY_ALL));
-    nc_node.unref_nodelete();
     // GLTF uses a +X=right +y=up -z=forward coordinate system,but if using osg to process external data does not require this
     //osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
     //transform->setMatrix(osg::Matrixd::rotate(osg::Vec3d(0.0, 0.0, 1.0), osg::Vec3d(0.0, 1.0, 0.0)));
     //transform->addChild(&nc_node);;
     //transform->accept(osg2gltf);
     //transform->removeChild(&nc_node);
-    TextureOptimizer* to = new TextureOptimizer(copyNode, textureType,2048);
+    TextureOptimizerProxy* to = new TextureOptimizerProxy(copyNode, textureType,2048);
     delete to;
     GeometryNodeVisitor gnv;
     copyNode->accept(gnv);

@@ -1,8 +1,9 @@
+#pragma once
 #include <random>
 #ifndef OSG_GIS_PLUGINS_UUID
 #define OSG_GIS_PLUGINS_UUID 1
 
-std::string generateUUID() {
+inline std::string generateUUID() {
 	std::random_device rd;
 	std::mt19937 gen(rd());
 	std::uniform_int_distribution<int> dis(0, 15);

@@ -12,7 +12,7 @@
 #include <osgdb_ktx/LoadTextureKTX.h>
 #include <thread>
 
-static inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
+inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 {
     switch (glFormat)
     {
@@ -207,7 +207,7 @@ static inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 
 namespace osg
 {
-    static osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, int layer, int face,
+    osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, int layer, int face,
         ktx_size_t imgDataSize, bool noCompress = false)
     {
         bool transcoded = false, compressed = false;
@@ -252,7 +252,7 @@ namespace osg
             {
                 OSG_WARN << "[LoaderKTX] Failed to get KTX2 file format: VkFormat = "
                     << std::hex << tex->vkFormat << std::dec << std::endl;
-                return NULL;
+                return nullptr;
             }
             else if (transcoded)
             {
@@ -273,13 +273,13 @@ namespace osg
         }
         if (image->getTotalDataSize() == 0) {
             OSG_WARN << "[LoaderKTX] Failed to allocateImage" << std::dec << std::endl;
-            return NULL;
+            return nullptr;
         }
         memcpy(image->data(), imgData, imgDataSize);
         return image;
     }
 
-    static std::vector<osg::ref_ptr<osg::Image>> loadKtxFromObject(ktxTexture* texture)
+	std::vector<osg::ref_ptr<osg::Image>> loadKtxFromObject(ktxTexture* texture)
     {
         std::vector<osg::ref_ptr<osg::Image>> resultArray;
         ktx_uint32_t numLevels = texture->numLevels;
@@ -319,7 +319,7 @@ namespace osg
 
     std::vector<osg::ref_ptr<osg::Image>> loadKtx(const std::string& file)
     {
-        ktxTexture* texture = NULL;
+        ktxTexture* texture = nullptr;
         ktx_error_code_e result = ktxTexture_CreateFromNamedFile(
             file.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture);
         if (result != KTX_SUCCESS)
@@ -336,7 +336,7 @@ namespace osg
             std::istreambuf_iterator<char>());
         if (data.empty()) return std::vector<osg::ref_ptr<osg::Image>>();
 
-        ktxTexture* texture = NULL;
+        ktxTexture* texture = nullptr;
         ktx_error_code_e result = ktxTexture_CreateFromMemory(
             (const ktx_uint8_t*)data.data(), data.size(),
             KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture);
@@ -348,13 +348,13 @@ namespace osg
         return loadKtxFromObject(texture);
     }
 
-    static ktxTexture* saveImageToKtx(const std::vector<osg::Image*>& images, bool asCubeMap,bool compressed)
+    ktxTexture* saveImageToKtx(const std::vector<osg::Image*>& images, bool asCubeMap,bool compressed)
     {
-        ktxTexture* texture = NULL;
-        if (images.empty()) return NULL;
-        if (asCubeMap && images.size() < 6) return NULL;
+        ktxTexture* texture = nullptr;
+        if (images.empty()) return nullptr;
+        if (asCubeMap && images.size() < 6) return nullptr;
 
-        osg::Image* image0 = images[0];
+        const osg::Image* image0 = images[0];
         ktxTextureCreateInfo createInfo;
 
         int componentCount = image0->computeNumComponents(image0->getPixelFormat());
@@ -376,7 +376,7 @@ namespace osg
         {
             OSG_WARN << "[LoaderKTX] No VkFormat for GL internal format: "
                 << std::hex << createInfo.glInternalformat << std::dec << std::endl;
-            return NULL;
+            return nullptr;
         }
 
         KTX_error_code result = ktxTexture2_Create(
@@ -384,7 +384,7 @@ namespace osg
         if (result != KTX_SUCCESS)
         {
             OSG_WARN << "[LoaderKTX] Unable to create KTX for saving" << std::endl;
-            return NULL;
+            return nullptr;
         }
 
         for (size_t i = 0; i < images.size(); ++i)
@@ -397,7 +397,7 @@ namespace osg
                     << "KTX texture" << std::endl; continue;
             }
 
-            ktx_uint8_t* src = (ktx_uint8_t*)img->data();
+            const ktx_uint8_t* src = (ktx_uint8_t*)img->data();
             result = ktxTexture_SetImageFromMemory(
                 texture, 0, (asCubeMap ? 0 : i), (asCubeMap ? i : 0),
                 src, img->getTotalSizeInBytes());
@@ -405,7 +405,7 @@ namespace osg
             {
                 OSG_WARN << "[LoaderKTX] Unable to save image " << i
                     << " to KTX texture: " << ktxErrorString(result) << std::endl;
-                ktxTexture_Destroy(texture); return NULL;
+                ktxTexture_Destroy(texture); return nullptr;
             }
         }
         ktx_uint32_t w = texture->baseWidth, h = texture->baseHeight;
@@ -439,7 +439,7 @@ namespace osg
         const std::vector<osg::Image*>& images,bool compressed)
     {
         ktxTexture* texture = saveImageToKtx(images, asCubeMap, compressed);
-        if (texture == NULL) return false;
+        if (texture == nullptr) return false;
 
         KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
         ktxTexture_Destroy(texture);
@@ -450,9 +450,9 @@ namespace osg
         const std::vector<osg::Image*>& images, bool compressed)
     {
         ktxTexture* texture = saveImageToKtx(images, asCubeMap, compressed);
-        if (texture == NULL) return false;
+        if (texture == nullptr) return false;
 
-        ktx_uint8_t* buffer = NULL; ktx_size_t length = 0;
+        ktx_uint8_t* buffer = nullptr; ktx_size_t length = 0;
         KTX_error_code result = ktxTexture_WriteToMemory(texture, &buffer, &length);
         if (result == KTX_SUCCESS)
         {

@@ -20,14 +20,14 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& pa
     std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return ReadResult::FILE_NOT_HANDLED;
 
-    bool usePseudo = (ext == "verse_ktx");
+    const bool usePseudo = (ext == "verse_ktx");
     if (usePseudo)
     {
         fileName = osgDB::getNameLessExtension(path);
         ext = osgDB::getFileExtension(fileName);
     }
 
-    std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx(fileName);
+    const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx(fileName);
     if (images.size() > 1)
     {
         osg::ref_ptr<osg::ImageSequence> seq = new osg::ImageSequence;
@@ -39,7 +39,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& pa
 
 osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(std::istream& fin, const Options*) const
 {
-    std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx2(fin);
+	const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx2(fin);
     if (images.size() > 1)
     {
         osg::ref_ptr<osg::ImageSequence> seq = new osg::ImageSequence;
@@ -71,12 +71,12 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
         {
             // split opt into pre= and post=
             std::string key;
-            std::string val;
 
-            size_t found = opt.find("=");
+            size_t found = opt.find('=');
             if (found != std::string::npos)
             {
-                key = opt.substr(0, found);
+	            std::string val;
+	            key = opt.substr(0, found);
                 val = opt.substr(found + 1);
             }
             else
@@ -125,7 +125,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
 osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, std::ostream& fout,
     const Options* options) const
 {
-    bool isKtx2 = true;
+	const bool isKtx2 = true;
     if (options)
     {
         std::istringstream iss(options->getOptionString());
@@ -134,12 +134,12 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
         {
             // split opt into pre= and post=
             std::string key;
-            std::string val;
 
-            size_t found = opt.find("=");
+            const size_t found = opt.find('=');
             if (found != std::string::npos)
             {
-                key = opt.substr(0, found);
+	            std::string val;
+	            key = opt.substr(0, found);
                 val = opt.substr(found + 1);
             }
             else
@@ -174,13 +174,13 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
 #endif
             imageList.push_back(seq->getImage(i));
 
-        bool result = osg::saveKtx2(fout, useCubemap, imageList, isKtx2);
+        const bool result = osg::saveKtx2(fout, useCubemap, imageList, isKtx2);
         return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
     }
     else
         imageList.push_back(imagePtr);
 
-    bool result = osg::saveKtx2(fout, false, imageList, isKtx2);
+	const bool result = osg::saveKtx2(fout, false, imageList, isKtx2);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 

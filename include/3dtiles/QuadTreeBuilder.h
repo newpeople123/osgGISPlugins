@@ -6,23 +6,23 @@
 class QuadTreeBuilder:public TreeBuilder
 {
 public:
-    QuadTreeBuilder(osg::ref_ptr<osg::Node> node) :TreeBuilder() {
-        RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
-        osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+    QuadTreeBuilder(const osg::ref_ptr<osg::Node>& node) {
+	    const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
+	    const osg::BoundingBox totalBoundingBox = GetBoundingBox(rdnv->output);
         rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
-        buildHlod(rootTreeNode);
+        //buildHlod(rootTreeNode);
     }
-    QuadTreeBuilder(osg::ref_ptr<osg::Node> node,const unsigned int maxTriangleNumber,const int maxTreeDepth,const double simpleRatio) :TreeBuilder(maxTriangleNumber,maxTreeDepth-1,simpleRatio) {
-        RebuildDataNodeVisitor* rdnv = new RebuildDataNodeVisitor(node);
-        osg::BoundingBox totalBoundingBox = getBoundingBox(rdnv->output);
+    QuadTreeBuilder(const osg::ref_ptr<osg::Node>& node,const unsigned int maxTriangleNumber,const int maxTreeDepth) :TreeBuilder(maxTriangleNumber,maxTreeDepth-1) {
+    	const RebuildDataNodeVisitorProxy* rdnv = new RebuildDataNodeVisitorProxy(node);
+	    const osg::BoundingBox totalBoundingBox = GetBoundingBox(rdnv->output);
         rootTreeNode = buildTree(totalBoundingBox, rdnv->output);
-        buildHlod(rootTreeNode);
+        //buildHlod(rootTreeNode);
     }
-    ~QuadTreeBuilder() {};
+    ~QuadTreeBuilder() override = default;
 
 protected:
  
-    osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, int x = 0, int y = 0, int z = 0, osg::ref_ptr<TileNode> parent = nullptr, int depth = 0) {
+    osg::ref_ptr<TileNode> buildTree(const osg::BoundingBox& total, const osg::ref_ptr<osg::Group>& inputRoot, const int x = 0, const int y = 0, const int z = 0, const osg::ref_ptr<TileNode>& parent = nullptr, const int depth = 0) {
 
         if (total.valid()) {
             int s[2];
@@ -31,13 +31,12 @@ protected:
                 (total._max + total._min) * 0.5f,
                 total._max
             };
-            osg::ref_ptr<osg::Group> childData = new osg::Group;
+            const osg::ref_ptr<osg::Group> childData = new osg::Group;
 
             for (unsigned int i = 0; i < inputRoot->getNumChildren(); ++i)
             {
                 const osg::ref_ptr<osg::Node>& obj = inputRoot->getChild(i);
-                obj->dirtyBound();
-                osg::BoundingBox childBox = getBoundingBox(obj);
+                osg::BoundingBox childBox = GetBoundingBox(obj);
                 if (total.contains(childBox._min) && total.contains(childBox._max))
                     childData->addChild(obj);
                 else if (total.intersects(childBox))
@@ -54,13 +53,17 @@ protected:
             childData->accept(tnnv);
             triangleNumber += tnnv.count;
             if (triangleNumber == 0) {
-                return NULL;
+                return nullptr;
             }
+
+            ComputeTextureSizeVisitor ctsv;
+            childData->accept(ctsv);
             bool isLeafNode = false;
-            if (triangleNumber <= _maxTriangleNumber || depth >= _maxTreeDepth)
-            {
-                isLeafNode = true;
-            }
+            const unsigned int num = childData->getNumChildren();
+            if ((triangleNumber <= _maxTriangleNumber && ctsv.size <= 20) || depth >= _maxTreeDepth || num == 1)
+			{
+				isLeafNode = true;
+			}
 
 
             osg::ref_ptr<TileNode> root = new TileNode;
@@ -72,7 +75,7 @@ protected:
 
             if (!isLeafNode)
             {
-                osg::ref_ptr<osg::Group> childNodes = new osg::Group;
+	            const osg::ref_ptr<osg::Group> childNodes = new osg::Group;
 
                 for (s[0] = 0; s[0] < 2; ++s[0]) //x
                 {
@@ -90,7 +93,7 @@ protected:
 
                         int id = s[0] + (2 * s[1]);
                         osg::ref_ptr<TileNode> childTreeNode = buildTree(osg::BoundingBox(min, max), childData, root->x * 2 + s[0], root->y * 2 + s[1], root->z , root, depth + 1);
-                        if (childTreeNode != NULL)
+                        if (childTreeNode != nullptr)
                             childNodes->addChild(childTreeNode);
                     }
                 }
@@ -111,15 +114,15 @@ protected:
                 for (unsigned int i = 0; i < childData->getNumChildren(); ++i)
                 {
                     const osg::ref_ptr<osg::Node>& obj = childData->getChild(i);
-
                     root->nodes->addChild(obj);
                     root->currentNodes->addChild(obj);
                 }
+                root->size = ctsv.size;
             }
 
             return root;
         }
-        return NULL;
+        return nullptr;
     }
 };
 #endif // !OSG_GIS_PLUGINS_QUADTREEBUILDER

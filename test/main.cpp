@@ -20,6 +20,8 @@
 #include <osgViewer/ViewerEventHandlers>
 #include <utils/TextureAtlas.h>
 #include <utils/TextureOptimizier.h>
+
+#include "utils/SimplifyIndices.h"
 using namespace std;
 
 class MyGetValueVisitor : public osg::ValueObject::GetValueVisitor
@@ -226,73 +228,10 @@ osg::ref_ptr<osg::Node> tesslatorGeometry()
     return matTransNode.get();
 }
 
-class B3dmOptimizer :public osg::NodeVisitor {
-public:
-    B3dmOptimizer() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
-    void apply(osg::MatrixTransform& xform)
-    {
-        osg::ref_ptr<osg::Group> replaceNode = new osg::Group;
-        for (unsigned int j = 0; j < xform.asGroup()->getNumChildren(); j++) {
-            replaceNode->addChild(xform.asGroup()->getChild(j));
-        }
-        apply(static_cast<osg::Group&>(*replaceNode.get()));
-        xform.asGroup()->removeChildren(0, xform.asGroup()->getNumChildren());
-        for (unsigned int j = 0; j < replaceNode->getNumChildren(); j++) {
-            xform.asGroup()->addChild(replaceNode->getChild(j));
-        }
-    }
-    void apply(osg::Group& group) {
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::MERGE_GEODES);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::INDEX_MESH);
-        _optimizer.optimize(group.asGroup(), osgUtil::Optimizer::SHARE_DUPLICATE_STATE);
-        osgUtil::Optimizer::MergeGeometryVisitor mgv;
-        mgv.setTargetMaximumNumberOfVertices(10000000);//100w
-        group.accept(mgv);
-        for (unsigned int i = 0; i < group.getNumChildren(); i++) {
-            osg::ref_ptr<osg::Node> child = group.getChild(i);
-            if (typeid(*child.get()) == typeid(osg::MatrixTransform)) {
-                osg::ref_ptr<osg::Group> replaceChild = new osg::Group;
-                for (unsigned int j = 0; j < child->asGroup()->getNumChildren(); j++) {
-                    replaceChild->addChild(child->asGroup()->getChild(j));
-                }
-                apply(static_cast<osg::Group&>(*replaceChild.get()));
-                child->asGroup()->removeChildren(0, child->asGroup()->getNumChildren());
-                for (unsigned int j = 0; j < replaceChild->getNumChildren(); j++) {
-                    child->asGroup()->addChild(replaceChild->getChild(j));
-                }
-            }
-            else if (typeid(*child.get()) == typeid(osg::Group)) {
-                apply(static_cast<osg::Group&>(*child.get()));
-            }
-        }
-    }
-private:
-    osgUtil::Optimizer _optimizer;
-};
-inline std::string utf8_to_gbk(const std::string& str)
-{
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
-    std::wstring tmp_wstr = conv.from_bytes(str);
-    //GBK locale name in windows
-    const char* GBK_LOCALE_NAME = ".936";
-    std::wstring_convert<std::codecvt_byname<wchar_t, char, mbstate_t>> convert(new std::codecvt_byname<wchar_t, char, mbstate_t>(GBK_LOCALE_NAME));
-    return convert.to_bytes(tmp_wstr);
-}
-
-inline std::string gbk_to_utf8(const std::string& str)
-{
-    //GBK locale name in windows
-    const char* GBK_LOCALE_NAME = ".936";
-    std::wstring_convert<std::codecvt_byname<wchar_t, char, mbstate_t>> convert(new std::codecvt_byname<wchar_t, char, mbstate_t>(GBK_LOCALE_NAME));
-    std::wstring tmp_wstr = convert.from_bytes(str);
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> cv2;
-    return cv2.to_bytes(tmp_wstr);
-}
 void testOsgdb_fbx() {
     clock_t start, end;
     start = clock();
-    string filename = "D:\\Data\\芜湖水厂总装1.fbx";
+    string filename = R"(E:\Code\2023\Other\data\jianzhu+tietu.fbx)";//芜湖水厂总装单位M
     osg::setNotifyLevel(osg::ALWAYS);
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
     //TraverseMaterials(node);
@@ -308,10 +247,16 @@ void testOsgdb_fbx() {
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-meshopt.gltf", option);
     //option->setOptionString("embedImages compressionType=draco");
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-draco.gltf", option);
-    
-    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none");
-    osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\1.gltf", option);
-
+ //   osgViewer::Viewer viewer;
+ //   viewer.setSceneData(node);
+ //   viewer.run();
+	//SimplifyGeometryNodeVisitor sgnv(0.2f);
+	//node->accept(sgnv);
+    //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=draco ratio=0.5");
+    //osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\1.b3dm)", option);
+    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=draco ratio=0.5");
+    osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\1.b3dm)", option);
+    //osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\1.gltf)", option);
     //osgUtil::SmoothingVisitor smoothVisitor;
     //node->accept(smoothVisitor);
     //option->setOptionString("embedImages embedBuffers prettyPrint textureType=jpg");
@@ -403,26 +348,11 @@ public:
     TextureVisitor2() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
 
     }
-    void apply(osg::Node& node) {
-        osg::StateSet* ss = node.getStateSet();
-        osg::ref_ptr<osg::Geometry> geom = node.asGeometry();
-        if (geom.valid()) {
-            osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
-            if (texCoords.valid()) {
-                for (unsigned int q = 0; q < texCoords->size(); ++q) {
-                    osg::Vec2 coord = texCoords->at(q);
-                    const double u = coord.x();
-                    const double v = coord.y();
-                    if (u > 1.0 || u < -1.0 || v>1.0 || v < -1.0) {
-                        return;
-                    }
-                }
-            }
+    void apply(osg::Texture& texture) {
+        for (unsigned int i = 0; i < texture.getNumImages(); i++) {
+            osg::ref_ptr<osg::Image> img = texture.getImage(i);
+            std::cout << img->getOrigin() << std::endl;
         }
-        if (ss) {
-            apply(*ss);
-        }
-        traverse(node);
     }
     void apply(osg::StateSet& stateset) {
         for (unsigned int i = 0; i < stateset.getTextureAttributeList().size(); ++i)
@@ -435,23 +365,14 @@ public:
             }
         }
     }
-    void apply(osg::Texture& texture) {
-        for (unsigned int i = 0; i < texture.getNumImages(); i++) {
-            osg::ref_ptr<osg::Image> img = texture.getImage(i);
-            if (img.valid()) {
-                unsigned char* data = img->data();
-                if (data != nullptr) {
-                    delete data;
-                }
-                int count = img->referenceCount();
-                for (int i = 0; i < count; ++i) {
-                    img.release();
-                }
-            }
+    void apply(osg::Node& node) {
+        osg::StateSet* ss = node.getStateSet();
+        osg::ref_ptr<osg::Geometry> geom = node.asGeometry();
+        if (ss) {
+            apply(*ss);
         }
+        traverse(node);
     }
-
-private:
 
 };
 void testTextureAtlas() {
@@ -459,7 +380,7 @@ void testTextureAtlas() {
     node = nullptr;
     osg::Node* node1 = node.get();
     node1 = NULL;
-    TextureOptimizer* to = new TextureOptimizer(node, JPG,4096);
+    TextureOptimizerProxy* to = new TextureOptimizerProxy(node, JPG,4096);
     delete to;
     //osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
     //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
@@ -579,21 +500,33 @@ int main() {
     setlocale(LC_ALL, "en_US.UTF-8");
     //testOsgdb_webp();
     //testOsgdb_fbx();
-    //testTextureAtlas();
-    createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
-    createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
-    createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
-    createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
-    createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
+ 
+ //   osg::ref_ptr<osg::Node> node = osgDB::readNodeFile("D:\\Data\\龙翔桥站厅.FBX");
+ //   osgViewer::Viewer viewer1;
+	//viewer1.setUpViewInWindow(100, 100, 800, 600); // (x, y, width, height)
+	//viewer1.setSceneData(node.get());
+	//viewer1.addEventHandler(new osgViewer::WindowSizeHandler);//全屏  快捷键f
+	//viewer1.addEventHandler(new osgViewer::StatsHandler);//查看帧数 s
+	//viewer1.addEventHandler(new osgViewer::ScreenCaptureHandler);//截图  快捷键 c
+	//viewer1.run();
+ //   osg::ref_ptr<osgDB::Options> option = new osgDB::Options;
+ //   option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none textureType=jpg");
+ //   osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.24.0\\html\\3dtiles\\1.gltf", option);
+ //   TextureVisitor2 tv2;
+ //   node->accept(tv2);
+
+    //createCube(osg::Vec3(), 10000, osg::Vec4(1.0, 0.0, 0.0, 1.0),"root.b3dm");
+    //createCube(osg::Vec3(10000,0, 10000), 1000, osg::Vec4(0.0, 1.0, 0.0, 1.0),"0\\L0_0_0_0.b3dm");
+    //createCube(osg::Vec3(-10000, 0, 10000), 1000, osg::Vec4(0.0, 0.0, 1.0, 1.0), "0\\L0_0_1_0.b3dm");
+    //createCube(osg::Vec3(10000, 0, -10000), 1000, osg::Vec4(1.0, 1.0, 0.0, 1.0), "0\\L0_1_0_0.b3dm");
+    //createCube(osg::Vec3(-10000, 0, -10000), 1000, osg::Vec4(0.0, 1.0, 1.0, 1.0), "0\\L0_1_1_0.b3dm");
 
     //test();
     //std::cout << 1 << std::endl;
     //std::cout << 2 << std::endl;
     //std::cout << 3 << std::endl;
 
-    //const std::string basePath = "E:\\Code\\2023\\Other\\data\\芜湖水厂总装.fbm\\";
-    //osg::ref_ptr<osg::Image> img1 = osgDB::readImageFile(basePath + "440305A020GHJZA010.png");
-    //preview_img(img1);
+    testOsgdb_fbx();
     //osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C:\\Users\\ecidi-cve\\Desktop\\1.jpg");
     //img->scaleImage(800, 600, 1);
     //osgDB::writeImageFile(*img.get(),"C:\\Users\\ecidi-cve\\Desktop\\2.jpg");

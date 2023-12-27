@@ -43,7 +43,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有Pbr材质的fbx文件
 这里的3D模型指的是fbx、obj、3ds等osg能够读取的三维模型，但是不包括倾斜摄影模型，倾斜摄影模型目前建议使用[https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles)。  
 ### 用法说明
 #### 命令行格式
-``model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/none> -t <quad/oc> -max <Number> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -draco_compression_level <low/medium/high>``
+``model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/none> -t <quad/oc> -max <Number> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporess_level <low/medium/high> -multi_threading <true/false>``
 #### 示例命令
 ```sh
 model23dtiles.exe -i D:\test.fbx -o D:\output -lat 30 -lng 116 -height 100
@@ -59,13 +59,14 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 #### 参数说明
 `-tf` 纹理压缩格式，可选值有：png、jpg、webp、ktx2，默认值为：jpg。  
 `-vf` 顶点压缩格式，可选的值有：draco、meshopt、none，默认值为：none，即不对顶点进行压缩。
-`draco_compression_level` draco压缩级别，可选的值为：low、medium、high，默认值为：medium。
+`comporess_level` draco压缩级别，可选的值为：low、medium、high，默认值为：medium。
 `-t` 3dtiles的组织结构，可以为四叉树或八叉树，可选的值有：quad、oc，默认值为：quad。  
 `-max` b3dm文件所包含的三角面的最大数量，默认值为:40000。  
 `-ratio` 3dtiles中间节点的简化比例，默认值为：0.5。  
-`-lat` 纬度  
-`-lng` 经度  
-`-height` 高度  
+`-lat` 纬度,默认30
+`-lng` 经度，默认116
+`-height` 高度，默认300
+`-multi_threading` 是否启用多线程，默认false
 # 编译说明
 1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah 
 提取码：fgah )，下载解压后放在和src同级目录下即可  
@@ -118,7 +119,7 @@ Convert b3dm files to gltf/glb.
 The 3D model here refers to 3D models that can be read by OSG such as FBX, OBJ, and 3ds, but does not include oblique photography models. Currently, it is recommended to use oblique photography models [https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles).
 ### Usage
 #### Command Line
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/none> -t <quad/oc> -max <Number> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -draco_compression_level <low/medium/high>`
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/none> -t <quad/oc> -max <Number> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -compress_level <low/medium/high> -multi_threading <true/false>`
 #### Examples
 ```sh
 # output 3dtiles by texture format ktx2 and vertex format draco
@@ -134,12 +135,13 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-tf` texture format,option values are png、jpg、webp、ktx2，default value is jpg.  
 `-vf` vertex format,option values are draco、meshopt、none,default is none.  
 `-t` tree format,option values are quad、oc,default is quad.  
-`draco_compression_level` draco comporession level,option values are low、medium、high,default is medium.
+`compress_level` draco comporession level,option values are low、medium、high,default is medium.
 `-max` the maximum number of triangles contained in the b3dm node.default value is 40000.  
 `-ratio` Simplified ratio of intermediate nodes.default is 0.5.  
-`-lat` latitude  
-`-lng` longitude  
-`-height` height  
+`-lat` latitude,default is 30
+`-lng` longitude,default is 116
+`-height` height,default is 300
+`-multi_threading` Is multithreading enabled,default is false
 # Compilation Instructions
 1. Compilation requires libraries such as fbxsdk and modified tinygltf, but the file is too large to upload, so it was placed on Baidu's online drive (link: [https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah](https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah),Extract code: fgah). After downloading and decompressing, it can be placed in the same level directory as src  
 2. When compiling, it is necessary to modify the CMAKE in the CMakeLists file in the root directory the value of CMAKE_TOOLCHAIN_FILE the variable is the local vcpkg tool path.

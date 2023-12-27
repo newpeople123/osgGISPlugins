@@ -90,9 +90,9 @@ class WriterNodeVisitor: public osg::NodeVisitor
             _firstNodeProcessed(false)
         {}
 
-        virtual void apply(osg::Geometry& node);
-        virtual void apply(osg::Group& node);
-        virtual void apply(osg::MatrixTransform& node);
+        void apply(osg::Geometry& node) override;
+        void apply(osg::Group& node) override;
+        void apply(osg::MatrixTransform& node) override;
         
         void traverse (osg::Node& node)
         {
@@ -207,9 +207,9 @@ class WriterNodeVisitor: public osg::NodeVisitor
 
         /// Set Vertices, normals, and UVs
         void setControlPointAndNormalsAndUV(const GeometryList& geometryList,
-                                            MapIndices&       index_vert,
-                                            bool              texcoords,
-                                            FbxMesh*         fbxMesh);
+                                                   const MapIndices&       index_vert,
+                                                   bool              texcoords,
+                                                   FbxMesh*         fbxMesh);
 
         /**
         *  Create the list of faces from the geode.
