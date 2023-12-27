@@ -206,7 +206,7 @@ class WriterNodeVisitor: public osg::NodeVisitor
         void setLayerTextureAndMaterial(FbxMesh* mesh);
 
         /// Set Vertices, normals, and UVs
-        static void setControlPointAndNormalsAndUV(const GeometryList& geometryList,
+        void setControlPointAndNormalsAndUV(const GeometryList& geometryList,
                                                    const MapIndices&       index_vert,
                                                    bool              texcoords,
                                                    FbxMesh*         fbxMesh);

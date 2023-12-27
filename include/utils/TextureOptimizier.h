@@ -409,7 +409,7 @@ public:
 		return *this;
 	}
 private:
-	static std::vector<TextureAtlas*> copyTextureAtlases(const std::vector<TextureAtlas*>& source) {
+	std::vector<TextureAtlas*> copyTextureAtlases(const std::vector<TextureAtlas*>& source) {
 		std::vector<TextureAtlas*> result;
 		std::transform(source.begin(), source.end(), std::back_inserter(result),
 			[](const TextureAtlas* atlas) { return new TextureAtlas(*atlas); });

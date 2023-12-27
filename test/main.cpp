@@ -20,6 +20,8 @@
 #include <osgViewer/ViewerEventHandlers>
 #include <utils/TextureAtlas.h>
 #include <utils/TextureOptimizier.h>
+
+#include "utils/SimplifyIndices.h"
 using namespace std;
 
 class MyGetValueVisitor : public osg::ValueObject::GetValueVisitor
@@ -229,7 +231,7 @@ osg::ref_ptr<osg::Node> tesslatorGeometry()
 void testOsgdb_fbx() {
     clock_t start, end;
     start = clock();
-    string filename = R"(E:\Code\2023\Other\data\龙翔桥站.fbx)";
+    string filename = R"(E:\Code\2023\Other\data\jianzhu+tietu.fbx)";//芜湖水厂总装单位M
     osg::setNotifyLevel(osg::ALWAYS);
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
     //TraverseMaterials(node);
@@ -245,10 +247,16 @@ void testOsgdb_fbx() {
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-meshopt.gltf", option);
     //option->setOptionString("embedImages compressionType=draco");
     //osgDB::writeNodeFile(*node.get(), "D:\\nginx-1.22.1\\html\\3dtiles\\1\\tile-optimizer-draco.gltf", option);
-    
-    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=none");
-    osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\new-hlod4\1.b3dm)", option);
-
+ //   osgViewer::Viewer viewer;
+ //   viewer.setSceneData(node);
+ //   viewer.run();
+	//SimplifyGeometryNodeVisitor sgnv(0.2f);
+	//node->accept(sgnv);
+    //option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=draco ratio=0.5");
+    //osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\1.b3dm)", option);
+    option->setOptionString("embedImages embedBuffers prettyPrint isBinary compressionType=draco ratio=0.5");
+    osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\1.b3dm)", option);
+    //osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\1.gltf)", option);
     //osgUtil::SmoothingVisitor smoothVisitor;
     //node->accept(smoothVisitor);
     //option->setOptionString("embedImages embedBuffers prettyPrint textureType=jpg");

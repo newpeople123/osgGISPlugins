@@ -142,10 +142,12 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 				b3dmPath = output + "/root.b3dm";
 		}
 		if (!b3dmPath.empty() && tileNode->currentNodes != nullptr && tileNode->currentNodes->getNumChildren()) {
-			SimplifyGeometryNodeVisitor sgnv(simpleRatio);
-			tileNode->currentNodes->accept(sgnv);
+			if (simpleRatio < 1.0) {
+				SimplifyGeometryNodeVisitor sgnv(simpleRatio);
+				tileNode->currentNodes->accept(sgnv);
+			}
 			const int pixelSize = tileNode->singleTextureMaxSize;
-			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));
+			option->setOptionString(option->getOptionString() + " textureMaxSize=" + std::to_string(pixelSize));// +" ratio=" + std::to_string(simpleRatio));
 			osgDB::writeNodeFile(*tileNode->currentNodes, b3dmPath, option);
 		}
 	}
@@ -154,22 +156,11 @@ inline void WriteB3DM(const osg::ref_ptr<TileNode>& tileNode, const std::string&
 inline void BuildHlodAndWriteB3DM(const osg::ref_ptr<TileNode>& rootTreeNode, const std::string& output, const osg::ref_ptr<osgDB::Options>& option, const double simpleRatio, const bool enableMultiThreading) {
 	std::vector<std::vector<osg::ref_ptr<TileNode>>> levels;
 	ConvertTreeNode2Levels(rootTreeNode, levels);
-	auto func = [&levels, &simpleRatio](int i) {
-		const std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
-		for (const osg::ref_ptr<TileNode>& treeNode : level) {
-			if (treeNode->currentNodes->getNumChildren()) {
-				const osg::ref_ptr<osg::Node> lodModel = treeNode->currentNodes.get();
-				//osgUtil::Simplifier simplifier;
-				//simplifier.setSampleRatio(simpleRatio);
-				//lodModel->accept(simplifier);
-				SimplifyGeometryNodeVisitor sgnv(simpleRatio);
-				lodModel->accept(sgnv);
-			}
-		}
-		};
+
 	bool isLoadB3dmDll = false;
 	for (int i = levels.size() - 1; i > -1; --i) {
 		std::vector<osg::ref_ptr<TileNode>> level = levels.at(i);
+		//const double levelSimpleRatio = std::pow(simpleRatio, std::pow(2, levels.size() - 1 - i));
 		for (osg::ref_ptr<TileNode>& treeNode : level) {
 
 			if (treeNode->currentNodes->getNumChildren() == 0) {
@@ -317,6 +308,7 @@ inline void WriteTileset(const osg::ref_ptr<TileNode>& node, const std::string& 
 			if (node->currentNodes != nullptr && node->currentNodes->getNumChildren()) {
 				tileset["geometricError"] = node->upperGeometricError;
 				tileset["root"]["geometricError"] = node->lowerGeometricError;
+				tileset["root"]["content"]["uri"] = "root.b3dm";
 			}
 		}
 	}

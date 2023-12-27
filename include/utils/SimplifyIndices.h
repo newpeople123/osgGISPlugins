@@ -6,6 +6,10 @@
 
 class SimplifyGeometryNodeVisitor :public osg::NodeVisitor {
 	double _simpleRatio = 1.0;
+	unsigned int _options = meshopt_SimplifyLockBorder;
+	float _target_error = 1e-2f;
+	float _target_error_aggressive = 1e-1f;
+	bool _aggressive = false;
 public:
 	SimplifyGeometryNodeVisitor(double simpleRatio) :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _simpleRatio(simpleRatio)
 	{
@@ -42,7 +46,12 @@ public:
 						}
 						osg::ref_ptr<osg::UShortArray> destination = new osg::UShortArray;
 						destination->resize(numIndices);
-						const size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), 0.05f);
+						size_t newLength = 0;
+						if(!_aggressive)
+							newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), _target_error, _options);
+						else
+							newLength = meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), _target_error_aggressive);
+
 						if (newLength>0) {
 							osg::ref_ptr<osg::UShortArray> newIndices = new osg::UShortArray;
 
@@ -50,7 +59,7 @@ public:
 							{
 								newIndices->push_back(destination->at(i));
 							}
-							geom->setPrimitiveSet(kk, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));//&(*newIndices)[0])
+							geom->setPrimitiveSet(kk, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
 						}
 						else
 						{
@@ -67,7 +76,12 @@ public:
 						}
 						osg::ref_ptr<osg::UIntArray> destination = new osg::UIntArray;
 						destination->resize(numIndices);
-						const size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), 0.05f);
+						size_t newLength = 0;
+						if (!_aggressive)
+							newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), _target_error, _options);
+						else
+							newLength = meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], (size_t)numIndices, vertices.data(), (size_t)count, (size_t)(sizeof(float) * 3), static_cast<size_t>(numIndices * this->_simpleRatio), _target_error_aggressive);
+
 						osg::ref_ptr<osg::UIntArray> newIndices = new osg::UIntArray;
 						if (newLength>0) {
 							for (size_t i = 0; i < static_cast<size_t>(newLength); ++i)

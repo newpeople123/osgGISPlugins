@@ -1,6 +1,5 @@
 #include <osgdb_b3dm/ReaderWriterB3DM.h>
 #include <osgDB/FileNameUtils>
-#include <osgUtil/Optimizer>
 #include <osg/MatrixTransform>
 #include <osgUtil/Statistics>
 #include <utils/TextureOptimizier.h>
@@ -34,7 +33,7 @@ private:
 
 class BatchIdVisitor :public osg::NodeVisitor {
 public:
-    BatchIdVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
+    BatchIdVisitor() : NodeVisitor(TRAVERSE_ALL_CHILDREN) {};
 
     void apply(osg::Node& node) override
     {
@@ -92,7 +91,7 @@ void put_val(std::string& buf, T val) {
 class ForcedReleaseTextureVisitor :public osg::NodeVisitor
 {
 public:
-    ForcedReleaseTextureVisitor() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {
+    ForcedReleaseTextureVisitor() : NodeVisitor(TRAVERSE_ALL_CHILDREN) {
 
     }
     void apply(osg::Node& node) override
@@ -131,13 +130,14 @@ public:
     }
 
 };
-tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options)
+tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, const Options* options) const
 {
 
     bool embedImages = true, embedBuffers = true, prettyPrint = false, isBinary = true;
     int textureMaxSize = 4096;
-    TextureType textureType = TextureType::PNG;
-    CompressionType comporession_type = CompressionType::NONE;
+    double ratio = 1.0;
+    TextureType textureType = PNG;
+    CompressionType comporession_type = NONE;
     int comporessLevel = 1;
     if (options)
     {
@@ -165,26 +165,26 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
             {
                 textureTypeStr = osgDB::convertToLowerCase(val);
                 if (textureTypeStr == "ktx") {
-                    textureType = TextureType::KTX;
+                    textureType = KTX;
                 }
                 else if (textureTypeStr == "ktx2") {
-                    textureType = TextureType::KTX2;
+                    textureType = KTX2;
                 }
                 else if (textureTypeStr == "jpg") {
-                    textureType = TextureType::JPG;
+                    textureType = JPG;
                 }
                 else if (textureTypeStr == "webp") {
-                    textureType = TextureType::WEBP;
+                    textureType = WEBP;
                 }
             }
             else if (key == "compressionType")
             {
                 compressionTypeStr = osgDB::convertToLowerCase(val);
                 if (compressionTypeStr == "draco") {
-                    comporession_type = CompressionType::DRACO;
+                    comporession_type = DRACO;
                 }
                 else if (compressionTypeStr == "meshopt") {
-                    comporession_type = CompressionType::MESHOPT;
+                    comporession_type = MESHOPT;
                 }
             }
             else if (key == "comporessLevel") {
@@ -200,6 +200,10 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
             }
             else if (key == "textureMaxSize") {
                 textureMaxSize = std::atoi(val.c_str());
+            }
+            else if(key=="ratio")
+            {
+                ratio = std::atof(val.c_str());
             }
         }
     }
@@ -222,11 +226,11 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
         node->accept(stats);
         stats.totalUpStats();
         OSG_NOTICE << std::endl << "Stats after:" << std::endl;
-        stats.print(osg::notify(osg::NOTICE));
+        stats.print(notify(osg::NOTICE));
     }
     tinygltf::Model gltfModel;
     {
-        OsgToGltf osg2gltf(textureType, comporession_type, comporessLevel);
+        OsgToGltf osg2gltf(textureType, comporession_type, comporessLevel, ratio);
 
 
         // GLTF uses a +X=right +y=up -z=forward coordinate system,but if using osg to process external data does not require this
@@ -305,7 +309,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
             json typeInstances=json::object();
             for (unsigned int j = 0; j < udc->getNumUserObjects(); ++j)
             {
-                osg::Object* userObject = udc->getUserObject(j);
+	            Object* userObject = udc->getUserObject(j);
 
                 std::string key = userObject->getName();
                 typeInstances[key] = json::array();
@@ -334,7 +338,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
                     bool isEqualType = true;
                     for (unsigned int k = 0; k < udc->getNumUserObjects(); ++k)
                     {
-                        osg::Object* userObject = udc->getUserObject(k);
+	                    Object* userObject = udc->getUserObject(k);
 
                         std::string key = userObject->getName();
 
@@ -346,7 +350,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterB3DM::writeNode(
                     if (isEqualType) {
                         for (unsigned int k = 0; k < udc->getNumUserObjects(); ++k)
                         {
-                            osg::Object* userObject = udc->getUserObject(k);
+	                        Object* userObject = udc->getUserObject(k);
 
                             std::string key = userObject->getName();
 

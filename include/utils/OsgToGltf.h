@@ -3,7 +3,6 @@
 #include <utils/GltfUtils.h>
 #include <osg/Node>
 #include <osg/Geometry>
-#include <osgDB/ReaderWriter>
 #include <osgDB/ReadFile>
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
@@ -14,7 +13,6 @@
 #include <osg/Image>
 #include <meshoptimizer.h>
 #include <osgUtil/SmoothingVisitor>
-#include <osgUtil/Optimizer>
 class OsgToGltf :public osg::NodeVisitor {
 	typedef std::map<osg::ref_ptr<const osg::Node>, int> OsgNodeSequenceMap;
 	typedef std::map<osg::ref_ptr<const osg::BufferData>, int> ArraySequenceMap;
@@ -33,6 +31,7 @@ class OsgToGltf :public osg::NodeVisitor {
 	osg::ref_ptr<osg::Geode> _cacheGeode = nullptr;
 	CompressionType _compresssionType = NONE;
 	int _vco = 1;
+	double _ratio = 1.0;
 	TextureType _textureType = PNG;
 	GltfUtils* _gltfUtils;
 
@@ -58,7 +57,7 @@ class OsgToGltf :public osg::NodeVisitor {
 		_ssStack.pop_back();
 	}
 
-	static unsigned getBytesInDataType(const GLenum dataType)
+	unsigned getBytesInDataType(const GLenum dataType)
 	{
 		return
 			dataType == GL_BYTE || dataType == GL_UNSIGNED_BYTE ? 1 :
@@ -67,12 +66,12 @@ class OsgToGltf :public osg::NodeVisitor {
 			0;
 	}
 
-	static unsigned getBytesPerElement(const osg::Array* data)
+	unsigned getBytesPerElement(const osg::Array* data)
 	{
 		return data->getDataSize() * getBytesInDataType(data->getDataType());
 	}
 
-	static unsigned getBytesPerElement(const osg::DrawElements* data)
+	unsigned getBytesPerElement(const osg::DrawElements* data)
 	{
 		return
 			dynamic_cast<const osg::DrawElementsUByte*>(data) ? 1 :
@@ -127,7 +126,7 @@ class OsgToGltf :public osg::NodeVisitor {
 		}
 		catch (const std::exception& e)
 		{
-			std::cout << e.what() << std::endl;
+			std::cout << e.what() << '\n';
 			return -1;
 		}
 	}
@@ -326,7 +325,7 @@ class OsgToGltf :public osg::NodeVisitor {
 	}
 	void apply(osg::Drawable& drawable) override
 	{
-		osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+		const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 		if (geom.valid())
 		{
 			if (geom->getNumPrimitiveSets() == 0)
@@ -364,17 +363,19 @@ class OsgToGltf :public osg::NodeVisitor {
 				}
 			}
 			//1
-			reindexMesh(geom, positions, normals, texCoords);
+			_gltfUtils->reindexMesh(geom);
 			//2
-			mergePrimitives(geom);
+			if(_ratio < 1.0)
+				_gltfUtils->simplifyMesh(geom, _ratio, false, false);
 			//3
+			_gltfUtils->mergePrimitives(geom);
 
 			osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
 			osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 			positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 			normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
 			texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
-			const osg::ref_ptr<osg::FloatArray> batchIds = static_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
+			const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 			if (!texCoords.valid())
 			{
 				// See if we have 3d texture coordinates and convert them to vec2
@@ -460,9 +461,13 @@ class OsgToGltf :public osg::NodeVisitor {
 					if (texCoords.valid() && currentMaterial >= 0) {
 						getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
 					}
-					if (batchIds) {
+					if (batchIds.valid()&&batchIds->size()==positions->size()) {
 						getOrCreateBufferView(batchIds, GL_ARRAY_BUFFER_ARB);
 						getOrCreateAccessor(batchIds, pset, primitive, "_BATCHID");
+					}else
+					{
+						if(batchIds)
+							std::cerr << "osg2gltf error:batchid's length is not equal position's length!" << '\n';
 					}
 				}
 			}
@@ -474,343 +479,9 @@ class OsgToGltf :public osg::NodeVisitor {
 		}
 	}
 
-	static void mergePrimitives(const osg::ref_ptr<osg::Geometry>& geom) {
-		osgUtil::Optimizer optimizer;
-		optimizer.optimize(geom, osgUtil::Optimizer::INDEX_MESH);
-		osg::ref_ptr<osg::PrimitiveSet> mergePrimitiveset = nullptr;
-		const unsigned int numPrimitiveSets = geom->getNumPrimitiveSets();
-		for (unsigned i = 0; i < numPrimitiveSets; ++i) {
-			osg::PrimitiveSet* pset = geom->getPrimitiveSet(i);;
-			const osg::PrimitiveSet::Type type = pset->getType();
-			switch (type)
-			{
-			case osg::PrimitiveSet::PrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawArraysPrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawArrayLengthsPrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawElementsUBytePrimitiveType:
-				if (mergePrimitiveset == nullptr) {
-					if (geom->getNumPrimitiveSets() > 1)
-						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
-				}
-				else {
-					const auto primitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(pset);
-					const osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
-					if (mergeType == osg::PrimitiveSet::DrawElementsUBytePrimitiveType) {
-						const auto mergePrimitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(mergePrimitiveset.get());
-						mergePrimitiveUByte->insert(mergePrimitiveUByte->end(), primitiveUByte->begin(), primitiveUByte->end());
-					}
-					else {
-						const auto mergePrimitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(mergePrimitiveset.get());
-						if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
-
-							for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
-								unsigned short index = primitiveUByte->at(k);
-								mergePrimitiveUShort->push_back(index);
-							}
-						}
-						else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
-							const auto mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
-							for (unsigned int k = 0; k < primitiveUByte->getNumIndices(); ++k) {
-								unsigned int index = primitiveUByte->at(k);
-								mergePrimitiveUInt->push_back(index);
-							}
-						}
-					}
-				}
-
-				break;
-			case osg::PrimitiveSet::DrawElementsUShortPrimitiveType:
-				if (mergePrimitiveset == nullptr) {
-					if (geom->getNumPrimitiveSets() > 1)
-						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
-				}
-				else {
-					osg::ref_ptr<osg::DrawElementsUShort> primitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(pset);
-					const osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
-					const osg::ref_ptr<osg::DrawElementsUShort> mergePrimitiveUShort = dynamic_cast<osg::DrawElementsUShort*>(mergePrimitiveset.get());
-					if (mergeType == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
-						mergePrimitiveUShort->insert(mergePrimitiveUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
-						primitiveUShort.release();
-					}
-					else {
-						if (mergeType == osg::PrimitiveSet::DrawElementsUBytePrimitiveType) {
-							const auto mergePrimitiveUByte = dynamic_cast<osg::DrawElementsUByte*>(mergePrimitiveset.get());
-							const auto newMergePrimitvieUShort = new osg::DrawElementsUShort;
-							for (unsigned int k = 0; k < mergePrimitiveUByte->getNumIndices(); ++k) {
-								unsigned short index = mergePrimitiveUByte->at(k);
-								newMergePrimitvieUShort->push_back(index);
-							}
-							newMergePrimitvieUShort->insert(newMergePrimitvieUShort->end(), primitiveUShort->begin(), primitiveUShort->end());
-							primitiveUShort.release();
-							mergePrimitiveset.release();
-							mergePrimitiveset = newMergePrimitvieUShort;
-						}
-						else if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
-							const auto mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
-							for (unsigned int k = 0; k < primitiveUShort->getNumIndices(); ++k) {
-								unsigned int index = primitiveUShort->at(k);
-								mergePrimitiveUInt->push_back(index);
-							}
-							primitiveUShort.release();
-						}
-					}
-
-				}
-				break;
-			case osg::PrimitiveSet::DrawElementsUIntPrimitiveType:
-				if (mergePrimitiveset == nullptr) {
-					if (geom->getNumPrimitiveSets() > 1)
-						mergePrimitiveset = osg::clone(pset, osg::CopyOp::DEEP_COPY_ALL);
-				}
-				else {
-					osg::ref_ptr<osg::DrawElementsUInt> primitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(pset);
-					const osg::PrimitiveSet::Type mergeType = mergePrimitiveset->getType();
-					if (mergeType == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
-						const auto mergePrimitiveUInt = dynamic_cast<osg::DrawElementsUInt*>(mergePrimitiveset.get());
-						mergePrimitiveUInt->insert(mergePrimitiveUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
-						primitiveUInt.release();
-					}
-					else {
-						const auto mergePrimitive = dynamic_cast<osg::DrawElements*>(mergePrimitiveset.get());
-						const auto newMergePrimitvieUInt = new osg::DrawElementsUInt;
-						for (unsigned int k = 0; k < mergePrimitive->getNumIndices(); ++k) {
-							unsigned int index = mergePrimitive->getElement(k);
-							newMergePrimitvieUInt->push_back(index);
-						}
-						newMergePrimitvieUInt->insert(newMergePrimitvieUInt->end(), primitiveUInt->begin(), primitiveUInt->end());
-						primitiveUInt.release();
-						mergePrimitiveset.release();
-						mergePrimitiveset = newMergePrimitvieUInt;
-					}
-				}
-				break;
-			case osg::PrimitiveSet::MultiDrawArraysPrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawArraysIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawElementsUByteIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawElementsUShortIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::DrawElementsUIntIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::MultiDrawArraysIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::MultiDrawElementsUByteIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::MultiDrawElementsUShortIndirectPrimitiveType:
-				break;
-			case osg::PrimitiveSet::MultiDrawElementsUIntIndirectPrimitiveType:
-				break;
-			default:
-				break;
-			}
-		}
-		if (mergePrimitiveset != nullptr) {
-			for (unsigned i = 0; i < numPrimitiveSets; ++i) {
-				geom->removePrimitiveSet(0);
-			}
-			geom->addPrimitiveSet(mergePrimitiveset);
-		}
-	}
-
-	static void reindexMesh(osg::ref_ptr<osg::Geometry>  geom, osg::ref_ptr<osg::Vec3Array>& positions, osg::ref_ptr<osg::Vec3Array>& normals, osg::ref_ptr<osg::Vec2Array>& texCoords) {
-		//reindexmesh
-		const unsigned int num = geom->getNumPrimitiveSets();
-		if (num > 0) {
-			for (unsigned int kk = 0; kk < num; ++kk) {
-				osg::ref_ptr<osg::DrawElements> drawElements = dynamic_cast<osg::DrawElements*>(geom->getPrimitiveSet(kk));
-				if (drawElements.valid() && positions.valid()) {
-					const unsigned int numIndices = drawElements->getNumIndices();
-					std::vector<meshopt_Stream> streams;
-					struct Attr
-					{
-						float f[4];
-					};
-					const size_t count = positions->size();
-					std::vector<Attr> vertexData, normalData, texCoordData;
-					for (size_t i = 0; i < count; ++i)
-					{
-						const osg::Vec3& vertex = positions->at(i);
-						Attr v;
-						v.f[0] = vertex.x();
-						v.f[1] = vertex.y();
-						v.f[2] = vertex.z();
-						v.f[3] = 0.0;
-
-						vertexData.push_back(v);
-
-						if (normals.valid()) {
-							const osg::Vec3& normal = normals->at(i);
-							Attr n;
-							n.f[0] = normal.x();
-							n.f[1] = normal.y();
-							n.f[2] = normal.z();
-							n.f[3] = 0.0;
-							normalData.push_back(n);
-						}
-						if (texCoords.valid()) {
-							const osg::Vec2& texCoord = texCoords->at(i);
-							Attr t;
-							t.f[0] = texCoord.x();
-							t.f[1] = texCoord.y();
-							t.f[2] = 0.0;
-							t.f[3] = 0.0;
-							texCoordData.push_back(t);
-						}
-					}
-					meshopt_Stream vertexStream = {vertexData.data(), sizeof(Attr), sizeof(Attr) };
-					streams.push_back(vertexStream);
-					if (normals.valid()) {
-						meshopt_Stream normalStream = {normalData.data(), sizeof(Attr), sizeof(Attr) };
-						streams.push_back(normalStream);
-					}
-					if (texCoords.valid()) {
-						meshopt_Stream texCoordStream = {texCoordData.data(), sizeof(Attr), sizeof(Attr) };
-						streams.push_back(texCoordStream);
-					}
-
-					osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(geom->getPrimitiveSet(kk));
-					if (drawElementsUShort.valid()) {
-						osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
-						for (unsigned int i = 0; i < numIndices; ++i)
-						{
-							indices->push_back(drawElementsUShort->at(i));
-						}
-						std::vector<unsigned int> remap(positions->size());
-						size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(remap.data(), &(*indices)[0], indices->size(), positions->size(),
-							streams.data(), streams.size());
-
-						//size_t uniqueVertexCount = meshopt_generateVertexRemap(&remap[0], &(*indices)[0], indices->size(), &(*positions)[0].x(), positions->size(), sizeof(osg::Vec3));
-						osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
-						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
-						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
-						osg::ref_ptr<osg::UShortArray> optimizedIndices = new osg::UShortArray(indices->size());
-						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), remap.data());
-						meshopt_remapVertexBuffer(vertexData.data(), vertexData.data(), positions->size(), sizeof(Attr),
-						                          remap.data());
-						vertexData.resize(uniqueVertexCount);
-						if (normals.valid()) {
-							meshopt_remapVertexBuffer(normalData.data(), normalData.data(), normals->size(), sizeof(Attr),
-							                          remap.data());
-							normalData.resize(uniqueVertexCount);
-						}
-						if (texCoords.valid()) {
-							meshopt_remapVertexBuffer(texCoordData.data(), texCoordData.data(), texCoords->size(), sizeof(Attr),
-							                          remap.data());
-							texCoordData.resize(uniqueVertexCount);
-						}
-
-						for (size_t i = 0; i < uniqueVertexCount; ++i) {
-							optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
-							if (normals.valid())
-							{
-								osg::Vec3 n(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
-								n.normalize();
-								optimizedNormals->at(i) = n;
-							}
-							if (texCoords.valid())
-								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-						}
-						geom->setVertexArray(optimizedVertices);
-						if (normals.valid())
-							geom->setNormalArray(optimizedNormals);
-						if (texCoords.valid())
-							geom->setTexCoordArray(0, optimizedTexCoords);
-#pragma region filterTriangles
-						size_t newNumIndices = 0;
-
-						for (size_t i = 0; i < numIndices; i += 3) {
-							unsigned short a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
-
-							if (a != b && a != c && b != c)
-							{
-								optimizedIndices->at(newNumIndices) = a;
-								optimizedIndices->at(newNumIndices + 1) = b;
-								optimizedIndices->at(newNumIndices + 2) = c;
-								newNumIndices += 3;
-							}
-						}
-						optimizedIndices->resize(newNumIndices);
-#pragma endregion
-
-						geom->setPrimitiveSet(kk, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, optimizedIndices->size(), &(*optimizedIndices)[0]));
-
-					}
-					else {
-						osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(kk));
-						osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
-						for (unsigned int i = 0; i < numIndices; ++i)
-						{
-							indices->push_back(drawElementsUInt->at(i));
-						}
-						std::vector<unsigned int> remap(positions->size());
-						size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(remap.data(), &(*indices)[0], indices->size(), positions->size(),
-							streams.data(), streams.size());
-
-						//size_t uniqueVertexCount = meshopt_generateVertexRemap(&remap[0], &(*indices)[0], indices->size(), &(*positions)[0].x(), positions->size(), sizeof(osg::Vec3));
-						osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
-						osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
-						osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
-						osg::ref_ptr<osg::UIntArray> optimizedIndices = new osg::UIntArray(indices->size());
-						meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), remap.data());
-						meshopt_remapVertexBuffer(vertexData.data(), vertexData.data(), positions->size(), sizeof(Attr),
-						                          remap.data());
-						vertexData.resize(uniqueVertexCount);
-						if (normals.valid()) {
-							meshopt_remapVertexBuffer(normalData.data(), normalData.data(), normals->size(), sizeof(Attr),
-							                          remap.data());
-							normalData.resize(uniqueVertexCount);
-						}
-						if (texCoords.valid()) {
-							meshopt_remapVertexBuffer(texCoordData.data(), texCoordData.data(), texCoords->size(), sizeof(Attr),
-							                          remap.data());
-							texCoordData.resize(uniqueVertexCount);
-						}
-						for (size_t i = 0; i < uniqueVertexCount; ++i) {
-							optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
-							if (normals.valid()) {
-								osg::Vec3 n(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
-								n.normalize();
-								optimizedNormals->at(i) = osg::Vec3(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
-							}
-							if (texCoords.valid())
-								optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-						}
-						geom->setVertexArray(optimizedVertices);
-						if (normals.valid())
-							geom->setNormalArray(optimizedNormals);
-						if (texCoords.valid())
-							geom->setTexCoordArray(0, optimizedTexCoords);
-#pragma region filterTriangles
-						size_t newNumIndices = 0;
-						for (size_t i = 0; i < numIndices; i += 3) {
-							unsigned int a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
-
-							if (a != b && a != c && b != c)
-							{
-								optimizedIndices->at(newNumIndices) = a;
-								optimizedIndices->at(newNumIndices + 1) = b;
-								optimizedIndices->at(newNumIndices + 2) = c;
-								newNumIndices += 3;
-							}
-						}
-						optimizedIndices->resize(newNumIndices);
-#pragma endregion
-						geom->setPrimitiveSet(kk, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, optimizedIndices->size(), &(*optimizedIndices)[0]));
-					}
-
-				}
-			}
-		}
-	}
-
 public:
-	OsgToGltf(const TextureType textureType, const CompressionType compresstionType, const int vco) : _compresssionType(compresstionType),
-	                                                                                                  _vco(vco), _textureType(textureType)
+	OsgToGltf(const TextureType textureType, const CompressionType compresstionType, const int vco, const double ratio = 1.0) : _compresssionType(compresstionType),
+	                                                                                                  _vco(vco), _textureType(textureType),_ratio(ratio)
 	{
 		_model.asset.version = "2.0";
 		_gltfUtils = new GltfUtils(_model);

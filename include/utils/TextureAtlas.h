@@ -137,7 +137,7 @@ public:
 		return -1;
 	}
 
-	static void resizeImage(const osg::ref_ptr<osg::Image>& image,osg::Vec2 size) {
+	void resizeImage(const osg::ref_ptr<osg::Image>& image,osg::Vec2 size) {
 		const int currentWidth = image->s();
 		const int currentHeight = image->t();
 		const float scale = std::min(size.x() / currentWidth, size.y() / currentHeight);

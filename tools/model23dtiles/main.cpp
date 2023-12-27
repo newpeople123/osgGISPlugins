@@ -9,6 +9,7 @@
 
 int main(int argc, char** argv)
 {
+    const auto startTime = std::chrono::steady_clock::now();
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #else
@@ -28,7 +29,7 @@ int main(int argc, char** argv)
     arguments.getApplicationUsage()->addCommandLineOption("-lat <number>", "datum point's latitude");
     arguments.getApplicationUsage()->addCommandLineOption("-lng <number>", "datum point's longitude");
     arguments.getApplicationUsage()->addCommandLineOption("-height <number>", "datum point's height");
-    arguments.getApplicationUsage()->addCommandLineOption("-comporessLevel <low/medium/hight>", "draco compression level");
+    arguments.getApplicationUsage()->addCommandLineOption("-comporess_level <low/medium/hight>", "draco compression level");
     arguments.getApplicationUsage()->addCommandLineOption("-multi_threading <true/false>", "Is multithreading enabled");
     arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters");
 
@@ -38,7 +39,7 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-    //std::string input = R"(E:\Code\2023\Other\data\建筑+贴图.fbx)", output = R"(E:\Code\2023\Other\data\建筑+贴图2)";
+    //std::string input = R"(E:\Code\2023\Other\data\222.fbx)", output = R"(D:\nginx-1.22.1\html\3dtiles\222)";
     //osgDB::ofstream fout(output.c_str(), std::ios::out | std::ios::binary);
     //if (fout.is_open()) {
     //    std::cout << std::endl;
@@ -79,7 +80,7 @@ int main(int argc, char** argv)
         while (arguments.read("-lat", latitude));
         while (arguments.read("-lng", longitude));
         while (arguments.read("-height", height));
-        while (arguments.read("-comporessLevel", comporessLevel));
+        while (arguments.read("-comporess_level", comporessLevel));
         while (arguments.read("-multi_threading", multiThreading));
         osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
         std::string optionStr = "textureType=" + textureFormat + " compressionType=" + vertexFormat + " comporessLevel=" + comporessLevel;
@@ -114,7 +115,9 @@ int main(int argc, char** argv)
             for (unsigned i = 0; i < 16; ++i)
                 rootTransform.push_back(*ptr++);
             Write3DTiles(threeDTilesNode, options, output, ratio, multi_threading, rootTransform);
-
+            const auto endTime = std::chrono::steady_clock::now();
+            const double duration_second = std::chrono::duration<double>(endTime - startTime).count();
+            std::cout << "time:" << duration_second << "s" << std::endl;
         }
         catch (const std::invalid_argument& e) {
             std::cerr << "invalid input: " << e.what() << '\n';

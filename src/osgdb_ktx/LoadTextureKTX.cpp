@@ -12,7 +12,7 @@
 #include <osgdb_ktx/LoadTextureKTX.h>
 #include <thread>
 
-static inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
+inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 {
     switch (glFormat)
     {
@@ -207,7 +207,7 @@ static inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 
 namespace osg
 {
-    static osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, int layer, int face,
+    osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, int layer, int face,
         ktx_size_t imgDataSize, bool noCompress = false)
     {
         bool transcoded = false, compressed = false;
@@ -279,7 +279,7 @@ namespace osg
         return image;
     }
 
-    static std::vector<osg::ref_ptr<osg::Image>> loadKtxFromObject(ktxTexture* texture)
+	std::vector<osg::ref_ptr<osg::Image>> loadKtxFromObject(ktxTexture* texture)
     {
         std::vector<osg::ref_ptr<osg::Image>> resultArray;
         ktx_uint32_t numLevels = texture->numLevels;
@@ -348,7 +348,7 @@ namespace osg
         return loadKtxFromObject(texture);
     }
 
-    static ktxTexture* saveImageToKtx(const std::vector<osg::Image*>& images, bool asCubeMap,bool compressed)
+    ktxTexture* saveImageToKtx(const std::vector<osg::Image*>& images, bool asCubeMap,bool compressed)
     {
         ktxTexture* texture = nullptr;
         if (images.empty()) return nullptr;
