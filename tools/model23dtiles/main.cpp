@@ -2,14 +2,12 @@
 #include <3dtiles/Write3DTiles.h>
 #include <osgDB/ReadFile>
 #include <iostream>
-
-#include "osgDB/FileUtils"
+#include <osgDB/FileUtils>
 #include <3dtiles/OctreeBuilder.h>
 #include <3dtiles/QuadTreeBuilder.h>
 
 int main(int argc, char** argv)
 {
-    const auto startTime = std::chrono::steady_clock::now();
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #else
@@ -39,12 +37,8 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
-    //std::string input = R"(E:\Code\2023\Other\data\222.fbx)", output = R"(D:\nginx-1.22.1\html\3dtiles\222)";
-    //osgDB::ofstream fout(output.c_str(), std::ios::out | std::ios::binary);
-    //if (fout.is_open()) {
-    //    std::cout << std::endl;
-    //}
-    std::string input = "", output = "";
+
+    std::string input, output;
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -63,12 +57,7 @@ int main(int argc, char** argv)
     output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
 
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
-    osg::ref_ptr<osg::MatrixTransform> matrixTransformNode = new osg::MatrixTransform;
-    osg::BoundingBox box = GetBoundingBox(node);
-    const osg::Vec3 center = -osg::Vec3(node->getBound().center().x(), node->getBound().center().y(), box.zMin());
-    matrixTransformNode->setMatrix(osg::Matrix::translate(center));
-    matrixTransformNode->addChild(node);
-    node=matrixTransformNode;
+
     if (node.valid()) {
 
         std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", maxTriangle = "40000", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel = "high", multiThreading = "false";
@@ -115,9 +104,6 @@ int main(int argc, char** argv)
             for (unsigned i = 0; i < 16; ++i)
                 rootTransform.push_back(*ptr++);
             Write3DTiles(threeDTilesNode, options, output, ratio, multi_threading, rootTransform);
-            const auto endTime = std::chrono::steady_clock::now();
-            const double duration_second = std::chrono::duration<double>(endTime - startTime).count();
-            std::cout << "time:" << duration_second << "s" << std::endl;
         }
         catch (const std::invalid_argument& e) {
             std::cerr << "invalid input: " << e.what() << '\n';
