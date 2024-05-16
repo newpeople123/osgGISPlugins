@@ -94,31 +94,8 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
     imagePtr->flipVertical();
-    osg::ImageSequence* seq = dynamic_cast<osg::ImageSequence*>(imagePtr);
-    std::vector<osg::Image*> imageList;
-    if (seq)
-    {
-        bool useCubemap = false;
-        if (options)
-        {
-            std::string scm = options->getPluginStringData("SavingCubeMap");
-            std::transform(scm.begin(), scm.end(), scm.begin(), tolower);
-            useCubemap = (scm == "true" || atoi(scm.c_str()) > 0);
-        }
-#if OSG_VERSION_GREATER_THAN(3, 3, 0)
-        for (size_t i = 0; i < seq->getNumImageData(); ++i)
-#else
-        for (size_t i = 0; i < seq->getNumImages(); ++i)
-#endif
-            imageList.push_back(seq->getImage(i));
 
-        bool result = osg::saveKtx(fileName, useCubemap, imageList, isKtx2);
-        return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
-    }
-    else
-        imageList.push_back(imagePtr);
-
-    bool result = osg::saveKtx(fileName, false, imageList, isKtx2);
+    bool result = osg::saveKtx(fileName, imagePtr, isKtx2);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 
@@ -156,31 +133,8 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
     }
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
-    osg::ImageSequence* seq = dynamic_cast<osg::ImageSequence*>(imagePtr);
-    std::vector<osg::Image*> imageList;
-    if (seq)
-    {
-        bool useCubemap = false;
-        if (options)
-        {
-            std::string scm = options->getPluginStringData("SavingCubeMap");
-            std::transform(scm.begin(), scm.end(), scm.begin(), tolower);
-            useCubemap = (scm == "true" || atoi(scm.c_str()) > 0);
-        }
-#if OSG_VERSION_GREATER_THAN(3, 3, 0)
-        for (size_t i = 0; i < seq->getNumImageData(); ++i)
-#else
-        for (size_t i = 0; i < seq->getNumImages(); ++i)
-#endif
-            imageList.push_back(seq->getImage(i));
 
-        const bool result = osg::saveKtx2(fout, useCubemap, imageList, isKtx2);
-        return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
-    }
-    else
-        imageList.push_back(imagePtr);
-
-	const bool result = osg::saveKtx2(fout, false, imageList, isKtx2);
+	const bool result = osg::saveKtx2(fout, imagePtr, isKtx2);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 

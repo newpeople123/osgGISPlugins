@@ -7,7 +7,12 @@
 #pragma warning( disable : 4505 )
 #pragma warning( default : 4996 )
 #endif
-#include <fbxsdk.h>
+#ifdef _WIN32
+#include <windows/fbxsdk.h>
+#else
+#include <linux/fbxsdk.h>
+#endif
+
 
 #include <osgdb_fbx/fbxReader.h>
 

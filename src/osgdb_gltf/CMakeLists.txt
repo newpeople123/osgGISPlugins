@@ -21,11 +21,7 @@ find_package(meshoptimizer CONFIG REQUIRED)
 target_link_libraries(${LIB_NAME} meshoptimizer::meshoptimizer)
 find_package(draco CONFIG REQUIRED)
 target_link_libraries(${LIB_NAME} draco::draco)
-
-#将库安装到bin文件夹中
-# 将目标安装到不同的目录中，具体取决于构建模式
 install(TARGETS ${LIB_NAME}
-    RUNTIME DESTINATION ${PROJECT_ROOT_DIR}/bin/$<CONFIG>
-    LIBRARY DESTINATION ${PROJECT_ROOT_DIR}/lib/$<CONFIG>
-    ARCHIVE DESTINATION ${PROJECT_ROOT_DIR}/lib/$<CONFIG>
+    LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}
 )

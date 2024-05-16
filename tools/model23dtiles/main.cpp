@@ -1,5 +1,7 @@
 #include <osg/ArgumentParser>
 #include <3dtiles/Write3DTiles.h>
+#include <osgDB/Options>
+#include <osgDB/ConvertUTF>
 #include <osgDB/ReadFile>
 #include <iostream>
 #include <osgDB/FileUtils>
@@ -116,4 +118,5 @@ int main(int argc, char** argv)
     else {
         std::cout << "Error:can not read 3d model file!" << '\n';
     }
+    return 1;
 }

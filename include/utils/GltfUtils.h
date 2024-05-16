@@ -1200,7 +1200,7 @@ private:
 		fallbackBuffer.name = "fallback";
 		int byteOffset = 0, fallbackByteOffset = 0;
 		for (auto& bufferView : _model.bufferViews) {
-			auto& meshoptExtension = bufferView.extensions.find("EXT_meshopt_compression");
+			const auto& meshoptExtension = bufferView.extensions.find("EXT_meshopt_compression");
 			if (meshoptExtension != bufferView.extensions.end()) {
 				auto& bufferIndex = meshoptExtension->second.Get("buffer");
 				auto& buffer = _model.buffers[bufferIndex.GetNumberAsInt()];
@@ -1268,7 +1268,7 @@ private:
 		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
 		for (auto& mesh : _model.meshes) {
 			if (!mesh.primitives.empty()) {
-				auto& item = materialPrimitiveMap.find(mesh.primitives[0].material);
+				const auto& item = materialPrimitiveMap.find(mesh.primitives[0].material);
 				if (item != materialPrimitiveMap.end()) {
 					item->second.push_back(mesh.primitives[0]);
 				}
@@ -1332,22 +1332,22 @@ private:
 				totalIndicesAccessor = oldIndicesAccessor;
 				tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
 				totalVerticesAccessor = oldVerticesAccessor;
-				auto& normalAttr = prim.attributes.find("NORMAL");
+				const auto& normalAttr = prim.attributes.find("NORMAL");
 				if (normalAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
 					totalNormalsAccessor = oldNormalsAccessor;
 				}
-				auto& texAttr = prim.attributes.find("TEXCOORD_0");
+				const auto& texAttr = prim.attributes.find("TEXCOORD_0");
 				if (texAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
 					totalTexcoordsAccessor = oldTexcoordsAccessor;
 				}
-				auto& batchidAttr = prim.attributes.find("_BATCHID");
+				const auto& batchidAttr = prim.attributes.find("_BATCHID");
 				if (batchidAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
 					totalBatchIdsAccessor = oldBatchIdsAccessor;
 				}
-				auto& colorAttr = prim.attributes.find("COLOR_0");
+				const auto& colorAttr = prim.attributes.find("COLOR_0");
 				if (colorAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
 					totalColorsAccessor = oldColorsAccessor;
@@ -1458,22 +1458,22 @@ private:
 				reindexBufferAndBvAndAccessor(oldIndicesAccessor, totalIndicesBufferView, totalIndicesBuffer, totalIndicesAccessor, sum, true);
 				sum += oldVerticesAccessor.count;
 
-				auto& normalAttr = prim.attributes.find("NORMAL");
+				const auto& normalAttr = prim.attributes.find("NORMAL");
 				if (normalAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
 					reindexBufferAndBvAndAccessor(oldNormalsAccessor, totalNormalsBufferView, totalNormalsBuffer, totalNormalsAccessor);
 				}
-				auto& texAttr = prim.attributes.find("TEXCOORD_0");
+				const auto& texAttr = prim.attributes.find("TEXCOORD_0");
 				if (texAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
 					reindexBufferAndBvAndAccessor(oldTexcoordsAccessor, totalTexcoordsBufferView, totalTexcoordsBuffer, totalTexcoordsAccessor);
 				}
-				auto& batchidAttr = prim.attributes.find("_BATCHID");
+				const auto& batchidAttr = prim.attributes.find("_BATCHID");
 				if (batchidAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
 					reindexBufferAndBvAndAccessor(oldBatchIdsAccessor, totalBatchIdsBufferView, totalBatchIdsBuffer, totalBatchIdsAccessor);
 				}
-				auto& colorAttr = prim.attributes.find("COLOR_0");
+				const auto& colorAttr = prim.attributes.find("COLOR_0");
 				if (colorAttr != prim.attributes.end()) {
 					tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
 					reindexBufferAndBvAndAccessor(oldColorsAccessor, totalColorsBufferView, totalColorsBuffer, totalColorsAccessor);

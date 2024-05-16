@@ -20,7 +20,7 @@
 #include <osgViewer/ViewerEventHandlers>
 #include <utils/TextureAtlas.h>
 #include <utils/TextureOptimizier.h>
-
+#include <osg/PrimitiveSet>
 #include "utils/SimplifyIndices.h"
 using namespace std;
 
@@ -299,8 +299,8 @@ void testOsgdb_webp() {
     osgDB::writeImageFile(*img1.get(), "./osgdb_webp_test.webp");
 }
 void testOsgdb_ktx() {
-    osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C://Users//ecidi-cve//Downloads//31-gas-tank//pbr.fbm//1.png");
-    osgDB::writeImageFile(*img.get(), "./osgdb_ktx_test.ktx");
+    osg::ref_ptr<osg::Image> img = osgDB::readImageFile(R"(E:\Code\2023\Other\data\jianzhu+tietu1.fbm\u_f010_t006_Residential_000.jpg)");
+    osgDB::writeImageFile(*img.get(), "./osgdb_ktx_test1.ktx");
 }
 
 void preview_img(osg::ref_ptr<osg::Image>& image) {
@@ -526,7 +526,7 @@ int main() {
     //std::cout << 2 << std::endl;
     //std::cout << 3 << std::endl;
 
-    testOsgdb_fbx();
+    testOsgdb_ktx();
     //osg::ref_ptr<osg::Image> img = osgDB::readImageFile("C:\\Users\\ecidi-cve\\Desktop\\1.jpg");
     //img->scaleImage(800, 600, 1);
     //osgDB::writeImageFile(*img.get(),"C:\\Users\\ecidi-cve\\Desktop\\2.jpg");

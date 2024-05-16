@@ -167,7 +167,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			const FbxFileTexture* baseColorFileTexture = getFbxFileTextureTex("base_color");
 			if (baseColorFileTexture) {
 				mat->baseColorTexture = fbxTextureToOsgTexture(baseColorFileTexture);
-				result.diffuse = result.diffuse ? result.diffuse : new TextureDetails;
+				osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+				result.diffuse = result.diffuse ? result.diffuse : temp;
 				result.diffuse->texture = mat->baseColorTexture;
 				result.diffuse->channel = baseColorFileTexture->UVSet.Get();
 				result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
@@ -250,7 +251,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* normalFileTexture = getTex("norm");
 				if (normalFileTexture) {
 					mat->normalTexture = fbxTextureToOsgTexture(normalFileTexture);
-					result.normalMap = result.normalMap ? result.normalMap : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.normalMap = result.normalMap ? result.normalMap : temp;
 					result.normalMap->texture = mat->normalTexture;
 					result.normalMap->channel = normalFileTexture->UVSet.Get();
 					result.normalMap->scale.set(normalFileTexture->GetScaleU(), normalFileTexture->GetScaleV());
@@ -259,7 +261,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* aoFileTexture = getTex("ao");
 				if (aoFileTexture) {
 					mat->occlusionTexture = fbxTextureToOsgTexture(aoFileTexture);
-					result.ambient = result.ambient ? result.ambient : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.ambient = result.ambient ? result.ambient : temp;
 					result.ambient->texture = mat->occlusionTexture;
 					result.ambient->channel = aoFileTexture->UVSet.Get();
 					result.ambient->scale.set(aoFileTexture->GetScaleU(), aoFileTexture->GetScaleV());
@@ -268,7 +271,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* emissiveFileTexture = getTex("emit_color");
 				if (emissiveFileTexture) {
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
-					result.emissive = result.emissive ? result.emissive : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.emissive = result.emissive ? result.emissive : temp;
 					result.emissive->texture = mat->occlusionTexture;
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
 					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
@@ -279,7 +283,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
 				if (baseColorFileTexture) {
 					mat->baseColorTexture = fbxTextureToOsgTexture(baseColorFileTexture);
-					result.diffuse = result.diffuse ? result.diffuse : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.diffuse = result.diffuse ? result.diffuse : temp;
 					result.diffuse->texture = mat->baseColorTexture;
 					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
 					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
@@ -338,7 +343,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* normalFileTexture = getTex("norm");
 				if (normalFileTexture) {
 					mat->normalTexture = fbxTextureToOsgTexture(normalFileTexture);
-					result.normalMap = result.normalMap ? result.normalMap : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.normalMap = result.normalMap ? result.normalMap : temp;
 					result.normalMap->texture = mat->normalTexture;
 					result.normalMap->channel = normalFileTexture->UVSet.Get();
 					result.normalMap->scale.set(normalFileTexture->GetScaleU(), normalFileTexture->GetScaleV());
@@ -347,7 +353,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* aoFileTexture = getTex("ao");
 				if (aoFileTexture) {
 					mat->occlusionTexture = fbxTextureToOsgTexture(aoFileTexture);
-					result.ambient = result.ambient ? result.ambient : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.ambient = result.ambient ? result.ambient : temp;
 					result.ambient->texture = mat->occlusionTexture;
 					result.ambient->channel = aoFileTexture->UVSet.Get();
 					result.ambient->scale.set(aoFileTexture->GetScaleU(), aoFileTexture->GetScaleV());
@@ -356,7 +363,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* emissiveFileTexture = getTex("emit_color");
 				if (emissiveFileTexture) {
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
-					result.emissive = result.emissive ? result.emissive : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.emissive = result.emissive ? result.emissive : temp;
 					result.emissive->texture = mat->occlusionTexture;
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
 					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
@@ -372,7 +380,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				if (baseColorFileTexture) {
 					osg::ref_ptr<osg::Texture2D> baseColorMap = fbxTextureToOsgTexture(baseColorFileTexture);
 					mat->diffuseTexture = baseColorMap;
-					result.diffuse = result.diffuse ? result.diffuse : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.diffuse = result.diffuse ? result.diffuse : temp;
 					result.diffuse->texture = baseColorMap;
 					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
 					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
@@ -394,12 +403,12 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					specularGlossinessTexture->setImage(specularGlossinessImage);
 
 					mat->specularGlossinessTexture = specularGlossinessTexture;
-
-					result.specular = result.specular ? result.specular : new TextureDetails;
+                    osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.specular = result.specular ? result.specular : temp;
 					result.specular->texture = specularMap;
 					result.specular->channel = specularFileTexture->UVSet.Get();
 					result.specular->scale.set(specularFileTexture->GetScaleU(), specularFileTexture->GetScaleV());
-					result.shininess = result.shininess ? result.shininess : new TextureDetails;
+					result.shininess = result.shininess ? result.shininess : temp;
 					result.shininess->texture = glossinessMap;
 					result.shininess->channel = glossinessFileTexture->UVSet.Get();
 					result.shininess->scale.set(glossinessFileTexture->GetScaleU(), glossinessFileTexture->GetScaleV());
@@ -407,14 +416,16 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				}
 				else if (specularMap && !glossinessMap) {
 					mat->specularGlossinessTexture = specularMap;
-					result.specular = result.specular ? result.specular : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.specular = result.specular ? result.specular : temp;
 					result.specular->texture = mat->specularGlossinessTexture;
 					result.specular->channel = specularFileTexture->UVSet.Get();
 					result.specular->scale.set(specularFileTexture->GetScaleU(), specularFileTexture->GetScaleV());
 				}
 				else if (!specularMap && glossinessMap) {
 					mat->specularGlossinessTexture = glossinessMap;
-					result.shininess = result.shininess ? result.shininess : new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					result.shininess = result.shininess ? result.shininess : temp;
 					result.shininess->texture = mat->specularGlossinessTexture;
 					result.shininess->channel = glossinessFileTexture->UVSet.Get();
 					result.shininess->scale.set(glossinessFileTexture->GetScaleU(), glossinessFileTexture->GetScaleV());

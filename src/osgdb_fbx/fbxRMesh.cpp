@@ -21,7 +21,11 @@
 #pragma warning( disable : 4505 )
 #pragma warning( default : 4996 )
 #endif
-#include <fbxsdk.h>
+#ifdef _WIN32
+#include <windows/fbxsdk.h>
+#else
+#include <linux/fbxsdk.h>
+#endif
 #include <osgdb_fbx/fbxReader.h>
 
 enum GeometryType
@@ -706,7 +710,7 @@ void fbxProperty2OsgUserValue(const FbxNode* pNode, osg::Node& node) {
                 if (prop.GetFlag(FbxPropertyFlags::eUserDefined)) {
                     FbxDataType dataType = prop.GetPropertyDataType();
                     EFbxType eType = dataType.GetType();
-                    std::string key = prop.GetName();
+                    std::string key = prop.GetName().Buffer();
 
                     FbxDouble2 value2;
                     FbxDouble3 value3;

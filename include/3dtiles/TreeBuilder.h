@@ -115,7 +115,7 @@ public:
 								std::string filename = img->getFileName();
 								if (!filename.empty())
 									filename = osgDB::convertStringFromUTF8toCurrentCodePage(filename);
-								auto& item = textureGeometryMap.find(filename);
+								const auto& item = textureGeometryMap.find(filename);
 								if (item != textureGeometryMap.end())
 								{
 									item->second->addChild(geom);
