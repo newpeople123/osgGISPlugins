@@ -1769,15 +1769,20 @@ public:
 					if (normals.valid()) {
 						meshopt_Stream normalStream = { normalData.data(), sizeof(Attr), sizeof(Attr) };
 						streams.push_back(normalStream);
+						if (positions->size() != normals->size())
+						{
+							continue;
+						}
 					}
 					if (texCoords.valid()) {
 						meshopt_Stream texCoordStream = { texCoordData.data(), sizeof(Attr), sizeof(Attr) };
 						streams.push_back(texCoordStream);
+						if (positions->size() != texCoords->size())
+						{
+							continue;
+						}
 					}
-					if(positions->size()!=normals->size()||positions->size()!=texCoords->size())
-					{
-						continue;
-					}
+
 					osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(geom->getPrimitiveSet(kk));
 					if (drawElementsUShort.valid()) {
 						osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
