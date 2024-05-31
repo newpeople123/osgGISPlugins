@@ -40,7 +40,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input, output;
+    //std::string input, output;
+    std::string input = R"(C:\Users\ecidi-cve\Documents\WeChat Files\wxid_dxll2nrduz422\FileStorage\File\2024-05\江湖别墅q-三维视图-{3D}-revit导出.fbx)", output = R"(C:\Users\ecidi-cve\Documents\WeChat Files\wxid_dxll2nrduz422\FileStorage\File\2024-05\output)";
+
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -55,9 +57,11 @@ int main(int argc, char** argv)
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
+#ifndef NDEBUG
+#else
     input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
-
+#endif // !NDEBUG
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
 
     if (node.valid()) {
@@ -75,6 +79,7 @@ int main(int argc, char** argv)
         while (arguments.read("-multi_threading", multiThreading));
         osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
         std::string optionStr = "textureType=" + textureFormat + " compressionType=" + vertexFormat + " comporessLevel=" + comporessLevel;
+
         options->setOptionString(optionStr);
         try {
             int max = std::stoi(maxTriangle);
@@ -118,5 +123,6 @@ int main(int argc, char** argv)
     else {
         std::cout << "Error:can not read 3d model file!" << '\n';
     }
+
     return 1;
 }

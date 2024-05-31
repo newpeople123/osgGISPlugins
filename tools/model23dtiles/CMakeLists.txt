@@ -1,34 +1,43 @@
 set(TOOL_NAME "model23dtiles")
+
+# 设置编译标志
+# set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+# set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
+# 查找源文件
 aux_source_directory(. DIR_SRCS)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g")
-ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS})
+source_group("src" FILES ${DIR_SRCS})
 
+# 定义可执行文件
+file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/*.h)
+add_executable(${TOOL_NAME} ${DIR_SRCS} ${HEADER_FILES})
+source_group("include" FILES ${HEADER_FILES}) 
+# 包含外部工具链文件
 include(${CMAKE_TOOLCHAIN_FILE})
-#设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
+# 设置全局包含路径，必须放在添加子目录之前
+include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
+# 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
 target_link_libraries(${TOOL_NAME} meshoptimizer::meshoptimizer)
 
+# 如果是 Linux 系统，链接 pthread 库
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${TOOL_NAME} -pthread)
+    target_link_libraries(${TOOL_NAME} pthread)
 endif()
 
+# 查找 OpenSceneGraph 包
+find_package(OpenSceneGraph REQUIRED)
 if (OPENSCENEGRAPH_FOUND)
-    message("OPENSCENEGRAPH_INCLUDE_DIRS:${OPENSCENEGRAPH_INCLUDE_DIRS}")
-    message("OPENSCENEGRAPH_LIBRARIES:${OPENSCENEGRAPH_LIBRARIES}")
+    message(STATUS "Found OpenSceneGraph")
+    message(STATUS "OPENSCENEGRAPH_INCLUDE_DIRS: ${OPENSCENEGRAPH_INCLUDE_DIRS}")
+    message(STATUS "OPENSCENEGRAPH_LIBRARIES: ${OPENSCENEGRAPH_LIBRARIES}")
 
     include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
-    if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_link_libraries(${TOOL_NAME}
-        ${OPENSCENEGRAPH_LIBRARIES}
-        )
-    else()
-        target_link_libraries(${TOOL_NAME}
-        ${OPENSCENEGRAPH_LIBRARIES}
-        )
-    endif()
+    target_link_libraries(${TOOL_NAME} ${OPENSCENEGRAPH_LIBRARIES})
 else()
-    message(FATAL_ERROR ${TOOL_NAME}+":osg not found!")
+    message(FATAL_ERROR "${TOOL_NAME}: OpenSceneGraph not found!")
 endif()
+
+# 安装目标
 install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})

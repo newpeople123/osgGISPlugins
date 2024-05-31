@@ -1,8 +1,10 @@
 set(TOOL_NAME "gltfpack")
 aux_source_directory(. DIR_SRCS)
-
-ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltfpack/*.h)
+add_executable(${TOOL_NAME} ${DIR_SRCS} ${HEADER_FILES})
+source_group("include" FILES ${HEADER_FILES}) 
+source_group("src" FILES ${DIR_SRCS})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_ROOT_DIR}/include/gltfpack)
 include(${CMAKE_TOOLCHAIN_FILE})
 find_package(meshoptimizer CONFIG REQUIRED)
 target_link_libraries(${TOOL_NAME} meshoptimizer::meshoptimizer)

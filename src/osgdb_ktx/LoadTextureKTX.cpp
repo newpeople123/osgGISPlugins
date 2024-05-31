@@ -358,9 +358,9 @@ namespace osg
 		int componentSize = glGetTypeSizeFromType(image->getDataType());
 		GLuint max_dim = image->s() > image->t() ?
 			image->s() : image->t();
-		max_dim = floor(log2(max_dim)) - 1;//最低分辨率控制为4*4
+		//max_dim = floor(log2(max_dim)) - 1;//最低分辨率控制为4*4
+		max_dim = floor(log2(max_dim));
 		createInfo.glInternalformat = image->getInternalTextureFormat();
-
 		createInfo.vkFormat = glGetVkFormatFromInternalFormat(createInfo.glInternalformat);
 		createInfo.baseWidth = image->s();
 		createInfo.baseHeight = image->t();
@@ -387,7 +387,7 @@ namespace osg
 		}
 
 		osg::Image* imgCopy = dynamic_cast<osg::Image*>(image->clone(osg::CopyOp::DEEP_COPY_ALL));
-		for (size_t i = 0; i < createInfo.numLevels; ++i)
+		for (size_t i = 0; i < max_dim; ++i)
 		{
 			int width = image->s() / pow(2, i);
 			int height = image->t() / pow(2, i);
@@ -406,27 +406,21 @@ namespace osg
 		}
 
 		ktx_uint32_t w = texture->baseWidth, h = texture->baseHeight;
-		if (compressed && false) {
-			if (((w > 0) && (w & (w - 1)) == 0) && ((h > 0) && (h & (h - 1)) == 0)) {
-				ktxBasisParams params = { 0 };
-				params.structSize = sizeof(params);
-				params.compressionLevel = KTX_ETC1S_DEFAULT_COMPRESSION_LEVEL;
-				params.uastc = KTX_FALSE;
-				unsigned int numThreads = std::thread::hardware_concurrency() / 2;
-				if (numThreads == 0) {
-					numThreads = 2;
-				}
-				params.threadCount = numThreads;
-				result = ktxTexture2_CompressBasisEx((ktxTexture2*)texture, &params);
-				if (result != KTX_SUCCESS)
-				{
-					OSG_WARN << "[LoaderKTX] Failed to compress ktxTexture2: "
-						<< ktxErrorString(result) << std::endl;
-				}
+		if (compressed) {
+			ktxBasisParams params = { 0 };
+			params.structSize = sizeof(params);
+			params.compressionLevel = KTX_ETC1S_DEFAULT_COMPRESSION_LEVEL;
+			params.uastc = KTX_FALSE;
+			unsigned int numThreads = std::thread::hardware_concurrency();
+			if (numThreads == 0) {
+				numThreads = 2;
 			}
-			else {
+			params.threadCount = numThreads;
+			result = ktxTexture2_CompressBasisEx((ktxTexture2*)texture, &params);
+			if (result != KTX_SUCCESS)
+			{
 				OSG_WARN << "[LoaderKTX] Failed to compress ktxTexture2: "
-					<< "image's width or height is not to the nth power of 2" << std::endl;
+					<< ktxErrorString(result) << std::endl;
 			}
 		}
 		return texture;

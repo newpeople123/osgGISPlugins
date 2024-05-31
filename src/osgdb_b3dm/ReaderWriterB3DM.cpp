@@ -209,10 +209,10 @@ tinygltf::Model ReaderWriterB3DM::convertOsg2Gltf(osg::ref_ptr<osg::Node> node, 
     }
 
     //1
-    {
-        TextureOptimizerProxy* to = new TextureOptimizerProxy(node, textureType, textureMaxSize);
-        delete to;
-    }
+    //{
+    //    TextureOptimizerProxy* to = new TextureOptimizerProxy(node, textureType, textureMaxSize);
+    //    delete to;
+    //}
     //2
     GeometryNodeVisitor gnv(false);
     node->accept(gnv);

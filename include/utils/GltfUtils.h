@@ -21,6 +21,7 @@
 #include <osgDB/ConvertUTF>
 #include <meshoptimizer.h>
 #include <osg/MatrixTransform>
+#include <osg/PositionAttitudeTransform>
 #include <osgUtil/Optimizer>
 
 class GeometryNodeVisitor :public osg::NodeVisitor {
@@ -68,7 +69,19 @@ public:
 	{
 		//TestNodeVisitor tnv(mtransform.asMatrixTransform()->getMatrix());
 		//mtransform.accept(tnv);
-		mtransform.asMatrixTransform()->setMatrix(osg::Matrixd::identity());
+		osg::ref_ptr<osg::MatrixTransform> matrixTransform = mtransform.asMatrixTransform();
+		if (matrixTransform.valid()) {
+			matrixTransform->setMatrix(osg::Matrixd::identity());
+		}
+		else {
+			osg::ref_ptr<osg::PositionAttitudeTransform> positionAttitudeTransform = mtransform.asPositionAttitudeTransform();
+			if (positionAttitudeTransform.valid()) {
+				// 重置位置和姿态  
+				positionAttitudeTransform->setPosition(osg::Vec3());
+				positionAttitudeTransform->setAttitude(osg::Quat());
+			}
+		}
+
 		apply(static_cast<osg::Group&>(mtransform));
 	};
 };
@@ -1068,7 +1081,13 @@ private:
 		sampler.wrapS = wrapS;
 		sampler.wrapT = wrapT;
 		//sampler.wrapR = wrapR;
-		sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR; //osgTexture->getFilter(osg::Texture::MIN_FILTER);
+		if (type == KTX2 || KTX) {
+			sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR;
+		}
+		else
+		{
+			sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR; //osgTexture->getFilter(osg::Texture::MIN_FILTER);
+		}
 		sampler.magFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
 		int samplerIndex = -1;
 		for (int i = 0; i < _model.samplers.size(); ++i) {

@@ -1,6 +1,6 @@
-set(TOOL_NAME "b3dm2gltf")
+set(TOOL_TEST_NAME "test_osgdb_ktx")
 aux_source_directory(. DIR_SRCS)
-ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS})
+ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS})
 source_group("src" FILES ${DIR_SRCS})
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
@@ -9,15 +9,15 @@ include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/inc
 if (OPENSCENEGRAPH_FOUND)
         include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
         if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
-            target_link_libraries(${TOOL_NAME}
+            target_link_libraries(${TOOL_TEST_NAME}
             ${OPENSCENEGRAPH_LIBRARIES}
             )
         else()
-            target_link_libraries(${TOOL_NAME}
+            target_link_libraries(${TOOL_TEST_NAME}
             ${OPENSCENEGRAPH_LIBRARIES}
             )
         endif()
 else()
-    message(FATAL_ERROR ${TOOL_NAME}+":osg not found!")
+    message(FATAL_ERROR ${TOOL_TEST_NAME}+":osg not found!")
 endif()
-install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(TARGETS ${TOOL_TEST_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
