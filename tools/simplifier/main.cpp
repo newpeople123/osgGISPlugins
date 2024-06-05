@@ -7,6 +7,7 @@
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 #include <osgUtil/Optimizer>
+#include <osgViewer/Viewer>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -30,7 +31,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = R"(F:\Test\osgverse\assets\models\Sponza.osgb)", output = R"(F:\Test\osgverse\assets\models\Sponza-05.osgb)";
+    std::string input = R"(E:\Code\2023\Other\data\wuhu.osgb)", output = R"(E:\Code\2023\Other\data\wuhu1.osgb)";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -60,8 +61,13 @@ int main(int argc, char** argv)
             osgUtil::Optimizer optimizer;
             optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
             //flatten transform
-            FlattenTransformVisitor ftv;
+            GeometryNodeVisitor ftv;
             node->accept(ftv);
+            TransformNodeVisitor ftv1;
+            node->accept(ftv1);
+            osgViewer::Viewer viewer;
+            viewer.setSceneData(node);
+            viewer.run();
             //mesh optimizer
             MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
             MeshOptimizerVisitor mov(meshOptimizer, ratio);
