@@ -20,13 +20,10 @@ include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/inc
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(OpenMP REQUIRED)
-find_package(pmp CONFIG REQUIRED)
 
 # 链接库
 target_link_libraries(${TOOL_NAME} 
     meshoptimizer::meshoptimizer
-    OpenMP::OpenMP_CXX
-    pmp
 )
 # 如果是 Linux 系统，链接 pthread 库
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")

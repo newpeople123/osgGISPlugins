@@ -1,6 +1,5 @@
 #include "3dtiles/optimizer/mesh/FlattenTransformVisitor.h"
 #include "3dtiles/optimizer/mesh/MeshOptimizer.h"
-#include "3dtiles/optimizer/mesh/PmpMeshOptimizer.h"
 #include "3dtiles/optimizer/mesh/MeshOptimizerVisitor.h"
 #include <osg/ArgumentParser>
 #include <iostream>
@@ -11,6 +10,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -30,7 +30,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input, output;
+    std::string input = R"(F:\Test\osgverse\assets\models\Sponza.osgb)", output = R"(F:\Test\osgverse\assets\models\Sponza-05.osgb)";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 

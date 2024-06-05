@@ -243,94 +243,66 @@ void MeshOptimizer::reindexMesh(osg::ref_ptr<osg::Geometry> geom)
 
 void MeshOptimizer::simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float simplifyRatio)
 {
-	const bool aggressive = false;
-	const bool lockBorders = false;
-
-	if (geom.valid()) {
-		const float target_error = 1e-2f;
-		const float target_error_aggressive = 1e-1f;
-		const unsigned int options = lockBorders ? meshopt_SimplifyLockBorder : 0;
-
-		const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
-		const unsigned int psetCount = geom->getNumPrimitiveSets();
-		if (psetCount > 0) {
-			for (size_t primIndex = 0; primIndex < psetCount; ++primIndex) {
-				osg::ref_ptr<osg::DrawElements> drawElements = dynamic_cast<osg::DrawElements*>(geom->getPrimitiveSet(primIndex));
-				if (drawElements.valid() && positions.valid()) {
-					const unsigned int indiceCount = drawElements->getNumIndices();
-					const unsigned int positionCount = positions->size();
-					std::vector<float> vertices(positionCount * 3);
-					for (size_t i = 0; i < positionCount; ++i)
-					{
-						const osg::Vec3& vertex = positions->at(i);
-						vertices[i * 3] = vertex.x();
-						vertices[i * 3 + 1] = vertex.y();
-						vertices[i * 3 + 2] = vertex.z();
-
-					}
-
-					osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(geom->getPrimitiveSet(primIndex));
-					if (drawElementsUShort.valid()) {
-						osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
-						for (unsigned int i = 0; i < indiceCount; ++i)
-						{
-							indices->push_back(drawElementsUShort->at(i));
-						}
-						osg::ref_ptr<osg::UShortArray> destination = new osg::UShortArray;
-						destination->resize(indiceCount);
-						const unsigned int targetIndexCount = indiceCount * simplifyRatio;
-						size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error, options);
-						if (aggressive && newLength > targetIndexCount)
-							newLength = meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error_aggressive);
-
-						if (newLength > 0) {
-							osg::ref_ptr<osg::UShortArray> newIndices = new osg::UShortArray;
-
-							for (size_t i = 0; i < static_cast<size_t>(newLength); ++i)
-							{
-								newIndices->push_back(destination->at(i));
-							}
-							geom->setPrimitiveSet(primIndex, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
-						}
-						else
-						{
-							geom->removePrimitiveSet(primIndex);
-							primIndex--;
-						}
-					}
-					else {
-						const osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(geom->getPrimitiveSet(primIndex));
-						osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
-						for (unsigned int i = 0; i < indiceCount; ++i)
-						{
-							indices->push_back(drawElementsUInt->at(i));
-						}
-						osg::ref_ptr<osg::UIntArray> destination = new osg::UIntArray;
-						destination->resize(indiceCount);
-						const unsigned int targetIndexCount = indiceCount * simplifyRatio;
-						size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error, options);
-						if (aggressive && newLength > targetIndexCount)
-							newLength = meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error_aggressive);
-
-						osg::ref_ptr<osg::UIntArray> newIndices = new osg::UIntArray;
-						if (newLength > 0) {
-							for (size_t i = 0; i < static_cast<size_t>(newLength); ++i)
-							{
-								newIndices->push_back(destination->at(i));
-							}
-							geom->setPrimitiveSet(primIndex, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
-						}
-						else
-						{
-							geom->removePrimitiveSet(primIndex);
-							primIndex--;
-						}
-					}
-
-				}
-			}
+	if (!geom.valid()) return;
+	const unsigned int psetCount = geom->getNumPrimitiveSets();
+	for (unsigned int primIndex = 0; primIndex < psetCount; ++primIndex) {
+		osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
+		if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
+			osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+			simplifyPrimitiveSet<osg::DrawElementsUShort, osg::UShortArray>(geom, drawElementsUShort, simplifyRatio, primIndex);
+		}else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
+			osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+			simplifyPrimitiveSet<osg::DrawElementsUInt, osg::UIntArray>(geom, drawElementsUInt, simplifyRatio, primIndex);
 		}
 	}
 
 
+}
+
+template<typename DrawElementsType, typename IndexArrayType>
+void MeshOptimizer::simplifyPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const float simplifyRatio, unsigned int& psetIndex)
+{
+	const bool aggressive = false;
+	const bool lockBorders = false;
+	const float target_error = 1e-2f;
+	const float target_error_aggressive = 1e-1f;
+	const unsigned int options = lockBorders ? meshopt_SimplifyLockBorder : 0;
+
+	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
+	if (!positions.valid()) return;
+
+	const unsigned int indiceCount = drawElements->getNumIndices();
+	const unsigned int positionCount = positions->size();
+	std::vector<float> vertices(positionCount * 3);
+	for (size_t i = 0; i < positionCount; ++i) {
+		const osg::Vec3& vertex = positions->at(i);
+		vertices[i * 3] = vertex.x();
+		vertices[i * 3 + 1] = vertex.y();
+		vertices[i * 3 + 2] = vertex.z();
+	}
+
+	osg::ref_ptr<IndexArrayType> indices = new IndexArrayType;
+	for (unsigned int i = 0; i < indiceCount; ++i) {
+		indices->push_back(drawElements->at(i));
+	}
+
+	osg::ref_ptr<IndexArrayType> destination = new IndexArrayType;
+	destination->resize(indiceCount);
+	const unsigned int targetIndexCount = indiceCount * simplifyRatio;
+	size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error, options);
+	if (aggressive && newLength > targetIndexCount) {
+		newLength = meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error_aggressive);
+	}
+
+	if (newLength > 0) {
+		osg::ref_ptr<IndexArrayType> newIndices = new IndexArrayType;
+		for (size_t i = 0; i < static_cast<size_t>(newLength); ++i) {
+			newIndices->push_back(destination->at(i));
+		}
+		geom->setPrimitiveSet(psetIndex, new DrawElementsType(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
+	}
+	else {
+		geom->removePrimitiveSet(psetIndex);
+		psetIndex--;
+	}
 }
