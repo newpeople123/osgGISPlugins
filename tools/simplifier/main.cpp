@@ -31,7 +31,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = R"(E:\Code\2023\Other\data\wuhu.osgb)", output = R"(E:\Code\2023\Other\data\wuhu1.osgb)";
+    std::string input = "", output = "";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
