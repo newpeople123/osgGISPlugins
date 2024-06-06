@@ -57,23 +57,20 @@ int main(int argc, char** argv)
         std::string simplifiedRatio = "0.5";
         while (arguments.read("-ratio", simplifiedRatio));
         const double ratio = std::stod(simplifiedRatio);
-        if (ratio < 1.0) {
-            //index mesh
-            osgUtil::Optimizer optimizer;
-            optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-            //flatten transform
-            FlattenTransformVisitor ftv;
-            node->accept(ftv);
-            node->dirtyBound();
-            node->computeBound();
-            //mesh optimizer
-            MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
-            MeshOptimizerVisitor mov(meshOptimizer, ratio);
-            node->accept(mov);
-            //write node to file
-            osgDB::writeNodeFile(*node.get(), output);
-            
-        }
+        //index mesh
+        osgUtil::Optimizer optimizer;
+        optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+        //mesh optimizer
+        MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
+        MeshOptimizerVisitor mov(meshOptimizer, ratio);
+        node->accept(mov);
+        //flatten transform
+        FlattenTransformVisitor ftv;
+        node->accept(ftv);
+        node->dirtyBound();
+        node->computeBound();
+        //write node to file
+        osgDB::writeNodeFile(*node.get(), output);
     }
     return 1;
 }

@@ -8,7 +8,7 @@ void FlattenTransformVisitor::apply(osg::Drawable& drawable) {
     for (const osg::Matrixd& matrix : matrix_list) {
         mat = mat * matrix;
     }
-    const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
+    osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
     if (mat != osg::Matrixd::identity()) {
         for (auto& i : *positions) {
             i = i * mat;
@@ -27,8 +27,7 @@ void FlattenTransformVisitor::apply(osg::Transform& transform) {
     }
     else {
         osg::ref_ptr<osg::PositionAttitudeTransform> positionAttitudeTransform = transform.asPositionAttitudeTransform();
-        if (positionAttitudeTransform.valid()) {
-            // 重置位置和姿态  
+        if (positionAttitudeTransform.valid()) {  
             positionAttitudeTransform->setPosition(osg::Vec3());
             positionAttitudeTransform->setAttitude(osg::Quat());
         }
