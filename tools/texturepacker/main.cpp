@@ -1,6 +1,5 @@
-#include "3dtiles/optimizer/mesh/FlattenTransformVisitor.h"
-#include "3dtiles/optimizer/mesh/MeshOptimizer.h"
-#include "3dtiles/optimizer/mesh/MeshOptimizerVisitor.h"
+#include "3dtiles/optimizer/texture/TexturePacker.h"
+
 #include <osg/ArgumentParser>
 #include <iostream>
 #include <osgDB/ConvertUTF>
@@ -35,41 +34,47 @@ int main(int argc, char** argv)
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
-    if (input.empty()) {
-        std::cout << "input file can not be null!" << '\n';
-        arguments.getApplicationUsage()->write(std::cout);
-        return 0;
-    }
+    //if (input.empty()) {
+    //    std::cout << "input file can not be null!" << '\n';
+    //    arguments.getApplicationUsage()->write(std::cout);
+    //    return 0;
+    //}
 
-    if (output.empty()) {
-        std::cout << "output file can not be null!" << '\n';
-        arguments.getApplicationUsage()->write(std::cout);
-        return 0;
-    }
+    //if (output.empty()) {
+    //    std::cout << "output file can not be null!" << '\n';
+    //    arguments.getApplicationUsage()->write(std::cout);
+    //    return 0;
+    //}
 #ifndef NDEBUG
 #else
     input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
 #endif // !NDEBUG
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
-    if (node.valid()) {
-        std::string simplifiedRatio = "0.5";
-        while (arguments.read("-ratio", simplifiedRatio));
-        const double ratio = std::stod(simplifiedRatio);
-        //index mesh
-        osgUtil::Optimizer optimizer;
-        optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-        //mesh optimizer
-        MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
-        MeshOptimizerVisitor mov(meshOptimizer, ratio);
-        node->accept(mov);
-        //flatten transform
-        FlattenTransformVisitor ftv;
-        node->accept(ftv);
-        node->dirtyBound();
-        node->computeBound();
-        //write node to file
-        osgDB::writeNodeFile(*node.get(), output);
+    const std::string basePath = R"(E:\Code\2023\Other\data\1芜湖水厂总装.fbm\)";
+    std::vector<std::string> imgPaths = {
+        basePath+R"(01 - Default_Base_Color.jpg)",
+        basePath + R"(城南污水处理厂地形-4.jpg)",
+        basePath + R"(440305A003GHJZA001T008.png)",
+        basePath + R"(出水泵二期颜色666.jpg)",
+        basePath + R"(MXGMB003 - 副本.png)",
+        basePath + R"(办公室单开门.jpg)",
+        basePath + R"(办公室双开门.png)",
+
+    };
+    std::vector<osg::ref_ptr<osg::Image>> images;
+    std::map<size_t, size_t> geometryIdMap;
+    std::string imageName; size_t numImages = 0;
+    for (auto str : imgPaths) {
+        osg::ref_ptr<osg::Image> img = osgDB::readImageFile(str);
+        images.push_back(img);
     }
+
+    osg::ref_ptr<TexturePacker> packer = new TexturePacker(4096, 4096);
+    for (size_t i = 0; i < images.size(); ++i)
+    {
+        geometryIdMap[i] = packer->addElement(images[i].get());
+    }
+    osg::ref_ptr<osg::Image> atlas = packer->pack(numImages, true);
+    osgDB::writeImageFile(*atlas.get(), "./test.png");
     return 1;
 }

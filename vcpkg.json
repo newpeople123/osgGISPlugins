@@ -25,6 +25,9 @@
     {
       "name": "meshoptimizer",
       "version>=": "0.19#1"
+    },
+    {
+      "name": "stb"
     }
   ],
   "overrides": [
@@ -55,6 +58,10 @@
     {
       "name": "zlib",
       "version": "1.2.13#0"
+    },
+    {
+      "name": "stb",
+      "version": "2023-04-11#1"
     }
   ],
   "builtin-baseline": "c43dbaeca0f96d90da29a151eb2ee14cad5f0aeb"
