@@ -51,6 +51,7 @@ int main(int argc, char** argv)
     input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
 #endif // !NDEBUG
+    osgViewer::Viewer viewer;
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input);
     if (node.valid()) {
         std::string simplifiedRatio = "0.5";
@@ -61,13 +62,10 @@ int main(int argc, char** argv)
             osgUtil::Optimizer optimizer;
             optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
             //flatten transform
-            GeometryNodeVisitor ftv;
+            FlattenTransformVisitor ftv;
             node->accept(ftv);
-            TransformNodeVisitor ftv1;
-            node->accept(ftv1);
-            osgViewer::Viewer viewer;
-            viewer.setSceneData(node);
-            viewer.run();
+            node->dirtyBound();
+            node->computeBound();
             //mesh optimizer
             MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
             MeshOptimizerVisitor mov(meshOptimizer, ratio);

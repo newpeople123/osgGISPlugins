@@ -13,6 +13,7 @@ void FlattenTransformVisitor::apply(osg::Drawable& drawable) {
         for (auto& i : *positions) {
             i = i * mat;
         }
+        drawable.asGeometry()->setVertexArray(positions);
         drawable.dirtyBound();
         drawable.computeBound();
     }
@@ -20,6 +21,20 @@ void FlattenTransformVisitor::apply(osg::Drawable& drawable) {
 
 void FlattenTransformVisitor::apply(osg::Transform& transform) {
     traverse(transform);
+    osg::ref_ptr<osg::MatrixTransform> matrixTransform = transform.asMatrixTransform();
+    if (matrixTransform.valid()) {
+        matrixTransform->setMatrix(osg::Matrixd::identity());
+    }
+    else {
+        osg::ref_ptr<osg::PositionAttitudeTransform> positionAttitudeTransform = transform.asPositionAttitudeTransform();
+        if (positionAttitudeTransform.valid()) {
+            // 重置位置和姿态  
+            positionAttitudeTransform->setPosition(osg::Vec3());
+            positionAttitudeTransform->setAttitude(osg::Quat());
+        }
+    }
+    transform.dirtyBound();
+    transform.computeBound();
 }
 
 void FlattenTransformVisitor::apply(osg::Group& group)
