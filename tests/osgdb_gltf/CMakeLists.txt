@@ -1,5 +1,7 @@
 set(TOOL_TEST_NAME "test_osgdb_gltf")
 aux_source_directory(. DIR_SRCS)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS})
 source_group("src" FILES ${DIR_SRCS})
 include(${CMAKE_TOOLCHAIN_FILE})
