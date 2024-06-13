@@ -11,7 +11,64 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+class TestVisitor : public osg::NodeVisitor {
+public:
+    double area = 0.0;
+    TestVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    double computeTriangleArea(const osg::Vec3 a, const osg::Vec3 b, const osg::Vec3 c) {
+        osg::Vec3 ab = b - a;
+        osg::Vec3 ac = c - a;
+        return (ab ^ ac).length() * 0.5;
+    }
+    double computeTriangleAreaXY(const osg::Vec3& A, const osg::Vec3& B, const osg::Vec3& C) {
+        osg::Vec3 A_xy(A.x(), A.y(), 0.0);
+        osg::Vec3 B_xy(B.x(), B.y(), 0.0);
+        osg::Vec3 C_xy(C.x(), C.y(), 0.0);
 
+        osg::Vec3 AB = B_xy - A_xy;
+        osg::Vec3 AC = C_xy - A_xy;
+
+        return (AB ^ AC).length() * 0.5;
+    }
+
+    void apply(osg::Drawable& drawable) override
+    {
+        osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+        const unsigned int psetCount = geom->getNumPrimitiveSets();
+        const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
+        if (psetCount <= 0) return;
+        for (size_t primIndex = 0; primIndex < psetCount; ++primIndex) {
+            osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
+            if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
+                osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+				for (size_t i = 0; i < drawElementsUShort->size(); i += 3) {
+                    const unsigned short aIndex = drawElementsUShort->at(i + 0);
+                    const unsigned short bIndex = drawElementsUShort->at(i + 1);
+                    const unsigned short cIndex = drawElementsUShort->at(i + 2);
+
+					const osg::Vec3 a = positions->at(aIndex);
+					const osg::Vec3 b = positions->at(bIndex);
+					const osg::Vec3 c = positions->at(cIndex);
+					area += computeTriangleAreaXY(a, b, c);
+				}
+            }
+            else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
+                osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+                for (size_t i = 0; i < drawElementsUInt->size(); i += 3) {
+                    const unsigned int aIndex = drawElementsUInt->at(i + 0);
+                    const unsigned int bIndex = drawElementsUInt->at(i + 1);
+                    const unsigned int cIndex = drawElementsUInt->at(i + 2);
+
+                    const osg::Vec3 a = positions->at(aIndex);
+                    const osg::Vec3 b = positions->at(bIndex);
+                    const osg::Vec3 c = positions->at(cIndex);
+                    area += computeTriangleAreaXY(a, b, c);
+                }
+            }
+        }
+    }
+
+};
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -31,7 +88,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = "", output = "";
+    std::string input = R"(D:\Data\data\wuhu.osgb)", output = R"(D:\Data\data\wuhu.osgb)";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -59,15 +116,22 @@ int main(int argc, char** argv)
         //index mesh
         osgUtil::Optimizer optimizer;
         optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-        //mesh optimizer
-        MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
-        MeshOptimizerVisitor mov(meshOptimizer, ratio);
-        node->accept(mov);
         //flatten transform
         FlattenTransformVisitor ftv;
         node->accept(ftv);
         node->dirtyBound();
         node->computeBound();
+        TestVisitor tv1;
+        node->accept(tv1);
+        const double area1 = tv1.area;
+        //mesh optimizer
+        MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
+        MeshOptimizerVisitor mov(meshOptimizer, ratio);
+        node->accept(mov);
+        TestVisitor tv2;
+        node->accept(tv2);
+        const double area2 = tv2.area;
+        const double change = abs(area2 - area1);
         //write node to file
         osgDB::writeNodeFile(*node.get(), output);
     }
