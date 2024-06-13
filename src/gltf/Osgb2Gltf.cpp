@@ -3,7 +3,7 @@
 #include <osg/MatrixTransform>
 #include <osg/Node>
 #include <osgDB/FileNameUtils>
-int Osgb2Gltf::getMaterial(tinygltf::Material& gltfMaterial)
+int Osgb2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
 	json matJson;
 	tinygltf::SerializeGltfMaterial(gltfMaterial, matJson);
@@ -558,7 +558,7 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	return index;
 }
 
-int Osgb2Gltf::convertOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture)
+int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture)
 {
 	int index = -1;
 	gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgTexture);
@@ -567,7 +567,7 @@ int Osgb2Gltf::convertOsgTexture2Material(tinygltf::Material& gltfMaterial, cons
 	gltfMaterial.pbrMetallicRoughness.metallicFactor = 0.0;
 	gltfMaterial.pbrMetallicRoughness.roughnessFactor = 1.0;
 
-	index = getMaterial(gltfMaterial);
+	index = getCurrentMaterial(gltfMaterial);
 	if (index != -1) {
 		index = model.materials.size();
 		model.materials.push_back(gltfMaterial);
@@ -576,7 +576,7 @@ int Osgb2Gltf::convertOsgTexture2Material(tinygltf::Material& gltfMaterial, cons
 	return index;
 }
 
-int Osgb2Gltf::convertOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
+int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
 {
 	return 0;
 }
