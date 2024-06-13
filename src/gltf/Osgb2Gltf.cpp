@@ -398,12 +398,12 @@ int Osgb2Gltf::getCurrentMaterial()
 
 		const osg::ref_ptr<osg::Material> osgMatrial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 		if (osgMatrial.valid()) {
-			return convertOsgMaterial2Material(gltfMaterial, osgMatrial);
+			return getOsgMaterial2Material(gltfMaterial, osgMatrial);
 		}
 		else {
 			const osg::ref_ptr<osg::Texture> osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
 			if(osgTexture.valid())
-				return convertOsgTexture2Material(gltfMaterial, osgTexture);
+				return getOsgTexture2Material(gltfMaterial, osgTexture);
 		}
 	}
 	return -1;
