@@ -16,7 +16,7 @@ struct GltfExtension {
 	GltfExtension(const std::string& name) : name(name) {}
 
 	GltfExtension() = default;
-
+	virtual ~GltfExtension() = default;
 	template <typename T>
 	T Get(const std::string& key) const {
 		auto item = value.find(key);

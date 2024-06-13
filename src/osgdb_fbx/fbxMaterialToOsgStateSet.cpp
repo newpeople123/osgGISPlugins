@@ -204,12 +204,12 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
 			KHR_materials_emissive_strength emissive_strength_extension;
 			emissive_strength_extension.setEmissiveStrength(getValue(physicalProps, "emission", 0.0));
-			mat->materialExtensions.push_back(emissive_strength_extension);
+			mat->materialExtensions.push_back(&emissive_strength_extension);
 
 			KHR_materials_anisotropy anisotropy_extension;
 			anisotropy_extension.setAnisotropyStrength(getValue(physicalProps, "anisotropy", 0.0));
 			anisotropy_extension.osgAnisotropyTexture = getTex("anisotropy");
-			mat->materialExtensions.push_back(anisotropy_extension);
+			mat->materialExtensions.push_back(&anisotropy_extension);
 
 			KHR_materials_clearcoat clearcoat_extension;
 			clearcoat_extension.setClearcoatFactor(getValue(physicalProps, "coating", 0.0));
@@ -220,18 +220,18 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				clearcoat_extension.setClearcoatRoughnessFactor(1 - getValue(physicalProps, "coat_roughness", 0.0));
 			}
 			clearcoat_extension.osgClearcoatRoughnessTexture = getTex("coat_rough");
-			mat->materialExtensions.push_back(clearcoat_extension);
+			mat->materialExtensions.push_back(&clearcoat_extension);
 
 			KHR_materials_ior ior_extension;
 			ior_extension.setIor(getValue(physicalProps, "trans_ior", 1.5));
-			mat->materialExtensions.push_back(ior_extension);
+			mat->materialExtensions.push_back(&ior_extension);
 
 			FbxProperty specularProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecular);
 			FbxDouble3 specularColorFactor = specularProperty.Get<FbxDouble3>();
 			KHR_materials_specular specular_extension;
 			specular_extension.setSpecularColorFactor({ specularColorFactor[0],specularColorFactor[1],specularColorFactor[2] });
 			specular_extension.osgSpecularTexture = result.ambient ? result.specular->texture : NULL;
-			mat->materialExtensions.push_back(specular_extension);
+			mat->materialExtensions.push_back(&specular_extension);
 		}
 		const FbxProperty pbrProps = topProp.Find("main", false);
 		if (pbrProps.IsValid()) {
@@ -436,8 +436,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					result.shininess->channel = glossinessFileTexture->UVSet.Get();
 					result.shininess->scale.set(glossinessFileTexture->GetScaleU(), glossinessFileTexture->GetScaleV());
 				}
-				mat->materialExtensions.push_back(pbrSpecularGlossiness_extension);
-				mat->materialExtensionsByCesiumSupport.push_back(pbrSpecularGlossiness_extension);
+				//添加到materialExtensionsByCesiumSupport就不要添加到materialExtensions
+				mat->materialExtensionsByCesiumSupport.push_back(&pbrSpecularGlossiness_extension);
 			}
 		}
 
@@ -508,7 +508,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 		}
 		KHR_materials_emissive_strength emissive_strength_extension;
 		emissive_strength_extension.setEmissiveStrength(1.0);
-		mat->materialExtensions.push_back(emissive_strength_extension);
+		mat->materialExtensions.push_back(&emissive_strength_extension);
 
 		FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
 		mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };

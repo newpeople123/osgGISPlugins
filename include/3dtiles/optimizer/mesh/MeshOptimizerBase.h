@@ -10,5 +10,6 @@ public:
 	void mergeGeometries(osg::ref_ptr<osg::Group> group);
 
 	MeshOptimizerBase() = default;
+	virtual ~MeshOptimizerBase() = default;
 };
 #endif // !OSG_GIS_PLUGINS_MESHOPTIMIZERBASE_H

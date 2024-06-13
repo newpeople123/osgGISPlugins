@@ -2,7 +2,14 @@
 #include <osg/Geometry>
 #include <osg/MatrixTransform>
 #include <osg/Node>
+#include <osg/Geode>
 #include <osgDB/FileNameUtils>
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_WRITE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define TINYGLTF_IMPLEMENTATION
+#include <tinygltf/tiny_gltf.h>
 int Osgb2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
 	json matJson;
@@ -221,6 +228,10 @@ Osgb2Gltf::Osgb2Gltf(GltfComporessor* gltfComporessor):NodeVisitor(TRAVERSE_ALL_
 {
 }
 
+Osgb2Gltf::~Osgb2Gltf()
+{
+}
+
 void Osgb2Gltf::push(tinygltf::Node& gnode)
 {
 	_gltfNodeStack.push(&gnode);
@@ -395,6 +406,14 @@ int Osgb2Gltf::getCurrentMaterial()
 		if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON) {
 			gltfMaterial.alphaMode = "BLEND";
 		}
+		else {
+			//gltf规范中alphaMode的默认值为OPAQUE
+			gltfMaterial.alphaMode = "OPAQUE";
+
+
+			//gltfMaterial.alphaMode = "MASK";
+			//gltfMaterial.alphaCutoff = 0.5;
+		}
 
 		const osg::ref_ptr<osg::Material> osgMatrial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 		if (osgMatrial.valid()) {
@@ -468,6 +487,10 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	}
 	else if (ext == "webp") {
 		mimeType = "image/webp";
+	}
+	else {
+		std::cerr << "Error:texture's extension is: " << ext << " ,that is not supported!" << std::endl;
+		return -1;
 	}
 
 	tinygltf::Image image;
@@ -562,13 +585,9 @@ int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const os
 {
 	int index = -1;
 	gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgTexture);
-	gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
-	gltfMaterial.pbrMetallicRoughness.baseColorFactor = { 1.0,1.0,1.0,1.0 };
-	gltfMaterial.pbrMetallicRoughness.metallicFactor = 0.0;
-	gltfMaterial.pbrMetallicRoughness.roughnessFactor = 1.0;
 
 	index = getCurrentMaterial(gltfMaterial);
-	if (index != -1) {
+	if (index == -1) {
 		index = model.materials.size();
 		model.materials.push_back(gltfMaterial);
 	}
@@ -576,8 +595,68 @@ int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const os
 	return index;
 }
 
-int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
+int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial,const osg::ref_ptr<osg::Material>& osgMaterial)
 {
-	return 0;
+	int index = -1;
+
+	const osg::ref_ptr<GltfMaterial> osgGltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
+	if (osgGltfMaterial.valid()) {
+		const osg::ref_ptr<osg::Texture2D> normalTexture = osgGltfMaterial->normalTexture;
+		if (normalTexture.valid()) {
+			gltfMaterial.normalTexture.index = getOrCreateTexture(normalTexture);
+			gltfMaterial.normalTexture.texCoord = 0;
+		}
+		const osg::ref_ptr<osg::Texture2D> occlusionTexture = osgGltfMaterial->occlusionTexture;
+		if (occlusionTexture.valid()) {
+			gltfMaterial.occlusionTexture.index = getOrCreateTexture(occlusionTexture);
+			gltfMaterial.occlusionTexture.texCoord = 0;
+		}
+		const osg::ref_ptr<osg::Texture2D> emissiveTexture = osgGltfMaterial->emissiveTexture;
+		if (emissiveTexture.valid()) {
+			gltfMaterial.emissiveTexture.index = getOrCreateTexture(emissiveTexture);
+			gltfMaterial.emissiveTexture.texCoord = 0;
+		}
+		gltfMaterial.emissiveFactor = { osgGltfMaterial->emissiveFactor[0],osgGltfMaterial->emissiveFactor[1], osgGltfMaterial->emissiveFactor[2] };
+
+		const osg::ref_ptr<GltfPbrMRMaterial> osgGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(osgGltfMaterial.get());
+		if (osgGltfMRMaterial.valid()) {
+
+			gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index = getOrCreateTexture(osgGltfMRMaterial->metallicRoughnessTexture);
+			gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.texCoord = 0;
+			gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgGltfMRMaterial->baseColorTexture);
+			gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
+			gltfMaterial.pbrMetallicRoughness.baseColorFactor = {
+				osgGltfMRMaterial->baseColorFactor[0],
+				osgGltfMRMaterial->baseColorFactor[1],
+				osgGltfMRMaterial->baseColorFactor[2],
+				osgGltfMRMaterial->baseColorFactor[3]
+			};
+			gltfMaterial.pbrMetallicRoughness.metallicFactor = osgGltfMRMaterial->metallicFactor;
+			gltfMaterial.pbrMetallicRoughness.roughnessFactor = osgGltfMRMaterial->roughnessFactor;
+		}
+		for (GltfExtension* extension : osgGltfMaterial->materialExtensionsByCesiumSupport) {
+			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
+				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+				pbrSpecularGlossiness_extension->setDiffuseTexture(getOrCreateTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture));
+				pbrSpecularGlossiness_extension->setSpecularGlossinessTexture(getOrCreateTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture));
+			}
+
+			model.extensionsRequired.emplace_back(extension->name);
+			model.extensionsUsed.emplace_back(extension->name);
+			gltfMaterial.extensions[extension->name] = tinygltf::Value(extension->value);
+		}
+	}
+	else {
+		const osg::Vec4 baseColor = osgMaterial->getDiffuse(osg::Material::FRONT_AND_BACK);
+		gltfMaterial.pbrMetallicRoughness.baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
+		gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
+	}
+
+	index = getCurrentMaterial(gltfMaterial);
+	if (index == -1) {
+		index = model.materials.size();
+		model.materials.push_back(gltfMaterial);
+	}
+	return index;
 }
 

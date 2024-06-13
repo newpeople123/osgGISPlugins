@@ -4,7 +4,7 @@ class GltfComporessor
 {
 public:
 	GltfComporessor() = default;
-	~GltfComporessor() = default;
+	virtual ~GltfComporessor() = default;
 };
 
 

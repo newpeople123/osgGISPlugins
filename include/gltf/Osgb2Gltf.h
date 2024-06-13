@@ -1,14 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_OSGB2GLTF_H
 #define OSG_GIS_PLUGINS_OSGB2GLTF_H 1
 #include <osg/NodeVisitor>
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_WRITE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#define TINYGLTF_IMPLEMENTATION
-#include <tinygltf/tiny_gltf.h>
 #include "material/GltfPbrMRMaterial.h"
-#include "material/GltfPbrSGMaterial.h"
 #include "compress/GltfComporessor.h"
 #include "merge/GltfMerge.h"
 #include <stack>
