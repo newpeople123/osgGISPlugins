@@ -9,9 +9,6 @@ public:
     double metallicFactor = 1.0;
     double roughnessFactor = 1.0;
 	osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& metalnessImage, const osg::ref_ptr<osg::Image>& roughnessImage) override;
-
-    // 通过 GltfMaterial 继承
-    int convert2TinyGltfMaterial(tinygltf::Model& model, const osg::ref_ptr<osg::StateSet>& stateSet) override;
 };
 
 #endif // !OSG_GIS_PLUGINS_GLTF_PBR_MR_MATERIAL_H

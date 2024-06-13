@@ -21,6 +21,7 @@ class Osgb2Gltf :public osg::NodeVisitor {
 	typedef std::vector<osg::ref_ptr<osg::StateSet>> StateSetStack;
 
 	std::vector<osg::ref_ptr<osg::Texture>> _textures;
+	GltfComporessor* _gltfComporessor;
 
 	std::stack<tinygltf::Node*> _gltfNodeStack;
 	OsgNodeSequenceMap _osgNodeSeqMap;
@@ -53,6 +54,14 @@ class Osgb2Gltf :public osg::NodeVisitor {
 	int getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, const std::string& attr);
 
 	int getCurrentMaterial();
+
+	int getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture);
+
+	int convertOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture);
+
+	int convertOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial);
+
+	int getMaterial(tinygltf::Material& gltfMaterial);
 
 	void apply(osg::Node& node) override;
 

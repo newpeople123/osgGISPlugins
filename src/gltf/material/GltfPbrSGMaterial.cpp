@@ -21,7 +21,3 @@ osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::
     return specularGlossinessImage;
 }
 
-int GltfPbrSGMaterial::convert2TinyGltfMaterial(tinygltf::Model& model, const osg::ref_ptr<osg::StateSet>& stateSet)
-{
-    return 0;
-}

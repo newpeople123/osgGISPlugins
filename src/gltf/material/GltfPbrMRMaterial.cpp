@@ -20,7 +20,3 @@ osg::ref_ptr<osg::Image> GltfPbrMRMaterial::mergeImages(const osg::ref_ptr<osg::
     return metallicRoughnessImage;
 }
 
-int GltfPbrMRMaterial::convert2TinyGltfMaterial(tinygltf::Model& model, const osg::ref_ptr<osg::StateSet>& stateSet)
-{
-    return 0;
-}

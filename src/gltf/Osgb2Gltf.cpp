@@ -2,6 +2,21 @@
 #include <osg/Geometry>
 #include <osg/MatrixTransform>
 #include <osg/Node>
+#include <osgDB/FileNameUtils>
+int Osgb2Gltf::getMaterial(tinygltf::Material& gltfMaterial)
+{
+	json matJson;
+	tinygltf::SerializeGltfMaterial(gltfMaterial, matJson);
+	for (int i = 0; i < model.materials.size(); ++i) {
+		json existMatJson;
+		SerializeGltfMaterial(model.materials.at(i), existMatJson);
+		if (matJson == existMatJson) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 void Osgb2Gltf::apply(osg::Node& node)
 {
 	const bool isRoot = model.scenes[model.defaultScene].nodes.empty();
@@ -202,6 +217,10 @@ void Osgb2Gltf::apply(osg::Drawable& drawable)
 	}
 }
 
+Osgb2Gltf::Osgb2Gltf(GltfComporessor* gltfComporessor):NodeVisitor(TRAVERSE_ALL_CHILDREN),_gltfComporessor(gltfComporessor)
+{
+}
+
 void Osgb2Gltf::push(tinygltf::Node& gnode)
 {
 	_gltfNodeStack.push(&gnode);
@@ -371,69 +390,194 @@ int Osgb2Gltf::getCurrentMaterial()
 	if (!_ssStack.empty())
 	{
 		const osg::ref_ptr<osg::StateSet> stateSet = _ssStack.back();
-		// Try to get the current texture
-		auto osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-
-		const auto osgMatrial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-		auto setGltfMaterial = [&]()->int {
-			const GltfPbrMetallicRoughnessMaterial* pbrMRMaterial = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(osgMatrial);
-			const GltfPbrSpecularGlossinessMaterial* pbrSGMaterial = dynamic_cast<GltfPbrSpecularGlossinessMaterial*>(osgMatrial);
-			if (pbrMRMaterial || pbrSGMaterial) {
-				return _gltfUtils->textureCompression(_textureType, stateSet);
-			}
-			else if (osgTexture) {
-				//same as osgearth
-				return _gltfUtils->textureCompression(_textureType, stateSet, osgTexture);
-			}
-			else {
-				return _gltfUtils->textureCompression(_textureType, stateSet, osgMatrial);
-			}
-			};
-		if (osgMatrial)
-		{
-			const int index = setGltfMaterial();
-			if (index != -1) {
-				return index;
-			}
+		tinygltf::Material gltfMaterial;
+		gltfMaterial.doubleSided = ((stateSet->getMode(GL_CULL_FACE) & osg::StateAttribute::ON) == 0);
+		if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON) {
+			gltfMaterial.alphaMode = "BLEND";
 		}
-		if (osgTexture) {
-			const osg::Image* osgImage = osgTexture->getImage(0);
-			if (osgImage) {
-				// Try to find the existing texture, which corresponds to a material index
-				for (unsigned int i = 0; i < _textures.size(); i++)
-				{
-					const osg::Texture* existTexture = _textures[i].get();
-					const std::string existPathName = existTexture->getImage(0)->getFileName();
-					const osg::Texture::WrapMode existWrapS = existTexture->getWrap(osg::Texture::WRAP_S);
-					const osg::Texture::WrapMode existWrapT = existTexture->getWrap(osg::Texture::WRAP_T);
-					const osg::Texture::WrapMode existWrapR = existTexture->getWrap(osg::Texture::WRAP_R);
-					const osg::Texture::FilterMode existMinFilter = existTexture->getFilter(osg::Texture::MIN_FILTER);
-					const osg::Texture::FilterMode existMaxFilter = existTexture->getFilter(osg::Texture::MAG_FILTER);
 
-					const std::string newPathName = osgImage->getFileName();
-					const osg::Texture::WrapMode newWrapS = osgTexture->getWrap(osg::Texture::WRAP_S);
-					const osg::Texture::WrapMode newWrapT = osgTexture->getWrap(osg::Texture::WRAP_T);
-					const osg::Texture::WrapMode newWrapR = osgTexture->getWrap(osg::Texture::WRAP_R);
-					const osg::Texture::FilterMode newMinFilter = osgTexture->getFilter(osg::Texture::MIN_FILTER);
-					const osg::Texture::FilterMode newMaxFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
-					if (existPathName == newPathName
-						&& existWrapS == newWrapS
-						&& existWrapT == newWrapT
-						&& existWrapR == newWrapR
-						&& existMinFilter == newMinFilter
-						&& existMaxFilter == newMaxFilter
-						)
-					{
-						return i;
-					}
-				}
-			}
-			const int index = setGltfMaterial();
-			if (index != -1) {
-				_textures.emplace_back(osgTexture);
-				return index;
-			}
+		const osg::ref_ptr<osg::Material> osgMatrial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+		if (osgMatrial.valid()) {
+			return convertOsgMaterial2Material(gltfMaterial, osgMatrial);
+		}
+		else {
+			const osg::ref_ptr<osg::Texture> osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
+			if(osgTexture.valid())
+				return convertOsgTexture2Material(gltfMaterial, osgTexture);
 		}
 	}
 	return -1;
 }
+
+int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
+{
+	if (!osgTexture.valid()) {
+		return -1;
+	}
+	if (osgTexture->getNumImages() < 1) {
+		return -1;
+	}
+	osg::ref_ptr<osg::Image> osgImage = osgTexture->getImage(0);
+	if (!osgImage.valid()) {
+		return -1;
+	}
+	for (unsigned int i = 0; i < _textures.size(); i++)
+	{
+		const osg::Texture* existTexture = _textures[i].get();
+		const std::string existPathName = existTexture->getImage(0)->getFileName();
+		osg::Texture::WrapMode existWrapS = existTexture->getWrap(osg::Texture::WRAP_S);
+		osg::Texture::WrapMode existWrapT = existTexture->getWrap(osg::Texture::WRAP_T);
+		osg::Texture::WrapMode existWrapR = existTexture->getWrap(osg::Texture::WRAP_R);
+		osg::Texture::FilterMode existMinFilter = existTexture->getFilter(osg::Texture::MIN_FILTER);
+		osg::Texture::FilterMode existMaxFilter = existTexture->getFilter(osg::Texture::MAG_FILTER);
+
+		const std::string newPathName = osgImage->getFileName();
+		osg::Texture::WrapMode newWrapS = osgTexture->getWrap(osg::Texture::WRAP_S);
+		osg::Texture::WrapMode newWrapT = osgTexture->getWrap(osg::Texture::WRAP_T);
+		osg::Texture::WrapMode newWrapR = osgTexture->getWrap(osg::Texture::WRAP_R);
+		osg::Texture::FilterMode newMinFilter = osgTexture->getFilter(osg::Texture::MIN_FILTER);
+		osg::Texture::FilterMode newMaxFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
+		if (existPathName == newPathName
+			&& existWrapS == newWrapS
+			&& existWrapT == newWrapT
+			&& existWrapR == newWrapR
+			&& existMinFilter == newMinFilter
+			&& existMaxFilter == newMaxFilter
+			)
+		{
+			return i;
+		}
+	}
+	int index = model.textures.size();
+	_textures.emplace_back(osgTexture);
+	const std::string filename = osgImage->getFileName();
+	const std::string ext = osgDB::getLowerCaseFileExtension(filename);
+	std::string mimeType;
+	
+	if (ext == "ktx") {
+		mimeType = "image/ktx";
+	}
+	else if (ext == "ktx2") {
+		mimeType = "image/ktx2";
+	}
+	else if (ext == "png") {
+		mimeType = "image/png";
+	}
+	else if (ext == "jpeg"||ext=="jpg") {
+		mimeType = "image/jpeg";
+	}
+	else if (ext == "webp") {
+		mimeType = "image/webp";
+	}
+
+	tinygltf::Image image;
+
+	tinygltf::BufferView gltfBufferView;
+	int bufferViewIndex = -1;
+	bufferViewIndex = static_cast<int>(model.bufferViews.size());
+	gltfBufferView.buffer = model.buffers.size();
+	gltfBufferView.byteOffset = 0;
+	{
+		std::ifstream file(filename, std::ios::binary);
+		std::vector<unsigned char> imageData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+		gltfBufferView.byteLength = static_cast<int>(imageData.size());
+		tinygltf::Buffer gltfBuffer;
+		gltfBuffer.data = imageData;
+		model.buffers.push_back(gltfBuffer);
+		file.close();
+	}
+	gltfBufferView.target = TINYGLTF_TEXTURE_TARGET_TEXTURE2D;
+	gltfBufferView.name = filename;
+	model.bufferViews.push_back(gltfBufferView);
+
+	image.mimeType = mimeType;
+	image.bufferView = bufferViewIndex; //model.bufferViews.size() the only bufferView in this model
+	model.images.push_back(image);
+
+	// Add the sampler
+	tinygltf::Sampler sampler;
+	osg::Texture::WrapMode wrapS = osgTexture->getWrap(osg::Texture::WRAP_S);
+	osg::Texture::WrapMode wrapT = osgTexture->getWrap(osg::Texture::WRAP_T);
+	osg::Texture::WrapMode wrapR = osgTexture->getWrap(osg::Texture::WRAP_R);
+
+	// Validate the clamp mode to be compatible with webgl
+	if ((wrapS == osg::Texture::CLAMP) || (wrapS == osg::Texture::CLAMP_TO_BORDER))
+	{
+		wrapS = osg::Texture::CLAMP_TO_EDGE;
+	}
+	if ((wrapT == osg::Texture::CLAMP) || (wrapT == osg::Texture::CLAMP_TO_BORDER))
+	{
+		wrapT = osg::Texture::CLAMP_TO_EDGE;
+	}
+	sampler.wrapS = wrapS;
+	sampler.wrapT = wrapT;
+
+	if (ext == "ktx2" || ext == "ktx") {
+		sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR;
+	}
+	else
+	{
+		sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR; //osgTexture->getFilter(osg::Texture::MIN_FILTER);
+	}
+	sampler.magFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
+	int samplerIndex = -1;
+	for (int i = 0; i < model.samplers.size(); ++i) {
+		const tinygltf::Sampler existSampler = model.samplers.at(i);
+		if (existSampler.wrapR == sampler.wrapR && existSampler.wrapT == sampler.wrapT && existSampler.minFilter == sampler.minFilter && existSampler.magFilter == sampler.magFilter) {
+			samplerIndex = i;
+		}
+	}
+	if (samplerIndex == -1) {
+		samplerIndex = model.samplers.size();
+		model.samplers.push_back(sampler);
+	}
+	// Add the texture
+	tinygltf::Texture texture;
+	if (ext == "ktx2" || ext == "ktx")
+	{
+		KHR_texture_basisu texture_basisu_extension;
+		model.extensionsRequired.emplace_back(texture_basisu_extension.name);
+		model.extensionsUsed.emplace_back(texture_basisu_extension.name);
+		texture.source = -1;
+		texture_basisu_extension.setSource(index);
+		texture.extensions.insert(std::make_pair(texture_basisu_extension.name, texture_basisu_extension.value));
+	}
+	else if (ext == "webp") {
+		EXT_texture_webp texture_webp_extension;
+		model.extensionsRequired.emplace_back(texture_webp_extension.name);
+		model.extensionsUsed.emplace_back(texture_webp_extension.name);
+		texture.source = -1;
+		texture_webp_extension.setSource(index);
+		texture.extensions.insert(std::make_pair(texture_webp_extension.name, texture_webp_extension.value));
+	}
+	else {
+		texture.source = index;
+	}
+	texture.sampler = samplerIndex;
+	model.textures.push_back(texture);
+	return index;
+}
+
+int Osgb2Gltf::convertOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture)
+{
+	int index = -1;
+	gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgTexture);
+	gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
+	gltfMaterial.pbrMetallicRoughness.baseColorFactor = { 1.0,1.0,1.0,1.0 };
+	gltfMaterial.pbrMetallicRoughness.metallicFactor = 0.0;
+	gltfMaterial.pbrMetallicRoughness.roughnessFactor = 1.0;
+
+	index = getMaterial(gltfMaterial);
+	if (index != -1) {
+		index = model.materials.size();
+		model.materials.push_back(gltfMaterial);
+	}
+
+	return index;
+}
+
+int Osgb2Gltf::convertOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
+{
+	return 0;
+}
+

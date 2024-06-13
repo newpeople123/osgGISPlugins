@@ -15,8 +15,5 @@ public:
     osg::MixinVector<GltfExtension> materialExtensions;
     osg::MixinVector<GltfExtension> materialExtensionsByCesiumSupport;
     virtual osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2) = 0;
-    virtual int convert2TinyGltfMaterial(tinygltf::Model& model, const osg::ref_ptr<osg::StateSet>& stateSet) = 0;
-    static int convertOsgTexture2TinyGltfMaterial(tinygltf::Model& model, const osg::ref_ptr<osg::StateSet>& stateSet);
-    static int convertOsgMaterial2TinyGltfMaterial(tinygltf::Model& model, const osg::ref_ptr<osg::StateSet>& stateSet);
 };
 #endif // !OSG_GIS_PLUGINS_GLTF_MATERIAL_H
