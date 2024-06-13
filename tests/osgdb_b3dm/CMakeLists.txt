@@ -1,7 +1,29 @@
 set(TOOL_TEST_NAME "test_osgdb_b3dm")
 aux_source_directory(. DIR_SRCS)
-ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS})
-source_group("src" FILES ${DIR_SRCS})
+file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_b3dm/*.h)
+file(GLOB GLTF_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/*.h)
+file(GLOB GLTF_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/*.cpp)
+file(GLOB GLTF_MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/material/*.h)
+file(GLOB GLTF_MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/material/*.cpp)
+file(GLOB GLTF_COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/compress/*.h)
+file(GLOB GLTF_COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/compress/*.cpp)
+file(GLOB GLTF_MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/merge/*.h)
+file(GLOB GLTF_MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/merge/*.cpp)
+ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} ${HEADER_FILES} 
+${GLTF_MATERIAL_HEADER_FILES} ${GLTF_MATERIAL_SOURCE_FILES}
+${GLTF_COMPRESS_HEADER_FILES} ${GLTF_COMPRESS_SOURCE_FILES}
+${GLTF_MERGE_HEADER_FILES} ${GLTF_MERGE_SOURCE_FILES}
+${GLTF_HEADER_FILES} ${GLTF_SOURCE_FILES}
+)
+source_group("include" FILES ${HEADER_FILES} ${GLTF_HEADER_FILES})
+source_group("include/material" FILES ${GLTF_MATERIAL_HEADER_FILES}) 
+source_group("include/compress" FILES ${GLTF_COMPRESS_HEADER_FILES}) 
+source_group("include/merge" FILES ${GLTF_MERGE_HEADER_FILES}) 
+source_group("src" FILES ${DIR_SRCS} ${GLTF_SOURCE_FILES})
+source_group("src/material" FILES ${GLTF_MATERIAL_SOURCE_FILES}) 
+source_group("src/compress" FILES ${GLTF_COMPRESS_SOURCE_FILES}) 
+source_group("src/merge" FILES ${GLTF_MERGE_SOURCE_FILES}) 
+
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
 include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)

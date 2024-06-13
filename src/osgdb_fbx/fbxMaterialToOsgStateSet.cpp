@@ -1,6 +1,7 @@
 #include <osgdb_fbx/fbxMaterialToOsgStateSet.h>
-#include <utils/GltfPbrMetallicRoughnessMaterial.h>
-#include <utils/GltfPbrSpecularGlossinessMaterial.h>
+#include <gltf/material/GltfMaterial.h>
+#include <gltf/material/GltfPbrMRMaterial.h>
+#include <gltf/material/GltfPbrSGMaterial.h>
 #include <sstream>
 #include <osg/TexMat>
 #include <osgDB/ReadFile>
@@ -99,7 +100,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 	// shininess map...
 	result.shininess = selectTextureDetails(pFbxMat->FindProperty(FbxSurfaceMaterial::sShininess));
 
-	osg::ref_ptr<osg::Material> pOsgMat = new GltfPbrMetallicRoughnessMaterial;
+	osg::ref_ptr<osg::Material> pOsgMat = new GltfPbrMRMaterial;
 	result.material = pOsgMat;
 	const FbxProperty topProp = pFbxMat->FindProperty("3dsMax", false);
 	if (topProp.GetPropertyDataType() == FbxCompoundDT) {
@@ -108,7 +109,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			OSG_INFO << ("3dsMax Physical Material.") << std::endl;
 			pOsgMat->setName(pFbxMat->GetName());
 
-			osg::ref_ptr<GltfPbrMetallicRoughnessMaterial> mat = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(pOsgMat.get());
+			osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
 
 			if (!shadingModel.IsEmpty() && shadingModel != "unknown") {
 				std::cout <<
@@ -124,7 +125,6 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				roughness = 1.0f - roughness;
 			}
 			FbxDouble4 emissiveColor = getValue(physicalProps, "emit_color", FbxDouble4(1, 1, 1, 1));
-
 			mat->metallicFactor = metalness;
 			mat->roughnessFactor = roughness;
 
@@ -146,6 +146,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				}
 				return ptr;
 				};
+
 			auto getFbxFileTextureTex = [&](std::string propName) -> const FbxFileTexture* {
 				FbxFileTexture* ptr = nullptr;
 				const FbxProperty texProp = physicalProps.Find((propName + "_map").c_str(), false);
@@ -164,10 +165,11 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				}
 				return ptr;
 				};
+
 			const FbxFileTexture* baseColorFileTexture = getFbxFileTextureTex("base_color");
 			if (baseColorFileTexture) {
 				mat->baseColorTexture = fbxTextureToOsgTexture(baseColorFileTexture);
-				osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+				osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 				result.diffuse = result.diffuse ? result.diffuse : temp;
 				result.diffuse->texture = mat->baseColorTexture;
 				result.diffuse->channel = baseColorFileTexture->UVSet.Get();
@@ -181,7 +183,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
 				osg::ref_ptr<osg::Image> roughnessImageData = roughnessMap->getImage();
 				osg::ref_ptr<osg::Image> metalnessImageData = metalnessMap->getImage();
-				osg::ref_ptr<osg::Image> metallicRoughnessImage = mat->mergeImagesToMetallicRoughnessImage(metalnessImageData, roughnessImageData);
+				osg::ref_ptr<osg::Image> metallicRoughnessImage = mat->mergeImages(metalnessImageData, roughnessImageData);
 				osg::ref_ptr<osg::Texture2D> metallicRoughnessTexture = new osg::Texture2D;
 
 				metallicRoughnessTexture->setImage(metallicRoughnessImage);
@@ -196,35 +198,40 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			}
 
 			mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
-			mat->emissiveStrength = getValue(physicalProps, "emission", 0.0);
 			mat->emissiveTexture = getTex("emit_color");
-			mat->enable_KHR_materials_emissive_strength = false;//cesium does not support
-
 			mat->normalTexture = result.normalMap ? result.normalMap->texture : NULL;
 			mat->occlusionTexture = result.ambient ? result.ambient->texture : NULL;
 
-			mat->anisotropyStrength = getValue(physicalProps, "anisotropy", 1.0);
-			mat->anisotropyTexture = getTex("anisotropy");
-			mat->enable_KHR_materials_anisotropy = false;//cesium does not support
+			KHR_materials_emissive_strength emissive_strength_extension;
+			emissive_strength_extension.setEmissiveStrength(getValue(physicalProps, "emission", 0.0));
+			mat->materialExtensions.push_back(emissive_strength_extension);
 
-			mat->clearcoatFactor = getValue(physicalProps, "coating", 0.0);
-			mat->clearcoatTexture = getTex("coat");
-			mat->clearcoatRoughnessFactor = getValue(physicalProps, "coat_roughness", 0.0);
+			KHR_materials_anisotropy anisotropy_extension;
+			anisotropy_extension.setAnisotropyStrength(getValue(physicalProps, "anisotropy", 0.0));
+			anisotropy_extension.osgAnisotropyTexture = getTex("anisotropy");
+			mat->materialExtensions.push_back(anisotropy_extension);
+
+			KHR_materials_clearcoat clearcoat_extension;
+			clearcoat_extension.setClearcoatFactor(getValue(physicalProps, "coating", 0.0));
+			clearcoat_extension.osgClearcoatNormalTexture = getTex("coat");
+			clearcoat_extension.setClearcoatRoughnessFactor(getValue(physicalProps, "coat_roughness", 0.0));
 			bool invertCoatRoughness = getValue(physicalProps, "coat_roughness_inv", false);
 			if (invertCoatRoughness) {
-				mat->clearcoatRoughnessFactor = 1.0f - mat->clearcoatRoughnessFactor;
+				clearcoat_extension.setClearcoatRoughnessFactor(1 - getValue(physicalProps, "coat_roughness", 0.0));
 			}
-			mat->clearcoatRoughnessTexture = getTex("coat_rough");
-			mat->enable_KHR_materials_clearcoat = false;//cesium does not support
+			clearcoat_extension.osgClearcoatRoughnessTexture = getTex("coat_rough");
+			mat->materialExtensions.push_back(clearcoat_extension);
 
-			mat->ior = getValue(physicalProps, "trans_ior", 1.5);
-			mat->enable_KHR_materials_ior = false;//cesium does not support
+			KHR_materials_ior ior_extension;
+			ior_extension.setIor(getValue(physicalProps, "trans_ior", 1.5));
+			mat->materialExtensions.push_back(ior_extension);
 
 			FbxProperty specularProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecular);
 			FbxDouble3 specularColorFactor = specularProperty.Get<FbxDouble3>();
-			mat->specularColorFactor = { specularColorFactor[0],specularColorFactor[1],specularColorFactor[2] };
-			mat->specularTexture = result.ambient ? result.specular->texture : NULL;
-			mat->enable_KHR_materials_specular = false;//cesium does not support
+			KHR_materials_specular specular_extension;
+			specular_extension.setSpecularColorFactor({ specularColorFactor[0],specularColorFactor[1],specularColorFactor[2] });
+			specular_extension.osgSpecularTexture = result.ambient ? result.specular->texture : NULL;
+			mat->materialExtensions.push_back(specular_extension);
 		}
 		const FbxProperty pbrProps = topProp.Find("main", false);
 		if (pbrProps.IsValid()) {
@@ -232,7 +239,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			if (metalnessProps.IsValid()) {
 				OSG_INFO << ("3dsMax Metalness/Roughness Material.") << std::endl;
 				pOsgMat->setName(pFbxMat->GetName());
-				osg::ref_ptr<GltfPbrMetallicRoughnessMaterial> mat = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(pOsgMat.get());
+				osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
 
 				auto getTex = [&](std::string propName) -> const FbxFileTexture* {
 					FbxFileTexture* ptr = nullptr;
@@ -251,7 +258,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* normalFileTexture = getTex("norm");
 				if (normalFileTexture) {
 					mat->normalTexture = fbxTextureToOsgTexture(normalFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.normalMap = result.normalMap ? result.normalMap : temp;
 					result.normalMap->texture = mat->normalTexture;
 					result.normalMap->channel = normalFileTexture->UVSet.Get();
@@ -261,7 +268,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* aoFileTexture = getTex("ao");
 				if (aoFileTexture) {
 					mat->occlusionTexture = fbxTextureToOsgTexture(aoFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.ambient = result.ambient ? result.ambient : temp;
 					result.ambient->texture = mat->occlusionTexture;
 					result.ambient->channel = aoFileTexture->UVSet.Get();
@@ -271,7 +278,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* emissiveFileTexture = getTex("emit_color");
 				if (emissiveFileTexture) {
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.emissive = result.emissive ? result.emissive : temp;
 					result.emissive->texture = mat->occlusionTexture;
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
@@ -283,7 +290,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
 				if (baseColorFileTexture) {
 					mat->baseColorTexture = fbxTextureToOsgTexture(baseColorFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.diffuse = result.diffuse ? result.diffuse : temp;
 					result.diffuse->texture = mat->baseColorTexture;
 					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
@@ -303,7 +310,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
 					osg::ref_ptr<osg::Image> roughnessImageData = roughnessMap->getImage();
 					osg::ref_ptr<osg::Image> metalnessImageData = metalnessMap->getImage();
-					osg::ref_ptr<osg::Image> metallicRoughnessImage = mat->mergeImagesToMetallicRoughnessImage(metalnessImageData, roughnessImageData);
+					osg::ref_ptr<osg::Image> metallicRoughnessImage = mat->mergeImages(metalnessImageData, roughnessImageData);
 					osg::ref_ptr<osg::Texture2D> metallicRoughnessTexture = new osg::Texture2D;
 					metallicRoughnessTexture->setImage(metallicRoughnessImage);
 
@@ -321,10 +328,10 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			}
 			else {
 				OSG_INFO << ("3dsMax Specular/Glossiness Material.") << std::endl;
-				pOsgMat = new GltfPbrSpecularGlossinessMaterial;
+				pOsgMat = new GltfPbrSGMaterial;
 				pOsgMat->setName(pFbxMat->GetName());
 				result.material = pOsgMat;
-				osg::ref_ptr<GltfPbrSpecularGlossinessMaterial> mat = dynamic_cast<GltfPbrSpecularGlossinessMaterial*>(pOsgMat.get());
+				osg::ref_ptr<GltfPbrSGMaterial> mat = dynamic_cast<GltfPbrSGMaterial*>(pOsgMat.get());
 
 				auto getTex = [&](std::string propName) -> const FbxFileTexture* {
 					FbxFileTexture* ptr = nullptr;
@@ -343,7 +350,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* normalFileTexture = getTex("norm");
 				if (normalFileTexture) {
 					mat->normalTexture = fbxTextureToOsgTexture(normalFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.normalMap = result.normalMap ? result.normalMap : temp;
 					result.normalMap->texture = mat->normalTexture;
 					result.normalMap->channel = normalFileTexture->UVSet.Get();
@@ -353,7 +360,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* aoFileTexture = getTex("ao");
 				if (aoFileTexture) {
 					mat->occlusionTexture = fbxTextureToOsgTexture(aoFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.ambient = result.ambient ? result.ambient : temp;
 					result.ambient->texture = mat->occlusionTexture;
 					result.ambient->channel = aoFileTexture->UVSet.Get();
@@ -363,7 +370,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* emissiveFileTexture = getTex("emit_color");
 				if (emissiveFileTexture) {
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.emissive = result.emissive ? result.emissive : temp;
 					result.emissive->texture = mat->occlusionTexture;
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
@@ -372,25 +379,24 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.5, 0.5, 0.5, 1.0));
 				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
 
+				KHR_materials_pbrSpecularGlossiness pbrSpecularGlossiness_extension;
 				FbxDouble4 Specular = getValue(pbrProps, "Specular", FbxDouble4(1.0, 1.0, 1.0, 1.0));
-				mat->specularFactor = { Specular[0],Specular[1],Specular[2] };
-				mat->glossinessFactor = getValue(pbrProps, "glossiness", 1.0);
+				pbrSpecularGlossiness_extension.setSpecularFactor({ Specular[0],Specular[1],Specular[2] });
+				pbrSpecularGlossiness_extension.setGlossinessFactor(getValue(pbrProps, "glossiness", 0.0));
 
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
 				if (baseColorFileTexture) {
 					osg::ref_ptr<osg::Texture2D> baseColorMap = fbxTextureToOsgTexture(baseColorFileTexture);
-					mat->diffuseTexture = baseColorMap;
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					pbrSpecularGlossiness_extension.osgDiffuseTexture = baseColorMap;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.diffuse = result.diffuse ? result.diffuse : temp;
 					result.diffuse->texture = baseColorMap;
 					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
 					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
 				}
 				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
-				mat->diffuseFactor = { baseColor[0],baseColor[1],baseColor[2],baseColor[3] };
+				pbrSpecularGlossiness_extension.setDiffuseFactor({ baseColor[0],baseColor[1],baseColor[2],baseColor[3] });
 
-				//const FbxFileTexture* specularFileTexture = getTex("specular");
-				//const FbxFileTexture* glossinessFileTexture = getTex("glossiness");
 				const FbxFileTexture* glossinessFileTexture = getTex("specular");
 				const FbxFileTexture* specularFileTexture = getTex("glossiness");
 				osg::ref_ptr<osg::Texture2D> specularMap = specularFileTexture ? fbxTextureToOsgTexture(specularFileTexture) : NULL;
@@ -398,12 +404,12 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				if (specularMap && glossinessMap) {
 					osg::ref_ptr<osg::Image> specularImageData = specularMap->getImage();
 					osg::ref_ptr<osg::Image> glossinessImageData = glossinessMap->getImage();
-					osg::ref_ptr<osg::Image> specularGlossinessImage = mat->mergeImagesToSpecularGlossinessImage(specularImageData, glossinessImageData);
+					osg::ref_ptr<osg::Image> specularGlossinessImage = mat->mergeImages(specularImageData, glossinessImageData);
 					osg::ref_ptr<osg::Texture2D> specularGlossinessTexture = new osg::Texture2D;
 					specularGlossinessTexture->setImage(specularGlossinessImage);
 
-					mat->specularGlossinessTexture = specularGlossinessTexture;
-                    osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture = specularGlossinessTexture;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.specular = result.specular ? result.specular : temp;
 					result.specular->texture = specularMap;
 					result.specular->channel = specularFileTexture->UVSet.Get();
@@ -415,22 +421,23 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
 				}
 				else if (specularMap && !glossinessMap) {
-					mat->specularGlossinessTexture = specularMap;
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture = specularMap;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.specular = result.specular ? result.specular : temp;
-					result.specular->texture = mat->specularGlossinessTexture;
+					result.specular->texture = pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture;
 					result.specular->channel = specularFileTexture->UVSet.Get();
 					result.specular->scale.set(specularFileTexture->GetScaleU(), specularFileTexture->GetScaleV());
 				}
 				else if (!specularMap && glossinessMap) {
-					mat->specularGlossinessTexture = glossinessMap;
-					osg::ref_ptr<TextureDetails> temp=new TextureDetails;
+					pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture = glossinessMap;
+					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.shininess = result.shininess ? result.shininess : temp;
-					result.shininess->texture = mat->specularGlossinessTexture;
+					result.shininess->texture = pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture;
 					result.shininess->channel = glossinessFileTexture->UVSet.Get();
 					result.shininess->scale.set(glossinessFileTexture->GetScaleU(), glossinessFileTexture->GetScaleV());
 				}
-
+				mat->materialExtensions.push_back(pbrSpecularGlossiness_extension);
+				mat->materialExtensionsByCesiumSupport.push_back(pbrSpecularGlossiness_extension);
 			}
 		}
 
@@ -490,16 +497,19 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			if (result.specular.valid()) result.specular->factor = pFbxPhong->SpecularFactor.Get();
 			// get more factors here...
 		}
-		
+
 		OSG_INFO << ("3dsMax Traditional Material.") << std::endl;
-		osg::ref_ptr<GltfPbrMetallicRoughnessMaterial> mat = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(pOsgMat.get());
-	
+		osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
+
 		FbxFileTexture* diffuseTexture = selectFbxFileTexture(pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse));
 		if (diffuseTexture)
 		{
 			mat->baseColorTexture = fbxTextureToOsgTexture(diffuseTexture);
 		}
-		mat->emissiveStrength = 1.0f;
+		KHR_materials_emissive_strength emissive_strength_extension;
+		emissive_strength_extension.setEmissiveStrength(1.0);
+		mat->materialExtensions.push_back(emissive_strength_extension);
+
 		FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
 		mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
 		if (shadingModel.Lower() == "blinn" || shadingModel.Lower() == "phong") {
@@ -531,8 +541,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 		if (diffuseProperty.IsValid()) {
 			FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
 			FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
-			osg::ref_ptr<GltfPbrMetallicRoughnessMaterial> mat = dynamic_cast<GltfPbrMetallicRoughnessMaterial*>(pOsgMat.get());
-			if(diffuseFactorProperty.IsValid())
+			osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
+			if (diffuseFactorProperty.IsValid())
 			{
 				FbxDouble diffuseFactor = diffuseFactorProperty.Get<FbxDouble>();
 				osg::Vec4 color(
@@ -542,7 +552,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					static_cast<float>(1.0 * diffuseFactor));
 				pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, color);
 				mat->baseColorFactor = { color[0],color[1],color[2],color[3] };
-			}else
+			}
+			else
 			{
 				osg::Vec4 color(
 					static_cast<float>(diffuseColor[0]),
@@ -574,6 +585,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 	_fbxMaterialMap.insert(FbxMaterialMap::value_type(pFbxMat, result));
 	return result;
 }
+
 osg::ref_ptr<osg::Texture2D> FbxMaterialToOsgStateSet::fbxTextureToOsgTexture(const FbxFileTexture* fbx)
 {
 	// Try to find image in cache

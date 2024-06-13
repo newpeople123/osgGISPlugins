@@ -1,11 +1,14 @@
+#ifndef OSG_GIS_PLUGINS_GLTF_EXTENSIONS_H
+#define OSG_GIS_PLUGINS_GLTF_EXTENSIONS_H 1
+
 #include <string>
 #include <array>
-#define TINYGLTF_IMPLEMENTATION
+#include <osg/Texture2D>
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tinygltf/tiny_gltf.h>
-#include <osg/Texture>
-template <typename Base>
 struct GltfExtension {
 	const std::string name;
 	tinygltf::Value::Object value;
@@ -81,7 +84,7 @@ private:
 #pragma region material
 #pragma region common
 //cesium does not support
-struct KHR_materials_clearcoat : GltfExtension<KHR_materials_clearcoat> {
+struct KHR_materials_clearcoat : GltfExtension {
 	KHR_materials_clearcoat() : GltfExtension("KHR_materials_clearcoat") {
 		setClearcoatFactor(0.0);
 		setClearcoatRoughnessFactor(0.0);
@@ -89,7 +92,7 @@ struct KHR_materials_clearcoat : GltfExtension<KHR_materials_clearcoat> {
 		setClearcoatRoughnessTexture(-1);
 		setClearcoatNormalTexture(-1);
 	}
-	osg::ref_ptr<osg::Texture> osgClearcoatTexture, osgClearcoatRoughnessTexture, osgClearcoatNormalTexture;
+	osg::ref_ptr<osg::Texture2D> osgClearcoatTexture, osgClearcoatRoughnessTexture, osgClearcoatNormalTexture;
 	double getClearcoatFactor() const {
 		return Get<double>("clearcoatFactor");
 	}
@@ -132,14 +135,14 @@ struct KHR_materials_clearcoat : GltfExtension<KHR_materials_clearcoat> {
 };
 
 //cesium does not support
-struct KHR_materials_anisotropy :GltfExtension<KHR_materials_anisotropy>
+struct KHR_materials_anisotropy :GltfExtension
 {
 	KHR_materials_anisotropy() :GltfExtension("KHR_materials_anisotropy") {
 		setAnisotropyStrength(0.0);
 		setAnisotropyRotation(0.0);
 		setAnisotropyTexture(-1);
 	}
-	osg::ref_ptr<osg::Texture> anisotropyOsgTexture;
+	osg::ref_ptr<osg::Texture2D> osgAnisotropyTexture;
 	double getAnisotropyStrength() const {
 		return Get<double>("anisotropyStrength");
 	}
@@ -166,7 +169,7 @@ struct KHR_materials_anisotropy :GltfExtension<KHR_materials_anisotropy>
 };
 
 //conflict KHR_materials_unlit,and cesium does not support
-struct KHR_materials_emissive_strength :GltfExtension<KHR_materials_emissive_strength>
+struct KHR_materials_emissive_strength :GltfExtension
 {
 	KHR_materials_emissive_strength() :GltfExtension("KHR_materials_emissive_strength") {
 		setEmissiveStrength(0.0);
@@ -180,20 +183,19 @@ struct KHR_materials_emissive_strength :GltfExtension<KHR_materials_emissive_str
 	}
 };
 
-struct KHR_materials_variants :GltfExtension<KHR_materials_variants>
+struct KHR_materials_variants :GltfExtension
 {
 	KHR_materials_variants() :GltfExtension("KHR_materials_variants") {}
 };
 
-struct KHR_materials_unlit :GltfExtension<KHR_materials_unlit>
+struct KHR_materials_unlit :GltfExtension
 {
 	KHR_materials_unlit() :GltfExtension("KHR_materials_unlit") {}
 };
 #pragma endregion
 
 #pragma region SpecularGlossiness
-struct KHR_materials_pbrSpecularGlossiness :GltfExtension<KHR_materials_pbrSpecularGlossiness>
-{
+struct KHR_materials_pbrSpecularGlossiness :GltfExtension{
 	KHR_materials_pbrSpecularGlossiness() :GltfExtension("KHR_materials_pbrSpecularGlossiness") {
 		setDiffuseFactor({ 1.0, 1.0, 1.0, 1.0 });
 		setSpecularFactor({ 1.0, 1.0, 1.0 });
@@ -201,7 +203,7 @@ struct KHR_materials_pbrSpecularGlossiness :GltfExtension<KHR_materials_pbrSpecu
 		setSpecularGlossinessTexture(-1);
 		setDiffuseTexture(-1);
 	}
-	osg::ref_ptr<osg::Texture> specularGlossinessOsgTexture, diffuseOsgTexture;
+	osg::ref_ptr<osg::Texture2D> osgSpecularGlossinessTexture, osgDiffuseTexture;
 	std::array<double, 4> getDiffuseFactor() const {
 		return GetArray<double, 4>("diffuseFactor");
 	}
@@ -246,7 +248,7 @@ struct KHR_materials_pbrSpecularGlossiness :GltfExtension<KHR_materials_pbrSpecu
 
 #pragma region MetallicRoughness
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness,and cesium does not support
-struct KHR_materials_ior :GltfExtension<KHR_materials_ior>
+struct KHR_materials_ior :GltfExtension
 {
 	KHR_materials_ior() :GltfExtension("KHR_materials_ior") {
 		setIor(1.5);
@@ -261,7 +263,7 @@ struct KHR_materials_ior :GltfExtension<KHR_materials_ior>
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness
-struct KHR_materials_sheen :GltfExtension<KHR_materials_sheen>
+struct KHR_materials_sheen :GltfExtension
 {
 	KHR_materials_sheen() :GltfExtension("KHR_materials_sheen") {
 		setSheenColorFactor({ 1.0, 1.0, 1.0 });
@@ -269,7 +271,7 @@ struct KHR_materials_sheen :GltfExtension<KHR_materials_sheen>
 		setSheenColorTexture(-1);
 		setSheenRoughnessTexture(-1);
 	}
-	osg::ref_ptr<osg::Texture> sheenColorOsgTexture, sheenRoughnessOsgTexture;
+	osg::ref_ptr<osg::Texture2D> osgSheenColorTexture, osgSheenRoughnessTexture;
 	std::array<double, 3> getSheenColorFactor() const {
 		return GetArray<double, 3>("sheenColorFactor");
 	}
@@ -297,7 +299,7 @@ struct KHR_materials_sheen :GltfExtension<KHR_materials_sheen>
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness
-struct KHR_materials_volume :GltfExtension<KHR_materials_volume>
+struct KHR_materials_volume :GltfExtension
 {
 	KHR_materials_volume() :GltfExtension("KHR_materials_volume") {
 		setAttenuationColor({ 1.0,1.0,1.0 });
@@ -306,7 +308,7 @@ struct KHR_materials_volume :GltfExtension<KHR_materials_volume>
 		getThicknessTexture(-1);
 
 	}
-	osg::ref_ptr<osg::Texture> thicknessOsgTexture;
+	osg::ref_ptr<osg::Texture2D> osgThicknessTexture;
 	std::array<double, 3> getAttenuationColor() const {
 		return GetArray<double, 3>("attenuationColor");
 	}
@@ -334,7 +336,7 @@ struct KHR_materials_volume :GltfExtension<KHR_materials_volume>
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness,and cesium does not support
-struct KHR_materials_specular :GltfExtension<KHR_materials_specular>
+struct KHR_materials_specular :GltfExtension
 {
 	KHR_materials_specular() :GltfExtension("KHR_materials_specular") {
 		setSpecularColorFactor({ 1.0,1.0,1.0 });
@@ -343,7 +345,7 @@ struct KHR_materials_specular :GltfExtension<KHR_materials_specular>
 		setSpecularColorTexture(-1);
 
 	}
-	osg::ref_ptr<osg::Texture> specularOsgTexture, specularColorOsgTexture;
+	osg::ref_ptr<osg::Texture2D> osgSpecularTexture, osgSpecularColorTexture;
 	std::array<double, 3> getSpecularColorFactor() const {
 		return GetArray<double, 3>("specularColorFactor");
 	}
@@ -372,13 +374,13 @@ struct KHR_materials_specular :GltfExtension<KHR_materials_specular>
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness,and cesium does not support
-struct KHR_materials_transmission :GltfExtension<KHR_materials_transmission>
+struct KHR_materials_transmission :GltfExtension
 {
 	KHR_materials_transmission() :GltfExtension("KHR_materials_transmission") {
 		setTransmissionFactor(0.0);
 		setTransmissionTexture(-1);
 	}
-	osg::ref_ptr<osg::Texture> transmissionOsgTexture;
+	osg::ref_ptr<osg::Texture2D> osgTransmissionTexture;
 	double getTransmissionFactor() const {
 		return Get<double>("transmissionFactor");
 	}
@@ -396,7 +398,7 @@ struct KHR_materials_transmission :GltfExtension<KHR_materials_transmission>
 #pragma endregion
 
 #pragma region mesh
-struct KHR_draco_mesh_compression :GltfExtension<KHR_draco_mesh_compression>
+struct KHR_draco_mesh_compression :GltfExtension
 {
 	KHR_draco_mesh_compression() :GltfExtension("KHR_draco_mesh_compression") {
 		setBufferView(-1);
@@ -465,7 +467,7 @@ const std::string EXT_mesh_gpu_instancing = "EXT_mesh_gpu_instancing";
 #pragma endregion
 
 #pragma region texture
-struct KHR_texture_basisu :GltfExtension<KHR_texture_basisu>
+struct KHR_texture_basisu :GltfExtension
 {
 	KHR_texture_basisu() :GltfExtension("KHR_texture_basisu") {
 		setSource(-1);
@@ -478,7 +480,7 @@ struct KHR_texture_basisu :GltfExtension<KHR_texture_basisu>
 	}
 };
 
-struct KHR_texture_transform :GltfExtension<KHR_texture_transform>
+struct KHR_texture_transform :GltfExtension
 {
 	KHR_texture_transform() :GltfExtension("KHR_texture_transform") {
 		setOffset({ 0.0,0.0 });
@@ -512,7 +514,7 @@ struct KHR_texture_transform :GltfExtension<KHR_texture_transform>
 	}
 };
 
-struct EXT_texture_webp :GltfExtension<EXT_texture_webp>
+struct EXT_texture_webp :GltfExtension
 {
 	EXT_texture_webp() :GltfExtension("EXT_texture_webp") {
 		setSource(-1);
@@ -525,7 +527,4 @@ struct EXT_texture_webp :GltfExtension<EXT_texture_webp>
 	}
 };
 #pragma endregion
-
-
-
-
+#endif // !OSG_GIS_PLUGINS_GLTF_EXTENSIONS_H
