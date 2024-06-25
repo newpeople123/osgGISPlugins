@@ -39,7 +39,7 @@ void convertOsgModel2Gltf(const std::string& filename) {
     std::string s2 = osgDB::findDataFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), new osgDB::Options);
 
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
-    TexturePackingVisitor tpv(4096, 4096, ".jpg", "./test3");
+    TexturePackingVisitor tpv(4096, 4096, ".jpg", "./test4");
     node->accept(tpv);
     tpv.packTextures();
     exportGltf(node, filename);
@@ -67,10 +67,10 @@ int main() {
     //tpv.packTextures();
     //exportGltf(node, R"(E:\Data\data\龙翔桥站厅.FBX)");
 
-    convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站厅.fbx)");
-    //convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
-    //convertOsgModel2Gltf(R"(E:\Data\data\芜湖水厂总装单位M.fbx)");
-    //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站厅.fbx)");
+    convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
+    convertOsgModel2Gltf(R"(E:\Data\data\芜湖水厂总装单位M.fbx)");
+    convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
     //convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
 
     return 1;

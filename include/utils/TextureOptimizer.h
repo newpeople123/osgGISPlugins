@@ -10,6 +10,16 @@
 #include "utils/TexturePacker.h"
 #include "osgdb_gltf/material/GltfMaterial.h"
 
+enum class GltfTextureType {
+    NORMAL,
+    OCCLUSION,
+    EMISSIVE,
+    METALLICROUGHNESS,
+    BASECOLOR,
+    DIFFUSE,
+    SPECULARGLOSSINESS
+};
+
 class TexturePackingVisitor : public osg::NodeVisitor
 {
 public:
@@ -91,7 +101,7 @@ private:
 
     void removePackedImages(std::vector<osg::Image*>& imgs, const std::vector<osg::ref_ptr<osg::Image>>& deleteImgs);
 
-    void processGltfPbrMRImages(std::vector<osg::Image*>& imageList, const std::string& textureType);
+    void processGltfPbrMRImages(std::vector<osg::Image*>& imageList, const GltfTextureType type);
 
     void updateGltfMaterialUserValue(osg::Geometry* geometry,
         osg::ref_ptr<osg::StateSet>& stateSetCopy,
@@ -100,13 +110,9 @@ private:
         const int width,
         const int height,
         const osg::ref_ptr<osg::Texture2D>& oldTexture,
-        const std::string& textureNameExtension,
-        const std::string& textureOffsetXExtension,
-        const std::string& textureOffsetYExtension,
-        const std::string& textureScaleXExtension,
-        const std::string& textureScaleYExtension);
+        const GltfTextureType type);
 
-    void processGltfPbrSGImages(std::vector<osg::Image*>& images, const std::string& textureType);
+    void processGltfPbrSGImages(std::vector<osg::Image*>& images, const GltfTextureType type);
 
     bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img);
 
@@ -121,13 +127,7 @@ private:
     template <typename T>
     T clamp(T value, T min, T max);
 
-    void processGltfGeneralImages(std::vector<osg::Image*>& imgs,
-        const std::string& textureType,
-        const std::string& textureNameExtension,
-        const std::string& textureOffsetXExtension,
-        const std::string& textureOffsetYExtension,
-        const std::string& textureScaleXExtension,
-        const std::string& textureScaleYExtension);
+    void processGltfGeneralImages(std::vector<osg::Image*>& imgs,const GltfTextureType type);
 
     int _maxWidth, _maxHeight;
     std::string _ext, _cachePath;

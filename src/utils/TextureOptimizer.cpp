@@ -322,11 +322,71 @@ void TexturePackingVisitor::updateGltfMaterialUserValue(
 	const int width,
 	const int height,
 	const osg::ref_ptr<osg::Texture2D>& oldTexture,
-	const std::string& textureNameExtension,
-	const std::string& textureOffsetXExtension,
-	const std::string& textureOffsetYExtension,
-	const std::string& textureScaleXExtension,
-	const std::string& textureScaleYExtension) {
+	const GltfTextureType type) {
+
+	std::string textureNameExtension, textureOffsetXExtension, textureOffsetYExtension, textureScaleXExtension, textureScaleYExtension, textureTecCoord;
+	switch (type)
+	{
+	case GltfTextureType::NORMAL:
+		textureNameExtension = ExtensionNormalTextureName;
+		textureOffsetXExtension = ExtensionNormalTextureOffsetX;
+		textureOffsetYExtension = ExtensionNormalTextureOffsetY;
+		textureScaleXExtension = ExtensionNormalTextureScaleX;
+		textureScaleYExtension = ExtensionNormalTextureScaleY;
+		textureTecCoord = ExtensionNormalTextureTexCoord;
+		break;
+	case GltfTextureType::OCCLUSION:
+		textureNameExtension = ExtensionOcclusionTextureName;
+		textureOffsetXExtension = ExtensionOcclusionTextureOffsetX;
+		textureOffsetYExtension = ExtensionOcclusionTextureOffsetY;
+		textureScaleXExtension = ExtensionOcclusionTextureScaleX;
+		textureScaleYExtension = ExtensionOcclusionTextureScaleY;
+		textureTecCoord = ExtensionOcclusionTextureTexCoord;
+		break;
+	case GltfTextureType::EMISSIVE:
+		textureNameExtension = ExtensionEmissiveTextureName;
+		textureOffsetXExtension = ExtensionEmissiveTextureOffsetX;
+		textureOffsetYExtension = ExtensionEmissiveTextureOffsetY;
+		textureScaleXExtension = ExtensionEmissiveTextureScaleX;
+		textureScaleYExtension = ExtensionEmissiveTextureScaleY;
+		textureTecCoord = ExtensionEmissiveTextureTexCoord;
+		break;
+	case GltfTextureType::METALLICROUGHNESS:
+		textureNameExtension = ExtensionMRTextureName;
+		textureOffsetXExtension = ExtensionMRTextureOffsetX;
+		textureOffsetYExtension = ExtensionMRTextureOffsetY;
+		textureScaleXExtension = ExtensionMRTextureScaleX;
+		textureScaleYExtension = ExtensionMRTextureScaleY;
+		textureTecCoord = ExtensionMRTexCoord;
+		break;
+	case GltfTextureType::BASECOLOR:
+		textureNameExtension = ExtensionName;
+		textureOffsetXExtension = ExtensionOffsetX;
+		textureOffsetYExtension = ExtensionOffsetY;
+		textureScaleXExtension = ExtensionScaleX;
+		textureScaleYExtension = ExtensionScaleY;
+		textureTecCoord = ExtensionTexCoord;
+		break;
+	case GltfTextureType::DIFFUSE:
+		textureNameExtension = ExtensionDiffuseTextureName;
+		textureOffsetXExtension = ExtensionDiffuseTextureOffsetX;
+		textureOffsetYExtension = ExtensionDiffuseTextureOffsetY;
+		textureScaleXExtension = ExtensionDiffuseTextureScaleX;
+		textureScaleYExtension = ExtensionDiffuseTextureScaleY;
+		textureTecCoord = ExtensionDiffuseTexCoord;
+		break;
+	case GltfTextureType::SPECULARGLOSSINESS:
+		textureNameExtension = ExtensionSGTextureName;
+		textureOffsetXExtension = ExtensionSGTextureOffsetX;
+		textureOffsetYExtension = ExtensionSGTextureOffsetY;
+		textureScaleXExtension = ExtensionSGTextureScaleX;
+		textureScaleYExtension = ExtensionSGTextureScaleY;
+		textureTecCoord = ExtensionSGTexCoord;
+		break;
+	default:
+		break;
+	}
+
 	int w, h;
 	double x, y;
 	const size_t id = packer.getId(oldTexture->getImage(0));
@@ -341,19 +401,13 @@ void TexturePackingVisitor::updateGltfMaterialUserValue(
 		packedGltfMaterial->setUserValue(textureScaleXExtension, clamp(scaleX, 0.0, 1.0));
 		double scaleY = static_cast<double>(h) / height;
 		packedGltfMaterial->setUserValue(textureScaleYExtension, clamp(scaleY, 0.0, 1.0));
-		packedGltfMaterial->setUserValue(ExtensionNormalTextureTexCoord, 0);
+		packedGltfMaterial->setUserValue(textureTecCoord, 0);
 		stateSetCopy->setAttribute(packedGltfMaterial.get(), osg::StateAttribute::MATERIAL);
 		geometry->setStateSet(stateSetCopy.get());
 	}
 }
 
-void TexturePackingVisitor::processGltfGeneralImages(std::vector<osg::Image*>& imgs,
-	const std::string& textureType,
-	const std::string& textureNameExtension,
-	const std::string& textureOffsetXExtension,
-	const std::string& textureOffsetYExtension,
-	const std::string& textureScaleXExtension,
-	const std::string& textureScaleYExtension)
+void TexturePackingVisitor::processGltfGeneralImages(std::vector<osg::Image*>& imgs, const GltfTextureType type)
 {
 
 	while (imgs.size())
@@ -377,13 +431,13 @@ void TexturePackingVisitor::processGltfGeneralImages(std::vector<osg::Image*>& i
 				osg::ref_ptr<GltfMaterial> packedGltfMaterial = dynamic_cast<GltfMaterial*>(stateSetCopy->getAttribute(osg::StateAttribute::MATERIAL));
 
 				osg::ref_ptr<osg::Texture2D> packedTexture,oldTexture;
-				if (textureType == "normal") {
+				if (type == GltfTextureType::NORMAL) {
 					packedTexture = packedGltfMaterial->normalTexture;
 				}
-				else if (textureType == "occlusion") {
+				else if (type == GltfTextureType::OCCLUSION) {
 					packedTexture = packedGltfMaterial->occlusionTexture;
 				}
-				else if (textureType == "emissive") {
+				else if (type == GltfTextureType::EMISSIVE) {
 					packedTexture = packedGltfMaterial->emissiveTexture;
 				}
 
@@ -391,17 +445,17 @@ void TexturePackingVisitor::processGltfGeneralImages(std::vector<osg::Image*>& i
 					GltfMaterial* gltfMaterial = entry.second;
 					if (olgMaterial.get() == gltfMaterial) {
 						packedTexture->setImage(packedImage);
-						if (textureType == "normal") {
+						if (type == GltfTextureType::NORMAL) {
 							oldTexture = gltfMaterial->normalTexture;
 						}
-						else if (textureType == "occlusion") {
+						else if (type == GltfTextureType::OCCLUSION) {
 							oldTexture = gltfMaterial->occlusionTexture;
 						}
-						else if (textureType == "emissive") {
+						else if (type == GltfTextureType::EMISSIVE) {
 							oldTexture = gltfMaterial->emissiveTexture;
 						}
 						if (oldTexture.valid() && oldTexture->getNumImages()) {
-							updateGltfMaterialUserValue(geometry, stateSetCopy, packedGltfMaterial, packer, width, height, oldTexture, textureNameExtension, textureOffsetXExtension, textureOffsetYExtension, textureScaleXExtension, textureScaleYExtension);
+							updateGltfMaterialUserValue(geometry, stateSetCopy, packedGltfMaterial, packer, width, height, oldTexture, type);
 						}
 					}
 				}
@@ -433,15 +487,8 @@ void TexturePackingVisitor::removePackedImages(std::vector<osg::Image*>& imgs, c
 	}
 }
 
-void TexturePackingVisitor::processGltfPbrMRImages(std::vector<osg::Image*>& imageList, const std::string& textureType)
+void TexturePackingVisitor::processGltfPbrMRImages(std::vector<osg::Image*>& imageList, const GltfTextureType type)
 {
-	const std::string extensionName = (textureType == "metallicRoughness") ? ExtensionMRTextureName : ExtensionName;
-	const std::string extensionOffsetX = (textureType == "metallicRoughness") ? ExtensionMRTextureOffsetX : ExtensionOffsetX;
-	const std::string extensionOffsetY = (textureType == "metallicRoughness") ? ExtensionMRTextureOffsetY : ExtensionOffsetY;
-	const std::string extensionScaleX = (textureType == "metallicRoughness") ? ExtensionMRTextureScaleX : ExtensionScaleX;
-	const std::string extensionScaleY = (textureType == "metallicRoughness") ? ExtensionMRTextureScaleY : ExtensionScaleY;
-	const std::string extensionTexCoord = (textureType == "metallicRoughness") ? ExtensionMRTexCoord : ExtensionTexCoord;
-
 	while (imageList.size())
 	{
 		TexturePacker packer(_maxWidth, _maxHeight);
@@ -463,7 +510,7 @@ void TexturePackingVisitor::processGltfPbrMRImages(std::vector<osg::Image*>& ima
 				osg::ref_ptr<GltfPbrMRMaterial> olgMaterial = dynamic_cast<GltfPbrMRMaterial*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 				osg::ref_ptr<GltfPbrMRMaterial> packedGltfMaterial = dynamic_cast<GltfPbrMRMaterial*>(stateSetCopy->getAttribute(osg::StateAttribute::MATERIAL));
 
-				osg::ref_ptr<osg::Texture2D> texture = (textureType == "metallicRoughness") ? packedGltfMaterial->metallicRoughnessTexture : packedGltfMaterial->baseColorTexture;
+				osg::ref_ptr<osg::Texture2D> texture = (type == GltfTextureType::METALLICROUGHNESS) ? packedGltfMaterial->metallicRoughnessTexture : packedGltfMaterial->baseColorTexture;
 
 				if (texture.valid() && texture->getNumImages())
 				{
@@ -472,34 +519,11 @@ void TexturePackingVisitor::processGltfPbrMRImages(std::vector<osg::Image*>& ima
 					{
 						GltfPbrMRMaterial* gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial);
 						texture->setImage(packedImage);
-						osg::ref_ptr<osg::Texture2D> originalTexture = (textureType == "metallicRoughness") ? gltfMRMaterial->metallicRoughnessTexture : gltfMRMaterial->baseColorTexture;
+						osg::ref_ptr<osg::Texture2D> originalTexture = (type == GltfTextureType::METALLICROUGHNESS) ? gltfMRMaterial->metallicRoughnessTexture : gltfMRMaterial->baseColorTexture;
 
 						if (originalTexture.valid() && originalTexture->getNumImages())
 						{
-							updateGltfMaterialUserValue(geometry, stateSetCopy, packedGltfMaterial, packer, width, height, originalTexture, extensionName, extensionOffsetX, extensionOffsetY, extensionScaleX, extensionScaleY);
-							//int w, h;
-							//double x, y;
-							//const size_t id = packer.getId(originalTexture->getImage(0));
-							//if (packer.getPackingData(id, x, y, w, h))
-							//{
-							//	packedGltfMaterial->setUserValue(extensionName, true);
-
-							//	double offsetX = x / width;
-							//	packedGltfMaterial->setUserValue(extensionOffsetX, clamp(offsetX, 0.0, 1.0));
-
-							//	double offsetY = y / height;
-							//	packedGltfMaterial->setUserValue(extensionOffsetY, clamp(offsetY, 0.0, 1.0));
-
-							//	double scaleX = static_cast<double>(w) / width;
-							//	packedGltfMaterial->setUserValue(extensionScaleX, clamp(scaleX, 0.0, 1.0));
-
-							//	double scaleY = static_cast<double>(h) / height;
-							//	packedGltfMaterial->setUserValue(extensionScaleY, clamp(scaleY, 0.0, 1.0));
-
-							//	packedGltfMaterial->setUserValue(extensionTexCoord, 0);
-							//	stateSetCopy->setAttribute(packedGltfMaterial.get(), osg::StateAttribute::MATERIAL);
-							//	geometry->setStateSet(stateSetCopy.get());
-							//}
+							updateGltfMaterialUserValue(geometry, stateSetCopy, packedGltfMaterial, packer, width, height, originalTexture, type);
 						}
 					}
 				}
@@ -509,14 +533,8 @@ void TexturePackingVisitor::processGltfPbrMRImages(std::vector<osg::Image*>& ima
 	}
 }
 
-void TexturePackingVisitor::processGltfPbrSGImages(std::vector<osg::Image*>& images, const std::string& textureType)
+void TexturePackingVisitor::processGltfPbrSGImages(std::vector<osg::Image*>& images, const GltfTextureType type)
 {
-	const std::string textureName = (textureType == "diffuse") ? ExtensionDiffuseTextureName : ExtensionSGTextureName;
-	const std::string textureOffsetX = (textureType == "diffuse") ? ExtensionDiffuseTextureOffsetX : ExtensionSGTextureOffsetX;
-	const std::string textureOffsetY = (textureType == "diffuse") ? ExtensionDiffuseTextureOffsetY : ExtensionSGTextureOffsetY;
-	const std::string textureScaleX = (textureType == "diffuse") ? ExtensionDiffuseTextureScaleX : ExtensionSGTextureScaleX;
-	const std::string textureScaleY = (textureType == "diffuse") ? ExtensionDiffuseTextureScaleY : ExtensionSGTextureScaleY;
-	const std::string textureCoord = (textureType == "diffuse") ? ExtensionDiffuseTexCoord : ExtensionSGTexCoord;
 	while (images.size())
 	{
 		TexturePacker packer(_maxWidth, _maxHeight);
@@ -545,14 +563,14 @@ void TexturePackingVisitor::processGltfPbrSGImages(std::vector<osg::Image*>& ima
 								KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 								KHR_materials_pbrSpecularGlossiness* packed_pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(packedExtension);
 
-								osg::ref_ptr<osg::Texture2D> osgTexture = (textureType == "diffuse") ? pbrSpecularGlossiness_extension->osgDiffuseTexture : pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
-								osg::ref_ptr<osg::Texture2D> packedOsgTexture = (textureType == "diffuse") ? packed_pbrSpecularGlossiness_extension->osgDiffuseTexture : packed_pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
+								osg::ref_ptr<osg::Texture2D> osgTexture = (type == GltfTextureType::DIFFUSE) ? pbrSpecularGlossiness_extension->osgDiffuseTexture : pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
+								osg::ref_ptr<osg::Texture2D> packedOsgTexture = (type == GltfTextureType::DIFFUSE) ? packed_pbrSpecularGlossiness_extension->osgDiffuseTexture : packed_pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
 
 								if (osgTexture.valid() && packedOsgTexture.valid()) {
 									if (osgTexture->getNumImages() && packedOsgTexture->getNumImages()) {
 										packedOsgTexture->setImage(packedImage);
 
-										updateGltfMaterialUserValue(geometry, stateSetCopy, packedGltfMaterial, packer, width, height, osgTexture, textureName, textureOffsetX, textureOffsetY, textureScaleX, textureScaleY);
+										updateGltfMaterialUserValue(geometry, stateSetCopy, packedGltfMaterial, packer, width, height, osgTexture, type);
 									}
 								}
 							}
@@ -588,16 +606,16 @@ void TexturePackingVisitor::packOsgMaterials()
 		}
 	}
 
-	processGltfGeneralImages(normalImgs, "normal", ExtensionNormalTextureName, ExtensionNormalTextureOffsetX, ExtensionNormalTextureOffsetY, ExtensionNormalTextureScaleX, ExtensionNormalTextureScaleY);
-	processGltfGeneralImages(occlusionImgs, "occlusion", ExtensionOcclusionTextureName, ExtensionOcclusionTextureOffsetX, ExtensionOcclusionTextureOffsetY, ExtensionOcclusionTextureScaleX, ExtensionOcclusionTextureScaleY);
-	processGltfGeneralImages(emissiveImgs, "emissive", ExtensionEmissiveTextureName, ExtensionEmissiveTextureOffsetX, ExtensionEmissiveTextureOffsetY, ExtensionEmissiveTextureScaleX, ExtensionEmissiveTextureScaleY);
+	processGltfGeneralImages(normalImgs, GltfTextureType::NORMAL);
+	processGltfGeneralImages(occlusionImgs, GltfTextureType::OCCLUSION);
+	processGltfGeneralImages(emissiveImgs, GltfTextureType::EMISSIVE);
 
-	processGltfPbrMRImages(mrImgs, "metallicRoughness");
-	processGltfPbrMRImages(baseColorImgs, "baseColor");
+	processGltfPbrMRImages(mrImgs, GltfTextureType::METALLICROUGHNESS);
+	processGltfPbrMRImages(baseColorImgs, GltfTextureType::BASECOLOR);
 
-	processGltfPbrSGImages(diffuseImgs, "diffuse");
+	processGltfPbrSGImages(diffuseImgs, GltfTextureType::DIFFUSE);
 
-	processGltfPbrSGImages(diffuseImgs, "sg");
+	processGltfPbrSGImages(diffuseImgs, GltfTextureType::SPECULARGLOSSINESS);
 }
 
 void TexturePackingVisitor::packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer)
