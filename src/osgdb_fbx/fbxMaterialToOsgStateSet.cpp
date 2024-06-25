@@ -117,14 +117,14 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					pFbxMat->GetName() <<
 					shadingModel << std::endl;
 			}
-			FbxDouble4 baseCol = getValue(physicalProps, "base_color", FbxDouble4(0.5, 0.5, 0.5, 1.0));
-			double roughness = getValue(physicalProps, "roughness", 0.0);
-			double metalness = getValue(physicalProps, "metalness", 0.0);
+			FbxDouble4 baseColor = getValue(physicalProps, "base_color", FbxDouble4(1.0, 1.0, 1.0, 1.0));
+			double roughness = getValue(physicalProps, "roughness", 1.0);
+			double metalness = getValue(physicalProps, "metalness", 1.0);
 			bool invertRoughness = getValue(physicalProps, "inv_roughness", false);
 			if (invertRoughness) {
 				roughness = 1.0f - roughness;
 			}
-			FbxDouble4 emissiveColor = getValue(physicalProps, "emit_color", FbxDouble4(1, 1, 1, 1));
+			FbxDouble4 emissiveColor = getValue(physicalProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
 			mat->metallicFactor = metalness;
 			mat->roughnessFactor = roughness;
 
@@ -175,7 +175,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				result.diffuse->channel = baseColorFileTexture->UVSet.Get();
 				result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
 			}
-			mat->baseColorFactor = { baseCol[0],baseCol[1],baseCol[2],baseCol[3] };
+			mat->baseColorFactor = { baseColor[0],baseColor[1],baseColor[2],baseColor[3] };
 
 			osg::ref_ptr<osg::Texture2D> roughnessMap = getTex("roughness");
 			osg::ref_ptr<osg::Texture2D> metalnessMap = getTex("metalness");
@@ -284,7 +284,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
 					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
 				}
-				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.5, 0.5, 0.5, 1.0));
+				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
 				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
 
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
@@ -296,7 +296,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
 					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
 				}
-				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(0.5, 0.5, 0.5, 1.0));
+				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
 				mat->baseColorFactor = { baseColor[0],baseColor[1],baseColor[2],baseColor[3] };
 
 				mat->metallicFactor = getValue(pbrProps, "metalness", 1.0);
@@ -376,7 +376,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
 					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
 				}
-				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.5, 0.5, 0.5, 1.0));
+				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
 				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
 
 				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = new KHR_materials_pbrSpecularGlossiness;

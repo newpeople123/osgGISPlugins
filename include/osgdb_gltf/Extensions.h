@@ -222,7 +222,7 @@ struct KHR_materials_variants :GltfExtension
 {
 	KHR_materials_variants() :GltfExtension("KHR_materials_variants") {}
 	GltfExtension* clone() override {
-		return new KHR_materials_emissive_strength;
+		return new KHR_materials_variants;
 	}
 };
 

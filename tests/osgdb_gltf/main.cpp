@@ -68,9 +68,9 @@ int main() {
     //exportGltf(node, R"(E:\Data\data\龙翔桥站厅.FBX)");
 
     //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站厅.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
     convertOsgModel2Gltf(R"(E:\Data\data\芜湖水厂总装单位M.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
     //convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
 
     return 1;
