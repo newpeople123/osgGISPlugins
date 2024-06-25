@@ -1,7 +1,7 @@
 #include <osgdb_fbx/fbxMaterialToOsgStateSet.h>
-#include <gltf/material/GltfMaterial.h>
-#include <gltf/material/GltfPbrMRMaterial.h>
-#include <gltf/material/GltfPbrSGMaterial.h>
+#include <osgdb_gltf/material/GltfMaterial.h>
+#include <osgdb_gltf/material/GltfPbrMRMaterial.h>
+#include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <sstream>
 #include <osg/TexMat>
 #include <osgDB/ReadFile>
@@ -202,36 +202,36 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			mat->normalTexture = result.normalMap ? result.normalMap->texture : NULL;
 			mat->occlusionTexture = result.ambient ? result.ambient->texture : NULL;
 
-			KHR_materials_emissive_strength emissive_strength_extension;
-			emissive_strength_extension.setEmissiveStrength(getValue(physicalProps, "emission", 0.0));
-			mat->materialExtensions.push_back(&emissive_strength_extension);
+			KHR_materials_emissive_strength* emissive_strength_extension = new KHR_materials_emissive_strength;
+			emissive_strength_extension->setEmissiveStrength(getValue(physicalProps, "emission", 0.0));
+			mat->materialExtensions.push_back(emissive_strength_extension);
 
-			KHR_materials_anisotropy anisotropy_extension;
-			anisotropy_extension.setAnisotropyStrength(getValue(physicalProps, "anisotropy", 0.0));
-			anisotropy_extension.osgAnisotropyTexture = getTex("anisotropy");
-			mat->materialExtensions.push_back(&anisotropy_extension);
+			KHR_materials_anisotropy* anisotropy_extension = new KHR_materials_anisotropy;
+			anisotropy_extension->setAnisotropyStrength(getValue(physicalProps, "anisotropy", 0.0));
+			anisotropy_extension->osgAnisotropyTexture = getTex("anisotropy");
+			mat->materialExtensions.push_back(anisotropy_extension);
 
-			KHR_materials_clearcoat clearcoat_extension;
-			clearcoat_extension.setClearcoatFactor(getValue(physicalProps, "coating", 0.0));
-			clearcoat_extension.osgClearcoatNormalTexture = getTex("coat");
-			clearcoat_extension.setClearcoatRoughnessFactor(getValue(physicalProps, "coat_roughness", 0.0));
+			KHR_materials_clearcoat* clearcoat_extension = new KHR_materials_clearcoat;
+			clearcoat_extension->setClearcoatFactor(getValue(physicalProps, "coating", 0.0));
+			clearcoat_extension->osgClearcoatNormalTexture = getTex("coat");
+			clearcoat_extension->setClearcoatRoughnessFactor(getValue(physicalProps, "coat_roughness", 0.0));
 			bool invertCoatRoughness = getValue(physicalProps, "coat_roughness_inv", false);
 			if (invertCoatRoughness) {
-				clearcoat_extension.setClearcoatRoughnessFactor(1 - getValue(physicalProps, "coat_roughness", 0.0));
+				clearcoat_extension->setClearcoatRoughnessFactor(1 - getValue(physicalProps, "coat_roughness", 0.0));
 			}
-			clearcoat_extension.osgClearcoatRoughnessTexture = getTex("coat_rough");
-			mat->materialExtensions.push_back(&clearcoat_extension);
+			clearcoat_extension->osgClearcoatRoughnessTexture = getTex("coat_rough");
+			mat->materialExtensions.push_back(clearcoat_extension);
 
-			KHR_materials_ior ior_extension;
-			ior_extension.setIor(getValue(physicalProps, "trans_ior", 1.5));
-			mat->materialExtensions.push_back(&ior_extension);
+			KHR_materials_ior* ior_extension = new KHR_materials_ior;
+			ior_extension->setIor(getValue(physicalProps, "trans_ior", 1.5));
+			mat->materialExtensions.push_back(ior_extension);
 
 			FbxProperty specularProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecular);
 			FbxDouble3 specularColorFactor = specularProperty.Get<FbxDouble3>();
-			KHR_materials_specular specular_extension;
-			specular_extension.setSpecularColorFactor({ specularColorFactor[0],specularColorFactor[1],specularColorFactor[2] });
-			specular_extension.osgSpecularTexture = result.ambient ? result.specular->texture : NULL;
-			mat->materialExtensions.push_back(&specular_extension);
+			KHR_materials_specular* specular_extension = new KHR_materials_specular;
+			specular_extension->setSpecularColorFactor({ specularColorFactor[0],specularColorFactor[1],specularColorFactor[2] });
+			specular_extension->osgSpecularTexture = result.ambient ? result.specular->texture : NULL;
+			mat->materialExtensions.push_back(specular_extension);
 		}
 		const FbxProperty pbrProps = topProp.Find("main", false);
 		if (pbrProps.IsValid()) {
@@ -379,15 +379,15 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.5, 0.5, 0.5, 1.0));
 				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
 
-				KHR_materials_pbrSpecularGlossiness pbrSpecularGlossiness_extension;
+				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = new KHR_materials_pbrSpecularGlossiness;
 				FbxDouble4 Specular = getValue(pbrProps, "Specular", FbxDouble4(1.0, 1.0, 1.0, 1.0));
-				pbrSpecularGlossiness_extension.setSpecularFactor({ Specular[0],Specular[1],Specular[2] });
-				pbrSpecularGlossiness_extension.setGlossinessFactor(getValue(pbrProps, "glossiness", 0.0));
+				pbrSpecularGlossiness_extension->setSpecularFactor({ Specular[0],Specular[1],Specular[2] });
+				pbrSpecularGlossiness_extension->setGlossinessFactor(getValue(pbrProps, "glossiness", 0.0));
 
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
 				if (baseColorFileTexture) {
 					osg::ref_ptr<osg::Texture2D> baseColorMap = fbxTextureToOsgTexture(baseColorFileTexture);
-					pbrSpecularGlossiness_extension.osgDiffuseTexture = baseColorMap;
+					pbrSpecularGlossiness_extension->osgDiffuseTexture = baseColorMap;
 					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.diffuse = result.diffuse ? result.diffuse : temp;
 					result.diffuse->texture = baseColorMap;
@@ -395,7 +395,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
 				}
 				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
-				pbrSpecularGlossiness_extension.setDiffuseFactor({ baseColor[0],baseColor[1],baseColor[2],baseColor[3] });
+				pbrSpecularGlossiness_extension->setDiffuseFactor({ baseColor[0],baseColor[1],baseColor[2],baseColor[3] });
 
 				const FbxFileTexture* glossinessFileTexture = getTex("specular");
 				const FbxFileTexture* specularFileTexture = getTex("glossiness");
@@ -408,7 +408,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					osg::ref_ptr<osg::Texture2D> specularGlossinessTexture = new osg::Texture2D;
 					specularGlossinessTexture->setImage(specularGlossinessImage);
 
-					pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture = specularGlossinessTexture;
+					pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture = specularGlossinessTexture;
 					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.specular = result.specular ? result.specular : temp;
 					result.specular->texture = specularMap;
@@ -421,23 +421,23 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
 				}
 				else if (specularMap && !glossinessMap) {
-					pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture = specularMap;
+					pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture = specularMap;
 					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.specular = result.specular ? result.specular : temp;
-					result.specular->texture = pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture;
+					result.specular->texture = pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
 					result.specular->channel = specularFileTexture->UVSet.Get();
 					result.specular->scale.set(specularFileTexture->GetScaleU(), specularFileTexture->GetScaleV());
 				}
 				else if (!specularMap && glossinessMap) {
-					pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture = glossinessMap;
+					pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture = glossinessMap;
 					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.shininess = result.shininess ? result.shininess : temp;
-					result.shininess->texture = pbrSpecularGlossiness_extension.osgSpecularGlossinessTexture;
+					result.shininess->texture = pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
 					result.shininess->channel = glossinessFileTexture->UVSet.Get();
 					result.shininess->scale.set(glossinessFileTexture->GetScaleU(), glossinessFileTexture->GetScaleV());
 				}
 				//添加到materialExtensionsByCesiumSupport就不要添加到materialExtensions
-				mat->materialExtensionsByCesiumSupport.push_back(&pbrSpecularGlossiness_extension);
+				mat->materialExtensionsByCesiumSupport.push_back(pbrSpecularGlossiness_extension);
 			}
 		}
 
@@ -506,9 +506,9 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 		{
 			mat->baseColorTexture = fbxTextureToOsgTexture(diffuseTexture);
 		}
-		KHR_materials_emissive_strength emissive_strength_extension;
-		emissive_strength_extension.setEmissiveStrength(1.0);
-		mat->materialExtensions.push_back(&emissive_strength_extension);
+		KHR_materials_emissive_strength* emissive_strength_extension = new KHR_materials_emissive_strength;
+		emissive_strength_extension->setEmissiveStrength(1.0);
+		mat->materialExtensions.push_back(emissive_strength_extension);
 
 		FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
 		mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };

@@ -48,6 +48,8 @@ void convertOsgModel2Gltf(const std::string& filename) {
 
 int main() {
 
+
+
     osgDB::Registry* instance = osgDB::Registry::instance();
     instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
     //osgDB::readNodeFile(R"(D:\nginx-1.27.0\html\test\gltf\1.glb)");
@@ -66,10 +68,10 @@ int main() {
     //exportGltf(node, R"(E:\Data\data\龙翔桥站厅.FBX)");
 
     convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站厅.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\芜湖水厂总装单位M.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\芜湖水厂总装单位M.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
 
     return 1;
 }

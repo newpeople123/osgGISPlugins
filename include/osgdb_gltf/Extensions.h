@@ -47,6 +47,9 @@ struct GltfExtension {
 		value[key] = std::move(tinygltfVal);
 	}
 
+	virtual GltfExtension* clone() {
+		return new GltfExtension;
+	}
 private:
 	template <typename T>
 	struct Default;
@@ -64,11 +67,6 @@ private:
 	template <>
 	struct Default<double> {
 		static double value() { return 0.0; }
-	};
-
-	template <>
-	struct Default<float> {
-		static float value() { return 0.0; }
 	};
 
 	template <typename T, size_t N>
@@ -137,6 +135,22 @@ struct KHR_materials_clearcoat : GltfExtension {
 	void setClearcoatNormalTexture(int val) {
 		Set("clearcoatNormalTexture", val);
 	}
+
+	GltfExtension* clone() override {
+		KHR_materials_clearcoat* newExtension = new KHR_materials_clearcoat;
+		newExtension->setClearcoatFactor(this->getClearcoatFactor());
+		newExtension->setClearcoatRoughnessFactor(this->getClearcoatRoughnessFactor());
+		newExtension->setClearcoatTexture(this->getClearcoatTexture());
+		newExtension->setClearcoatRoughnessTexture(this->getClearcoatRoughnessTexture());
+		newExtension->setClearcoatNormalTexture(this->getClearcoatNormalTexture());
+		if(this->osgClearcoatTexture.valid())
+			newExtension->osgClearcoatTexture = (osg::Texture2D*)this->osgClearcoatTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		if (this->osgClearcoatRoughnessTexture.valid())
+			newExtension->osgClearcoatRoughnessTexture = (osg::Texture2D*)this->osgClearcoatRoughnessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		if (this->osgClearcoatNormalTexture.valid())
+			newExtension->osgClearcoatNormalTexture = (osg::Texture2D*)this->osgClearcoatNormalTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		return newExtension;
+	}
 };
 
 //cesium does not support
@@ -171,6 +185,16 @@ struct KHR_materials_anisotropy :GltfExtension
 	void setAnisotropyTexture(int val) {
 		Set("anisotropyTexture", val);
 	}
+
+	GltfExtension* clone() override {
+		KHR_materials_anisotropy* newExtension = new KHR_materials_anisotropy;
+		newExtension->setAnisotropyStrength(this->getAnisotropyStrength());
+		newExtension->setAnisotropyRotation(this->getAnisotropyRotation());
+		newExtension->setAnisotropyTexture(this->getAnisotropyTexture());
+		if(this->osgAnisotropyTexture.valid())
+			newExtension->osgAnisotropyTexture = (osg::Texture2D*)this->osgAnisotropyTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		return newExtension;
+	}
 };
 
 //conflict KHR_materials_unlit,and cesium does not support
@@ -186,21 +210,33 @@ struct KHR_materials_emissive_strength :GltfExtension
 	void setEmissiveStrength(double val) {
 		Set("emissiveStrength", val);
 	}
+
+	GltfExtension* clone() override {
+		KHR_materials_emissive_strength* newExtension = new KHR_materials_emissive_strength;
+		newExtension->setEmissiveStrength(this->getEmissiveStrength());
+		return newExtension;
+	}
 };
 
 struct KHR_materials_variants :GltfExtension
 {
 	KHR_materials_variants() :GltfExtension("KHR_materials_variants") {}
+	GltfExtension* clone() override {
+		return new KHR_materials_emissive_strength;
+	}
 };
 
 struct KHR_materials_unlit :GltfExtension
 {
 	KHR_materials_unlit() :GltfExtension("KHR_materials_unlit") {}
+	GltfExtension* clone() override {
+		return new KHR_materials_unlit;
+	}
 };
 #pragma endregion
 
 #pragma region SpecularGlossiness
-struct KHR_materials_pbrSpecularGlossiness :GltfExtension{
+struct KHR_materials_pbrSpecularGlossiness :GltfExtension {
 	KHR_materials_pbrSpecularGlossiness() :GltfExtension("KHR_materials_pbrSpecularGlossiness") {
 		setDiffuseFactor({ 1.0, 1.0, 1.0, 1.0 });
 		setSpecularFactor({ 1.0, 1.0, 1.0 });
@@ -247,6 +283,20 @@ struct KHR_materials_pbrSpecularGlossiness :GltfExtension{
 
 	void setDiffuseTexture(int val) {
 		Set("diffuseTexture", val);
+	}
+
+	GltfExtension* clone() override {
+		KHR_materials_pbrSpecularGlossiness* newExtension = new KHR_materials_pbrSpecularGlossiness;
+		newExtension->setDiffuseFactor(this->getDiffuseFactor());
+		newExtension->setSpecularFactor(this->getSpecularFactor());
+		newExtension->setGlossinessFactor(this->getGlossinessFactor());
+		newExtension->setSpecularGlossinessTexture(this->getSpecularGlossinessTexture());
+		newExtension->setDiffuseTexture(this->getDiffuseTexture());
+		if(this->osgDiffuseTexture.valid())
+			newExtension->osgDiffuseTexture = (osg::Texture2D*)this->osgDiffuseTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		if (this->osgSpecularGlossinessTexture.valid())
+			newExtension->osgSpecularGlossinessTexture = (osg::Texture2D*)this->osgSpecularGlossinessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		return newExtension;
 	}
 };
 #pragma endregion
@@ -301,6 +351,18 @@ struct KHR_materials_sheen :GltfExtension
 	void setSheenRoughnessTexture(int val) {
 		Set("sheenRoughnessTexture", val);
 	}
+	GltfExtension* clone() override {
+		KHR_materials_sheen* newExtension = new KHR_materials_sheen;
+		newExtension->setSheenColorFactor(this->getSheenColorFactor());
+		newExtension->setSheenRoughnessFactor(this->getSheenRoughnessFactor());
+		newExtension->setSheenColorTexture(this->getSheenColorTexture());
+		newExtension->setSheenRoughnessTexture(this->getSheenRoughnessTexture());
+		if (this->osgSheenColorTexture.valid())
+			newExtension->osgSheenColorTexture = (osg::Texture2D*)this->osgSheenColorTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		if (this->osgSheenRoughnessTexture.valid())
+			newExtension->osgSheenRoughnessTexture = (osg::Texture2D*)this->osgSheenRoughnessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		return newExtension;
+	}
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness
@@ -337,6 +399,16 @@ struct KHR_materials_volume :GltfExtension
 	}
 	void getThicknessTexture(int val) {
 		Set("thicknessTexture", val);
+	}
+	GltfExtension* clone() override {
+		KHR_materials_volume* newExtension = new KHR_materials_volume;
+		newExtension->setAttenuationColor(this->getAttenuationColor());
+		newExtension->setThicknessFactor(this->getThicknessFactor());
+		newExtension->setAttenuationDistance(this->getAttenuationDistance());
+		newExtension->getThicknessTexture(this->getThicknessTexture());
+		if (this->osgThicknessTexture.valid())
+			newExtension->osgThicknessTexture = (osg::Texture2D*)this->osgThicknessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		return newExtension;
 	}
 };
 
@@ -375,7 +447,19 @@ struct KHR_materials_specular :GltfExtension
 	void setSpecularColorTexture(int val) {
 		Set("specularColorTexture", val);
 	}
+	GltfExtension* clone() override {
+		KHR_materials_specular* newExtension = new KHR_materials_specular;
+		newExtension->setSpecularColorFactor(this->getSpecularColorFactor());
+		newExtension->setSpecularFactor(this->getSpecularFactor());
+		newExtension->setSpecularTexture(this->getSpecularTexture());
+		newExtension->setSpecularColorTexture(this->getSpecularColorTexture());
+		if (this->osgSpecularTexture.valid())
+			newExtension->osgSpecularTexture = (osg::Texture2D*)this->osgSpecularTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+		if (this->osgSpecularColorTexture.valid())
+			newExtension->osgSpecularColorTexture = (osg::Texture2D*)this->osgSpecularColorTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
 
+		return newExtension;
+	}
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness,and cesium does not support
@@ -397,6 +481,15 @@ struct KHR_materials_transmission :GltfExtension
 	}
 	void setTransmissionTexture(int val) {
 		Set("transmissionTexture", val);
+	}
+	GltfExtension* clone() override {
+		KHR_materials_transmission* newExtension = new KHR_materials_transmission;
+		newExtension->setTransmissionFactor(this->getTransmissionFactor());
+		newExtension->setTransmissionTexture(this->getTransmissionTexture());
+		if (this->osgTransmissionTexture.valid())
+			newExtension->osgTransmissionTexture = (osg::Texture2D*)this->osgTransmissionTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+
+		return newExtension;
 	}
 };
 #pragma endregion
@@ -464,6 +557,19 @@ struct KHR_draco_mesh_compression :GltfExtension
 	void setBatchId(int val) {
 		Set("_BATCHID", val);
 	}
+
+	GltfExtension* clone() override {
+		KHR_draco_mesh_compression* newExtension = new KHR_draco_mesh_compression;
+		newExtension->setBufferView(this->getBufferView());
+		newExtension->setPosition(this->getPosition());
+		newExtension->setNormal(this->getNormal());
+		newExtension->setTexCoord0(this->getTexCoord0());
+		newExtension->setTexCoord1(this->getTexCoord1());
+		newExtension->setWeights0(this->getWeights0());
+		newExtension->setJoints0(this->getJoints0());
+		newExtension->setBatchId(this->getBatchId());
+		return newExtension;
+	}
 };
 
 const std::string KHR_mesh_quantization = "KHR_mesh_quantization";
@@ -483,6 +589,12 @@ struct KHR_texture_basisu :GltfExtension
 	void setSource(int val) {
 		Set("source", val);
 	}
+	GltfExtension* clone() override {
+		KHR_texture_basisu* newExtension = new KHR_texture_basisu;
+		newExtension->setSource(this->getSource());
+
+		return newExtension;
+	}
 };
 
 struct KHR_texture_transform :GltfExtension
@@ -493,16 +605,16 @@ struct KHR_texture_transform :GltfExtension
 		setTexCoord(-1);
 		setRotation(0.0);
 	}
-	std::array<float, 2> getOffset() const {
-		return GetArray<float, 2>("offset");
+	std::array<double, 2> getOffset() const {
+		return GetArray<double, 2>("offset");
 	}
-	void setOffset(const std::array<float, 2>& val) {
+	void setOffset(const std::array<double, 2>& val) {
 		Set("offset", tinygltf::Value::Array(val.begin(), val.end()));
 	}
-	std::array<float, 2> getScale() const {
-		return GetArray<float, 2>("scale");
+	std::array<double, 2> getScale() const {
+		return GetArray<double, 2>("scale");
 	}
-	void setScale(const std::array<float, 2>& val) {
+	void setScale(const std::array<double, 2>& val) {
 		Set("scale", tinygltf::Value::Array(val.begin(), val.end()));
 	}
 	int getTexCoord() const {
@@ -512,10 +624,19 @@ struct KHR_texture_transform :GltfExtension
 		Set("texCoord", val);
 	}
 	double getRotation() const {
-		return Get<float>("rotation");
+		return Get<double>("rotation");
 	}
-	void setRotation(float val) {
+	void setRotation(double val) {
 		Set("rotation", val);
+	}
+	GltfExtension* clone() override {
+		KHR_texture_transform* newExtension = new KHR_texture_transform;
+		newExtension->setOffset(this->getOffset());
+		newExtension->setScale(this->getScale());
+		newExtension->setTexCoord(this->getTexCoord());
+		newExtension->setRotation(this->getRotation());
+
+		return newExtension;
 	}
 };
 
@@ -529,6 +650,12 @@ struct EXT_texture_webp :GltfExtension
 	}
 	void setSource(int val) {
 		Set("source", val);
+	}
+	GltfExtension* clone() override {
+		EXT_texture_webp* newExtension = new EXT_texture_webp;
+		newExtension->setSource(this->getSource());
+
+		return newExtension;
 	}
 };
 #pragma endregion

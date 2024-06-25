@@ -135,7 +135,15 @@ size_t TexturePacker::getId(osg::Image* image) const
 {
 	for (const auto& entry : _input)
 	{
-		if (entry.second.first.get() == image)
+		if (entry.second.first.get() == image ||
+			(entry.second.first->getName() == image->getName() &&
+				entry.second.first->getFileName() == image->getFileName() &&
+				entry.second.first->s() == image->s() &&
+				entry.second.first->t() == image->t() &&
+				entry.second.first->r() == image->r() &&
+				entry.second.first->getInternalTextureFormat() == image->getInternalTextureFormat()
+				)
+			)
 			return entry.first;
 	}
 	return 0;

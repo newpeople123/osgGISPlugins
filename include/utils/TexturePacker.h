@@ -13,7 +13,7 @@ public:
 	size_t addElement(int width, int height);
 	void removeElement(size_t id);
 
-	osg::Image* pack(size_t& numImages, bool generateResult, bool stopIfFailed = false);
+	osg::Image* pack(size_t& numImages, bool generateResult, bool stopIfFailed = true);
 	bool getPackingData(size_t id, double& x, double& y, int& w, int& h);
 	size_t getId(osg::Image* image) const;
 protected:
