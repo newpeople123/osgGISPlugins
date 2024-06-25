@@ -4,7 +4,7 @@
 #include <osg/Texture2D>
 #include <osg/Image>
 #include <array>
-#include "gltf/Extensions.h"
+#include "osgdb_gltf/Extensions.h"
 class GltfMaterial :public osg::Material
 {
 public:

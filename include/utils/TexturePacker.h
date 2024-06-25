@@ -1,6 +1,5 @@
 #ifndef OSG_GIS_PLUGINS_TEXTUREPACKER_H
 #define OSG_GIS_PLUGINS_TEXTUREPACKER_H
-
 #include <osg/Image>
 #include <osg/observer_ptr>
 class TexturePacker :public osg::Referenced
@@ -15,7 +14,8 @@ public:
 	void removeElement(size_t id);
 
 	osg::Image* pack(size_t& numImages, bool generateResult, bool stopIfFailed = false);
-	bool getPackingData(size_t id, int& x, int& y, int& w, int& h);
+	bool getPackingData(size_t id, double& x, double& y, int& w, int& h);
+	size_t getId(osg::Image* image) const;
 protected:
 	typedef std::pair<osg::observer_ptr<osg::Image>, osg::Vec4> InputPair;
 	std::map<size_t, InputPair> _input, _result;

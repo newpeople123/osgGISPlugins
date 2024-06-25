@@ -1,4 +1,4 @@
-#include "gltf/merge/GltfMerge.h"
+#include "osgdb_gltf/merge/GltfMerge.h"
 #include <osg/Math>
 void mergeBuffers(tinygltf::Model& model)
 {

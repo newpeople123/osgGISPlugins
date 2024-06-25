@@ -66,6 +66,11 @@ private:
 		static double value() { return 0.0; }
 	};
 
+	template <>
+	struct Default<float> {
+		static float value() { return 0.0; }
+	};
+
 	template <typename T, size_t N>
 	struct Default<std::array<T, N>> {
 		static std::array<T, N> value() { return { 0.0 }; }
@@ -488,16 +493,16 @@ struct KHR_texture_transform :GltfExtension
 		setTexCoord(-1);
 		setRotation(0.0);
 	}
-	std::array<double, 2> getOffset() const {
-		return GetArray<double, 2>("offset");
+	std::array<float, 2> getOffset() const {
+		return GetArray<float, 2>("offset");
 	}
-	void setOffset(const std::array<double, 2>& val) {
+	void setOffset(const std::array<float, 2>& val) {
 		Set("offset", tinygltf::Value::Array(val.begin(), val.end()));
 	}
-	std::array<double, 2> getScale() const {
-		return GetArray<double, 2>("scale");
+	std::array<float, 2> getScale() const {
+		return GetArray<float, 2>("scale");
 	}
-	void setScale(const std::array<double, 2>& val) {
+	void setScale(const std::array<float, 2>& val) {
 		Set("scale", tinygltf::Value::Array(val.begin(), val.end()));
 	}
 	int getTexCoord() const {
@@ -507,9 +512,9 @@ struct KHR_texture_transform :GltfExtension
 		Set("texCoord", val);
 	}
 	double getRotation() const {
-		return Get<double>("rotation");
+		return Get<float>("rotation");
 	}
-	void setRotation(double val) {
+	void setRotation(float val) {
 		Set("rotation", val);
 	}
 };

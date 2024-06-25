@@ -2,14 +2,21 @@ set(TOOL_NAME "texturepacker")
 
 # 查找源文件
 aux_source_directory(. DIR_SRCS)
-file(GLOB_RECURSE SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/optimizer/texture/*.cpp)
 source_group("src" FILES ${DIR_SRCS})
-source_group("src/optimizer/texture" FILES ${SOURCE_FILES})
+source_group("src/optimizer/texture" FILES 
+${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp 
+${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
+)
 
 # 定义可执行文件
-file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/texture/*.h)
-add_executable(${TOOL_NAME} ${DIR_SRCS} ${HEADER_FILES} ${SOURCE_FILES})
-source_group("include/optimizer/texture" FILES ${HEADER_FILES}) 
+add_executable(${TOOL_NAME} ${DIR_SRCS} 
+${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h ${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp
+${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
+)
+source_group("include/optimizer/texture" FILES 
+${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h
+${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
+) 
 # 包含外部工具链文件
 include(${CMAKE_TOOLCHAIN_FILE})
 

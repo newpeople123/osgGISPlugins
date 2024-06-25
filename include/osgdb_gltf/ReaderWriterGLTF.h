@@ -1,7 +1,7 @@
 #ifndef READERWRITERGLTF_H
 #define READERWRITERGLTF_H 1
 #include <osgDB/ReaderWriter>
-#include <utils/OsgToGltf.h>
+#include "osgdb_gltf/Osgb2Gltf.h"
 class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
 public:

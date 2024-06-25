@@ -1,6 +1,6 @@
-#include "3dtiles/optimizer/mesh/FlattenTransformVisitor.h"
-#include "3dtiles/optimizer/mesh/MeshOptimizer.h"
-#include "3dtiles/optimizer/mesh/MeshOptimizerVisitor.h"
+#include "utils/FlattenTransformVisitor.h"
+#include "3dtiles/optimizer/MeshOptimizer.h"
+#include "3dtiles/optimizer/MeshOptimizerVisitor.h"
 #include <osg/ArgumentParser>
 #include <iostream>
 #include <osgDB/ConvertUTF>

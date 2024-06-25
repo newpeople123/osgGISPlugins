@@ -1,4 +1,4 @@
-#include "3dtiles/optimizer/texture/TexturePacker.h"
+#include "utils/TexturePacker.h"
 #include <osg/io_utils>
 #include <osg/ImageUtils>
 #define STB_RECT_PACK_IMPLEMENTATION
@@ -118,7 +118,7 @@ osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool sto
 	return total.release();
 }
 
-bool TexturePacker::getPackingData(size_t id, int& x, int& y, int& w, int& h)
+bool TexturePacker::getPackingData(size_t id, double& x, double& y, int& w, int& h)
 {
 	if (_result.find(id) != _result.end()) {
 		const osg::Vec4& rect = _result[id].second;
@@ -129,4 +129,14 @@ bool TexturePacker::getPackingData(size_t id, int& x, int& y, int& w, int& h)
 		return true;
 	}
 	return false;
+}
+
+size_t TexturePacker::getId(osg::Image* image) const
+{
+	for (const auto& entry : _input)
+	{
+		if (entry.second.first.get() == image)
+			return entry.first;
+	}
+	return 0;
 }

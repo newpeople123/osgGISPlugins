@@ -2,29 +2,34 @@ set(TOOL_TEST_NAME "test_osgdb_gltf")
 aux_source_directory(. DIR_SRCS)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/*.h)
-file(GLOB GLTF_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/*.h)
-file(GLOB GLTF_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/*.cpp)
-file(GLOB GLTF_MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/material/*.h)
-file(GLOB GLTF_MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/material/*.cpp)
-file(GLOB GLTF_COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/compress/*.h)
-file(GLOB GLTF_COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/compress/*.cpp)
-file(GLOB GLTF_MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/merge/*.h)
-file(GLOB GLTF_MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/merge/*.cpp)
-ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} ${HEADER_FILES} 
-${GLTF_MATERIAL_HEADER_FILES} ${GLTF_MATERIAL_SOURCE_FILES}
-${GLTF_COMPRESS_HEADER_FILES} ${GLTF_COMPRESS_SOURCE_FILES}
-${GLTF_MERGE_HEADER_FILES} ${GLTF_MERGE_SOURCE_FILES}
-${GLTF_HEADER_FILES} ${GLTF_SOURCE_FILES}
+set(HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Extensions.h ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Osgb2Gltf.h)
+file(GLOB COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/compress/*.h)
+file(GLOB MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/*.h)
+file(GLOB MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/merge/*.h)
+file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
+file(GLOB COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/compress/*.cpp)
+file(GLOB MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/*.cpp)
+file(GLOB MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/merge/*.cpp)
+file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
+set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osgb2Gltf.cpp)
+
+ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} 
+${HEADER_FILES} ${SOURCE_FILES}
+${COMPRESS_HEADER_FILES} ${COMPRESS_SOURCE_FILES}
+${MATERIAL_HEADER_FILES} ${MATERIAL_SOURCE_FILES}
+${MERGE_HEADER_FILES} ${MERGE_SOURCE_FILES}
+${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES}
 )
-source_group("include" FILES ${HEADER_FILES} ${GLTF_HEADER_FILES})
-source_group("include/material" FILES ${GLTF_MATERIAL_HEADER_FILES}) 
-source_group("include/compress" FILES ${GLTF_COMPRESS_HEADER_FILES}) 
-source_group("include/merge" FILES ${GLTF_MERGE_HEADER_FILES}) 
-source_group("src" FILES ${DIR_SRCS} ${GLTF_SOURCE_FILES})
-source_group("src/material" FILES ${GLTF_MATERIAL_SOURCE_FILES}) 
-source_group("src/compress" FILES ${GLTF_COMPRESS_SOURCE_FILES}) 
-source_group("src/merge" FILES ${GLTF_MERGE_SOURCE_FILES}) 
+source_group("include" FILES ${HEADER_FILES})
+source_group("include/compress" FILES ${COMPRESS_HEADER_FILES})
+source_group("include/material" FILES ${MATERIAL_HEADER_FILES})
+source_group("include/merge" FILES ${MERGE_HEADER_FILES})
+source_group("include/utils" FILES ${UTILS_HEADER_FILES}) 
+source_group("src" FILES ${DIR_SRCS} ${SOURCE_FILES})
+source_group("src/compress" FILES ${COMPRESS_SOURCE_FILES})
+source_group("src/material" FILES ${MATERIAL_SOURCE_FILES})
+source_group("src/merge" FILES ${MERGE_SOURCE_FILES})
+source_group("src/utils" FILES ${UTILS_SOURCE_FILES}) 
 
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到

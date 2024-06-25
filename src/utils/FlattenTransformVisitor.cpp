@@ -1,4 +1,4 @@
-#include "3dtiles/optimizer/mesh/FlattenTransformVisitor.h"
+#include "utils/FlattenTransformVisitor.h"
 FlattenTransformVisitor::FlattenTransformVisitor()
     : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
 

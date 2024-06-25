@@ -1,4 +1,4 @@
-#include "3dtiles/optimizer/mesh/MeshOptimizerBase.h"
+#include "3dtiles/optimizer/MeshOptimizerBase.h"
 void MeshOptimizerBase::mergePrimitives(osg::ref_ptr<osg::Geometry> geom) {
 	if (geom.valid()) {
 		osg::ref_ptr<osg::PrimitiveSet> mergePrimitiveset = nullptr;

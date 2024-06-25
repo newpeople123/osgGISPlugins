@@ -1,4 +1,4 @@
-#include "gltf/material/GltfPbrSGMaterial.h"
+#include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 #define TINYGLTF_NO_INCLUDE_STB_IMAGE
 #define TINYGLTF_NO_INCLUDE_STB_IMAGE_WRITE
 osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::Image>& specularImage, const osg::ref_ptr<osg::Image>& glossinessImage)

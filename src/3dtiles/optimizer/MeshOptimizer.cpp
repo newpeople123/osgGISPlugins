@@ -1,4 +1,4 @@
-#include "3dtiles/optimizer/mesh/MeshOptimizer.h"
+#include "3dtiles/optimizer/MeshOptimizer.h"
 #include <osg/PrimitiveSet>
 #include <meshoptimizer.h>
 #include <osgUtil/Optimizer>

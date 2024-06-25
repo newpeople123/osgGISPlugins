@@ -1,4 +1,4 @@
-#include "3dtiles/optimizer/texture/TexturePacker.h"
+#include "utils/TexturePacker.h"
 
 #include <osg/ArgumentParser>
 #include <iostream>
@@ -69,7 +69,7 @@ int main(int argc, char** argv)
         images.push_back(img);
     }
 
-    osg::ref_ptr<TexturePacker> packer = new TexturePacker(4096, 4096);
+    osg::ref_ptr<TexturePacker> packer = new TexturePacker(8192, 8192);
     for (size_t i = 0; i < images.size(); ++i)
     {
         geometryIdMap[i] = packer->addElement(images[i].get());

@@ -3,28 +3,15 @@ set(LIB_NAME osgdb_gltf)
 #并将名称保存到DIR_SRCS变量
 aux_source_directory(. DIR_SRCS)
 file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/*.h)
-file(GLOB GLTF_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/*.h)
-file(GLOB GLTF_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/*.cpp)
-file(GLOB GLTF_MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/material/*.h)
-file(GLOB GLTF_MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/material/*.cpp)
-file(GLOB GLTF_COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/compress/*.h)
-file(GLOB GLTF_COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/compress/*.cpp)
-file(GLOB GLTF_MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/gltf/merge/*.h)
-file(GLOB GLTF_MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/gltf/merge/*.cpp)
-add_library(${LIB_NAME} ${DIR_SRCS} ${HEADER_FILES} 
-${GLTF_MATERIAL_HEADER_FILES} ${GLTF_MATERIAL_SOURCE_FILES}
-${GLTF_COMPRESS_HEADER_FILES} ${GLTF_COMPRESS_SOURCE_FILES}
-${GLTF_MERGE_HEADER_FILES} ${GLTF_MERGE_SOURCE_FILES}
-${GLTF_HEADER_FILES} ${GLTF_SOURCE_FILES}
-)
-source_group("include" FILES ${HEADER_FILES} ${GLTF_HEADER_FILES})
-source_group("include/material" FILES ${GLTF_MATERIAL_HEADER_FILES}) 
-source_group("include/compress" FILES ${GLTF_COMPRESS_HEADER_FILES}) 
-source_group("include/merge" FILES ${GLTF_MERGE_HEADER_FILES}) 
-source_group("src" FILES ${DIR_SRCS} ${GLTF_SOURCE_FILES})
-source_group("src/material" FILES ${GLTF_MATERIAL_SOURCE_FILES}) 
-source_group("src/compress" FILES ${GLTF_COMPRESS_SOURCE_FILES}) 
-source_group("src/merge" FILES ${GLTF_MERGE_SOURCE_FILES}) 
+file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
+file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
+file(GLOB_RECURSE SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/*.cpp)
+
+add_library(${LIB_NAME} ${DIR_SRCS} ${HEADER_FILES} ${SOURCE_FILES})
+source_group("include" FILES ${HEADER_FILES})
+source_group("include/utils" FILES ${UTILS_HEADER_FILES}) 
+source_group("src" FILES ${DIR_SRCS} ${SOURCE_FILES})
+source_group("src/utils" FILES ${UTILS_SOURCE_FILES}) 
 
 if (OPENSCENEGRAPH_FOUND)
     include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})

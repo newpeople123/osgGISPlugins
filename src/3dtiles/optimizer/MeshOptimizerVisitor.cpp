@@ -1,4 +1,4 @@
-#include "3dtiles/optimizer/mesh/MeshOptimizerVisitor.h"
+#include "3dtiles/optimizer/MeshOptimizerVisitor.h"
 
 MeshOptimizerVisitor::MeshOptimizerVisitor(MeshOptimizerBase* meshOptimizer, float simplifyRatio)
 	: _meshOptimizer(meshOptimizer), _simplifyRatio(simplifyRatio), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}

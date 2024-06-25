@@ -25,6 +25,7 @@ class Osgb2Gltf :public osg::NodeVisitor {
 	osg::ref_ptr<osg::Geode> _cacheGeode = nullptr;
 	int _vco = 1;
 	double _ratio = 1.0;
+	std::vector<std::string> _imgNames;
 
 	void push(tinygltf::Node& gnode);
 
@@ -66,8 +67,11 @@ class Osgb2Gltf :public osg::NodeVisitor {
 
 public:
 	tinygltf::Model model;
-	Osgb2Gltf() = default;
+
+	Osgb2Gltf();
+
 	Osgb2Gltf(GltfComporessor* gltfComporessor);
+
 	~Osgb2Gltf();
 };
 
