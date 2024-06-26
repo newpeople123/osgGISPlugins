@@ -682,11 +682,6 @@ void TexturePackingVisitor::exportImage(const osg::ref_ptr<osg::Image>& img)
 	if (!isFileExists)
 	{
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*img);
-		if (flipped->getOrigin() == osg::Image::BOTTOM_LEFT)
-		{
-			flipped->flipVertical();
-			flipped->setOrigin(osg::Image::TOP_LEFT);
-		}
 		if (!(osgDB::writeImageFile(*flipped.get(), fullPath))) {
 			fullPath = _cachePath + "/" + filename + ".png";
 			std::ifstream fileExistedPng(fullPath);

@@ -625,12 +625,12 @@ int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const os
 	int index = -1;
 	gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgTexture);
 	if (osgTexture.valid()) {
+		KHR_texture_transform texture_transform_extension;
 		bool enableExtension = false;
 		osgTexture->getUserValue(TexturePackingVisitor::ExtensionName, enableExtension);
 		if (enableExtension) {
-			KHR_texture_transform texture_transform_extension;
-			double offsetX, offsetY, scaleX, scaleY;
-			int texCoord;
+			double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+			int texCoord = 0;
 			osgTexture->getUserValue(TexturePackingVisitor::ExtensionOffsetX, offsetX);
 			osgTexture->getUserValue(TexturePackingVisitor::ExtensionOffsetY, offsetY);
 			osgTexture->getUserValue(TexturePackingVisitor::ExtensionScaleX, scaleX);
@@ -639,11 +639,11 @@ int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const os
 			texture_transform_extension.setOffset({ offsetX,offsetY });
 			texture_transform_extension.setScale({ scaleX,scaleY });
 			texture_transform_extension.setTexCoord(texCoord);
-
-			model.extensionsRequired.emplace_back(texture_transform_extension.name);
-			model.extensionsUsed.emplace_back(texture_transform_extension.name);
-			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
+		texture_transform_extension.alignCoordinateAxes();
+		model.extensionsRequired.emplace_back(texture_transform_extension.name);
+		model.extensionsUsed.emplace_back(texture_transform_extension.name);
+		gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 	}
 
 	index = getCurrentMaterial(gltfMaterial);
@@ -659,18 +659,19 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 {
 	int index = -1;
 	const std::type_info& materialId = typeid(*osgMaterial.get());
-	if (materialId ==typeid(GltfMaterial)|| materialId == typeid(GltfPbrMRMaterial) || materialId == typeid(GltfPbrSGMaterial) ) {
+	if (materialId == typeid(GltfMaterial) || materialId == typeid(GltfPbrMRMaterial) || materialId == typeid(GltfPbrSGMaterial)) {
 		const osg::ref_ptr<GltfMaterial> osgGltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
 		const osg::ref_ptr<osg::Texture2D> normalTexture = osgGltfMaterial->normalTexture;
 		if (normalTexture.valid()) {
 			gltfMaterial.normalTexture.index = getOrCreateTexture(normalTexture);
 			gltfMaterial.normalTexture.texCoord = 0;
+
+			KHR_texture_transform texture_transform_extension;
 			bool enableExtension = false;
 			osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureName, enableExtension);
 			if (enableExtension) {
-				KHR_texture_transform texture_transform_extension;
-				double offsetX, offsetY, scaleX, scaleY;
-				int texCoord;
+				double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+				int texCoord = 0;
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureOffsetX, offsetX);
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureOffsetY, offsetY);
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureScaleX, scaleX);
@@ -679,22 +680,23 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				texture_transform_extension.setOffset({ offsetX,offsetY });
 				texture_transform_extension.setScale({ scaleX,scaleY });
 				texture_transform_extension.setTexCoord(texCoord);
-
-				model.extensionsRequired.emplace_back(texture_transform_extension.name);
-				model.extensionsUsed.emplace_back(texture_transform_extension.name);
-				gltfMaterial.normalTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
+			texture_transform_extension.alignCoordinateAxes();
+			model.extensionsRequired.emplace_back(texture_transform_extension.name);
+			model.extensionsUsed.emplace_back(texture_transform_extension.name);
+			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
 		const osg::ref_ptr<osg::Texture2D> occlusionTexture = osgGltfMaterial->occlusionTexture;
 		if (occlusionTexture.valid()) {
 			gltfMaterial.occlusionTexture.index = getOrCreateTexture(occlusionTexture);
 			gltfMaterial.occlusionTexture.texCoord = 0;
+
+			KHR_texture_transform texture_transform_extension;
 			bool enableExtension = false;
 			osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureName, enableExtension);
 			if (enableExtension) {
-				KHR_texture_transform texture_transform_extension;
-				double offsetX, offsetY, scaleX, scaleY;
-				int texCoord;
+				double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+				int texCoord = 0;
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureOffsetX, offsetX);
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureOffsetY, offsetY);
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureScaleX, scaleX);
@@ -703,22 +705,23 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				texture_transform_extension.setOffset({ offsetX,offsetY });
 				texture_transform_extension.setScale({ scaleX,scaleY });
 				texture_transform_extension.setTexCoord(texCoord);
-
-				model.extensionsRequired.emplace_back(texture_transform_extension.name);
-				model.extensionsUsed.emplace_back(texture_transform_extension.name);
-				gltfMaterial.occlusionTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
+			texture_transform_extension.alignCoordinateAxes();
+			model.extensionsRequired.emplace_back(texture_transform_extension.name);
+			model.extensionsUsed.emplace_back(texture_transform_extension.name);
+			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
 		const osg::ref_ptr<osg::Texture2D> emissiveTexture = osgGltfMaterial->emissiveTexture;
 		if (emissiveTexture.valid()) {
 			gltfMaterial.emissiveTexture.index = getOrCreateTexture(emissiveTexture);
 			gltfMaterial.emissiveTexture.texCoord = 0;
+
+			KHR_texture_transform texture_transform_extension;
 			bool enableExtension = false;
 			osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureName, enableExtension);
 			if (enableExtension) {
-				KHR_texture_transform texture_transform_extension;
-				double offsetX, offsetY, scaleX, scaleY;
-				int texCoord;
+				double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+				int texCoord = 0;
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureOffsetX, offsetX);
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureOffsetY, offsetY);
 				osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureScaleX, scaleX);
@@ -727,11 +730,11 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				texture_transform_extension.setOffset({ offsetX,offsetY });
 				texture_transform_extension.setScale({ scaleX,scaleY });
 				texture_transform_extension.setTexCoord(texCoord);
-
-				model.extensionsRequired.emplace_back(texture_transform_extension.name);
-				model.extensionsUsed.emplace_back(texture_transform_extension.name);
-				gltfMaterial.emissiveTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
+			texture_transform_extension.alignCoordinateAxes();
+			model.extensionsRequired.emplace_back(texture_transform_extension.name);
+			model.extensionsUsed.emplace_back(texture_transform_extension.name);
+			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
 		gltfMaterial.emissiveFactor = { osgGltfMaterial->emissiveFactor[0],osgGltfMaterial->emissiveFactor[1], osgGltfMaterial->emissiveFactor[2] };
 
@@ -740,12 +743,13 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 			if (osgGltfMRMaterial->metallicRoughnessTexture.valid()) {
 				gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index = getOrCreateTexture(osgGltfMRMaterial->metallicRoughnessTexture);
 				gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.texCoord = 0;
+
+				KHR_texture_transform texture_transform_extension;
 				bool enableExtension = false;
 				osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureName, enableExtension);
 				if (enableExtension) {
-					KHR_texture_transform texture_transform_extension;
-					double offsetX, offsetY, scaleX, scaleY;
-					int texCoord;
+					double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+					int texCoord = 0;
 					osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureOffsetX, offsetX);
 					osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureOffsetY, offsetY);
 					osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureScaleX, scaleX);
@@ -754,21 +758,22 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 					texture_transform_extension.setOffset({ offsetX,offsetY });
 					texture_transform_extension.setScale({ scaleX,scaleY });
 					texture_transform_extension.setTexCoord(texCoord);
-
-					model.extensionsRequired.emplace_back(texture_transform_extension.name);
-					model.extensionsUsed.emplace_back(texture_transform_extension.name);
-					gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 				}
+				texture_transform_extension.alignCoordinateAxes();
+				model.extensionsRequired.emplace_back(texture_transform_extension.name);
+				model.extensionsUsed.emplace_back(texture_transform_extension.name);
+				gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
 			if (osgGltfMRMaterial->baseColorTexture.valid()) {
 				gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgGltfMRMaterial->baseColorTexture);
 				gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
+
+				KHR_texture_transform texture_transform_extension;
 				bool enableExtension = false;
 				osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionName, enableExtension);
 				if (enableExtension) {
-					KHR_texture_transform texture_transform_extension;
-					double offsetX, offsetY, scaleX, scaleY;
-					int texCoord;
+					double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+					int texCoord = 0;
 					osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionOffsetX, offsetX);
 					osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionOffsetY, offsetY);
 					osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionScaleX, scaleX);
@@ -777,11 +782,11 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 					texture_transform_extension.setOffset({ offsetX,offsetY });
 					texture_transform_extension.setScale({ scaleX,scaleY });
 					texture_transform_extension.setTexCoord(texCoord);
-
-					model.extensionsRequired.emplace_back(texture_transform_extension.name);
-					model.extensionsUsed.emplace_back(texture_transform_extension.name);
-					gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 				}
+				texture_transform_extension.alignCoordinateAxes();
+				model.extensionsRequired.emplace_back(texture_transform_extension.name);
+				model.extensionsUsed.emplace_back(texture_transform_extension.name);
+				gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
 			gltfMaterial.pbrMetallicRoughness.baseColorFactor = {
 				osgGltfMRMaterial->baseColorFactor[0],
@@ -798,12 +803,13 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 				if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) {
 					pbrSpecularGlossiness_extension->setDiffuseTexture(getOrCreateTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture));
+
+					KHR_texture_transform texture_transform_extension;
 					bool enableExtension = false;
 					osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureName, enableExtension);
 					if (enableExtension) {
-						KHR_texture_transform texture_transform_extension;
-						double offsetX, offsetY, scaleX, scaleY;
-						int texCoord;
+						double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+						int texCoord = 0;
 						osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureOffsetX, offsetX);
 						osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureOffsetY, offsetY);
 						osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureScaleX, scaleX);
@@ -812,22 +818,23 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 						texture_transform_extension.setOffset({ offsetX,offsetY });
 						texture_transform_extension.setScale({ scaleX,scaleY });
 						texture_transform_extension.setTexCoord(texCoord);
-
-						model.extensionsRequired.emplace_back(texture_transform_extension.name);
-						model.extensionsUsed.emplace_back(texture_transform_extension.name);
-						tinygltf::ExtensionMap extenstionMap;
-						extenstionMap.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
-						pbrSpecularGlossiness_extension->value.insert(std::make_pair("extensions", extenstionMap));
 					}
+					texture_transform_extension.alignCoordinateAxes();
+					model.extensionsRequired.emplace_back(texture_transform_extension.name);
+					model.extensionsUsed.emplace_back(texture_transform_extension.name);
+					tinygltf::ExtensionMap extenstionMap;
+					extenstionMap.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
+					pbrSpecularGlossiness_extension->value.insert(std::make_pair("extensions", extenstionMap));
 				}
 				if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) {
 					pbrSpecularGlossiness_extension->setSpecularGlossinessTexture(getOrCreateTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture));
+
+					KHR_texture_transform texture_transform_extension;
 					bool enableExtension = false;
 					osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureName, enableExtension);
 					if (enableExtension) {
-						KHR_texture_transform texture_transform_extension;
-						double offsetX, offsetY, scaleX, scaleY;
-						int texCoord;
+						double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
+						int texCoord = 0;
 						osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureOffsetX, offsetX);
 						osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureOffsetY, offsetY);
 						osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureScaleX, scaleX);
@@ -836,13 +843,13 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 						texture_transform_extension.setOffset({ offsetX,offsetY });
 						texture_transform_extension.setScale({ scaleX,scaleY });
 						texture_transform_extension.setTexCoord(texCoord);
-
-						model.extensionsRequired.emplace_back(texture_transform_extension.name);
-						model.extensionsUsed.emplace_back(texture_transform_extension.name);
-						tinygltf::ExtensionMap extenstionMap;
-						extenstionMap.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
-						pbrSpecularGlossiness_extension->value.insert(std::make_pair("extensions", extenstionMap));
 					}
+					texture_transform_extension.alignCoordinateAxes();
+					model.extensionsRequired.emplace_back(texture_transform_extension.name);
+					model.extensionsUsed.emplace_back(texture_transform_extension.name);
+					tinygltf::ExtensionMap extenstionMap;
+					extenstionMap.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
+					pbrSpecularGlossiness_extension->value.insert(std::make_pair("extensions", extenstionMap));
 				}
 			}
 
