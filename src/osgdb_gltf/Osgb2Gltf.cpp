@@ -14,6 +14,7 @@
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
 #include "utils/TextureOptimizer.h"
+#include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 int Osgb2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
 	json matJson;
@@ -657,9 +658,9 @@ int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const os
 int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
 {
 	int index = -1;
-
-	const osg::ref_ptr<GltfMaterial> osgGltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
-	if (osgGltfMaterial.valid()) {
+	const std::type_info& materialId = typeid(*osgMaterial.get());
+	if (materialId ==typeid(GltfMaterial)|| materialId == typeid(GltfPbrMRMaterial) || materialId == typeid(GltfPbrSGMaterial) ) {
+		const osg::ref_ptr<GltfMaterial> osgGltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
 		const osg::ref_ptr<osg::Texture2D> normalTexture = osgGltfMaterial->normalTexture;
 		if (normalTexture.valid()) {
 			gltfMaterial.normalTexture.index = getOrCreateTexture(normalTexture);
@@ -734,8 +735,8 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 		}
 		gltfMaterial.emissiveFactor = { osgGltfMaterial->emissiveFactor[0],osgGltfMaterial->emissiveFactor[1], osgGltfMaterial->emissiveFactor[2] };
 
-		const osg::ref_ptr<GltfPbrMRMaterial> osgGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(osgGltfMaterial.get());
-		if (osgGltfMRMaterial.valid()) {
+		if (typeid(*osgGltfMaterial.get()) == typeid(GltfPbrMRMaterial)) {
+			const osg::ref_ptr<GltfPbrMRMaterial> osgGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(osgGltfMaterial.get());
 			if (osgGltfMRMaterial->metallicRoughnessTexture.valid()) {
 				gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index = getOrCreateTexture(osgGltfMRMaterial->metallicRoughnessTexture);
 				gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.texCoord = 0;
@@ -791,7 +792,8 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 			gltfMaterial.pbrMetallicRoughness.metallicFactor = osgGltfMRMaterial->metallicFactor;
 			gltfMaterial.pbrMetallicRoughness.roughnessFactor = osgGltfMRMaterial->roughnessFactor;
 		}
-		for (GltfExtension* extension : osgGltfMaterial->materialExtensionsByCesiumSupport) {
+		for (size_t i = 0; i < osgGltfMaterial->materialExtensionsByCesiumSupport.size(); ++i) {
+			GltfExtension* extension = osgGltfMaterial->materialExtensionsByCesiumSupport.at(i);
 			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
 				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 				if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) {

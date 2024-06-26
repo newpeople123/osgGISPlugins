@@ -5,8 +5,9 @@
 #include <osgDB/FileNameUtils>
 #include <iomanip>
 #include "osgdb_gltf/material/GltfPbrMRMaterial.h"
-TexturePackingVisitor::TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext, std::string cachePath) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
-_maxWidth(maxWidth), _maxHeight(maxHeight), _ext(ext), _cachePath(cachePath) {}
+#include "osgdb_gltf/material/GltfPbrSGMaterial.h"
+TexturePackingVisitor::TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext, std::string cachePath, bool bPackTexture) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
+_maxWidth(maxWidth), _maxHeight(maxHeight), _ext(ext), _cachePath(cachePath), _bPackTexture(bPackTexture) {}
 
 const std::string TexturePackingVisitor::Filename = "osgGisPlugins-filename";
 const std::string TexturePackingVisitor::ExtensionName = "osgGisPlugins-KHR_texture_transform";
@@ -64,10 +65,13 @@ void TexturePackingVisitor::apply(osg::Drawable& drawable)
 	osg::ref_ptr<osg::StateSet> stateSet = geom->getStateSet();
 	if (stateSet.valid())
 	{
-		const osg::ref_ptr<osg::Material> osgMatrial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-		if (osgMatrial.valid()) {
-			osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMatrial.get());
-			optimizeOsgMaterial(gltfMaterial, geom);
+		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+		if (osgMaterial.valid()) {
+			const std::type_info& materialId = typeid(*osgMaterial.get());
+			if (materialId == typeid(GltfMaterial) || materialId == typeid(GltfPbrMRMaterial) || materialId == typeid(GltfPbrSGMaterial)) {
+				osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
+				optimizeOsgMaterial(gltfMaterial, geom);
+			}
 		}
 		else {
 			optimizeOsgTexture(stateSet, geom);
@@ -89,31 +93,40 @@ void TexturePackingVisitor::optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>
 		osg::ref_ptr<osg::Image> image = texture->getImage(0);
 		if (image.valid()) {
 			resizeImageToPowerOfTwo(image);
-			bool bBuildTexturePacker = true;
-			for (auto texCoord : *texCoords.get()) {
-				if (std::fabs(texCoord.x()) - 1.0 > 0.001 || std::fabs(texCoord.y()) - 1.0 > 0.001) {
-					bBuildTexturePacker = false;
-					break;
+			if (_bPackTexture) {
+				bool bBuildTexturePacker = true;
+				for (auto texCoord : *texCoords.get()) {
+					if (std::fabs(texCoord.x()) - 1.0 > 0.001 || std::fabs(texCoord.y()) - 1.0 > 0.001) {
+						bBuildTexturePacker = false;
+						break;
+					}
 				}
-			}
-			if (bBuildTexturePacker)
-			{
-				if (image->s() < _maxWidth || image->t() < _maxHeight)
+				if (bBuildTexturePacker)
 				{
-					bool bAdd = true;
-					for (auto img : _images) {
-						if (img->getFileName() == image->getFileName()) {
-							_geometryImgMap[geom] = img;
-							bAdd = false;
+					if (image->s() < _maxWidth || image->t() < _maxHeight)
+					{
+						bool bAdd = true;
+						for (auto img : _images) {
+							if (img->getFileName() == image->getFileName()) {
+								_geometryImgMap[geom] = img;
+								bAdd = false;
+							}
+						}
+						if (bAdd) {
+							_images.push_back(image);
+							_geometryImgMap[geom] = image;
 						}
 					}
-					if (bAdd) {
-						_images.push_back(image);
-						_geometryImgMap[geom] = image;
+					else
+					{
+						std::string name;
+						image->getUserValue(Filename, name);
+						if (name.empty()) {
+							exportImage(image);
+						}
 					}
 				}
-				else
-				{
+				else {
 					std::string name;
 					image->getUserValue(Filename, name);
 					if (name.empty()) {
@@ -173,7 +186,8 @@ void TexturePackingVisitor::optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>
 				optimizeOsgTextureSize(gltfMRMaterial->metallicRoughnessTexture);
 				optimizeOsgTextureSize(gltfMRMaterial->baseColorTexture);
 			}
-			for (GltfExtension* extension : gltfMaterial->materialExtensionsByCesiumSupport) {
+			for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i) {
+				GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
 				if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
 					KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 					optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgDiffuseTexture);
@@ -181,24 +195,44 @@ void TexturePackingVisitor::optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>
 				}
 			}
 
-			bool bBuildTexturePacker = true;
-			for (auto texCoord : *texCoords.get()) {
-				if (std::fabs(texCoord.x()) - 1.0 > 0.001 || std::fabs(texCoord.y()) - 1.0 > 0.001) {
-					bBuildTexturePacker = false;
-					break;
-				}
-			}
-			if (bBuildTexturePacker) {
-				bool bAdd = true;
-				for (auto* item : _gltfMaterials) {
-					if (item == gltfMaterial.get()) {
-						_geometryMatMap[geom] = item;
-						bAdd = false;
+			if (_bPackTexture) {
+				bool bBuildTexturePacker = true;
+				for (auto texCoord : *texCoords.get()) {
+					if (std::fabs(texCoord.x()) - 1.0 > 0.001 || std::fabs(texCoord.y()) - 1.0 > 0.001) {
+						bBuildTexturePacker = false;
+						break;
 					}
 				}
-				if (bAdd) {
-					_gltfMaterials.push_back(gltfMaterial.get());
-					_geometryMatMap[geom] = gltfMaterial.get();
+				if (bBuildTexturePacker) {
+					bool bAdd = true;
+					for (auto* item : _gltfMaterials) {
+						if (item == gltfMaterial.get()) {
+							_geometryMatMap[geom] = item;
+							bAdd = false;
+						}
+					}
+					if (bAdd) {
+						_gltfMaterials.push_back(gltfMaterial.get());
+						_geometryMatMap[geom] = gltfMaterial.get();
+					}
+				}
+				else {
+					exportOsgTexture(gltfMaterial->normalTexture);
+					exportOsgTexture(gltfMaterial->occlusionTexture);
+					exportOsgTexture(gltfMaterial->emissiveTexture);
+					osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+					if (gltfMRMaterial.valid()) {
+						exportOsgTexture(gltfMRMaterial->metallicRoughnessTexture);
+						exportOsgTexture(gltfMRMaterial->baseColorTexture);
+					}
+					for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i) {
+						GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
+						if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
+							KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+							exportOsgTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture);
+							exportOsgTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
+						}
+					}
 				}
 			}
 			else {
@@ -210,7 +244,8 @@ void TexturePackingVisitor::optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>
 					exportOsgTexture(gltfMRMaterial->metallicRoughnessTexture);
 					exportOsgTexture(gltfMRMaterial->baseColorTexture);
 				}
-				for (GltfExtension* extension : gltfMaterial->materialExtensionsByCesiumSupport) {
+				for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i) {
+					GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
 					if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
 						KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 						exportOsgTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture);
@@ -279,7 +314,7 @@ T TexturePackingVisitor::clamp(T value, T min, T max) {
 	return value;
 }
 
-osg::ref_ptr<osg::Image> TexturePackingVisitor::packImges(TexturePacker& packer,std::vector<osg::Image*>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs) {
+osg::ref_ptr<osg::Image> TexturePackingVisitor::packImges(TexturePacker& packer, std::vector<osg::Image*>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs) {
 	int area = _maxWidth * _maxHeight;
 	std::sort(imgs.begin(), imgs.end(), TexturePackingVisitor::compareImageHeight);
 	std::vector<size_t> indexPacks;
@@ -430,7 +465,7 @@ void TexturePackingVisitor::processGltfGeneralImages(std::vector<osg::Image*>& i
 				osg::ref_ptr<GltfMaterial> olgMaterial = dynamic_cast<GltfMaterial*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 				osg::ref_ptr<GltfMaterial> packedGltfMaterial = dynamic_cast<GltfMaterial*>(stateSetCopy->getAttribute(osg::StateAttribute::MATERIAL));
 
-				osg::ref_ptr<osg::Texture2D> packedTexture,oldTexture;
+				osg::ref_ptr<osg::Texture2D> packedTexture, oldTexture;
 				if (type == GltfTextureType::NORMAL) {
 					packedTexture = packedGltfMaterial->normalTexture;
 				}
@@ -556,8 +591,10 @@ void TexturePackingVisitor::processGltfPbrSGImages(std::vector<osg::Image*>& ima
 				osg::ref_ptr<GltfMaterial> packedGltfMaterial = dynamic_cast<GltfMaterial*>(stateSetCopy->getAttribute(osg::StateAttribute::MATERIAL));
 				GltfMaterial* gltfMaterial = entry.second;
 				if (olgMaterial.get() == gltfMaterial) {
-					for (GltfExtension* packedExtension : packedGltfMaterial->materialExtensionsByCesiumSupport) {
-						for (GltfExtension* extension : gltfMaterial->materialExtensionsByCesiumSupport) {
+					for (size_t i = 0; i < packedGltfMaterial->materialExtensionsByCesiumSupport.size(); ++i) {
+						GltfExtension* packedExtension = packedGltfMaterial->materialExtensionsByCesiumSupport.at(i);
+						for (size_t j = 0; j < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++j) {
+							GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(j);
 							if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness) && typeid(*packedExtension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
 
 								KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
@@ -597,7 +634,8 @@ void TexturePackingVisitor::packOsgMaterials()
 			addImageFromTexture(gltfMRMaterial->metallicRoughnessTexture, mrImgs);
 			addImageFromTexture(gltfMRMaterial->baseColorTexture, baseColorImgs);
 		}
-		for (GltfExtension* extension : material->materialExtensionsByCesiumSupport) {
+		for (size_t i = 0; i < material->materialExtensionsByCesiumSupport.size(); ++i) {
+			GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(i);
 			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
 				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 				addImageFromTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture, diffuseImgs);

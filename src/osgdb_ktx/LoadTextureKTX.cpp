@@ -366,7 +366,7 @@ namespace osg
 
 		int componentCount = image->computeNumComponents(image->getPixelFormat());
 		int componentSize = glGetTypeSizeFromType(image->getDataType());
-		GLuint max_dim = image->s() > image->t() ?
+		int max_dim = image->s() > image->t() ?
 			image->s() : image->t();
 		max_dim = floor(log2(max_dim));
 		createInfo.glInternalformat = convertUNorm2SRgb(image->getInternalTextureFormat());
@@ -399,6 +399,8 @@ namespace osg
 		{
 			int width = image->s() / pow(2, i);
 			int height = image->t() / pow(2, i);
+			width = width > 0 ? width : 1;
+			height = height > 0 ? height : 1;
 			imgCopy->scaleImage(width, height, imgCopy->r());
 			const ktx_uint8_t* src = (ktx_uint8_t*)imgCopy->data();
 			const unsigned int level = i;
@@ -441,7 +443,7 @@ namespace osg
 
 		int componentCount = image->computeNumComponents(image->getPixelFormat());
 		int componentSize = glGetTypeSizeFromType(image->getDataType());
-		GLuint max_dim = image->s() > image->t() ?
+		int max_dim = image->s() > image->t() ?
 			image->s() : image->t();
 		max_dim = floor(log2(max_dim));
 		createInfo.glInternalformat = convertUNorm2SRgb(image->getInternalTextureFormat());
@@ -473,6 +475,8 @@ namespace osg
 		{
 			int width = image->s() / pow(2, i);
 			int height = image->t() / pow(2, i);
+			width = width > 0 ? width : 1;
+			height = height > 0 ? height : 1;
 			imgCopy->scaleImage(width, height, imgCopy->r());
 			const ktx_uint8_t* src = (ktx_uint8_t*)imgCopy->data();
 			const unsigned int level = i;

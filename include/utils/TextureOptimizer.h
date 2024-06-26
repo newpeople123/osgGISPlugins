@@ -74,7 +74,7 @@ public:
     static const std::string ExtensionSGTexCoord;
 
 
-    TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext = ".png", std::string cachePath = "./");
+    TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext = ".png", std::string cachePath = "./", bool bPackTexture = true);
 
     void apply(osg::Drawable& drawable) override;
 
@@ -140,7 +140,7 @@ private:
     std::vector<osg::Image*> _images;
     std::map<osg::Geometry*, osg::Image*> _geometryImgMap;
 
-    
+    bool _bPackTexture;
 };
 
 #endif // TEXTURE_PACKING_VISITOR_H
