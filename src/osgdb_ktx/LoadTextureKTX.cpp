@@ -204,6 +204,16 @@ inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 	}
 }
 
+inline GLint convertUNorm2SRgb(GLint glFormat) {
+	switch (glFormat) {
+	case GL_R8: return GL_SR8;
+	case GL_RG8: return GL_SRG8;
+	case GL_RGB8: return GL_SRGB8;
+	case GL_RGB: return GL_SRGB8;
+	case GL_RGBA8: return GL_SRGB8_ALPHA8;
+	default:return glFormat;
+	}
+}
 
 namespace osg
 {
@@ -250,14 +260,14 @@ namespace osg
 			GLenum glType = glGetTypeFromInternalFormat(glInternalformat);
 			if (glFormat == GL_INVALID_VALUE || glType == GL_INVALID_VALUE)
 			{
-				OSG_WARN << "[LoaderKTX] Failed to get KTX2 file format: VkFormat = "
+				OSG_WARN << "Failed to get KTX2 file format: VkFormat = "
 					<< std::hex << tex->vkFormat << std::dec << std::endl;
 				return nullptr;
 			}
 			else if (transcoded)
 			{
 				// FIXME: KTX1 transcoding?
-				OSG_INFO << "[LoaderKTX] Transcoded format: internalFmt = " << std::hex
+				OSG_INFO << "Transcoded format: internalFmt = " << std::hex
 					<< glInternalformat << ", pixelFmt = " << glFormat << ", type = "
 					<< glType << std::dec << std::endl;
 				imgDataSize = ktxTexture_GetImageSize(texture, 0);
@@ -272,7 +282,7 @@ namespace osg
 			image->setInternalTextureFormat(tex->glInternalformat);
 		}
 		if (image->getTotalDataSize() == 0) {
-			OSG_WARN << "[LoaderKTX] Failed to allocateImage" << std::dec << std::endl;
+			OSG_WARN << "Failed to allocateImage" << std::dec << std::endl;
 			return nullptr;
 		}
 		memcpy(image->data(), imgData, imgDataSize);
@@ -324,7 +334,7 @@ namespace osg
 			file.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture);
 		if (result != KTX_SUCCESS)
 		{
-			OSG_WARN << "[LoaderKTX] Unable to read from KTX file: " << file << "\n";
+			OSG_WARN << "Unable to read from KTX file: " << file << "\n";
 			return std::vector<osg::ref_ptr<osg::Image>>();
 		}
 		return loadKtxFromObject(texture);
@@ -342,13 +352,13 @@ namespace osg
 			KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture);
 		if (result != KTX_SUCCESS)
 		{
-			OSG_WARN << "[LoaderKTX] Unable to read from KTX stream\n";
+			OSG_WARN << "Unable to read from KTX stream\n";
 			return std::vector<osg::ref_ptr<osg::Image>>();
 		}
 		return loadKtxFromObject(texture);
 	}
 
-	ktxTexture* saveImageToKtx(const osg::Image* image, bool compressed)
+	ktxTexture* saveImageToKtx2(const osg::Image* image, bool compressed)
 	{
 		ktxTexture* texture = nullptr;
 
@@ -358,9 +368,8 @@ namespace osg
 		int componentSize = glGetTypeSizeFromType(image->getDataType());
 		GLuint max_dim = image->s() > image->t() ?
 			image->s() : image->t();
-		//max_dim = floor(log2(max_dim)) - 1;//最低分辨率控制为4*4
 		max_dim = floor(log2(max_dim));
-		createInfo.glInternalformat = image->getInternalTextureFormat();
+		createInfo.glInternalformat = convertUNorm2SRgb(image->getInternalTextureFormat());
 		createInfo.vkFormat = glGetVkFormatFromInternalFormat(createInfo.glInternalformat);
 		createInfo.baseWidth = image->s();
 		createInfo.baseHeight = image->t();
@@ -373,16 +382,15 @@ namespace osg
 		createInfo.generateMipmaps = KTX_FALSE;
 		if (createInfo.vkFormat == 0)
 		{
-			OSG_WARN << "[LoaderKTX] No VkFormat for GL internal format: "
+			OSG_WARN << "No VkFormat for GL internal format: "
 				<< std::hex << createInfo.glInternalformat << std::dec << std::endl;
 			return nullptr;
 		}
-
 		KTX_error_code result = ktxTexture2_Create(
 			&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, (ktxTexture2**)&texture);
 		if (result != KTX_SUCCESS)
 		{
-			OSG_WARN << "[LoaderKTX] Unable to create KTX for saving" << std::endl;
+			OSG_WARN << "Unable to create KTX for saving" << std::endl;
 			return nullptr;
 		}
 
@@ -399,7 +407,7 @@ namespace osg
 				src, imgCopy->getTotalSizeInBytes());
 			if (result != KTX_SUCCESS)
 			{
-				OSG_WARN << "[LoaderKTX] Unable to save image " << i
+				OSG_WARN << "Unable to save image " << i
 					<< " to KTX texture: " << ktxErrorString(result) << std::endl;
 				ktxTexture_Destroy(texture); return nullptr;
 			}
@@ -419,16 +427,71 @@ namespace osg
 			result = ktxTexture2_CompressBasisEx((ktxTexture2*)texture, &params);
 			if (result != KTX_SUCCESS)
 			{
-				OSG_WARN << "[LoaderKTX] Failed to compress ktxTexture2: "
+				OSG_WARN << "Failed to compress ktxTexture2: "
 					<< ktxErrorString(result) << std::endl;
 			}
 		}
 		return texture;
 	}
 
-	bool saveKtx(const std::string& file, const osg::Image* image, bool compressed)
+	ktxTexture* saveImageToKtx1(const osg::Image* image) {
+		ktxTexture* texture = nullptr;
+
+		ktxTextureCreateInfo createInfo;
+
+		int componentCount = image->computeNumComponents(image->getPixelFormat());
+		int componentSize = glGetTypeSizeFromType(image->getDataType());
+		GLuint max_dim = image->s() > image->t() ?
+			image->s() : image->t();
+		max_dim = floor(log2(max_dim));
+		createInfo.glInternalformat = convertUNorm2SRgb(image->getInternalTextureFormat());
+		createInfo.vkFormat = glGetVkFormatFromInternalFormat(createInfo.glInternalformat);
+		createInfo.baseWidth = image->s();
+		createInfo.baseHeight = image->t();
+		createInfo.baseDepth = image->r();
+		createInfo.numDimensions = (image->r() > 1) ? 3 : ((image->t() > 1) ? 2 : 1);
+		createInfo.numLevels = max_dim;
+		createInfo.numLayers = 1;
+		createInfo.numFaces = 1;
+		createInfo.isArray = KTX_FALSE;
+		createInfo.generateMipmaps = KTX_FALSE;
+		if (createInfo.vkFormat == 0)
+		{
+			OSG_WARN << "No VkFormat for GL internal format: "
+				<< std::hex << createInfo.glInternalformat << std::dec << std::endl;
+			return nullptr;
+		}
+		KTX_error_code result = ktxTexture1_Create(
+			&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, (ktxTexture1**)&texture);
+		if (result != KTX_SUCCESS)
+		{
+			OSG_WARN << "Unable to create KTX for saving" << std::endl;
+			return nullptr;
+		}
+		osg::Image* imgCopy = dynamic_cast<osg::Image*>(image->clone(osg::CopyOp::DEEP_COPY_ALL));
+		for (size_t i = 0; i < max_dim; ++i)
+		{
+			int width = image->s() / pow(2, i);
+			int height = image->t() / pow(2, i);
+			imgCopy->scaleImage(width, height, imgCopy->r());
+			const ktx_uint8_t* src = (ktx_uint8_t*)imgCopy->data();
+			const unsigned int level = i;
+			result = ktxTexture_SetImageFromMemory(
+				ktxTexture(texture), level, 0, 0,
+				src, imgCopy->getTotalSizeInBytes());
+			if (result != KTX_SUCCESS)
+			{
+				OSG_WARN << "Unable to save image " << i
+					<< " to KTX texture: " << ktxErrorString(result) << std::endl;
+				ktxTexture_Destroy(texture); return nullptr;
+			}
+		}
+		return texture;
+	}
+
+	bool saveKtx2(const std::string& file, const osg::Image* image, bool compressed)
 	{
-		ktxTexture* texture = saveImageToKtx(image, compressed);
+		ktxTexture* texture = saveImageToKtx2(image, compressed);
 		if (texture == nullptr) return false;
 
 		KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
@@ -438,7 +501,34 @@ namespace osg
 
 	bool saveKtx2(std::ostream& out, const osg::Image* image, bool compressed)
 	{
-		ktxTexture* texture = saveImageToKtx(image, compressed);
+		ktxTexture* texture = saveImageToKtx2(image, compressed);
+		if (texture == nullptr) return false;
+
+		ktx_uint8_t* buffer = nullptr; ktx_size_t length = 0;
+		KTX_error_code result = ktxTexture_WriteToMemory(texture, &buffer, &length);
+		if (result == KTX_SUCCESS)
+		{
+			out.write((char*)buffer, length);
+			delete buffer;
+		}
+		ktxTexture_Destroy(texture);
+		return result == KTX_SUCCESS;
+	}
+
+	bool saveKtx1(const std::string& file, const osg::Image* image)
+	{
+		ktxTexture* texture = saveImageToKtx1(image);
+		if (texture == nullptr) return false;
+
+		KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
+		ktxTexture_Destroy(texture);
+		return result == KTX_SUCCESS;
+		return false;
+	}
+
+	bool saveKtx1(std::ostream& out, const osg::Image* image)
+	{
+		ktxTexture* texture = saveImageToKtx1(image);
 		if (texture == nullptr) return false;
 
 		ktx_uint8_t* buffer = nullptr; ktx_size_t length = 0;

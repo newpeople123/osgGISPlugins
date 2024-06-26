@@ -3,15 +3,13 @@
 #include <osgViewer/Viewer>
 ReaderWriterKTX::ReaderWriterKTX()
 {
-    supportsExtension("verse_ktx", "osgVerse pseudo-loader");
-    supportsExtension("ktx", "KTX texture file");
-    supportsOption("SavingCubeMap", "Save KTX cubemap data");
-    supportsOption("Version=<value>", "ktx version enum values:1.0、2.0，default value is 2.0");
+    supportsExtension("ktx2", "KTX texture 2.0 file");
+    supportsExtension("ktx", "KTX texture 1.0 file");
 }
 
 const char* ReaderWriterKTX::className() const
 {
-    return "[osgVerse] KTX texture reader";
+    return "KTX texture reader";
 }
 
 osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& path, const Options* options) const
@@ -19,13 +17,6 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& pa
     std::string fileName(path);
     std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return ReadResult::FILE_NOT_HANDLED;
-
-    const bool usePseudo = (ext == "verse_ktx");
-    if (usePseudo)
-    {
-        fileName = osgDB::getNameLessExtension(path);
-        ext = osgDB::getFileExtension(fileName);
-    }
 
     const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx(fileName);
     if (images.size() > 1)
@@ -56,13 +47,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
     std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
-    bool usePseudo = (ext == "verse_ktx");
-    if (usePseudo)
-    {
-        fileName = osgDB::getNameLessExtension(path);
-        ext = osgDB::getFileExtension(fileName);
-    }
-    bool isKtx2 = true;
     if (options)
     {
         std::istringstream iss(options->getOptionString());
@@ -83,26 +67,24 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
             {
                 key = opt;
             }
-
-            //if (key == "Version") {
-            //    if (val != "2.0") {
-            //        isKtx2 = false;
-            //    }
-            //}
         }
     }
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
     imagePtr->flipVertical();
-
-    bool result = osg::saveKtx(fileName, imagePtr, isKtx2);
-    return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
+    if (ext == "ktx2") {
+        const bool result = osg::saveKtx2(fileName, imagePtr, true);
+        return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
+    }
+    else {
+        const bool result = osg::saveKtx1(fileName, imagePtr);
+        return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
+    }
 }
 
 osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, std::ostream& fout,
     const Options* options) const
 {
-	const bool isKtx2 = true;
     if (options)
     {
         std::istringstream iss(options->getOptionString());
@@ -123,18 +105,11 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
             {
                 key = opt;
             }
-
-            //if (key == "Version") {
-            //    if (val != "2.0") {
-            //        isKtx2 = false;
-            //    }
-            //}
         }
     }
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
-
-	const bool result = osg::saveKtx2(fout, imagePtr, isKtx2);
+	const bool result = osg::saveKtx2(fout, imagePtr, true);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 
