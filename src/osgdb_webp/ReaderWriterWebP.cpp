@@ -163,7 +163,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
     int internalFormat = osg::Image::computeNumComponents(img.getPixelFormat());
 
     osg::ref_ptr< osg::Image > flippedImage = new osg::Image(img);
-    //flippedImage->flipVertical();
+    flippedImage->flipVertical();
 
     WebPConfig config;
     config.quality = 75;
