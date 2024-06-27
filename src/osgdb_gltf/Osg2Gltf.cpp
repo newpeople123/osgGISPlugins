@@ -503,6 +503,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	std::ifstream file(osgDB::convertStringFromUTF8toCurrentCodePage(filename), std::ios::binary);
 	if (!file.is_open()) {
 		std::cerr << "Texture file \"" << filename << "\" exists,but failed to read.";
+		return -1;
 	}
 
 	for (unsigned int i = 0; i < _textures.size(); i++)
