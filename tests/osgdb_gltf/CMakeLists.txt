@@ -13,13 +13,25 @@ file(GLOB MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/merge/*.cpp)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
 set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp)
 
+file(GLOB_RECURSE TEST_HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/*.h)
+file(GLOB_RECURSE TEST_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/optimizer/*.cpp)
+
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} 
 ${HEADER_FILES} ${SOURCE_FILES}
 ${COMPRESS_HEADER_FILES} ${COMPRESS_SOURCE_FILES}
 ${MATERIAL_HEADER_FILES} ${MATERIAL_SOURCE_FILES}
 ${MERGE_HEADER_FILES} ${MERGE_SOURCE_FILES}
 ${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES}
+${TEST_HEADER_FILES} ${TEST_SOURCE_FILES}
 )
+# 查找 meshoptimizer 包
+find_package(meshoptimizer CONFIG REQUIRED)
+
+# 链接库
+target_link_libraries(${TOOL_TEST_NAME} 
+    meshoptimizer::meshoptimizer
+)
+
 source_group("include" FILES ${HEADER_FILES})
 source_group("include/compress" FILES ${COMPRESS_HEADER_FILES})
 source_group("include/material" FILES ${MATERIAL_HEADER_FILES})
@@ -33,7 +45,7 @@ source_group("src/utils" FILES ${UTILS_SOURCE_FILES})
 
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
+include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include ${TEST_HEADER_FILES})
 
 if (OPENSCENEGRAPH_FOUND)
         include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})

@@ -9,5 +9,16 @@ public:
 private:
 	MeshSimplifierBase* _meshSimplifier;
 	float _simplifyRatio = 1.0;
+
+	template <typename DrawElementsType, typename IndexArrayType>
+	void processDrawElements(osg::PrimitiveSet* pset, IndexArrayType& indices);
+
+	void vertexCacheOptimize(osg::Geometry& geometry);
+
+	void overdrawOptimize(osg::Geometry& geometry);
+
+	void vertexFetchOptimize(osg::Geometry& geometry);
+
+
 };
 #endif // !OSG_GIS_PLUGINS_MESHOPTIMIZER_H

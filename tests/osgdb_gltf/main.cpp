@@ -9,6 +9,9 @@
 #include <osgDB/ConvertUTF>
 #include <osgDB/FileUtils>
 #include <utils/TextureOptimizer.h>
+#include <osgUtil/Optimizer>
+#include <3dtiles/optimizer/MeshSimplifier.h>
+#include <3dtiles/optimizer/MeshOptimizer.h>
 using namespace std;
 void exportGltf(osg::ref_ptr<osg::Node> node, const std::string& filename,const std::string& path) {
     FlattenTransformVisitor ftv;
@@ -36,12 +39,15 @@ void convertOsgModel2Gltf(const std::string& filename,bool packTextures=true) {
     std::string s2 = osgDB::findDataFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), new osgDB::Options);
 
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
+    //index mesh
+    //osgUtil::Optimizer optimizer;
+    //optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
     exportGltf(node, filename, "关闭纹理尺寸优化");
 
     std::string path = "启用纹理图集";
     if (!packTextures)
         path = "关闭纹理图集";
-    const std::string textureExt = "ktx2";
+    const std::string textureExt = "jpg";
     const std::string textureCachePath = R"(D:\nginx-1.22.1\html\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + "\\" + textureExt;
     osgDB::makeDirectory(textureCachePath);
     TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, packTextures);
@@ -50,7 +56,29 @@ void convertOsgModel2Gltf(const std::string& filename,bool packTextures=true) {
     exportGltf(node, filename, path);
 }
 
+void convertOsgModel2Gltf2(const std::string& filename) {
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
 
+    //index mesh
+    osgUtil::Optimizer optimizer;
+    optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+    //flatten transform
+    FlattenTransformVisitor ftv;
+    node->accept(ftv);
+    node->dirtyBound();
+    node->computeBound();
+    //mesh optimizer
+    MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
+    MeshOptimizer mov(meshOptimizer, 1.0);
+    node->accept(mov);
+    const std::string textureExt = "ktx2";
+    const std::string textureCachePath = R"(D:\nginx-1.22.1\html\gltf\)" + osgDB::getStrippedName(filename) + "\\" + textureExt;
+    osgDB::makeDirectory(textureCachePath);
+    TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, false);
+    node->accept(tpv);
+    tpv.packTextures();
+    exportGltf(node, filename, "");
+}
 int main() {
 
 
@@ -73,16 +101,20 @@ int main() {
     //tpv.packTextures();
     //exportGltf(node, R"(E:\Data\data\龙翔桥站厅.FBX)");
 
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)");
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)");
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)");
+    convertOsgModel2Gltf(R"(E:\SDK\OpenSceneGraph-Data\cow.osg)", false);
 
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)", false);
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\卡拉电站.fbx)", false);
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)", false);
-    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)", false);
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)");
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)");
+
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)", false);
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\卡拉电站.fbx)", false);
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)", false);
+    //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)", false);
     //convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
+
+    //convertOsgModel2Gltf2(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
 
     return 1;
 }
