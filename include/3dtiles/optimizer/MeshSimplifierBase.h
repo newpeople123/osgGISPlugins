@@ -1,15 +1,15 @@
-#ifndef OSG_GIS_PLUGINS_MESHOPTIMIZERBASE_H
-#define OSG_GIS_PLUGINS_MESHOPTIMIZERBASE_H
+#ifndef OSG_GIS_PLUGINS_MESHSIMPLIFIERBASE_H
+#define OSG_GIS_PLUGINS_MESHSIMPLIFIERBASE_H
 #include <osg/NodeVisitor>
 #include <osg/Geometry>
-class MeshOptimizerBase {
+class MeshSimplifierBase {
 public:
 	virtual void reindexMesh(osg::ref_ptr<osg::Geometry> geom) = 0;
 	virtual void simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float simplifyRatio) = 0;
 	void mergePrimitives(osg::ref_ptr<osg::Geometry> geom);
 	void mergeGeometries(osg::ref_ptr<osg::Group> group);
 
-	MeshOptimizerBase() = default;
-	virtual ~MeshOptimizerBase() = default;
+	MeshSimplifierBase() = default;
+	virtual ~MeshSimplifierBase() = default;
 };
-#endif // !OSG_GIS_PLUGINS_MESHOPTIMIZERBASE_H
+#endif // !OSG_GIS_PLUGINS_MESHSIMPLIFIERBASE_H

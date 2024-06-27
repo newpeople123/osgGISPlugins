@@ -1,7 +1,7 @@
 #include <iostream>
 #include <osgDB/ReadFile>
 #include <osgDB/FileNameUtils>
-#include "osgdb_gltf/Osgb2Gltf.h"
+#include "osgdb_gltf/Osg2Gltf.h"
 #include "utils/FlattenTransformVisitor.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -10,22 +10,19 @@
 #include <osgDB/FileUtils>
 #include <utils/TextureOptimizer.h>
 using namespace std;
-void exportGltf(osg::ref_ptr<osg::Node> node, const std::string& filename) {
+void exportGltf(osg::ref_ptr<osg::Node> node, const std::string& filename,const std::string& path) {
     FlattenTransformVisitor ftv;
     node->accept(ftv);
     node->dirtyBound();
     node->computeBound();
-    Osgb2Gltf osgb2Gltf;
+    Osg2Gltf osgb2Gltf;
     node->accept(osgb2Gltf);
 
-    const std::string output = R"(D:\nginx-1.27.0\html\test\gltf\)" + osgDB::getStrippedName(filename) + ".gltf";
+    const std::string output = R"(D:\nginx-1.22.1\html\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + ".gltf";
     tinygltf::TinyGLTF writer;
-    std::sort(osgb2Gltf.model.extensionsRequired.begin(), osgb2Gltf.model.extensionsRequired.end());
-    osgb2Gltf.model.extensionsRequired.erase(std::unique(osgb2Gltf.model.extensionsRequired.begin(), osgb2Gltf.model.extensionsRequired.end()), osgb2Gltf.model.extensionsRequired.end());
-    std::sort(osgb2Gltf.model.extensionsUsed.begin(), osgb2Gltf.model.extensionsUsed.end());
-    osgb2Gltf.model.extensionsUsed.erase(std::unique(osgb2Gltf.model.extensionsUsed.begin(), osgb2Gltf.model.extensionsUsed.end()), osgb2Gltf.model.extensionsUsed.end());
+    tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
     bool isSuccess = writer.WriteGltfSceneToFile(
-        &osgb2Gltf.model,
+        &gltfModel,
         output,
         false,           // embedImages
         true,           // embedBuffers
@@ -34,15 +31,23 @@ void exportGltf(osg::ref_ptr<osg::Node> node, const std::string& filename) {
 }
 
 
-void convertOsgModel2Gltf(const std::string& filename) {
+void convertOsgModel2Gltf(const std::string& filename,bool packTextures=true) {
     std::string s1 = osgDB::findDataFile(filename, new osgDB::Options);
     std::string s2 = osgDB::findDataFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), new osgDB::Options);
 
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
-    TexturePackingVisitor tpv(4096, 4096, ".jpg", "./test4");
+    exportGltf(node, filename, "关闭纹理尺寸优化");
+
+    std::string path = "启用纹理图集";
+    if (!packTextures)
+        path = "关闭纹理图集";
+    const std::string textureExt = "ktx2";
+    const std::string textureCachePath = R"(D:\nginx-1.22.1\html\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + "\\" + textureExt;
+    osgDB::makeDirectory(textureCachePath);
+    TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, packTextures);
     node->accept(tpv);
     tpv.packTextures();
-    exportGltf(node, filename);
+    exportGltf(node, filename, path);
 }
 
 
@@ -52,7 +57,8 @@ int main() {
 
     osgDB::Registry* instance = osgDB::Registry::instance();
     instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
-    //osgDB::readNodeFile(R"(D:\nginx-1.27.0\html\test\gltf\1.glb)");
+    instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
+    instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
     std::cout << instance->createLibraryNameForExtension("glb") << std::endl;
 #ifdef _WIN32
@@ -67,10 +73,15 @@ int main() {
     //tpv.packTextures();
     //exportGltf(node, R"(E:\Data\data\龙翔桥站厅.FBX)");
 
-    //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站厅.fbx)");
-    //convertOsgModel2Gltf(R"(E:\Data\data\卡拉电站.fbx)");
-    convertOsgModel2Gltf(R"(E:\Data\data\芜湖水厂总装单位M.fbx)");
-    //convertOsgModel2Gltf(R"(E:\Data\data\龙翔桥站.fbx)");
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)");
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)");
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)");
+
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)", false);
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\卡拉电站.fbx)", false);
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)", false);
+    convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)", false);
     //convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
 
     return 1;

@@ -629,17 +629,6 @@ struct KHR_texture_transform :GltfExtension
 	void setRotation(double val) {
 		Set("rotation", val);
 	}
-	void alignCoordinateAxes() {
-		std::array<double, 2> offsets = getOffset();
-		double offsetX = offsets[0], offsetY = offsets[1];
-		std::array<double, 2> scales = getScale();
-		double scaleX = scales[0], scaleY = scales[1];
-
-		offsetY = 1 - offsetY;
-		scaleY = -scaleY;
-		setOffset({ offsetX,offsetY });
-		setScale({ scaleX,scaleY });
-	}
 	GltfExtension* clone() override {
 		KHR_texture_transform* newExtension = new KHR_texture_transform;
 		newExtension->setOffset(this->getOffset());

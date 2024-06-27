@@ -1,4 +1,4 @@
-#include "osgdb_gltf/Osgb2Gltf.h"
+#include "osgdb_gltf/Osg2Gltf.h"
 #include <osg/Geometry>
 #include <osg/MatrixTransform>
 #include <osg/Node>
@@ -15,13 +15,13 @@
 #include <osgDB/WriteFile>
 #include "utils/TextureOptimizer.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
-int Osgb2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
+int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
 	json matJson;
 	tinygltf::SerializeGltfMaterial(gltfMaterial, matJson);
-	for (int i = 0; i < model.materials.size(); ++i) {
+	for (int i = 0; i < _model.materials.size(); ++i) {
 		json existMatJson;
-		SerializeGltfMaterial(model.materials.at(i), existMatJson);
+		SerializeGltfMaterial(_model.materials.at(i), existMatJson);
 		if (matJson == existMatJson) {
 			return i;
 		}
@@ -29,14 +29,14 @@ int Osgb2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 	return -1;
 }
 
-void Osgb2Gltf::apply(osg::Node& node)
+void Osg2Gltf::apply(osg::Node& node)
 {
-	const bool isRoot = model.scenes[model.defaultScene].nodes.empty();
+	const bool isRoot = _model.scenes[_model.defaultScene].nodes.empty();
 	if (isRoot)
 	{
 		// put a placeholder here just to prevent any other nodes
 		// from thinking they are the root
-		model.scenes[model.defaultScene].nodes.push_back(-1);
+		_model.scenes[_model.defaultScene].nodes.push_back(-1);
 	}
 
 	bool pushedStateSet = false;
@@ -53,31 +53,31 @@ void Osgb2Gltf::apply(osg::Node& node)
 		popStateSet();
 	}
 
-	model.nodes.emplace_back();
-	tinygltf::Node& gnode = model.nodes.back();
-	const int id = model.nodes.size() - 1;
+	_model.nodes.emplace_back();
+	tinygltf::Node& gnode = _model.nodes.back();
+	const int id = _model.nodes.size() - 1;
 	const std::string nodeName = node.getName();
 	gnode.name = nodeName;
 	_osgNodeSeqMap[&node] = id;
 	if (isRoot)
 	{
 		// replace the placeholder with the actual root id.
-		model.scenes[model.defaultScene].nodes.back() = id;
+		_model.scenes[_model.defaultScene].nodes.back() = id;
 	}
 }
 
-void Osgb2Gltf::apply(osg::Group& group)
+void Osg2Gltf::apply(osg::Group& group)
 {
 	apply(static_cast<osg::Node&>(group));
 
 	for (unsigned i = 0; i < group.getNumChildren(); ++i)
 	{
 		int id = _osgNodeSeqMap[group.getChild(i)];
-		model.nodes.back().children.push_back(id);
+		_model.nodes.back().children.push_back(id);
 	}
 }
 
-void Osgb2Gltf::apply(osg::MatrixTransform& xform)
+void Osg2Gltf::apply(osg::MatrixTransform& xform)
 {
 	apply(static_cast<osg::Group&>(xform));
 
@@ -88,12 +88,12 @@ void Osgb2Gltf::apply(osg::MatrixTransform& xform)
 		constexpr int size = 16;
 		for (unsigned i = 0; i < size; ++i)
 		{
-			model.nodes.back().matrix.push_back(*ptr++);
+			_model.nodes.back().matrix.push_back(*ptr++);
 		}
 	}
 }
 
-void Osgb2Gltf::apply(osg::Drawable& drawable)
+void Osg2Gltf::apply(osg::Drawable& drawable)
 {
 	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 	if (geom.valid())
@@ -111,9 +111,9 @@ void Osgb2Gltf::apply(osg::Drawable& drawable)
 			pushedStateSet = pushStateSet(ss.get());
 		}
 
-		model.meshes.emplace_back();
-		tinygltf::Mesh& mesh = model.meshes.back();
-		model.nodes.back().mesh = model.meshes.size() - 1;
+		_model.meshes.emplace_back();
+		tinygltf::Mesh& mesh = _model.meshes.back();
+		_model.nodes.back().mesh = _model.meshes.size() - 1;
 
 		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -200,7 +200,7 @@ void Osgb2Gltf::apply(osg::Drawable& drawable)
 				const int a = getOrCreateAccessor(positions, pset, primitive, "POSITION");
 				if (a > -1) {
 					// record min/max for position array (required):
-					tinygltf::Accessor& posacc = model.accessors[a];
+					tinygltf::Accessor& posacc = _model.accessors[a];
 					posacc.minValues.push_back(posMin.x());
 					posacc.minValues.push_back(posMin.y());
 					posacc.minValues.push_back(posMin.z());
@@ -227,7 +227,7 @@ void Osgb2Gltf::apply(osg::Drawable& drawable)
 					else
 					{
 						if (batchIds)
-							std::cerr << "Osgb2Gltf error:batchid's length is not equal position's length!" << '\n';
+							std::cerr << "Osg2Gltf error:batchid's length is not equal position's length!" << '\n';
 					}
 				}
 			}
@@ -240,39 +240,61 @@ void Osgb2Gltf::apply(osg::Drawable& drawable)
 	}
 }
 
-Osgb2Gltf::Osgb2Gltf() :NodeVisitor(TRAVERSE_ALL_CHILDREN)
+void Osg2Gltf::flipGltfTextureYAxis(KHR_texture_transform& texture_transform_extension)
+{
+	std::array<double, 2> offsets = texture_transform_extension.getOffset();
+	double offsetX = offsets[0], offsetY = offsets[1];
+	std::array<double, 2> scales = texture_transform_extension.getScale();
+	double scaleX = scales[0], scaleY = scales[1];
+
+	offsetY = 1 - offsetY;
+	scaleY = -scaleY;
+	texture_transform_extension.setOffset({ offsetX,offsetY });
+	texture_transform_extension.setScale({ scaleX,scaleY });
+}
+
+Osg2Gltf::Osg2Gltf() :NodeVisitor(TRAVERSE_ALL_CHILDREN)
 {
 	setNodeMaskOverride(~0);
-	model.asset.version = "2.0";
-	model.scenes.emplace_back();
-	tinygltf::Scene& scene = model.scenes.back();
-	model.defaultScene = 0;
+	_model.asset.version = "2.0";
+	_model.scenes.emplace_back();
+	tinygltf::Scene& scene = _model.scenes.back();
+	_model.defaultScene = 0;
 }
 
-Osgb2Gltf::Osgb2Gltf(GltfComporessor* gltfComporessor) :NodeVisitor(TRAVERSE_ALL_CHILDREN), _gltfComporessor(gltfComporessor)
+Osg2Gltf::Osg2Gltf(GltfComporessor* gltfComporessor) :NodeVisitor(TRAVERSE_ALL_CHILDREN), _gltfComporessor(gltfComporessor)
 {
 	setNodeMaskOverride(~0);
-	model.asset.version = "2.0";
-	model.scenes.emplace_back();
-	tinygltf::Scene& scene = model.scenes.back();
-	model.defaultScene = 0;
+	_model.asset.version = "2.0";
+	_model.scenes.emplace_back();
+	tinygltf::Scene& scene = _model.scenes.back();
+	_model.defaultScene = 0;
 }
 
-Osgb2Gltf::~Osgb2Gltf()
+tinygltf::Model Osg2Gltf::getGltfModel()
+{
+	std::sort(_model.extensionsRequired.begin(), _model.extensionsRequired.end());
+	_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
+	std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
+	_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
+	return _model;
+}
+
+Osg2Gltf::~Osg2Gltf()
 {
 }
 
-void Osgb2Gltf::push(tinygltf::Node& gnode)
+void Osg2Gltf::push(tinygltf::Node& gnode)
 {
 	_gltfNodeStack.push(&gnode);
 }
 
-void Osgb2Gltf::pop()
+void Osg2Gltf::pop()
 {
 	_gltfNodeStack.pop();
 }
 
-bool Osgb2Gltf::pushStateSet(osg::StateSet* stateSet)
+bool Osg2Gltf::pushStateSet(osg::StateSet* stateSet)
 {
 	const osg::Texture* osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
 	osg::StateSet::AttributeList list = stateSet->getAttributeList();
@@ -286,12 +308,12 @@ bool Osgb2Gltf::pushStateSet(osg::StateSet* stateSet)
 	return true;
 }
 
-void Osgb2Gltf::popStateSet()
+void Osg2Gltf::popStateSet()
 {
 	_ssStack.pop_back();
 }
 
-unsigned Osgb2Gltf::getBytesInDataType(const GLenum dataType)
+unsigned Osg2Gltf::getBytesInDataType(const GLenum dataType)
 {
 	return
 		dataType == GL_BYTE || dataType == GL_UNSIGNED_BYTE ? 1 :
@@ -300,12 +322,12 @@ unsigned Osgb2Gltf::getBytesInDataType(const GLenum dataType)
 		0;
 }
 
-unsigned Osgb2Gltf::getBytesPerElement(const osg::Array* data)
+unsigned Osg2Gltf::getBytesPerElement(const osg::Array* data)
 {
 	return data->getDataSize() * getBytesInDataType(data->getDataType());
 }
 
-unsigned Osgb2Gltf::getBytesPerElement(const osg::DrawElements* data)
+unsigned Osg2Gltf::getBytesPerElement(const osg::DrawElements* data)
 {
 	return
 		dynamic_cast<const osg::DrawElementsUByte*>(data) ? 1 :
@@ -313,15 +335,15 @@ unsigned Osgb2Gltf::getBytesPerElement(const osg::DrawElements* data)
 		4;
 }
 
-int Osgb2Gltf::getOrCreateBuffer(const osg::BufferData* data)
+int Osg2Gltf::getOrCreateBuffer(const osg::BufferData* data)
 {
 	const auto a = _buffers.find(data);
 	if (a != _buffers.end())
 		return a->second;
 
-	model.buffers.emplace_back();
-	tinygltf::Buffer& buffer = model.buffers.back();
-	const int id = model.buffers.size() - 1;
+	_model.buffers.emplace_back();
+	tinygltf::Buffer& buffer = _model.buffers.back();
+	const int id = _model.buffers.size() - 1;
 	_buffers[data] = id;
 
 	buffer.data.resize(data->getTotalDataSize());
@@ -334,7 +356,7 @@ int Osgb2Gltf::getOrCreateBuffer(const osg::BufferData* data)
 	return id;
 }
 
-int Osgb2Gltf::getOrCreateBufferView(const osg::BufferData* data, const GLenum target)
+int Osg2Gltf::getOrCreateBufferView(const osg::BufferData* data, const GLenum target)
 {
 	try {
 		const auto a = _bufferViews.find(data);
@@ -348,10 +370,10 @@ int Osgb2Gltf::getOrCreateBufferView(const osg::BufferData* data, const GLenum t
 		else
 			bufferId = getOrCreateBuffer(data);
 
-		model.bufferViews.emplace_back();
-		tinygltf::BufferView& bv = model.bufferViews.back();
+		_model.bufferViews.emplace_back();
+		tinygltf::BufferView& bv = _model.bufferViews.back();
 
-		const int id = model.bufferViews.size() - 1;
+		const int id = _model.bufferViews.size() - 1;
 		_bufferViews[data] = id;
 
 		bv.buffer = bufferId;
@@ -367,7 +389,7 @@ int Osgb2Gltf::getOrCreateBufferView(const osg::BufferData* data, const GLenum t
 	}
 }
 
-int Osgb2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, const std::string& attr)
+int Osg2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, const std::string& attr)
 {
 	const auto a = _accessors.find(data);
 	if (a != _accessors.end())
@@ -377,9 +399,9 @@ int Osgb2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 	if (bv == _bufferViews.end())
 		return -1;
 
-	model.accessors.emplace_back();
-	tinygltf::Accessor& accessor = model.accessors.back();
-	const int accessorId = model.accessors.size() - 1;
+	_model.accessors.emplace_back();
+	tinygltf::Accessor& accessor = _model.accessors.back();
+	const int accessorId = _model.accessors.size() - 1;
 	prim.attributes[attr] = accessorId;
 
 	accessor.type =
@@ -407,9 +429,9 @@ int Osgb2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 		const auto de = dynamic_cast<osg::DrawElements*>(pset);
 		if (de)
 		{
-			model.accessors.emplace_back();
-			tinygltf::Accessor& idxAccessor = model.accessors.back();
-			prim.indices = model.accessors.size() - 1;
+			_model.accessors.emplace_back();
+			tinygltf::Accessor& idxAccessor = _model.accessors.back();
+			prim.indices = _model.accessors.size() - 1;
 
 			idxAccessor.type = TINYGLTF_TYPE_SCALAR;
 			idxAccessor.byteOffset = 0;
@@ -426,7 +448,7 @@ int Osgb2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 	return accessorId;
 }
 
-int Osgb2Gltf::getCurrentMaterial()
+int Osg2Gltf::getCurrentMaterial()
 {
 	if (!_ssStack.empty())
 	{
@@ -457,7 +479,7 @@ int Osgb2Gltf::getCurrentMaterial()
 	return -1;
 }
 
-int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
+int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 {
 	if (!osgTexture.valid()) {
 		return -1;
@@ -473,6 +495,14 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	osgImage->getUserValue(TexturePackingVisitor::Filename, filename);
 	if (filename.empty()) {
 		filename = osgImage->getFileName();
+	}
+
+	if (!osgDB::fileExists(filename)) {
+		return -1;
+	}
+	std::ifstream file(osgDB::convertStringFromUTF8toCurrentCodePage(filename), std::ios::binary);
+	if (!file.is_open()) {
+		std::cerr << "Texture file \"" << filename << "\" exists,but failed to read.";
 	}
 
 	for (unsigned int i = 0; i < _textures.size(); i++)
@@ -505,7 +535,7 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 			return i;
 		}
 	}
-	int index = model.textures.size();
+	int index = _model.textures.size();
 	_textures.emplace_back(osgTexture);
 
 	const std::string ext = osgDB::getLowerCaseFileExtension(filename);
@@ -531,30 +561,30 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 		return -1;
 	}
 
-	int imageIndex = model.images.size();
+	int imageIndex = _model.images.size();
 
 	tinygltf::Image image;
 	tinygltf::BufferView gltfBufferView;
 	int bufferViewIndex = -1;
-	bufferViewIndex = static_cast<int>(model.bufferViews.size());
-	gltfBufferView.buffer = model.buffers.size();
+	bufferViewIndex = static_cast<int>(_model.bufferViews.size());
+	gltfBufferView.buffer = _model.buffers.size();
 	gltfBufferView.byteOffset = 0;
-	std::ifstream file(filename, std::ios::binary);
+	
 	std::vector<unsigned char> imageData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 	gltfBufferView.byteLength = static_cast<int>(imageData.size());
 	tinygltf::Buffer gltfBuffer;
 	gltfBuffer.data = imageData;
-	model.buffers.push_back(gltfBuffer);
+	_model.buffers.push_back(gltfBuffer);
 	file.close();
 
 	gltfBufferView.target = TINYGLTF_TEXTURE_TARGET_TEXTURE2D;
 	gltfBufferView.name = filename;
-	model.bufferViews.push_back(gltfBufferView);
+	_model.bufferViews.push_back(gltfBufferView);
 
 	image.name = filename;
 	image.mimeType = mimeType;
-	image.bufferView = bufferViewIndex; //model.bufferViews.size() the only bufferView in this model
-	model.images.push_back(image);
+	image.bufferView = bufferViewIndex; //_model.bufferViews.size() the only bufferView in this _model
+	_model.images.push_back(image);
 
 	// Add the sampler
 	tinygltf::Sampler sampler;
@@ -583,31 +613,31 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	}
 	sampler.magFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
 	int samplerIndex = -1;
-	for (int i = 0; i < model.samplers.size(); ++i) {
-		const tinygltf::Sampler existSampler = model.samplers.at(i);
+	for (int i = 0; i < _model.samplers.size(); ++i) {
+		const tinygltf::Sampler existSampler = _model.samplers.at(i);
 		if (existSampler.wrapR == sampler.wrapR && existSampler.wrapT == sampler.wrapT && existSampler.minFilter == sampler.minFilter && existSampler.magFilter == sampler.magFilter) {
 			samplerIndex = i;
 		}
 	}
 	if (samplerIndex == -1) {
-		samplerIndex = model.samplers.size();
-		model.samplers.push_back(sampler);
+		samplerIndex = _model.samplers.size();
+		_model.samplers.push_back(sampler);
 	}
 	// Add the texture
 	tinygltf::Texture texture;
 	if (ext == "ktx2" || ext == "ktx")
 	{
 		KHR_texture_basisu texture_basisu_extension;
-		model.extensionsRequired.emplace_back(texture_basisu_extension.name);
-		model.extensionsUsed.emplace_back(texture_basisu_extension.name);
+		_model.extensionsRequired.emplace_back(texture_basisu_extension.name);
+		_model.extensionsUsed.emplace_back(texture_basisu_extension.name);
 		texture.source = -1;
 		texture_basisu_extension.setSource(imageIndex);
 		texture.extensions.insert(std::make_pair(texture_basisu_extension.name, texture_basisu_extension.value));
 	}
 	else if (ext == "webp") {
 		EXT_texture_webp texture_webp_extension;
-		model.extensionsRequired.emplace_back(texture_webp_extension.name);
-		model.extensionsUsed.emplace_back(texture_webp_extension.name);
+		_model.extensionsRequired.emplace_back(texture_webp_extension.name);
+		_model.extensionsUsed.emplace_back(texture_webp_extension.name);
 		texture.source = -1;
 		texture_webp_extension.setSource(imageIndex);
 		texture.extensions.insert(std::make_pair(texture_webp_extension.name, texture_webp_extension.value));
@@ -616,11 +646,11 @@ int Osgb2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 		texture.source = imageIndex;
 	}
 	texture.sampler = samplerIndex;
-	model.textures.push_back(texture);
+	_model.textures.push_back(texture);
 	return index;
 }
 
-int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture)
+int Osg2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture)
 {
 	int index = -1;
 	gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgTexture);
@@ -640,22 +670,22 @@ int Osgb2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const os
 			texture_transform_extension.setScale({ scaleX,scaleY });
 			texture_transform_extension.setTexCoord(texCoord);
 		}
-		texture_transform_extension.alignCoordinateAxes();
-		model.extensionsRequired.emplace_back(texture_transform_extension.name);
-		model.extensionsUsed.emplace_back(texture_transform_extension.name);
+		flipGltfTextureYAxis(texture_transform_extension);
+		_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+		_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 		gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 	}
 
 	index = getCurrentMaterial(gltfMaterial);
 	if (index == -1) {
-		index = model.materials.size();
-		model.materials.push_back(gltfMaterial);
+		index = _model.materials.size();
+		_model.materials.push_back(gltfMaterial);
 	}
 
 	return index;
 }
 
-int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
+int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial)
 {
 	int index = -1;
 	const std::type_info& materialId = typeid(*osgMaterial.get());
@@ -681,9 +711,9 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				texture_transform_extension.setScale({ scaleX,scaleY });
 				texture_transform_extension.setTexCoord(texCoord);
 			}
-			texture_transform_extension.alignCoordinateAxes();
-			model.extensionsRequired.emplace_back(texture_transform_extension.name);
-			model.extensionsUsed.emplace_back(texture_transform_extension.name);
+			flipGltfTextureYAxis(texture_transform_extension);
+			_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+			_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
 		const osg::ref_ptr<osg::Texture2D> occlusionTexture = osgGltfMaterial->occlusionTexture;
@@ -706,9 +736,9 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				texture_transform_extension.setScale({ scaleX,scaleY });
 				texture_transform_extension.setTexCoord(texCoord);
 			}
-			texture_transform_extension.alignCoordinateAxes();
-			model.extensionsRequired.emplace_back(texture_transform_extension.name);
-			model.extensionsUsed.emplace_back(texture_transform_extension.name);
+			flipGltfTextureYAxis(texture_transform_extension);
+			_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+			_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
 		const osg::ref_ptr<osg::Texture2D> emissiveTexture = osgGltfMaterial->emissiveTexture;
@@ -731,9 +761,9 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 				texture_transform_extension.setScale({ scaleX,scaleY });
 				texture_transform_extension.setTexCoord(texCoord);
 			}
-			texture_transform_extension.alignCoordinateAxes();
-			model.extensionsRequired.emplace_back(texture_transform_extension.name);
-			model.extensionsUsed.emplace_back(texture_transform_extension.name);
+			flipGltfTextureYAxis(texture_transform_extension);
+			_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+			_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 			gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 		}
 		gltfMaterial.emissiveFactor = { osgGltfMaterial->emissiveFactor[0],osgGltfMaterial->emissiveFactor[1], osgGltfMaterial->emissiveFactor[2] };
@@ -759,9 +789,9 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 					texture_transform_extension.setScale({ scaleX,scaleY });
 					texture_transform_extension.setTexCoord(texCoord);
 				}
-				texture_transform_extension.alignCoordinateAxes();
-				model.extensionsRequired.emplace_back(texture_transform_extension.name);
-				model.extensionsUsed.emplace_back(texture_transform_extension.name);
+				flipGltfTextureYAxis(texture_transform_extension);
+				_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+				_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 				gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
 			if (osgGltfMRMaterial->baseColorTexture.valid()) {
@@ -783,9 +813,9 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 					texture_transform_extension.setScale({ scaleX,scaleY });
 					texture_transform_extension.setTexCoord(texCoord);
 				}
-				texture_transform_extension.alignCoordinateAxes();
-				model.extensionsRequired.emplace_back(texture_transform_extension.name);
-				model.extensionsUsed.emplace_back(texture_transform_extension.name);
+				flipGltfTextureYAxis(texture_transform_extension);
+				_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+				_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 				gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 			}
 			gltfMaterial.pbrMetallicRoughness.baseColorFactor = {
@@ -819,9 +849,9 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 						texture_transform_extension.setScale({ scaleX,scaleY });
 						texture_transform_extension.setTexCoord(texCoord);
 					}
-					texture_transform_extension.alignCoordinateAxes();
-					model.extensionsRequired.emplace_back(texture_transform_extension.name);
-					model.extensionsUsed.emplace_back(texture_transform_extension.name);
+					flipGltfTextureYAxis(texture_transform_extension);
+					_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+					_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 					tinygltf::ExtensionMap extenstionMap;
 					extenstionMap.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 					pbrSpecularGlossiness_extension->value.insert(std::make_pair("extensions", extenstionMap));
@@ -844,17 +874,17 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 						texture_transform_extension.setScale({ scaleX,scaleY });
 						texture_transform_extension.setTexCoord(texCoord);
 					}
-					texture_transform_extension.alignCoordinateAxes();
-					model.extensionsRequired.emplace_back(texture_transform_extension.name);
-					model.extensionsUsed.emplace_back(texture_transform_extension.name);
+					flipGltfTextureYAxis(texture_transform_extension);
+					_model.extensionsRequired.emplace_back(texture_transform_extension.name);
+					_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 					tinygltf::ExtensionMap extenstionMap;
 					extenstionMap.insert(std::make_pair(texture_transform_extension.name, texture_transform_extension.value));
 					pbrSpecularGlossiness_extension->value.insert(std::make_pair("extensions", extenstionMap));
 				}
 			}
 
-			model.extensionsRequired.emplace_back(extension->name);
-			model.extensionsUsed.emplace_back(extension->name);
+			_model.extensionsRequired.emplace_back(extension->name);
+			_model.extensionsUsed.emplace_back(extension->name);
 			gltfMaterial.extensions[extension->name] = tinygltf::Value(extension->value);
 		}
 	}
@@ -866,8 +896,8 @@ int Osgb2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const o
 
 	index = getCurrentMaterial(gltfMaterial);
 	if (index == -1) {
-		index = model.materials.size();
-		model.materials.push_back(gltfMaterial);
+		index = _model.materials.size();
+		_model.materials.push_back(gltfMaterial);
 	}
 	return index;
 }

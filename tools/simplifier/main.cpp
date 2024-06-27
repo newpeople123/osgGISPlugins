@@ -1,6 +1,6 @@
 #include "utils/FlattenTransformVisitor.h"
+#include "3dtiles/optimizer/MeshSimplifier.h"
 #include "3dtiles/optimizer/MeshOptimizer.h"
-#include "3dtiles/optimizer/MeshOptimizerVisitor.h"
 #include <osg/ArgumentParser>
 #include <iostream>
 #include <osgDB/ConvertUTF>
@@ -125,8 +125,8 @@ int main(int argc, char** argv)
         node->accept(tv1);
         const double area1 = tv1.area;
         //mesh optimizer
-        MeshOptimizerBase* meshOptimizer = new MeshOptimizer;
-        MeshOptimizerVisitor mov(meshOptimizer, ratio);
+        MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
+        MeshOptimizer mov(meshOptimizer, ratio);
         node->accept(mov);
         TestVisitor tv2;
         node->accept(tv2);

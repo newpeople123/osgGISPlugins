@@ -1,5 +1,5 @@
-#include "3dtiles/optimizer/MeshOptimizerBase.h"
-void MeshOptimizerBase::mergePrimitives(osg::ref_ptr<osg::Geometry> geom) {
+#include "3dtiles/optimizer/MeshSimplifierBase.h"
+void MeshSimplifierBase::mergePrimitives(osg::ref_ptr<osg::Geometry> geom) {
 	if (geom.valid()) {
 		osg::ref_ptr<osg::PrimitiveSet> mergePrimitiveset = nullptr;
 		const unsigned int psetCount = geom->getNumPrimitiveSets();
@@ -141,6 +141,6 @@ void MeshOptimizerBase::mergePrimitives(osg::ref_ptr<osg::Geometry> geom) {
 		}
 	}
 }
-void MeshOptimizerBase::mergeGeometries(osg::ref_ptr<osg::Group> group) {
+void MeshSimplifierBase::mergeGeometries(osg::ref_ptr<osg::Group> group) {
 
 }

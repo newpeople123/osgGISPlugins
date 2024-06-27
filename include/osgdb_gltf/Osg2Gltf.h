@@ -1,5 +1,5 @@
-#ifndef OSG_GIS_PLUGINS_OSGB2GLTF_H
-#define OSG_GIS_PLUGINS_OSGB2GLTF_H 1
+#ifndef OSG_GIS_PLUGINS_OSG2GLTF_H
+#define OSG_GIS_PLUGINS_OSG2GLTF_H 1
 #include <osg/NodeVisitor>
 #include "material/GltfPbrMRMaterial.h"
 #include "compress/GltfComporessor.h"
@@ -7,7 +7,7 @@
 #include <stack>
 #include <osg/PrimitiveSet>
 #include <iostream>
-class Osgb2Gltf :public osg::NodeVisitor {
+class Osg2Gltf :public osg::NodeVisitor {
 	typedef std::map<osg::ref_ptr<const osg::Node>, int> OsgNodeSequenceMap;
 	typedef std::map<osg::ref_ptr<const osg::BufferData>, int> ArraySequenceMap;
 	typedef std::map<osg::ref_ptr<const osg::Array>, int> AccessorSequenceMap;
@@ -26,6 +26,7 @@ class Osgb2Gltf :public osg::NodeVisitor {
 	int _vco = 1;
 	double _ratio = 1.0;
 	std::vector<std::string> _imgNames;
+	tinygltf::Model _model;
 
 	void push(tinygltf::Node& gnode);
 
@@ -65,14 +66,16 @@ class Osgb2Gltf :public osg::NodeVisitor {
 
 	void apply(osg::Drawable& drawable) override;
 
+	void flipGltfTextureYAxis(KHR_texture_transform& texture_transform_extension);
 public:
-	tinygltf::Model model;
 
-	Osgb2Gltf();
+	Osg2Gltf();
 
-	Osgb2Gltf(GltfComporessor* gltfComporessor);
+	Osg2Gltf(GltfComporessor* gltfComporessor);
 
-	~Osgb2Gltf();
+	tinygltf::Model getGltfModel();
+
+	~Osg2Gltf();
 };
 
-#endif // !OSG_GIS_PLUGINS_OSGB2GLTF_H
+#endif // !OSG_GIS_PLUGINS_OSG2GLTF_H

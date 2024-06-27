@@ -1,6 +1,7 @@
 #include <osgdb_ktx/ReaderWriterKTX.h>
 #include <osgdb_ktx/LoadTextureKTX.h>
 #include <osgViewer/Viewer>
+#include <osgDB/ConvertUTF>
 ReaderWriterKTX::ReaderWriterKTX()
 {
     supportsExtension("ktx2", "KTX texture 2.0 file");
@@ -14,7 +15,7 @@ const char* ReaderWriterKTX::className() const
 
 osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& path, const Options* options) const
 {
-    std::string fileName(path);
+    std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
     std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return ReadResult::FILE_NOT_HANDLED;
 
@@ -43,7 +44,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(std::istream& fin, co
 osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, const std::string& path,
     const Options* options) const
 {
-    std::string fileName(path);
+    std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
     std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 

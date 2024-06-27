@@ -2,7 +2,7 @@ set(TOOL_TEST_NAME "test_osgdb_gltf")
 aux_source_directory(. DIR_SRCS)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Extensions.h ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Osgb2Gltf.h)
+set(HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Extensions.h ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Osg2Gltf.h)
 file(GLOB COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/compress/*.h)
 file(GLOB MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/*.h)
 file(GLOB MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/merge/*.h)
@@ -11,7 +11,7 @@ file(GLOB COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/compress/*.cp
 file(GLOB MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/*.cpp)
 file(GLOB MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/merge/*.cpp)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
-set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osgb2Gltf.cpp)
+set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp)
 
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} 
 ${HEADER_FILES} ${SOURCE_FILES}

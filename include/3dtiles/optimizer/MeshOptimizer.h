@@ -1,17 +1,13 @@
 #ifndef OSG_GIS_PLUGINS_MESHOPTIMIZER_H
 #define OSG_GIS_PLUGINS_MESHOPTIMIZER_H
-#include "MeshOptimizerBase.h"
-class MeshOptimizer :public MeshOptimizerBase {
+#include <osg/NodeVisitor>
+#include "MeshSimplifierBase.h"
+class MeshOptimizer :public osg::NodeVisitor {
 public:
-
-	// 通过 MeshOptimizerBase 继承
-	void reindexMesh(osg::ref_ptr<osg::Geometry> geom) override;
-	void simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float simplifyRatio) override;
+	MeshOptimizer(MeshSimplifierBase* meshOptimizer, float simplifyRatio);
+	void apply(osg::Geometry& geometry) override;
 private:
-	template<typename DrawElementsType, typename IndexArrayType>
-	void simplifyPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const float simplifyRatio, unsigned int& psetIndex);
-
-	template<typename DrawElementsType, typename IndexArrayType>
-	void reindexPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex);
+	MeshSimplifierBase* _meshSimplifier;
+	float _simplifyRatio = 1.0;
 };
 #endif // !OSG_GIS_PLUGINS_MESHOPTIMIZER_H
