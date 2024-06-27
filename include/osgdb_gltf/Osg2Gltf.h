@@ -48,6 +48,8 @@ class Osg2Gltf :public osg::NodeVisitor {
 
 	int getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, const std::string& attr);
 
+	void setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, tinygltf::Accessor& accessor);
+
 	int getCurrentMaterial();
 
 	int getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture);

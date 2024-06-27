@@ -15,6 +15,7 @@
 #include <osgDB/WriteFile>
 #include "utils/TextureOptimizer.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
+#include <osgUtil/Optimizer>
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
 	json matJson;
@@ -95,7 +96,7 @@ void Osg2Gltf::apply(osg::MatrixTransform& xform)
 
 void Osg2Gltf::apply(osg::Drawable& drawable)
 {
-	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+	osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 	if (geom.valid())
 	{
 		if (geom->getNumPrimitiveSets() == 0)
@@ -103,6 +104,22 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 			return;
 		}
 		apply(static_cast<osg::Node&>(drawable));
+
+		for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i)
+		{
+			const osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(i);
+			const osg::PrimitiveSet::Type type = pset->getType();
+			if (type != osg::PrimitiveSet::DrawArraysPrimitiveType &&
+				type != osg::PrimitiveSet::DrawElementsUBytePrimitiveType &&
+				type != osg::PrimitiveSet::DrawElementsUShortPrimitiveType &&
+				type != osg::PrimitiveSet::DrawElementsUIntPrimitiveType
+				) {
+				geom = dynamic_cast<osg::Geometry*>(geom->clone(osg::CopyOp::DEEP_COPY_ALL));
+				osgUtil::Optimizer optimizer;
+				optimizer.optimize(geom, osgUtil::Optimizer::INDEX_MESH);
+				break;
+			}
+		}
 
 		const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 		bool pushedStateSet = false;
@@ -171,14 +188,45 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 		const osg::ref_ptr<osg::Vec4Array> colors = dynamic_cast<osg::Vec4Array*>(geom->getColorArray());
 		if (colors.valid())
 		{
-			getOrCreateBufferView(colors, GL_ARRAY_BUFFER_ARB);
+			const osg::Geometry::AttributeBinding colorAttrBinding = geom->getColorBinding();
+			if (colorAttrBinding == osg::Geometry::AttributeBinding::BIND_PER_VERTEX) {
+				getOrCreateBufferView(colors, GL_ARRAY_BUFFER_ARB);
+			}
+			else if (colorAttrBinding == osg::Geometry::AttributeBinding::BIND_PER_PRIMITIVE_SET) {
+				if (colors->size()) {
+					osg::ref_ptr<osg::Vec4Array> colorsPerVertex = new osg::Vec4Array(positions->size());
+					std::fill(colors->begin(), colors->end(), colors->at(0));
+				}
+			}
 		}
 
 
 		for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i)
 		{
+			const osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(i);
 
-			osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(i);
+			const GLenum mode = pset->getMode();
+			switch (mode)
+			{
+			case osg::PrimitiveSet::Mode::QUADS:
+				std::cerr << "primitiveSet mode is quads,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::QUAD_STRIP:
+				std::cerr << "primitiveSet mode is quad_strip,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::POLYGON:
+				std::cerr << "primitiveSet mode is polygon,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::LINES_ADJACENCY:
+				std::cerr << "primitiveSet mode is lines_adjacency,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::LINE_STRIP_ADJACENCY:
+				std::cerr << "primitiveSet mode is line_strip_adjacency,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::TRIANGLES_ADJACENCY:
+				std::cerr << "primitiveSet mode is triangles_adjacency,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::TRIANGLE_STRIP_ADJACENCY:
+				std::cerr << "primitiveSet mode is triangle_strip_adjacency,not support!" << std::endl;
+			case osg::PrimitiveSet::Mode::PATCHES:
+				std::cerr << "primitiveSet mode is patches,not support!" << std::endl;
+			default:
+				break;
+			}
 
 			mesh.primitives.emplace_back();
 			tinygltf::Primitive& primitive = mesh.primitives.back();
@@ -195,7 +243,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 
 			}
 
-			primitive.mode = pset->getMode();
+			primitive.mode = mode;
 			if (positions.valid()) {
 				const int a = getOrCreateAccessor(positions, pset, primitive, "POSITION");
 				if (a > -1) {
@@ -419,24 +467,39 @@ int Osg2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pse
 
 
 	if (attr == "POSITION") {
+		setPositionAccessor(data, pset, prim, accessor);
+	}
+	return accessorId;
+}
+
+void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, tinygltf::Accessor& accessor)
+{
+	const osg::PrimitiveSet::Type type = pset->getType();
+	if (type == osg::PrimitiveSet::DrawArraysPrimitiveType) {
 		const auto da = dynamic_cast<const osg::DrawArrays*>(pset);
-		if (da)
-		{
+		if (da) {
 			accessor.byteOffset = da->getFirst() * getBytesPerElement(data);
 			accessor.count = da->getCount();
 		}
-		//TODO: indexed elements
+	}
+	else if (type == osg::PrimitiveSet::DrawElementsUBytePrimitiveType ||
+		type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType ||
+		type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
 		const auto de = dynamic_cast<osg::DrawElements*>(pset);
-		if (de)
-		{
+		if (de) {
+			prim.indices = _model.accessors.size();
 			_model.accessors.emplace_back();
 			tinygltf::Accessor& idxAccessor = _model.accessors.back();
-			prim.indices = _model.accessors.size() - 1;
 
 			idxAccessor.type = TINYGLTF_TYPE_SCALAR;
 			idxAccessor.byteOffset = 0;
-			const int componentType = de->getDataType();
-			idxAccessor.componentType = componentType;
+			if (type == osg::PrimitiveSet::DrawElementsUBytePrimitiveType)
+				idxAccessor.componentType = 5121;
+			else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType)
+				idxAccessor.componentType = 5123;
+			else if (type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType)
+				idxAccessor.componentType = 5125;
+
 			idxAccessor.count = de->getNumIndices();
 
 			getOrCreateBuffer(de);
@@ -445,7 +508,10 @@ int Osg2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pse
 			idxAccessor.bufferView = idxBV;
 		}
 	}
-	return accessorId;
+	else {
+		std::cerr << "primitiveSet type is " << type << ",not support!" << std::endl;
+	}
+
 }
 
 int Osg2Gltf::getCurrentMaterial()
@@ -582,7 +648,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	bufferViewIndex = static_cast<int>(_model.bufferViews.size());
 	gltfBufferView.buffer = _model.buffers.size();
 	gltfBufferView.byteOffset = 0;
-	
+
 	std::vector<unsigned char> imageData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 	gltfBufferView.byteLength = static_cast<int>(imageData.size());
 	tinygltf::Buffer gltfBuffer;
@@ -701,7 +767,7 @@ int Osg2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg
 int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<GltfMaterial>& osgGltfMaterial)
 {
 	int index = -1;
-	
+
 	const osg::ref_ptr<osg::Texture2D> normalTexture = osgGltfMaterial->normalTexture;
 	if (normalTexture.valid()) {
 		gltfMaterial.normalTexture.index = getOrCreateTexture(normalTexture);
