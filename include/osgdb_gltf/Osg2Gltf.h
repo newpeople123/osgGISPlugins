@@ -54,7 +54,7 @@ class Osg2Gltf :public osg::NodeVisitor {
 
 	int getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Texture>& osgTexture);
 
-	int getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<osg::Material>& osgMaterial);
+	int getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<GltfMaterial>& osgGltfMaterial);
 
 	int getCurrentMaterial(tinygltf::Material& gltfMaterial);
 

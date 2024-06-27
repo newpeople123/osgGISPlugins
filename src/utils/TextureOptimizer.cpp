@@ -72,6 +72,9 @@ void TexturePackingVisitor::apply(osg::Drawable& drawable)
 				osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
 				optimizeOsgMaterial(gltfMaterial, geom);
 			}
+			else {
+				optimizeOsgTexture(stateSet, geom);
+			}
 		}
 		else {
 			optimizeOsgTexture(stateSet, geom);
