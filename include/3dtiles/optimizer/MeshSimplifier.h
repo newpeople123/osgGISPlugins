@@ -12,6 +12,6 @@ private:
 	void simplifyPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const float simplifyRatio, unsigned int& psetIndex);
 
 	template<typename DrawElementsType, typename IndexArrayType>
-	void reindexPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex);
+	void reindexMesh(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex);
 };
 #endif // !OSG_GIS_PLUGINS_MESHSIMPLIFIER_H

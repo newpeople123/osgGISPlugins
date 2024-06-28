@@ -12,18 +12,18 @@ void MeshSimplifier::reindexMesh(osg::ref_ptr<osg::Geometry> geom)
 			osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
 			if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
 				osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-				reindexPrimitiveSet<osg::DrawElementsUShort, osg::UShortArray>(geom, drawElementsUShort, primIndex);
+				reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(geom, drawElementsUShort, primIndex);
 			}
 			else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
 				osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-				reindexPrimitiveSet<osg::DrawElementsUInt, osg::UIntArray>(geom, drawElementsUInt, primIndex);
+				reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(geom, drawElementsUInt, primIndex);
 			}
 		}
 	}
 }
 
 template<typename DrawElementsType, typename IndexArrayType>
-void MeshSimplifier::reindexPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex) {
+void MeshSimplifier::reindexMesh(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex) {
 	osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 	osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 	osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
@@ -35,9 +35,10 @@ void MeshSimplifier::reindexPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::
 		return;
 	}
 
-	if (positions->size() != normals->size() || positions->size() != texCoords->size()) {
-		return;
-	}
+	if(normals.valid())
+		if (positions->size() != normals->size() || positions->size() != texCoords->size()) {
+			return;
+		}
 
 	osg::ref_ptr<IndexArrayType> indices = new IndexArrayType;
 	const unsigned int indiceCount = drawElements->getNumIndices();
@@ -89,61 +90,17 @@ void MeshSimplifier::reindexPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::
 	osg::MixinVector<unsigned int> remap(positions->size());
 	size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(&remap.asVector()[0], &(*indices)[0], indices->size(), count,
 		&streams.asVector()[0], streams.size());
-	if (uniqueVertexCount > count) return;
-
-	osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(uniqueVertexCount);
-	osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(uniqueVertexCount);
-	osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(uniqueVertexCount);
-	osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(uniqueVertexCount);
-	osg::ref_ptr<IndexArrayType> optimizedIndices = new IndexArrayType(indices->size());
-
-	meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap.asVector()[0]);
-	meshopt_remapVertexBuffer(&vertexData.asVector()[0], &vertexData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
-	vertexData.resize(uniqueVertexCount);
-
-	if (normals.valid()) {
-		meshopt_remapVertexBuffer(&normalData.asVector()[0], &normalData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
-		normalData.resize(uniqueVertexCount);
-	}
-	if (texCoords.valid()) {
-		meshopt_remapVertexBuffer(&texCoordData.asVector()[0], &texCoordData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
-		texCoordData.resize(uniqueVertexCount);
-	}
-	if (batchIds.valid())
-	{
-		meshopt_remapVertexBuffer(&batchIdData.asVector()[0], &batchIdData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
-		batchIdData.resize(uniqueVertexCount);
-	}
-
-	for (size_t i = 0; i < uniqueVertexCount; ++i) {
-		optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
-		if (normals.valid())
-		{
-			optimizedNormals->at(i) = osg::Vec3(normalData[i].f[0], normalData[i].f[1], normalData[i].f[2]);
-		}
-		if (texCoords.valid())
-			optimizedTexCoords->at(i) = osg::Vec2(texCoordData[i].f[0], texCoordData[i].f[1]);
-		if (batchIds.valid())
-		{
-			optimizedBatchIds->at(i) = batchIdData[i].f[0];
-		}
-	}
-
-	geom->setVertexArray(optimizedVertices);
-	if (normals.valid())
-		geom->setNormalArray(optimizedNormals, osg::Array::BIND_PER_VERTEX);
-	if (texCoords.valid())
-		geom->setTexCoordArray(0, optimizedTexCoords);
-	if (batchIds.valid())
-		geom->setVertexAttribArray(0, optimizedBatchIds);
-
+	assert(uniqueVertexCount < count);
+	
+	osg::ref_ptr<IndexArrayType> optimizedIndices = reindexPrimitiveSet<DrawElementsType, IndexArrayType>(geom, drawElements, psetIndex, remap);
+	if (!optimizedIndices) return;
 #pragma region filterTriangles
 	size_t newIndiceCount = 0;
 	for (size_t i = 0; i < indiceCount; i += 3) {
 		const auto a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
 		if (a != b && a != c && b != c)
 		{
-			optimizedIndices->at(newIndiceCount) = a;
+			optimizedIndices->at(newIndiceCount + 0) = a;
 			optimizedIndices->at(newIndiceCount + 1) = b;
 			optimizedIndices->at(newIndiceCount + 2) = c;
 			newIndiceCount += 3;
@@ -162,12 +119,18 @@ void MeshSimplifier::simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float 
 	const unsigned int psetCount = geom->getNumPrimitiveSets();
 	for (unsigned int primIndex = 0; primIndex < psetCount; ++primIndex) {
 		osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
-		if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
-			osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-			simplifyPrimitiveSet<osg::DrawElementsUShort, osg::UShortArray>(geom, drawElementsUShort, simplifyRatio, primIndex);
-		}else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
-			osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-			simplifyPrimitiveSet<osg::DrawElementsUInt, osg::UIntArray>(geom, drawElementsUInt, simplifyRatio, primIndex);
+		if (pset->getMode() == osg::PrimitiveSet::Mode::TRIANGLES) {
+			if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
+				osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+				simplifyPrimitiveSet<osg::DrawElementsUShort, osg::UShortArray>(geom, drawElementsUShort, simplifyRatio, primIndex);
+			}
+			else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
+				osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+				simplifyPrimitiveSet<osg::DrawElementsUInt, osg::UIntArray>(geom, drawElementsUInt, simplifyRatio, primIndex);
+			}
+		}
+		else {
+			std::cerr << "Geometry primitive's mode is not Triangles,please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
 		}
 	}
 
