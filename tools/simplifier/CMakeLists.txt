@@ -9,12 +9,10 @@ source_group("src/optimizer/texture" FILES
 ${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp 
 ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 )
-source_group("src/utils" FILES ${PROJECT_ROOT_DIR}/src/utils/FlattenTransformVisitor.cpp)
 
 # 定义可执行文件
 file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/*.h)
 add_executable(${TOOL_NAME} ${DIR_SRCS} ${HEADER_FILES} ${SOURCE_FILES} ${UTILS_HEADER_FILES} 
-${PROJECT_ROOT_DIR}/include/utils/FlattenTransformVisitor.h ${PROJECT_ROOT_DIR}/src/utils/FlattenTransformVisitor.cpp
 ${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h ${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp 
 ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 )
@@ -23,7 +21,6 @@ source_group("include/optimizer/texture" FILES
 ${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h 
 ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
 ) 
-source_group("include/utils" FILES ${PROJECT_ROOT_DIR}/include/utils/FlattenTransformVisitor.h)
 # 包含外部工具链文件
 include(${CMAKE_TOOLCHAIN_FILE})
 

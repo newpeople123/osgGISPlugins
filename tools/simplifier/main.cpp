@@ -1,4 +1,3 @@
-#include "utils/FlattenTransformVisitor.h"
 #include "3dtiles/optimizer/MeshSimplifier.h"
 #include "3dtiles/optimizer/MeshOptimizer.h"
 #include <osg/ArgumentParser>
@@ -88,7 +87,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = R"(D:\Data\data\wuhu.osgb)", output = R"(D:\Data\data\wuhu.osgb)";
+    std::string input = R"(E:\Code\2023\Other\data\卡拉电站.fbx)", output = R"(D:\nginx-1.22.1\html\gltf\卡拉电站.fbx)";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -113,14 +112,11 @@ int main(int argc, char** argv)
         std::string simplifiedRatio = "0.5";
         while (arguments.read("-ratio", simplifiedRatio));
         const double ratio = std::stod(simplifiedRatio);
-        //index mesh
+        //flatten transform、index mesh(顺序很重要，
+        //还可以使用osgUtil::Optimizer::VERTEX_POSTTRANSFORM | osgUtil::Optimizer::VERTEX_PRETRANSFORM，
+        // 但是由于还要进行简化，所以选择使用meshoptimizer进行VERTEX_POSTTRANSFORM和VERTEX_PRETRANSFORM优化)
         osgUtil::Optimizer optimizer;
-        optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-        //flatten transform
-        FlattenTransformVisitor ftv;
-        node->accept(ftv);
-        node->dirtyBound();
-        node->computeBound();
+        optimizer.optimize(node, osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS|osgUtil::Optimizer::INDEX_MESH);
         TestVisitor tv1;
         node->accept(tv1);
         const double area1 = tv1.area;
