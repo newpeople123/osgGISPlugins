@@ -20,6 +20,14 @@ private:
 
 	void vertexFetchOptimize(osg::Geometry& geometry);
 
+	void reindexMesh(osg::ref_ptr<osg::Geometry> geom);
+
+	template<typename DrawElementsType, typename IndexArrayType>
+	void reindexMesh(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex);
+
+	template<typename DrawElementsType, typename IndexArrayType>
+	osg::ref_ptr<IndexArrayType> reindexMesh(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex, osg::MixinVector<unsigned int>& remap);
+
 
 };
 #endif // !OSG_GIS_PLUGINS_MESHOPTIMIZER_H

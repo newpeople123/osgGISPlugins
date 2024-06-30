@@ -4,13 +4,9 @@
 #include <osg/Geometry>
 class MeshSimplifierBase {
 public:
-	virtual void reindexMesh(osg::ref_ptr<osg::Geometry> geom) = 0;
 	virtual void simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float simplifyRatio) = 0;
 	void mergePrimitives(osg::ref_ptr<osg::Geometry> geom);
 	void mergeGeometries(osg::ref_ptr<osg::Group> group);
-	template<typename DrawElementsType, typename IndexArrayType>
-	osg::ref_ptr<IndexArrayType> reindexPrimitiveSet(osg::ref_ptr<osg::Geometry> geom, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex, osg::MixinVector<unsigned int>& remap);
-
 
 	MeshSimplifierBase() = default;
 	virtual ~MeshSimplifierBase() = default;
