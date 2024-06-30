@@ -9,6 +9,7 @@ public:
 private:
 	MeshSimplifierBase* _meshSimplifier;
 	float _simplifyRatio = 1.0;
+	bool _compressmore = false;
 
 	template <typename DrawElementsType, typename IndexArrayType>
 	void processDrawElements(osg::PrimitiveSet* pset, IndexArrayType& indices);

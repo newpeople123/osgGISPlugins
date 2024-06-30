@@ -15,7 +15,6 @@
 #include <osgDB/WriteFile>
 #include "utils/TextureOptimizer.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
-#include <osgUtil/Optimizer>
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
 	json matJson;
@@ -96,7 +95,7 @@ void Osg2Gltf::apply(osg::MatrixTransform& xform)
 
 void Osg2Gltf::apply(osg::Drawable& drawable)
 {
-	osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 	if (geom.valid())
 	{
 		if (geom->getNumPrimitiveSets() == 0)
@@ -104,22 +103,6 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 			return;
 		}
 		apply(static_cast<osg::Node&>(drawable));
-
-		for (unsigned i = 0; i < geom->getNumPrimitiveSets(); ++i)
-		{
-			const osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(i);
-			const osg::PrimitiveSet::Type type = pset->getType();
-			if (type != osg::PrimitiveSet::DrawArraysPrimitiveType &&
-				type != osg::PrimitiveSet::DrawElementsUBytePrimitiveType &&
-				type != osg::PrimitiveSet::DrawElementsUShortPrimitiveType &&
-				type != osg::PrimitiveSet::DrawElementsUIntPrimitiveType
-				) {
-				geom = dynamic_cast<osg::Geometry*>(geom->clone(osg::CopyOp::DEEP_COPY_ALL));
-				osgUtil::Optimizer optimizer;
-				optimizer.optimize(geom, osgUtil::Optimizer::INDEX_MESH);
-				break;
-			}
-		}
 
 		const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 		bool pushedStateSet = false;
@@ -209,21 +192,21 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 			switch (mode)
 			{
 			case osg::PrimitiveSet::Mode::QUADS:
-				std::cerr << "primitiveSet mode is quads,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::QUADS,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
 			case osg::PrimitiveSet::Mode::QUAD_STRIP:
-				std::cerr << "primitiveSet mode is quad_strip,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::QUAD_STRIP,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
 			case osg::PrimitiveSet::Mode::POLYGON:
-				std::cerr << "primitiveSet mode is polygon,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::POLYGON,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
 			case osg::PrimitiveSet::Mode::LINES_ADJACENCY:
-				std::cerr << "primitiveSet mode is lines_adjacency,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::LINES_ADJACENCY,that is not supported!" << std::endl;
 			case osg::PrimitiveSet::Mode::LINE_STRIP_ADJACENCY:
-				std::cerr << "primitiveSet mode is line_strip_adjacency,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::LINE_STRIP_ADJACENCY,that is not supported!" << std::endl;
 			case osg::PrimitiveSet::Mode::TRIANGLES_ADJACENCY:
-				std::cerr << "primitiveSet mode is triangles_adjacency,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::TRIANGLES_ADJACENCY,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
 			case osg::PrimitiveSet::Mode::TRIANGLE_STRIP_ADJACENCY:
-				std::cerr << "primitiveSet mode is triangle_strip_adjacency,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::TRIANGLE_STRIP_ADJACENCY,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
 			case osg::PrimitiveSet::Mode::PATCHES:
-				std::cerr << "primitiveSet mode is patches,not support!" << std::endl;
+				std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::PATCHES,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
 			default:
 				break;
 			}
@@ -508,10 +491,9 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 			idxAccessor.bufferView = idxBV;
 		}
 	}
-	else {
-		std::cerr << "primitiveSet type is " << type << ",not support!" << std::endl;
+	else{
+		std::cerr << "primitiveSet type is " << type << ",that is not supported!Please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
 	}
-
 }
 
 int Osg2Gltf::getCurrentMaterial()

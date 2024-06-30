@@ -1176,10 +1176,10 @@ int main(int argc, char** argv)
 #endif
 	const char* cmds[] = {
 		"-i",
-		"D:\\nginx-1.22.1\\html\\3dtiles\\singleThread\\0\\1.glTF",
+		R"(D:\nginx-1.22.1\html\gltf\microcosm.gltf)",
 		"-o",
-		"D:\\nginx-1.22.1\\html\\3dtiles\\singleThread\\0\\1-1.gltf",
-		"-c",
+		R"(D:\nginx-1.22.1\html\gltf\microcosm2.gltf)",
+		"-noq",
 		"-si",
 		"0.01"
 	};
@@ -1206,6 +1206,7 @@ int main(int argc, char** argv)
 	meshopt_encodeIndexVersion(1);
 
 	Settings settings = defaults();
+	settings.compressmore = true;
 
 	const char* input = 0;
 	const char* output = 0;
