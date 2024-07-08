@@ -16,6 +16,10 @@ set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp)
 file(GLOB_RECURSE TEST_HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/*.h)
 file(GLOB_RECURSE TEST_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/optimizer/*.cpp)
 
+# 查找 meshoptimizer 包
+find_package(meshoptimizer CONFIG REQUIRED)
+find_package(draco CONFIG REQUIRED)
+
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} 
 ${HEADER_FILES} ${SOURCE_FILES}
 ${COMPRESS_HEADER_FILES} ${COMPRESS_SOURCE_FILES}
@@ -24,12 +28,11 @@ ${MERGE_HEADER_FILES} ${MERGE_SOURCE_FILES}
 ${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES}
 ${TEST_HEADER_FILES} ${TEST_SOURCE_FILES}
 )
-# 查找 meshoptimizer 包
-find_package(meshoptimizer CONFIG REQUIRED)
 
 # 链接库
 target_link_libraries(${TOOL_TEST_NAME} 
-    meshoptimizer::meshoptimizer
+    meshoptimizer::meshoptimizer 
+    draco::draco
 )
 
 source_group("include" FILES ${HEADER_FILES})

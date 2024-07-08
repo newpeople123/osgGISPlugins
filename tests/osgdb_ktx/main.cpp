@@ -13,17 +13,17 @@ int findNearestPowerOfTwo(int value)
 
 bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img)
 {
-	int originalWidth = img->s();
-	int originalHeight = img->t();
-	int newWidth = findNearestPowerOfTwo(originalWidth);
-	int newHeight = findNearestPowerOfTwo(originalHeight);
+    int originalWidth = img->s();
+    int originalHeight = img->t();
+    int newWidth = findNearestPowerOfTwo(originalWidth);
+    int newHeight = findNearestPowerOfTwo(originalHeight);
 
-	if (!(originalWidth == newWidth && originalHeight == newHeight))
-	{
-		img->scaleImage(newWidth, newHeight, img->r());
-		return true;
-	}
-	return false;
+    if (!(originalWidth == newWidth && originalHeight == newHeight))
+    {
+        img->scaleImage(newWidth, newHeight, img->r());
+        return true;
+    }
+    return false;
 }
 
 int main() {

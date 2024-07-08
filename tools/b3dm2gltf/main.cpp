@@ -96,8 +96,8 @@ int main(int argc, char** argv)
 
     gltfFile.close();
     if (osgDB::convertToLowerCase(osgDB::getFileExtension(output)) != "glb") {
-	    tinygltf::TinyGLTF writer;
-	    bool result = writer.LoadBinaryFromFile(&model, &err, &waring, output);
+        tinygltf::TinyGLTF writer;
+        bool result = writer.LoadBinaryFromFile(&model, &err, &waring, output);
         if (result) {
             result = writer.WriteGltfSceneToFile(&model, output, true, true, false, false);
             if (result)

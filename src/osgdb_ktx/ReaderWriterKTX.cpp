@@ -31,7 +31,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& pa
 
 osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(std::istream& fin, const Options*) const
 {
-	const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx2(fin);
+    const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx2(fin);
     if (images.size() > 1)
     {
         osg::ref_ptr<osg::ImageSequence> seq = new osg::ImageSequence;
@@ -60,8 +60,8 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
             size_t found = opt.find('=');
             if (found != std::string::npos)
             {
-	            std::string val;
-	            key = opt.substr(0, found);
+                std::string val;
+                key = opt.substr(0, found);
                 val = opt.substr(found + 1);
             }
             else
@@ -98,8 +98,8 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
             const size_t found = opt.find('=');
             if (found != std::string::npos)
             {
-	            std::string val;
-	            key = opt.substr(0, found);
+                std::string val;
+                key = opt.substr(0, found);
                 val = opt.substr(found + 1);
             }
             else
@@ -110,7 +110,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
     }
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
-	const bool result = osg::saveKtx2(fout, imagePtr, true);
+    const bool result = osg::saveKtx2(fout, imagePtr, true);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 

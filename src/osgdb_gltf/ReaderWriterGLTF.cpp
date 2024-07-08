@@ -21,9 +21,9 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     int comporessLevel = 1;
     if (options)
     {
-	    std::string compressionTypeStr;
-	    std::string textureTypeStr;
-	    std::istringstream iss(options->getOptionString());
+        std::string compressionTypeStr;
+        std::string textureTypeStr;
+        std::istringstream iss(options->getOptionString());
         std::string opt;
         while (iss >> opt)
         {

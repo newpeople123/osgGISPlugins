@@ -1,7 +1,9 @@
+
 #include <iostream>
 #include <osgDB/ReadFile>
 #include <osgDB/FileNameUtils>
 #include "osgdb_gltf/Osg2Gltf.h"
+#include "osgdb_gltf/compress/GltfDracoCompressor.h"//必须放在<windows.h>前面
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -72,6 +74,45 @@ void convertOsgModel2Gltf2(const std::string& filename) {
     exportGltf(node, filename, "");
 }
 
+void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, const std::string& path) {
+    osgUtil::Optimizer optimizer;
+    optimizer.optimize(node, osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
+    Osg2Gltf osgb2Gltf;
+    node->accept(osgb2Gltf);
+
+    const std::string output = R"(D:\nginx-1.27.0\html\test\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + "_draco.gltf";
+    tinygltf::TinyGLTF writer;
+    tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
+    GltfDracoCompressor dracoCompressor(gltfModel);
+    bool isSuccess = writer.WriteGltfSceneToFile(
+        &gltfModel,
+        output,
+        false,           // embedImages
+        true,           // embedBuffers
+        true,           // prettyPrint
+        false);
+}
+
+
+void convertOsgModel2Gltf3(const std::string& filename) {
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
+
+    //index mesh
+    osgUtil::Optimizer optimizer;
+    optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+    //mesh optimizer
+    MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
+    MeshOptimizer mov(meshOptimizer, 1.0);
+    node->accept(mov);
+    const std::string textureExt = "jpg";
+    const std::string textureCachePath = R"(D:\nginx-1.27.0\html\test\gltf\)" + osgDB::getStrippedName(filename) + "_draco\\" + textureExt;
+    osgDB::makeDirectory(textureCachePath);
+    TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, false);
+    node->accept(tpv);
+    tpv.packTextures();
+    exportGltf3(node, filename, "");
+}
+
 int main() {
 
 
@@ -94,11 +135,11 @@ int main() {
     //tpv.packTextures();
     //exportGltf(node, R"(E:\Data\data\龙翔桥站厅.FBX)");
 
-    convertOsgModel2Gltf(R"(E:\SDK\OpenSceneGraph-Data\cow.osg)", false);
+    //convertOsgModel2Gltf(R"(E:\SDK\OpenSceneGraph-Data\cow.osg)", false);
 
 
     //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)");
-    convertOsgModel2Gltf2(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
+    //convertOsgModel2Gltf2(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
     //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\芜湖水厂总装单位M.fbx)");
     //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)");
 
@@ -108,7 +149,8 @@ int main() {
     //convertOsgModel2Gltf(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)", false);
     //convertOsgModel2Gltf(R"(E:\Data\data\jianzhu+tietu.fbx)");
 
-    //convertOsgModel2Gltf2(R"(E:\Code\2023\Other\data\卡拉电站.fbx)");
+    //convertOsgModel2Gltf2(R"(E:\Code\2023\Other\data\jianzhu+tietu.fbx)");
 
+    convertOsgModel2Gltf3(R"(E:\Data\data\卡拉电站.fbx)");
     return 1;
 }

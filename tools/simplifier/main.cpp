@@ -40,16 +40,16 @@ public:
             osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
             if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
                 osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-				for (size_t i = 0; i < drawElementsUShort->size(); i += 3) {
+                for (size_t i = 0; i < drawElementsUShort->size(); i += 3) {
                     const unsigned short aIndex = drawElementsUShort->at(i + 0);
                     const unsigned short bIndex = drawElementsUShort->at(i + 1);
                     const unsigned short cIndex = drawElementsUShort->at(i + 2);
 
-					const osg::Vec3 a = positions->at(aIndex);
-					const osg::Vec3 b = positions->at(bIndex);
-					const osg::Vec3 c = positions->at(cIndex);
-					area += computeTriangleAreaXY(a, b, c);
-				}
+                    const osg::Vec3 a = positions->at(aIndex);
+                    const osg::Vec3 b = positions->at(bIndex);
+                    const osg::Vec3 c = positions->at(cIndex);
+                    area += computeTriangleAreaXY(a, b, c);
+                }
             }
             else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
                 osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());

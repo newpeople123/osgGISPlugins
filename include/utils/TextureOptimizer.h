@@ -142,5 +142,10 @@ private:
 
     bool _bPackTexture;
 };
-
+template <typename T>
+inline T TexturePackingVisitor::clamp(T value, T min, T max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
 #endif // TEXTURE_PACKING_VISITOR_H
