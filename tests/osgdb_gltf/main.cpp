@@ -18,6 +18,12 @@
 #include <utils/FlattenTransformVisitor.h>
 
 using namespace std;
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+
 /// <summary>
 /// 导出gltf
 /// </summary>
@@ -30,7 +36,7 @@ void exportGltf(osg::ref_ptr<osg::Node> node, const std::string& filename,const 
     Osg2Gltf osgb2Gltf;
     node->accept(osgb2Gltf);
 
-    const std::string output = R"(D:\nginx-1.27.0\html\test\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + ".gltf";
+    const std::string output = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + ".gltf";
     tinygltf::TinyGLTF writer;
     tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
     bool isSuccess = writer.WriteGltfSceneToFile(
@@ -62,7 +68,7 @@ void convertOsgModel2Gltf(const std::string& filename,bool packTextures=true) {
     if (!packTextures)
         path = "关闭纹理图集";
     const std::string textureExt = "jpg";
-    const std::string textureCachePath = R"(D:\nginx-1.27.0\html\test\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + "\\" + textureExt;
+    const std::string textureCachePath = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + "\\" + textureExt;
     osgDB::makeDirectory(textureCachePath);
     TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, packTextures);
     node->accept(tpv);
@@ -84,7 +90,7 @@ void convertOsgModel2Gltf2(const std::string& filename) {
     MeshOptimizer mov(meshOptimizer, 1.0);
     //node->accept(mov);
     const std::string textureExt = "jpg";
-    const std::string textureCachePath = R"(D:\nginx-1.27.0\html\test\gltf\)" + osgDB::getStrippedName(filename) + "\\" + textureExt;
+    const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "\\" + textureExt;
     osgDB::makeDirectory(textureCachePath);
     TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, false);
     node->accept(tpv);
@@ -103,7 +109,7 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
     Osg2Gltf osgb2Gltf;
     node->accept(osgb2Gltf);
 
-    const std::string output = R"(D:\nginx-1.27.0\html\test\gltf\)" + path + "\\" + osgDB::getStrippedName(filename) + "_quantization.gltf";
+    const std::string output = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + "_quantization.gltf";
     tinygltf::TinyGLTF writer;
     tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
     //GltfDracoCompressor dracoCompressor(gltfModel);
@@ -132,7 +138,7 @@ void convertOsgModel2Gltf3(const std::string& filename) {
     MeshOptimizer mov(meshOptimizer, 1.0);
     node->accept(mov);
     const std::string textureExt = "jpg";
-    const std::string textureCachePath = R"(D:\nginx-1.27.0\html\test\gltf\)" + osgDB::getStrippedName(filename) + "_quantization\\" + textureExt;
+    const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "_quantization\\" + textureExt;
     osgDB::makeDirectory(textureCachePath);
     TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
     node->accept(tpv);
@@ -152,6 +158,6 @@ int main() {
 #else
     setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
-    convertOsgModel2Gltf3(R"(E:\Data\data\卡拉电站.fbx)");
+    convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
     return 1;
 }

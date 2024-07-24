@@ -202,7 +202,7 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh, DracoCompressionOpt
 			_model.accessors[primitive.indices] = encodedIndexAccessor;
 		}
 
-		for (const auto& dracoAttribute : extension.value) {
+		for (const auto& dracoAttribute : extension.GetValueObject()) {
 			auto accessorAttr = primitive.attributes.find(dracoAttribute.first);
 			if (accessorAttr == primitive.attributes.end())
 				continue;
@@ -229,8 +229,8 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh, DracoCompressionOpt
 		bv.byteOffset = 0;
 
 		tinygltf::Value::Object dracoExtensionObj;
-		dracoExtensionObj.insert(std::make_pair("attributes", extension.value));
-		dracoExtensionObj.insert(std::make_pair("bufferView", tinygltf::Value(id)));
+		dracoExtensionObj["attributes"] = extension.GetValue();
+		dracoExtensionObj["bufferView"] = tinygltf::Value(id);
 		tinygltf::Primitive resultPrimitive(primitive);
 		resultPrimitive.extensions.insert(std::make_pair(extension.name, tinygltf::Value(dracoExtensionObj)));
 		j = resultPrimitive;

@@ -11,8 +11,10 @@
 #include <tinygltf/tiny_gltf.h>
 #include <type_traits>
 struct GltfExtension {
-    const std::string name;
+protected:
     tinygltf::Value::Object value;
+public:
+    const std::string name;
 
     GltfExtension(const std::string& name) : name(name) {}
 
@@ -25,6 +27,18 @@ struct GltfExtension {
             return item->second.Get<T>();
         }
         return getDefault<T>();
+    }
+
+    virtual tinygltf::Value GetValue() {
+        return tinygltf::Value(value);
+    }
+
+    virtual tinygltf::Value::Object& GetValueObject() {
+        return value;
+    }
+
+    virtual void SetValue(const tinygltf::Value::Object& val) {
+        value = val;
     }
 
     template <typename T, size_t N>
@@ -63,6 +77,57 @@ struct GltfExtension {
         value[key] = std::move(tinygltfVal);
     }
 
+    tinygltf::Value::Object TextureInfo2Object(const tinygltf::TextureInfo& textureInfo) {
+        tinygltf::Value::Object obj;
+
+        obj["index"] = tinygltf::Value(textureInfo.index);
+        obj["texCoord"] = tinygltf::Value(textureInfo.texCoord);
+        if (textureInfo.extensions.size() > 0) {
+            tinygltf::Value::Object extensionsObj;
+            for (const auto& ext : textureInfo.extensions) {
+                extensionsObj[ext.first] = ext.second;
+            }
+            obj["extensions"] = tinygltf::Value(extensionsObj);
+        }
+        if (textureInfo.extras.Type() != tinygltf::NULL_TYPE) {
+            obj["extras"] = textureInfo.extras;
+        }
+
+        return obj;
+    }
+
+    tinygltf::TextureInfo Object2TextureInfo(const tinygltf::Value::Object& obj) {
+        tinygltf::TextureInfo textureInfo;
+
+        // 提取 index 字段
+        auto indexIt = obj.find("index");
+        if (indexIt != obj.end() && indexIt->second.IsInt()) {
+            textureInfo.index = indexIt->second.Get<int>();
+        }
+
+        // 提取 texCoord 字段
+        auto texCoordIt = obj.find("texCoord");
+        if (texCoordIt != obj.end() && texCoordIt->second.IsInt()) {
+            textureInfo.texCoord = texCoordIt->second.Get<int>();
+        }
+
+        // 提取 extensions 字段
+        auto extensionsIt = obj.find("extensions");
+        if (extensionsIt != obj.end() && extensionsIt->second.IsObject()) {
+            const tinygltf::Value::Object& extensionsObj = extensionsIt->second.Get<tinygltf::Value::Object>();
+            for (const auto& ext : extensionsObj) {
+                textureInfo.extensions[ext.first] = ext.second;
+            }
+        }
+
+        // 提取 extras 字段
+        auto extrasIt = obj.find("extras");
+        if (extrasIt != obj.end()) {
+            textureInfo.extras = extrasIt->second;
+        }
+
+        return textureInfo;
+    }
 
     virtual GltfExtension* clone() {
         return new GltfExtension;
@@ -105,12 +170,10 @@ private:
 #pragma region common
 //cesium does not support
 struct KHR_materials_clearcoat : GltfExtension {
+    tinygltf::TextureInfo clearcoatTexture, clearcoatNormalTexture,clearcoatRoughnessTexture;
     KHR_materials_clearcoat() : GltfExtension("KHR_materials_clearcoat") {
         setClearcoatFactor(0.0);
         setClearcoatRoughnessFactor(0.0);
-        setClearcoatTexture(-1);
-        setClearcoatRoughnessTexture(-1);
-        setClearcoatNormalTexture(-1);
     }
     osg::ref_ptr<osg::Texture2D> osgClearcoatTexture, osgClearcoatRoughnessTexture, osgClearcoatNormalTexture;
     double getClearcoatFactor() const {
@@ -129,56 +192,47 @@ struct KHR_materials_clearcoat : GltfExtension {
         Set("clearcoatRoughnessFactor", val);
     }
 
-    int getClearcoatTexture() const {
-        return Get<int>("clearcoatTexture");
+    tinygltf::Value GetValue() override {
+        Set("clearcoatTexture", TextureInfo2Object(clearcoatTexture));
+        Set("clearcoatNormalTexture", TextureInfo2Object(clearcoatNormalTexture));
+        Set("clearcoatRoughnessTexture", TextureInfo2Object(clearcoatRoughnessTexture));
+        return tinygltf::Value(value);
     }
 
-    void setClearcoatTexture(int val) {
-        Set("clearcoatTexture", val);
-    }
-
-    int getClearcoatRoughnessTexture() const {
-        return Get<int>("clearcoatRoughnessTexture");
-    }
-
-    void setClearcoatRoughnessTexture(int val) {
-        Set("clearcoatRoughnessTexture", val);
-    }
-
-    int getClearcoatNormalTexture() const {
-        return Get<int>("clearcoatNormalTexture");
-    }
-
-    void setClearcoatNormalTexture(int val) {
-        Set("clearcoatNormalTexture", val);
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("clearcoatTexture", TextureInfo2Object(clearcoatTexture));
+        Set("clearcoatNormalTexture", TextureInfo2Object(clearcoatNormalTexture));
+        Set("clearcoatRoughnessTexture", TextureInfo2Object(clearcoatRoughnessTexture));
+        return value;
     }
 
     GltfExtension* clone() override {
         KHR_materials_clearcoat* newExtension = new KHR_materials_clearcoat;
         newExtension->setClearcoatFactor(this->getClearcoatFactor());
         newExtension->setClearcoatRoughnessFactor(this->getClearcoatRoughnessFactor());
-        newExtension->setClearcoatTexture(this->getClearcoatTexture());
-        newExtension->setClearcoatRoughnessTexture(this->getClearcoatRoughnessTexture());
-        newExtension->setClearcoatNormalTexture(this->getClearcoatNormalTexture());
-        if(this->osgClearcoatTexture.valid())
-            newExtension->osgClearcoatTexture = (osg::Texture2D*)this->osgClearcoatTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+        newExtension->clearcoatTexture = this->clearcoatTexture;
+        newExtension->clearcoatNormalTexture = this->clearcoatNormalTexture;
+        newExtension->clearcoatRoughnessTexture = this->clearcoatRoughnessTexture;
+        if (this->osgClearcoatTexture.valid())
+            newExtension->osgClearcoatTexture = dynamic_cast<osg::Texture2D*>(this->osgClearcoatTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         if (this->osgClearcoatRoughnessTexture.valid())
-            newExtension->osgClearcoatRoughnessTexture = (osg::Texture2D*)this->osgClearcoatRoughnessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgClearcoatRoughnessTexture = dynamic_cast<osg::Texture2D*>(this->osgClearcoatRoughnessTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         if (this->osgClearcoatNormalTexture.valid())
-            newExtension->osgClearcoatNormalTexture = (osg::Texture2D*)this->osgClearcoatNormalTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgClearcoatNormalTexture = dynamic_cast<osg::Texture2D*>(this->osgClearcoatNormalTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         return newExtension;
     }
 };
 
 //cesium does not support
-struct KHR_materials_anisotropy :GltfExtension
-{
-    KHR_materials_anisotropy() :GltfExtension("KHR_materials_anisotropy") {
+struct KHR_materials_anisotropy : GltfExtension {
+    tinygltf::TextureInfo anisotropyTextureInfo;
+    osg::ref_ptr<osg::Texture2D> osgAnisotropyTexture;
+
+    KHR_materials_anisotropy() : GltfExtension("KHR_materials_anisotropy") {
         setAnisotropyStrength(0.0);
         setAnisotropyRotation(0.0);
-        setAnisotropyTexture(-1);
     }
-    osg::ref_ptr<osg::Texture2D> osgAnisotropyTexture;
+
     double getAnisotropyStrength() const {
         return Get<double>("anisotropyStrength");
     }
@@ -195,21 +249,23 @@ struct KHR_materials_anisotropy :GltfExtension
         Set("anisotropyRotation", val);
     }
 
-    int getAnisotropyTexture() const {
-        return Get<int>("anisotropyTexture");
+    tinygltf::Value GetValue() override {
+        Set("anisotropyTexture", TextureInfo2Object(anisotropyTextureInfo));
+        return tinygltf::Value(value);
     }
 
-    void setAnisotropyTexture(int val) {
-        Set("anisotropyTexture", val);
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("anisotropyTexture", TextureInfo2Object(anisotropyTextureInfo));
+        return value;
     }
 
     GltfExtension* clone() override {
         KHR_materials_anisotropy* newExtension = new KHR_materials_anisotropy;
         newExtension->setAnisotropyStrength(this->getAnisotropyStrength());
         newExtension->setAnisotropyRotation(this->getAnisotropyRotation());
-        newExtension->setAnisotropyTexture(this->getAnisotropyTexture());
-        if(this->osgAnisotropyTexture.valid())
-            newExtension->osgAnisotropyTexture = (osg::Texture2D*)this->osgAnisotropyTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+        newExtension->anisotropyTextureInfo = this->anisotropyTextureInfo;
+        if (this->osgAnisotropyTexture.valid())
+            newExtension->osgAnisotropyTexture = dynamic_cast<osg::Texture2D*>(this->osgAnisotropyTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         return newExtension;
     }
 };
@@ -253,15 +309,16 @@ struct KHR_materials_unlit :GltfExtension
 #pragma endregion
 
 #pragma region SpecularGlossiness
-struct KHR_materials_pbrSpecularGlossiness :GltfExtension {
-    KHR_materials_pbrSpecularGlossiness() :GltfExtension("KHR_materials_pbrSpecularGlossiness") {
+struct KHR_materials_pbrSpecularGlossiness : GltfExtension {
+    KHR_materials_pbrSpecularGlossiness() : GltfExtension("KHR_materials_pbrSpecularGlossiness") {
         setDiffuseFactor({ 1.0, 1.0, 1.0, 1.0 });
         setSpecularFactor({ 1.0, 1.0, 1.0 });
         setGlossinessFactor(0.0);
-        setSpecularGlossinessTexture(-1);
-        setDiffuseTexture(-1);
     }
+
+    tinygltf::TextureInfo specularGlossinessTexture, diffuseTexture;
     osg::ref_ptr<osg::Texture2D> osgSpecularGlossinessTexture, osgDiffuseTexture;
+
     std::array<double, 4> getDiffuseFactor() const {
         return GetArray<double, 4>("diffuseFactor");
     }
@@ -286,20 +343,23 @@ struct KHR_materials_pbrSpecularGlossiness :GltfExtension {
         Set("glossinessFactor", val);
     }
 
-    int getSpecularGlossinessTexture() const {
-        return Get<int>("specularGlossinessTexture");
+    tinygltf::Value GetValue() override {
+        Set("specularGlossinessTexture", TextureInfo2Object(specularGlossinessTexture));
+        Set("diffuseTexture", TextureInfo2Object(diffuseTexture));
+        return tinygltf::Value(value);
     }
 
-    void setSpecularGlossinessTexture(int val) {
-        Set("specularGlossinessTexture", val);
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("specularGlossinessTexture", TextureInfo2Object(specularGlossinessTexture));
+        Set("diffuseTexture", TextureInfo2Object(diffuseTexture));
+        return value;
     }
 
-    int getDiffuseTexture() const {
-        return Get<int>("diffuseTexture");
-    }
+    void SetValue(const tinygltf::Value::Object& val) override {
+        specularGlossinessTexture = Object2TextureInfo(val.at("specularGlossinessTexture").Get<tinygltf::Value::Object>());
+        diffuseTexture = Object2TextureInfo(val.at("diffuseTexture").Get<tinygltf::Value::Object>());
 
-    void setDiffuseTexture(int val) {
-        Set("diffuseTexture", val);
+        value = val;
     }
 
     GltfExtension* clone() override {
@@ -307,12 +367,12 @@ struct KHR_materials_pbrSpecularGlossiness :GltfExtension {
         newExtension->setDiffuseFactor(this->getDiffuseFactor());
         newExtension->setSpecularFactor(this->getSpecularFactor());
         newExtension->setGlossinessFactor(this->getGlossinessFactor());
-        newExtension->setSpecularGlossinessTexture(this->getSpecularGlossinessTexture());
-        newExtension->setDiffuseTexture(this->getDiffuseTexture());
-        if(this->osgDiffuseTexture.valid())
-            newExtension->osgDiffuseTexture = (osg::Texture2D*)this->osgDiffuseTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+        newExtension->specularGlossinessTexture = this->specularGlossinessTexture;
+        newExtension->diffuseTexture = this->diffuseTexture;
+        if (this->osgDiffuseTexture.valid())
+            newExtension->osgDiffuseTexture = dynamic_cast<osg::Texture2D*>(this->osgDiffuseTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         if (this->osgSpecularGlossinessTexture.valid())
-            newExtension->osgSpecularGlossinessTexture = (osg::Texture2D*)this->osgSpecularGlossinessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgSpecularGlossinessTexture = dynamic_cast<osg::Texture2D*>(this->osgSpecularGlossinessTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         return newExtension;
     }
 };
@@ -335,176 +395,200 @@ struct KHR_materials_ior :GltfExtension
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness
-struct KHR_materials_sheen :GltfExtension
-{
-    KHR_materials_sheen() :GltfExtension("KHR_materials_sheen") {
+struct KHR_materials_sheen : GltfExtension {
+    KHR_materials_sheen() : GltfExtension("KHR_materials_sheen") {
         setSheenColorFactor({ 1.0, 1.0, 1.0 });
         setSheenRoughnessFactor(0.0);
-        setSheenColorTexture(-1);
-        setSheenRoughnessTexture(-1);
     }
+
+    tinygltf::TextureInfo sheenColorTexture, sheenRoughnessTexture;
     osg::ref_ptr<osg::Texture2D> osgSheenColorTexture, osgSheenRoughnessTexture;
+
     std::array<double, 3> getSheenColorFactor() const {
         return GetArray<double, 3>("sheenColorFactor");
     }
+
     void setSheenColorFactor(const std::array<double, 3>& val) {
         Set("sheenColorFactor", tinygltf::Value::Array(val.begin(), val.end()));
     }
+
     double getSheenRoughnessFactor() const {
         return Get<double>("sheenRoughnessFactor");
     }
+
     void setSheenRoughnessFactor(double val) {
         Set("sheenRoughnessFactor", val);
     }
-    int getSheenColorTexture() const {
-        return Get<int>("sheenColorTexture");
+
+    tinygltf::Value GetValue() override {
+        Set("sheenColorTexture", TextureInfo2Object(sheenColorTexture));
+        Set("sheenRoughnessTexture", TextureInfo2Object(sheenRoughnessTexture));
+        return tinygltf::Value(value);
     }
-    void setSheenColorTexture(int val) {
-        Set("sheenColorTexture", val);
+
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("sheenColorTexture", TextureInfo2Object(sheenColorTexture));
+        Set("sheenRoughnessTexture", TextureInfo2Object(sheenRoughnessTexture));
+        return value;
     }
-    int getSheenRoughnessTexture() const {
-        return Get<int>("sheenRoughnessTexture");
-    }
-    void setSheenRoughnessTexture(int val) {
-        Set("sheenRoughnessTexture", val);
-    }
+
     GltfExtension* clone() override {
         KHR_materials_sheen* newExtension = new KHR_materials_sheen;
         newExtension->setSheenColorFactor(this->getSheenColorFactor());
         newExtension->setSheenRoughnessFactor(this->getSheenRoughnessFactor());
-        newExtension->setSheenColorTexture(this->getSheenColorTexture());
-        newExtension->setSheenRoughnessTexture(this->getSheenRoughnessTexture());
+        newExtension->sheenColorTexture = this->sheenColorTexture;
+        newExtension->sheenRoughnessTexture = this->sheenRoughnessTexture;
         if (this->osgSheenColorTexture.valid())
-            newExtension->osgSheenColorTexture = (osg::Texture2D*)this->osgSheenColorTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgSheenColorTexture = dynamic_cast<osg::Texture2D*>(this->osgSheenColorTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         if (this->osgSheenRoughnessTexture.valid())
-            newExtension->osgSheenRoughnessTexture = (osg::Texture2D*)this->osgSheenRoughnessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgSheenRoughnessTexture = dynamic_cast<osg::Texture2D*>(this->osgSheenRoughnessTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         return newExtension;
     }
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness
-struct KHR_materials_volume :GltfExtension
-{
-    KHR_materials_volume() :GltfExtension("KHR_materials_volume") {
-        setAttenuationColor({ 1.0,1.0,1.0 });
+struct KHR_materials_volume : GltfExtension {
+    KHR_materials_volume() : GltfExtension("KHR_materials_volume") {
+        setAttenuationColor({ 1.0, 1.0, 1.0 });
         setThicknessFactor(0.0);
         setAttenuationDistance(std::numeric_limits<double>::infinity());
-        getThicknessTexture(-1);
-
     }
+
+    tinygltf::TextureInfo thicknessTexture;
     osg::ref_ptr<osg::Texture2D> osgThicknessTexture;
+
     std::array<double, 3> getAttenuationColor() const {
         return GetArray<double, 3>("attenuationColor");
     }
+
     void setAttenuationColor(const std::array<double, 3>& val) {
         Set("attenuationColor", tinygltf::Value::Array(val.begin(), val.end()));
     }
+
     double getThicknessFactor() const {
         return Get<double>("thicknessFactor");
     }
+
     void setThicknessFactor(double val) {
         Set("thicknessFactor", val);
     }
+
     double getAttenuationDistance() const {
         return Get<double>("attenuationDistance");
     }
+
     void setAttenuationDistance(double val) {
         Set("attenuationDistance", val);
     }
-    int getThicknessTexture() const {
-        return Get<int>("thicknessTexture");
+
+    tinygltf::Value GetValue() override {
+        Set("thicknessTexture", TextureInfo2Object(thicknessTexture));
+        return tinygltf::Value(value);
     }
-    void getThicknessTexture(int val) {
-        Set("thicknessTexture", val);
+
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("thicknessTexture", TextureInfo2Object(thicknessTexture));
+        return value;
     }
+
     GltfExtension* clone() override {
         KHR_materials_volume* newExtension = new KHR_materials_volume;
         newExtension->setAttenuationColor(this->getAttenuationColor());
         newExtension->setThicknessFactor(this->getThicknessFactor());
         newExtension->setAttenuationDistance(this->getAttenuationDistance());
-        newExtension->getThicknessTexture(this->getThicknessTexture());
+        newExtension->thicknessTexture = this->thicknessTexture;
         if (this->osgThicknessTexture.valid())
-            newExtension->osgThicknessTexture = (osg::Texture2D*)this->osgThicknessTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgThicknessTexture = dynamic_cast<osg::Texture2D*>(this->osgThicknessTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         return newExtension;
     }
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness,and cesium does not support
-struct KHR_materials_specular :GltfExtension
-{
-    KHR_materials_specular() :GltfExtension("KHR_materials_specular") {
-        setSpecularColorFactor({ 1.0,1.0,1.0 });
+struct KHR_materials_specular : GltfExtension {
+    KHR_materials_specular() : GltfExtension("KHR_materials_specular") {
+        setSpecularColorFactor({ 1.0, 1.0, 1.0 });
         setSpecularFactor(0.0);
-        setSpecularTexture(-1);
-        setSpecularColorTexture(-1);
-
     }
+
+    tinygltf::TextureInfo specularTexture, specularColorTexture;
     osg::ref_ptr<osg::Texture2D> osgSpecularTexture, osgSpecularColorTexture;
+
     std::array<double, 3> getSpecularColorFactor() const {
         return GetArray<double, 3>("specularColorFactor");
     }
+
     void setSpecularColorFactor(const std::array<double, 3>& val) {
         Set("specularColorFactor", tinygltf::Value::Array(val.begin(), val.end()));
     }
+
     double getSpecularFactor() const {
         return Get<double>("specularFactor");
     }
+
     void setSpecularFactor(double val) {
         Set("specularFactor", val);
     }
-    int getSpecularTexture() const {
-        return Get<int>("specularTexture");
+
+    tinygltf::Value GetValue() override {
+        Set("specularTexture", TextureInfo2Object(specularTexture));
+        Set("specularColorTexture", TextureInfo2Object(specularColorTexture));
+        return tinygltf::Value(value);
     }
-    void setSpecularTexture(int val) {
-        Set("specularTexture", val);
+
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("specularTexture", TextureInfo2Object(specularTexture));
+        Set("specularColorTexture", TextureInfo2Object(specularColorTexture));
+        return value;
     }
-    int getSpecularColorTexture() const {
-        return Get<int>("specularColorTexture");
-    }
-    void setSpecularColorTexture(int val) {
-        Set("specularColorTexture", val);
-    }
+
     GltfExtension* clone() override {
         KHR_materials_specular* newExtension = new KHR_materials_specular;
         newExtension->setSpecularColorFactor(this->getSpecularColorFactor());
         newExtension->setSpecularFactor(this->getSpecularFactor());
-        newExtension->setSpecularTexture(this->getSpecularTexture());
-        newExtension->setSpecularColorTexture(this->getSpecularColorTexture());
+        newExtension->specularTexture = this->specularTexture;
+        newExtension->specularColorTexture = this->specularColorTexture;
         if (this->osgSpecularTexture.valid())
-            newExtension->osgSpecularTexture = (osg::Texture2D*)this->osgSpecularTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgSpecularTexture = dynamic_cast<osg::Texture2D*>(this->osgSpecularTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
         if (this->osgSpecularColorTexture.valid())
-            newExtension->osgSpecularColorTexture = (osg::Texture2D*)this->osgSpecularColorTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgSpecularColorTexture = dynamic_cast<osg::Texture2D*>(this->osgSpecularColorTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
 
         return newExtension;
     }
 };
 
 //conflict KHR_materials_unlit and KHR_materials_pbrSpecularGlossiness,and cesium does not support
-struct KHR_materials_transmission :GltfExtension
-{
-    KHR_materials_transmission() :GltfExtension("KHR_materials_transmission") {
+struct KHR_materials_transmission : GltfExtension {
+    KHR_materials_transmission() : GltfExtension("KHR_materials_transmission") {
         setTransmissionFactor(0.0);
-        setTransmissionTexture(-1);
     }
+
+    tinygltf::TextureInfo transmissionTexture;
     osg::ref_ptr<osg::Texture2D> osgTransmissionTexture;
+
     double getTransmissionFactor() const {
         return Get<double>("transmissionFactor");
     }
+
     void setTransmissionFactor(double val) {
         Set("transmissionFactor", val);
     }
-    int getTransmissionTexture() const {
-        return Get<int>("transmissionTexture");
+
+    tinygltf::Value GetValue() override {
+        Set("transmissionTexture", TextureInfo2Object(transmissionTexture));
+        return tinygltf::Value(value);
     }
-    void setTransmissionTexture(int val) {
-        Set("transmissionTexture", val);
+
+    tinygltf::Value::Object& GetValueObject() override {
+        Set("transmissionTexture", TextureInfo2Object(transmissionTexture));
+        return value;
     }
+
     GltfExtension* clone() override {
         KHR_materials_transmission* newExtension = new KHR_materials_transmission;
         newExtension->setTransmissionFactor(this->getTransmissionFactor());
-        newExtension->setTransmissionTexture(this->getTransmissionTexture());
+        newExtension->transmissionTexture = this->transmissionTexture;
         if (this->osgTransmissionTexture.valid())
-            newExtension->osgTransmissionTexture = (osg::Texture2D*)this->osgTransmissionTexture->clone(osg::CopyOp::DEEP_COPY_ALL);
+            newExtension->osgTransmissionTexture = dynamic_cast<osg::Texture2D*>(this->osgTransmissionTexture->clone(osg::CopyOp::DEEP_COPY_ALL));
 
         return newExtension;
     }

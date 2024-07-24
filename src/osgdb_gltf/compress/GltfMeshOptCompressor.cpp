@@ -1,6 +1,5 @@
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include <meshoptimizer.h>
-#include <iostream>
 void GltfMeshOptCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits)
 {
 	const float scaler = sqrtf(2.f);
@@ -130,11 +129,6 @@ int GltfMeshOptCompressor::quantizeColor(float v, int bytebits, int bits)
 
 void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minVX, const double minVY, const double minVZ, const double scaleV)
 {
-	const int positionBit = 14;
-	const int normalBit = 8;
-	const int texBit = 12;
-	const int colorBit = 12;
-	const bool compressmore = true;
 	for (const tinygltf::Primitive& primitive : mesh.primitives)
 	{
 		for (const auto& pair : primitive.attributes) {
@@ -152,61 +146,47 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 						osg::ref_ptr<osg::Vec4usArray> newBufferData = new osg::Vec4usArray(accessor.count);
 						for (size_t i = 0; i < accessor.count; ++i)
 						{
-							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 3 + 0] - minVX) / scaleV, positionBit);
-							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 3 + 1] - minVY) / scaleV, positionBit);
-							const unsigned short z = meshopt_quantizeUnorm((bufferData[i * 3 + 2] - minVZ) / scaleV, positionBit);
+							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 3 + 0] - minVX) / scaleV, _positionBit);
+							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 3 + 1] - minVY) / scaleV, _positionBit);
+							const unsigned short z = meshopt_quantizeUnorm((bufferData[i * 3 + 2] - minVZ) / scaleV, _positionBit);
 							newBufferData->at(i) = osg::Vec4us(x, y, z, 0);
 						}
-						accessor.minValues[0] = meshopt_quantizeUnorm((accessor.minValues[0] - minVX) / scaleV, positionBit);
-						accessor.minValues[1] = meshopt_quantizeUnorm((accessor.minValues[1] - minVY) / scaleV, positionBit);
-						accessor.minValues[2] = meshopt_quantizeUnorm((accessor.minValues[2] - minVZ) / scaleV, positionBit);
-						accessor.maxValues[0] = meshopt_quantizeUnorm((accessor.maxValues[0] - minVX) / scaleV, positionBit);
-						accessor.maxValues[1] = meshopt_quantizeUnorm((accessor.maxValues[1] - minVY) / scaleV, positionBit);
-						accessor.maxValues[2] = meshopt_quantizeUnorm((accessor.maxValues[2] - minVZ) / scaleV, positionBit);
+						accessor.minValues[0] = meshopt_quantizeUnorm((accessor.minValues[0] - minVX) / scaleV, _positionBit);
+						accessor.minValues[1] = meshopt_quantizeUnorm((accessor.minValues[1] - minVY) / scaleV, _positionBit);
+						accessor.minValues[2] = meshopt_quantizeUnorm((accessor.minValues[2] - minVZ) / scaleV, _positionBit);
+						accessor.maxValues[0] = meshopt_quantizeUnorm((accessor.maxValues[0] - minVX) / scaleV, _positionBit);
+						accessor.maxValues[1] = meshopt_quantizeUnorm((accessor.maxValues[1] - minVY) / scaleV, _positionBit);
+						accessor.maxValues[2] = meshopt_quantizeUnorm((accessor.maxValues[2] - minVZ) / scaleV, _positionBit);
 						accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-
-						buffer.data.resize(newBufferData->getTotalDataSize());
-
-						//TODO: account for endianess
-						const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-						for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-							buffer.data[i] = *ptr++;
-						bufferView.byteLength = buffer.data.size();
 						bufferView.byteStride = 2 * 4;
-
+						restoreBuffer(buffer, bufferView, newBufferData);
 					}
 					else if (pair.first == "NORMAL")
 					{
 
-						if (normalBit < 9) {
-							const bool oct = compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
+						if (_normalBit < 9) {
+							const bool oct = _compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
 							osg::ref_ptr<osg::Vec4bArray> newBufferData = new osg::Vec4bArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
 								if (oct) {
 									int fu, fv;
-									encodeOct(fu, fv, bufferData[i * 3 + 0], bufferData[i * 3 + 1], bufferData[i * 3 + 2], normalBit);
+									encodeOct(fu, fv, bufferData[i * 3 + 0], bufferData[i * 3 + 1], bufferData[i * 3 + 2], _normalBit);
 									const signed char x = fu;
 									const signed char y = fv;
-									const signed char z = meshopt_quantizeSnorm(1.f, normalBit);
+									const signed char z = meshopt_quantizeSnorm(1.f, _normalBit);
 									newBufferData->at(i) = osg::Vec4b(x, y, z, 0);
 								}
 								else {
-									const signed char x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], normalBit);
-									const signed char y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], normalBit);
-									const signed char z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], normalBit);
+									const signed char x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], _normalBit);
+									const signed char y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], _normalBit);
+									const signed char z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], _normalBit);
 									newBufferData->at(i) = osg::Vec4b(x, y, z, 0);
 								}
 							}
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
 
-							buffer.data.resize(newBufferData->getTotalDataSize());
-
-							//TODO: account for endianess
-							const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-							for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-								buffer.data[i] = *ptr++;
-							bufferView.byteLength = buffer.data.size();
+							restoreBuffer(buffer, bufferView, newBufferData);
 							bufferView.byteStride = 1 * 4;
 						}
 						else
@@ -214,20 +194,14 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 							osg::ref_ptr<osg::Vec4sArray> newBufferData = new osg::Vec4sArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const short x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], normalBit);
-								const short y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], normalBit);
-								const short z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], normalBit);
+								const short x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], _normalBit);
+								const short y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], _normalBit);
+								const short z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], _normalBit);
 								newBufferData->at(i) = osg::Vec4s(x, y, z, 0);
 
 							}
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_SHORT;
-							buffer.data.resize(newBufferData->getTotalDataSize());
-
-							//TODO: account for endianess
-							const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-							for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-								buffer.data[i] = *ptr++;
-							bufferView.byteLength = buffer.data.size();
+							restoreBuffer(buffer, bufferView, newBufferData);
 							bufferView.byteStride = 2 * 4;
 						}
 					}
@@ -237,64 +211,32 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 				{
 					if (pair.first == "TEXCOORD_0")
 					{
-						std::vector<tinygltf::Accessor> test1;
-						for (tinygltf::Mesh& m : _model.meshes) {
-							for (const tinygltf::Primitive& pri : m.primitives) {
-								if (pri.material == primitive.material) {
-									test1.push_back(_model.accessors[pri.attributes.find("TEXCOORD_0")->second]);
-								}
-							}
-						}
-
-						double minTx = accessor.minValues[0], minTy = accessor.minValues[1], maxTx = accessor.maxValues[0], maxTy = accessor.maxValues[1];
-						for (auto item : test1) {
-							minTx = std::min(item.minValues[0], minTx);
-							minTy = std::min(item.minValues[1], minTy);
-
-							maxTx = std::max(item.maxValues[0], maxTx);
-							maxTy = std::max(item.maxValues[1], maxTy);
-						}
+						std::tuple<double, double, double, double> result = calculateTexcoordScales(_model, primitive, accessor);
+						const double minTx = std::get<0>(result);
+						const double minTy = std::get<1>(result);
+						const double scaleTx = std::get<2>(result);
+						const double scaleTy = std::get<3>(result);
 
 						osg::ref_ptr<osg::Vec2usArray> newBufferData = new osg::Vec2usArray(accessor.count);
 						for (size_t i = 0; i < accessor.count; ++i)
 						{
-							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 2 + 0] - minTx) / (maxTx - minTx), texBit);
-							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 2 + 1] - minTy) / (maxTy - minTy), texBit);
+							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 2 + 0] - minTx) / scaleTx, _texBit);
+							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 2 + 1] - minTy) / scaleTy, _texBit);
 							newBufferData->at(i) = osg::Vec2us(x, y);
 						}
 						accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-
-						buffer.data.resize(newBufferData->getTotalDataSize());
-						//if (!((maxTx - minTx) > 1.0 || (maxTy - minTy) > 1.0))
-							accessor.normalized = true;
-						//TODO: account for endianess
-						const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-						for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-							buffer.data[i] = *ptr++;
-						bufferView.byteLength = buffer.data.size();
+						accessor.normalized = true;
+						restoreBuffer(buffer, bufferView, newBufferData);
 						bufferView.byteStride = 2 * 2;
 
-						KHR_texture_transform texture_transform_extension;
-						auto& baseColorTextureTransformExtension = _model.materials[primitive.material].pbrMetallicRoughness.baseColorTexture.extensions.find(texture_transform_extension.name);
-						texture_transform_extension.value = baseColorTextureTransformExtension->second.Get<tinygltf::Value::Object>();
-						std::array<double, 2> offsets = texture_transform_extension.getOffset();
-						offsets[0] += minTx;
-						offsets[1] += minTy;
-						texture_transform_extension.setOffset(offsets);
-
-						std::array<double, 2> scales = texture_transform_extension.getScale();
-						scales[0] *= (maxTx - minTx) / float((1 << texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
-						scales[1] *= (maxTy - minTy) / float((1 << texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
-						texture_transform_extension.setScale(scales);
-
-						baseColorTextureTransformExtension->second = tinygltf::Value(texture_transform_extension.value);
+						processMaterial(primitive, accessor, minTx, minTy, scaleTx, scaleTy);
 					}
 				}
 				else {
 					if (pair.first == "TANGENT")
 					{
-						const int bits = normalBit > 8 ? 8 : normalBit;
-						const bool oct = compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
+						const int bits = _normalBit > 8 ? 8 : _normalBit;
+						const bool oct = _compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
 						osg::ref_ptr<osg::Vec4bArray> newBufferData = new osg::Vec4bArray(accessor.count);
 						for (size_t i = 0; i < accessor.count; ++i)
 						{
@@ -317,38 +259,26 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 						}
 						accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
 
-						buffer.data.resize(newBufferData->getTotalDataSize());
-
-						//TODO: account for endianess
-						const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-						for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-							buffer.data[i] = *ptr++;
-						bufferView.byteLength = buffer.data.size();
+						restoreBuffer(buffer, bufferView, newBufferData);
 						bufferView.byteStride = 1 * 4;
 					}
 					else if (pair.first == "COLOR_0")
 					{
-						if (colorBit < 9)
+						if (_colorBit < 9)
 						{
 							osg::ref_ptr<osg::Vec4bArray> newBufferData = new osg::Vec4bArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const signed char x = quantizeColor(bufferData[i * 4 + 0], 8, colorBit);
-								const signed char y = quantizeColor(bufferData[i * 4 + 1], 8, colorBit);
-								const signed char z = quantizeColor(bufferData[i * 4 + 2], 8, colorBit);
-								const signed char w = quantizeColor(bufferData[i * 4 + 3], 8, colorBit);
+								const signed char x = quantizeColor(bufferData[i * 4 + 0], 8, _colorBit);
+								const signed char y = quantizeColor(bufferData[i * 4 + 1], 8, _colorBit);
+								const signed char z = quantizeColor(bufferData[i * 4 + 2], 8, _colorBit);
+								const signed char w = quantizeColor(bufferData[i * 4 + 3], 8, _colorBit);
 
 								newBufferData->at(i) = osg::Vec4b(x, y, z, w);
 							}
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
 
-							buffer.data.resize(newBufferData->getTotalDataSize());
-
-							//TODO: account for endianess
-							const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-							for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-								buffer.data[i] = *ptr++;
-							bufferView.byteLength = buffer.data.size();
+							restoreBuffer(buffer, bufferView, newBufferData);
 							bufferView.byteStride = 1 * 4;
 						}
 						else
@@ -356,22 +286,16 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 							osg::ref_ptr<osg::Vec4sArray> newBufferData = new osg::Vec4sArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const short x = quantizeColor(bufferData[i * 4 + 0], 16, colorBit);
-								const short y = quantizeColor(bufferData[i * 4 + 1], 16, colorBit);
-								const short z = quantizeColor(bufferData[i * 4 + 2], 16, colorBit);
-								const short w = quantizeColor(bufferData[i * 4 + 3], 16, colorBit);
+								const short x = quantizeColor(bufferData[i * 4 + 0], 16, _colorBit);
+								const short y = quantizeColor(bufferData[i * 4 + 1], 16, _colorBit);
+								const short z = quantizeColor(bufferData[i * 4 + 2], 16, _colorBit);
+								const short w = quantizeColor(bufferData[i * 4 + 3], 16, _colorBit);
 
 								newBufferData->at(i) = osg::Vec4s(x, y, z, w);
 
 							}
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_SHORT;
-							buffer.data.resize(newBufferData->getTotalDataSize());
-
-							//TODO: account for endianess
-							const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-							for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-								buffer.data[i] = *ptr++;
-							bufferView.byteLength = buffer.data.size();
+							restoreBuffer(buffer, bufferView, newBufferData);
 							bufferView.byteStride = 2 * 4;
 						}
 					}
@@ -379,4 +303,82 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 			}
 		}
 	}
+}
+
+void GltfMeshOptCompressor::restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData)
+{
+	buffer.data.resize(newBufferData->getTotalDataSize());
+	const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
+	for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
+		buffer.data[i] = *ptr++;
+	bufferView.byteLength = buffer.data.size();
+}
+
+void GltfMeshOptCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
+{
+	KHR_texture_transform texture_transform_extension;
+	auto& findResult = extensionMap.find(texture_transform_extension.name);
+	if (findResult != extensionMap.end()) {
+		texture_transform_extension.SetValue(findResult->second.Get<tinygltf::Value::Object>());
+		std::array<double, 2> offsets = texture_transform_extension.getOffset();
+		offsets[0] += minTx;
+		offsets[1] += minTy;
+		texture_transform_extension.setOffset(offsets);
+
+		std::array<double, 2> scales = texture_transform_extension.getScale();
+		scales[0] *= scaleTx / float((1 << _texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
+		scales[1] *= scaleTy / float((1 << _texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
+		texture_transform_extension.setScale(scales);
+
+		findResult->second = texture_transform_extension.GetValue();
+	}
+}
+
+void GltfMeshOptCompressor::processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
+{
+	tinygltf::Material& material = _model.materials[primitive.material];
+	recomputeTextureTransform(material.pbrMetallicRoughness.baseColorTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+	recomputeTextureTransform(material.normalTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+	recomputeTextureTransform(material.occlusionTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+	recomputeTextureTransform(material.emissiveTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+	recomputeTextureTransform(material.pbrMetallicRoughness.metallicRoughnessTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+	KHR_materials_pbrSpecularGlossiness pbrSGExtension;
+	if (material.extensions.find(pbrSGExtension.name) != material.extensions.end()) {
+		tinygltf::Value& val = material.extensions[pbrSGExtension.name];
+		if (val.IsObject()) {
+			pbrSGExtension.SetValue(val.Get<tinygltf::Value::Object>());
+			recomputeTextureTransform(pbrSGExtension.specularGlossinessTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+			recomputeTextureTransform(pbrSGExtension.diffuseTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
+		}
+	}
+}
+
+std::tuple<double, double, double, double> GltfMeshOptCompressor::calculateTexcoordScales(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor)
+{
+	std::vector<tinygltf::Accessor> texcoordAccessors;
+	for (const tinygltf::Mesh& mesh : model.meshes) {
+		for (const tinygltf::Primitive& pri : mesh.primitives) {
+			if (pri.material == primitive.material) {
+				auto it = pri.attributes.find("TEXCOORD_0");
+				if (it != pri.attributes.end()) {
+					texcoordAccessors.push_back(model.accessors[it->second]);
+				}
+			}
+		}
+	}
+
+	double minTx = accessor.minValues[0], minTy = accessor.minValues[1];
+	double maxTx = accessor.maxValues[0], maxTy = accessor.maxValues[1];
+	for (const auto& item : texcoordAccessors) {
+		minTx = std::min(item.minValues[0], minTx);
+		minTy = std::min(item.minValues[1], minTy);
+
+		maxTx = std::max(item.maxValues[0], maxTx);
+		maxTy = std::max(item.maxValues[1], maxTy);
+	}
+
+	double scaleTx = maxTx - minTx;
+	double scaleTy = maxTy - minTy;
+
+	return std::make_tuple(minTx, minTy, scaleTx, scaleTy);
 }

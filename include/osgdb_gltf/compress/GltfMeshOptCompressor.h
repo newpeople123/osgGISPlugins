@@ -4,6 +4,12 @@
 
 class GltfMeshOptCompressor :public GltfCompressor {
 private:
+	int _positionBit = 14;
+	int _normalBit = 8;
+	int _texBit = 12;
+	int _colorBit = 12;
+	bool _compressmore = true;
+
 	static void encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits);
 
 	static void encodeOct(int& fu, int& fv, float nx, float ny, float nz, int bits);
@@ -18,6 +24,16 @@ private:
 
 	void quantizeMesh(tinygltf::Mesh& mesh, const double minVX, const double minVY, const double minVZ, const double scaleV);
 
+	void restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData);
+
+	void recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap,tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
+
+	void processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
+
+	std::tuple<double, double, double, double> calculateTexcoordScales(
+		const tinygltf::Model& model,
+		const tinygltf::Primitive& primitive,
+		const tinygltf::Accessor& accessor);
 public:
 	//启用该扩展需要展开变换矩阵
     KHR_mesh_quantization meshQuanExtension;
