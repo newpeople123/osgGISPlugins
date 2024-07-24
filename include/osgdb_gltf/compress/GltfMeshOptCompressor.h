@@ -89,8 +89,10 @@ public:
 		{
 			for (const tinygltf::Primitive& primitive : mesh.primitives)
 			{
-				_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].maxValues.clear();
-				_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].minValues.clear();
+				if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
+					_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].maxValues.clear();
+					_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].minValues.clear();
+				}
 
 			}
 		}

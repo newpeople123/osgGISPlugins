@@ -18,11 +18,11 @@
 #include <utils/FlattenTransformVisitor.h>
 
 using namespace std;
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 /// <summary>
 /// 导出gltf
@@ -113,7 +113,7 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
     tinygltf::TinyGLTF writer;
     tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
     //GltfDracoCompressor dracoCompressor(gltfModel);
-    GltfMeshOptCompressor meshOptCompressor(gltfModel);
+    //GltfMeshOptCompressor meshOptCompressor(gltfModel);
     bool isSuccess = writer.WriteGltfSceneToFile(
         &gltfModel,
         output,
@@ -158,6 +158,9 @@ int main() {
 #else
     setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
-    convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
+    //convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
+    convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站.fbx)");
+    convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
+
     return 1;
 }
