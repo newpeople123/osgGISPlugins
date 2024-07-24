@@ -10,7 +10,7 @@ public:
 private:
     MeshSimplifierBase* _meshSimplifier;
     float _simplifyRatio = 1.0;
-    bool _compressmore = false;
+    bool _compressmore = true;
 
     template <typename DrawElementsType, typename IndexArrayType>
     void processDrawElements(osg::PrimitiveSet* pset, IndexArrayType& indices);
@@ -101,6 +101,7 @@ inline void MeshOptimizer::reindexMesh(osg::ref_ptr<osg::Geometry> geom, osg::re
     }
 
     osg::MixinVector<unsigned int> remap(positions->size());
+
     size_t uniqueVertexCount = meshopt_generateVertexRemapMulti(&remap.asVector()[0], &(*indices)[0], indices->size(), count,
         &streams.asVector()[0], streams.size());
     assert(uniqueVertexCount <= count);
@@ -158,6 +159,7 @@ inline osg::ref_ptr<IndexArrayType> MeshOptimizer::reindexMesh(osg::ref_ptr<osg:
     };
     const size_t count = positions->size();
     osg::MixinVector<Attr> vertexData, normalData, texCoordData, batchIdData;
+
     for (size_t i = 0; i < count; ++i)
     {
         const osg::Vec3& vertex = positions->at(i);
@@ -207,23 +209,23 @@ inline osg::ref_ptr<IndexArrayType> MeshOptimizer::reindexMesh(osg::ref_ptr<osg:
     osg::ref_ptr<IndexArrayType> optimizedIndices = new IndexArrayType(indices->size());
 
     meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap.asVector()[0]);
-    meshopt_remapVertexBuffer(&vertexData.asVector()[0], &vertexData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
+    //osg::MixinVector<unsigned int>& remap
+    meshopt_remapVertexBuffer(&vertexData.asVector()[0], &vertexData.asVector()[0], uniqueVertexCount, sizeof(Attr), &remap.asVector()[0]);
     vertexData.resize(uniqueVertexCount);
 
     if (normals.valid()) {
-        meshopt_remapVertexBuffer(&normalData.asVector()[0], &normalData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
+        meshopt_remapVertexBuffer(&normalData.asVector()[0], &normalData.asVector()[0], uniqueVertexCount, sizeof(Attr), &remap.asVector()[0]);
         normalData.resize(uniqueVertexCount);
     }
     if (texCoords.valid()) {
-        meshopt_remapVertexBuffer(&texCoordData.asVector()[0], &texCoordData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
+        meshopt_remapVertexBuffer(&texCoordData.asVector()[0], &texCoordData.asVector()[0], uniqueVertexCount, sizeof(Attr), &remap.asVector()[0]);
         texCoordData.resize(uniqueVertexCount);
     }
     if (batchIds.valid())
     {
-        meshopt_remapVertexBuffer(&batchIdData.asVector()[0], &batchIdData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
+        meshopt_remapVertexBuffer(&batchIdData.asVector()[0], &batchIdData.asVector()[0], uniqueVertexCount, sizeof(Attr), &remap.asVector()[0]);
         batchIdData.resize(uniqueVertexCount);
     }
-
     for (size_t i = 0; i < uniqueVertexCount; ++i) {
         optimizedVertices->at(i) = osg::Vec3(vertexData[i].f[0], vertexData[i].f[1], vertexData[i].f[2]);
         if (normals.valid())
@@ -245,6 +247,7 @@ inline osg::ref_ptr<IndexArrayType> MeshOptimizer::reindexMesh(osg::ref_ptr<osg:
         geom->setTexCoordArray(0, optimizedTexCoords);
     if (batchIds.valid())
         geom->setVertexAttribArray(0, optimizedBatchIds);
+
     return optimizedIndices.release();
 }
 

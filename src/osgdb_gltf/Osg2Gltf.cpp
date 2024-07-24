@@ -116,23 +116,9 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
         _model.nodes.back().mesh = _model.meshes.size() - 1;
 
         osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
-        osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
-        osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
         if (positions.valid())
         {
             getOrCreateBufferView(positions, GL_ARRAY_BUFFER_ARB);
-            for (unsigned i = 0; i < positions->size(); ++i)
-            {
-                const osg::Vec3f& v = (*positions)[i];
-                if (!v.isNaN()) {
-                    posMin.x() = osg::minimum(posMin.x(), v.x());
-                    posMin.y() = osg::minimum(posMin.y(), v.y());
-                    posMin.z() = osg::minimum(posMin.z(), v.z());
-                    posMax.x() = osg::maximum(posMax.x(), v.x());
-                    posMax.y() = osg::maximum(posMax.y(), v.y());
-                    posMax.z() = osg::maximum(posMax.z(), v.z());
-                }
-            }
         }
 
         osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
@@ -229,10 +215,24 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 
             primitive.mode = mode;
             if (positions.valid()) {
-                const int a = getOrCreateAccessor(positions, pset, primitive, "POSITION");
-                if (a > -1) {
+                const int posAccessorIndex = getOrCreateAccessor(positions, pset, primitive, "POSITION");
+                if (posAccessorIndex > -1) {
+                    osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
+                    osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+                    for (size_t i = 0; i < positions->size(); ++i)
+                    {
+                        const osg::Vec3f& v = (*positions)[i];
+                        if (!v.isNaN()) {
+                            posMin.x() = osg::minimum(posMin.x(), v.x());
+                            posMin.y() = osg::minimum(posMin.y(), v.y());
+                            posMin.z() = osg::minimum(posMin.z(), v.z());
+                            posMax.x() = osg::maximum(posMax.x(), v.x());
+                            posMax.y() = osg::maximum(posMax.y(), v.y());
+                            posMax.z() = osg::maximum(posMax.z(), v.z());
+                        }
+                    }
                     // record min/max for position array (required):
-                    tinygltf::Accessor& posacc = _model.accessors[a];
+                    tinygltf::Accessor& posacc = _model.accessors[posAccessorIndex];
                     posacc.minValues.push_back(posMin.x());
                     posacc.minValues.push_back(posMin.y());
                     posacc.minValues.push_back(posMin.z());
@@ -241,13 +241,47 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                     posacc.maxValues.push_back(posMax.z());
                 }
                 if (normals.valid()) {
+                    normals->setNormalize(true);
                     getOrCreateAccessor(normals, pset, primitive, "NORMAL");
                 }
                 if (colors.valid()) {
                     getOrCreateAccessor(colors, pset, primitive, "COLOR_0");
                 }
                 if (texCoords.valid() && currentMaterial >= 0) {
-                    getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
+                    const int texAccessorIndex = getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
+                    if (texAccessorIndex > -1) {
+                        osg::Vec2f texMin(FLT_MAX, FLT_MAX);
+                        osg::Vec2f texMax(-FLT_MAX, -FLT_MAX);
+                        for (size_t i = 0; i < texCoords->size(); ++i)
+                        {
+                            const osg::Vec2f& t = (*texCoords)[i];
+                            if (!t.isNaN()) {
+                                texMin.x() = osg::minimum(texMin.x(), t.x());
+                                texMin.y() = osg::minimum(texMin.y(), t.y());
+
+                                texMax.x() = osg::maximum(texMax.x(), t.x());
+                                texMax.y() = osg::maximum(texMax.y(), t.y());
+                            }
+                        }
+                        //if (fabs(0.0 - fabs(texMin.x())) < 0.00001) {
+                        //    texMin.x() = 0.0;
+                        //}
+                        //if (fabs(0.0 - fabs(texMin.y())) < 0.00001) {
+                        //    texMin.y() = 0.0;
+                        //}
+                        //if (fabs(1.0 - fabs(texMax.x())) < 0.00001) {
+                        //    texMax.x() = 1.0;
+                        //}
+                        //if (fabs(1.0 - fabs(texMax.x())) < 0.00001) {
+                        //    texMax.y() = 1.0;
+                        //}
+                        // record min/max for position array (required):
+                        tinygltf::Accessor& posacc = _model.accessors[texAccessorIndex];
+                        posacc.minValues.push_back(texMin.x());
+                        posacc.minValues.push_back(texMin.y());
+                        posacc.maxValues.push_back(texMax.x());
+                        posacc.maxValues.push_back(texMax.y());
+                    }
                 }
 
                 const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));

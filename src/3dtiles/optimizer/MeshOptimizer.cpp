@@ -63,8 +63,7 @@ void MeshOptimizer::vertexCacheOptimize(osg::Geometry& geometry)
                 else
                     meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
 
-                auto* drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
-                std::copy(indices->begin(), indices->end(), drawElements->begin());
+                geometry.setPrimitiveSet(primIndex, new osg::DrawElementsUByte(osg::PrimitiveSet::TRIANGLES, indices->size(), &(*indices)[0]));
             }
             else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
                 osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
@@ -76,8 +75,7 @@ void MeshOptimizer::vertexCacheOptimize(osg::Geometry& geometry)
                 else
                     meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
 
-                auto* drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-                std::copy(indices->begin(), indices->end(), drawElements->begin());
+                geometry.setPrimitiveSet(primIndex, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, indices->size(), &(*indices)[0]));
             }
             else if (type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
                 osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
@@ -89,8 +87,7 @@ void MeshOptimizer::vertexCacheOptimize(osg::Geometry& geometry)
                 else
                     meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
 
-                auto* drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-                std::copy(indices->begin(), indices->end(), drawElements->begin());
+                geometry.setPrimitiveSet(primIndex, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, indices->size(), &(*indices)[0]));
             }
         }
     }
@@ -114,8 +111,7 @@ void MeshOptimizer::overdrawOptimize(osg::Geometry& geometry)
                 if (indices->empty()) continue;
                 meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
-                auto* drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
-                std::copy(indices->begin(), indices->end(), drawElements->begin());
+                geometry.setPrimitiveSet(primIndex, new osg::DrawElementsUByte(osg::PrimitiveSet::TRIANGLES, indices->size(), &(*indices)[0]));
             }
             else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType) {
                 osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
@@ -123,8 +119,8 @@ void MeshOptimizer::overdrawOptimize(osg::Geometry& geometry)
                 if (indices->empty()) continue;
                 meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
-                auto* drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-                std::copy(indices->begin(), indices->end(), drawElements->begin());
+                geometry.setPrimitiveSet(primIndex, new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES, indices->size(), &(*indices)[0]));
+
             }
             else if (type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
                 osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
@@ -132,8 +128,8 @@ void MeshOptimizer::overdrawOptimize(osg::Geometry& geometry)
                 if (indices->empty()) continue;
                 meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
-                auto* drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-                std::copy(indices->begin(), indices->end(), drawElements->begin());
+                geometry.setPrimitiveSet(primIndex, new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, indices->size(), &(*indices)[0]));
+
             }
         }
     }
@@ -156,7 +152,7 @@ void MeshOptimizer::vertexFetchOptimize(osg::Geometry& geometry)
                 if (indices->empty()) continue;
 
                 osg::MixinVector<unsigned int> remap(vertexCount);
-                size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap[0], indices->asVector().data(), indices->asVector().size(), vertexCount);
+                size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
                 assert(uniqueVertices <= vertexCount);
                 osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
                 osg::ref_ptr<osg::UByteArray> optimizedIndices = reindexMesh<osg::DrawElementsUByte, osg::UByteArray>(&geometry, drawElements, primIndex, remap);
@@ -169,7 +165,8 @@ void MeshOptimizer::vertexFetchOptimize(osg::Geometry& geometry)
                 if (indices->empty()) continue;
                 
                 osg::MixinVector<unsigned int> remap(vertexCount);
-                size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap[0], indices->asVector().data(), indices->asVector().size(), vertexCount);
+                size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
+
                 assert(uniqueVertices <= vertexCount);
                 osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
                 osg::ref_ptr<osg::UShortArray> optimizedIndices = reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(&geometry, drawElements, primIndex, remap);
@@ -182,7 +179,7 @@ void MeshOptimizer::vertexFetchOptimize(osg::Geometry& geometry)
                 if (indices->empty()) continue;
                 
                 osg::MixinVector<unsigned int> remap(vertexCount);
-                size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap[0], indices->asVector().data(), indices->asVector().size(), vertexCount);
+                size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
                 assert(uniqueVertices <= vertexCount);
                 osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
                 osg::ref_ptr<osg::UIntArray> optimizedIndices = reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(&geometry, drawElements, primIndex, remap);
