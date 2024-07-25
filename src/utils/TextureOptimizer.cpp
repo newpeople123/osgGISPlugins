@@ -292,13 +292,13 @@ void TexturePackingVisitor::packOsgTextures()
                 {
                     packedTexture->setUserValue(ExtensionName, true);
                     double offsetX = x / width;
-                    packedTexture->setUserValue(ExtensionOffsetX, clamp(offsetX, 0.0, 1.0));
+                    packedTexture->setUserValue(ExtensionOffsetX, osg::clampTo(offsetX, 0.0, 1.0));
                     double offsetY = y / height;
-                    packedTexture->setUserValue(ExtensionOffsetY, clamp(offsetY, 0.0, 1.0));
+                    packedTexture->setUserValue(ExtensionOffsetY, osg::clampTo(offsetY, 0.0, 1.0));
                     double scaleX = static_cast<double>(w) / width;
-                    packedTexture->setUserValue(ExtensionScaleX, clamp(scaleX, 0.0, 1.0));
+                    packedTexture->setUserValue(ExtensionScaleX, osg::clampTo(scaleX, 0.0, 1.0));
                     double scaleY = static_cast<double>(h) / height;
-                    packedTexture->setUserValue(ExtensionScaleY, clamp(scaleY, 0.0, 1.0));
+                    packedTexture->setUserValue(ExtensionScaleY, osg::clampTo(scaleY, 0.0, 1.0));
                     packedTexture->setUserValue(ExtensionTexCoord, 0);
                     stateSetCopy->setTextureAttribute(0, packedTexture.get());
                     geometry->setStateSet(stateSetCopy.get());
@@ -425,13 +425,13 @@ void TexturePackingVisitor::updateGltfMaterialUserValue(
     {
         packedGltfMaterial->setUserValue(textureNameExtension, true);
         double offsetX = x / width;
-        packedGltfMaterial->setUserValue(textureOffsetXExtension, clamp(offsetX, 0.0, 1.0));
+        packedGltfMaterial->setUserValue(textureOffsetXExtension, osg::clampTo(offsetX, 0.0, 1.0));
         double offsetY = y / height;
-        packedGltfMaterial->setUserValue(textureOffsetYExtension, clamp(offsetY, 0.0, 1.0));
+        packedGltfMaterial->setUserValue(textureOffsetYExtension, osg::clampTo(offsetY, 0.0, 1.0));
         double scaleX = static_cast<double>(w) / width;
-        packedGltfMaterial->setUserValue(textureScaleXExtension, clamp(scaleX, 0.0, 1.0));
+        packedGltfMaterial->setUserValue(textureScaleXExtension, osg::clampTo(scaleX, 0.0, 1.0));
         double scaleY = static_cast<double>(h) / height;
-        packedGltfMaterial->setUserValue(textureScaleYExtension, clamp(scaleY, 0.0, 1.0));
+        packedGltfMaterial->setUserValue(textureScaleYExtension, osg::clampTo(scaleY, 0.0, 1.0));
         packedGltfMaterial->setUserValue(textureTecCoord, 0);
         stateSetCopy->setAttribute(packedGltfMaterial.get(), osg::StateAttribute::MATERIAL);
         geometry->setStateSet(stateSetCopy.get());

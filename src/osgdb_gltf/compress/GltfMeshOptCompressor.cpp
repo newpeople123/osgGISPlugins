@@ -1,5 +1,6 @@
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include <meshoptimizer.h>
+#include <iostream>
 void GltfMeshOptCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits)
 {
 	const float scaler = sqrtf(2.f);
@@ -126,7 +127,11 @@ int GltfMeshOptCompressor::quantizeColor(float v, int bytebits, int bits)
 
 	return (result & ~mask) | (mask & -(result >> (bytebits - 1)));
 }
-
+float meshopt_dequantizeUnorm(int v, int N)
+{
+	const float scale = 1.0f / float((1 << N) - 1);
+	return v * scale;
+}
 void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minVX, const double minVY, const double minVZ, const double scaleV)
 {
 	for (const tinygltf::Primitive& primitive : mesh.primitives)
@@ -142,24 +147,49 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 				if (accessor.type == TINYGLTF_TYPE_VEC3)
 				{
 					if (pair.first == "POSITION") {
-						//顶点属性必须是4字节对齐的，所以这里是vec4us
-						osg::ref_ptr<osg::Vec4usArray> newBufferData = new osg::Vec4usArray(accessor.count);
-						for (size_t i = 0; i < accessor.count; ++i)
-						{
-							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 3 + 0] - minVX) / scaleV, _positionBit);
-							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 3 + 1] - minVY) / scaleV, _positionBit);
-							const unsigned short z = meshopt_quantizeUnorm((bufferData[i * 3 + 2] - minVZ) / scaleV, _positionBit);
-							newBufferData->at(i) = osg::Vec4us(x, y, z, 0);
+
+						if (_posFloat) {
+							osg::ref_ptr<osg::Vec3Array> newBufferData = new osg::Vec3Array(accessor.count);
+							for (size_t i = 0; i < accessor.count; ++i)
+							{
+								const float x = meshopt_quantizeFloat(bufferData[i * 3 + 0], _positionBit + 1);
+								const float y = meshopt_quantizeFloat(bufferData[i * 3 + 1], _positionBit + 1);
+								const float z = meshopt_quantizeFloat(bufferData[i * 3 + 2], _positionBit + 1);
+								newBufferData->at(i) = osg::Vec3(x, y, z);
+							}
+							for (int k = 0; k < 3; ++k)
+							{
+								accessor.minValues[k] = meshopt_quantizeFloat(accessor.minValues[k], _positionBit);
+								accessor.maxValues[k] = meshopt_quantizeFloat(accessor.maxValues[k], _positionBit);
+							}
+
+
+							accessor.componentType = TINYGLTF_COMPONENT_TYPE_FLOAT;
+							bufferView.byteStride = 4 * 3;
+							restoreBuffer(buffer, bufferView, newBufferData);
 						}
-						accessor.minValues[0] = meshopt_quantizeUnorm((accessor.minValues[0] - minVX) / scaleV, _positionBit);
-						accessor.minValues[1] = meshopt_quantizeUnorm((accessor.minValues[1] - minVY) / scaleV, _positionBit);
-						accessor.minValues[2] = meshopt_quantizeUnorm((accessor.minValues[2] - minVZ) / scaleV, _positionBit);
-						accessor.maxValues[0] = meshopt_quantizeUnorm((accessor.maxValues[0] - minVX) / scaleV, _positionBit);
-						accessor.maxValues[1] = meshopt_quantizeUnorm((accessor.maxValues[1] - minVY) / scaleV, _positionBit);
-						accessor.maxValues[2] = meshopt_quantizeUnorm((accessor.maxValues[2] - minVZ) / scaleV, _positionBit);
-						accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-						bufferView.byteStride = 2 * 4;
-						restoreBuffer(buffer, bufferView, newBufferData);
+						else
+						{
+							//顶点属性必须是4字节对齐的，所以这里是vec4us
+							osg::ref_ptr<osg::Vec4usArray> newBufferData = new osg::Vec4usArray(accessor.count);
+							for (size_t i = 0; i < accessor.count; ++i)
+							{
+								const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 3 + 0] - minVX) / scaleV, _positionBit);
+								const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 3 + 1] - minVY) / scaleV, _positionBit);
+								const unsigned short z = meshopt_quantizeUnorm((bufferData[i * 3 + 2] - minVZ) / scaleV, _positionBit);
+								newBufferData->at(i) = osg::Vec4us(x, y, z, 0);
+							}
+							accessor.minValues[0] = meshopt_quantizeUnorm((accessor.minValues[0] - minVX) / scaleV, _positionBit);
+							accessor.minValues[1] = meshopt_quantizeUnorm((accessor.minValues[1] - minVY) / scaleV, _positionBit);
+							accessor.minValues[2] = meshopt_quantizeUnorm((accessor.minValues[2] - minVZ) / scaleV, _positionBit);
+							accessor.maxValues[0] = meshopt_quantizeUnorm((accessor.maxValues[0] - minVX) / scaleV, _positionBit);
+							accessor.maxValues[1] = meshopt_quantizeUnorm((accessor.maxValues[1] - minVY) / scaleV, _positionBit);
+							accessor.maxValues[2] = meshopt_quantizeUnorm((accessor.maxValues[2] - minVZ) / scaleV, _positionBit);
+
+							accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
+							bufferView.byteStride = 2 * 4;
+							restoreBuffer(buffer, bufferView, newBufferData);
+						}
 					}
 					else if (pair.first == "NORMAL")
 					{
@@ -211,7 +241,7 @@ void GltfMeshOptCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double minV
 				{
 					if (pair.first == "TEXCOORD_0")
 					{
-						std::tuple<double, double, double, double> result = calculateTexcoordScales(_model, primitive, accessor);
+						std::tuple<double, double, double, double> result = getTexcoordBounds(primitive, accessor);
 						const double minTx = std::get<0>(result);
 						const double minTy = std::get<1>(result);
 						const double scaleTx = std::get<2>(result);
@@ -324,7 +354,6 @@ void GltfMeshOptCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& ex
 		offsets[0] += minTx;
 		offsets[1] += minTy;
 		texture_transform_extension.setOffset(offsets);
-
 		std::array<double, 2> scales = texture_transform_extension.getScale();
 		scales[0] *= scaleTx / float((1 << _texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
 		scales[1] *= scaleTy / float((1 << _texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
@@ -336,6 +365,9 @@ void GltfMeshOptCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& ex
 
 void GltfMeshOptCompressor::processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
 {
+	if (std::count(_materialIndexes.begin(), _materialIndexes.end(), primitive.material))
+		return;
+	_materialIndexes.push_back(primitive.material);
 	tinygltf::Material& material = _model.materials[primitive.material];
 	recomputeTextureTransform(material.pbrMetallicRoughness.baseColorTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
 	recomputeTextureTransform(material.normalTexture.extensions, accessor, minTx, minTy, scaleTx, scaleTy);
@@ -353,15 +385,15 @@ void GltfMeshOptCompressor::processMaterial(const tinygltf::Primitive primitive,
 	}
 }
 
-std::tuple<double, double, double, double> GltfMeshOptCompressor::calculateTexcoordScales(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor)
+std::tuple<double, double, double, double> GltfMeshOptCompressor::getTexcoordBounds(const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor)
 {
 	std::vector<tinygltf::Accessor> texcoordAccessors;
-	for (const tinygltf::Mesh& mesh : model.meshes) {
+	for (const tinygltf::Mesh& mesh : _model.meshes) {
 		for (const tinygltf::Primitive& pri : mesh.primitives) {
 			if (pri.material == primitive.material) {
 				auto it = pri.attributes.find("TEXCOORD_0");
 				if (it != pri.attributes.end()) {
-					texcoordAccessors.push_back(model.accessors[it->second]);
+					texcoordAccessors.push_back(_model.accessors[it->second]);
 				}
 			}
 		}
@@ -381,4 +413,33 @@ std::tuple<double, double, double, double> GltfMeshOptCompressor::calculateTexco
 	double scaleTy = maxTy - minTy;
 
 	return std::make_tuple(minTx, minTy, scaleTx, scaleTy);
+}
+
+std::tuple<double, double, double, double> GltfMeshOptCompressor::getPositionBounds()
+{
+	double minVX = FLT_MAX, minVY = FLT_MAX, minVZ = FLT_MAX, scaleV = -FLT_MAX, maxVX = -FLT_MAX, maxVY = -FLT_MAX, maxVZ = -FLT_MAX;
+	for (auto& mesh : _model.meshes)
+	{
+		for (const tinygltf::Primitive& primitive : mesh.primitives)
+		{
+			for (const auto& pair : primitive.attributes)
+			{
+				tinygltf::Accessor& accessor = _model.accessors[pair.second];
+				if (accessor.type == TINYGLTF_TYPE_VEC3 && pair.first == "POSITION")
+				{
+					minVX = std::min(double(accessor.minValues[0]), minVX);
+					minVY = std::min(double(accessor.minValues[1]), minVY);
+					minVZ = std::min(double(accessor.minValues[2]), minVZ);
+
+					maxVX = std::max(double(accessor.maxValues[0]), maxVX);
+					maxVY = std::max(double(accessor.maxValues[1]), maxVY);
+					maxVZ = std::max(double(accessor.maxValues[2]), maxVZ);
+				}
+			}
+
+		}
+	}
+	scaleV = std::max(std::max(maxVX - minVX, maxVY - minVY), maxVZ - minVZ);
+
+	return std::make_tuple(minVX, minVY, minVZ, scaleV);
 }

@@ -124,9 +124,6 @@ private:
 
     void addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::Image*>& imgs);
 
-    template <typename T>
-    T clamp(T value, T min, T max);
-
     void processGltfGeneralImages(std::vector<osg::Image*>& imgs,const GltfTextureType type);
 
     int _maxWidth, _maxHeight;
@@ -142,10 +139,4 @@ private:
 
     bool _bPackTexture;
 };
-template <typename T>
-inline T TexturePackingVisitor::clamp(T value, T min, T max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-}
 #endif // TEXTURE_PACKING_VISITOR_H

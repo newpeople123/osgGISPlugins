@@ -18,11 +18,11 @@
 #include <utils/FlattenTransformVisitor.h>
 
 using namespace std;
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 /// <summary>
 /// 导出gltf
@@ -92,7 +92,7 @@ void convertOsgModel2Gltf2(const std::string& filename) {
     const std::string textureExt = "jpg";
     const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "\\" + textureExt;
     osgDB::makeDirectory(textureCachePath);
-    TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, false);
+    TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
     node->accept(tpv);
     tpv.packTextures();
     exportGltf(node, filename, "");
@@ -113,7 +113,7 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
     tinygltf::TinyGLTF writer;
     tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
     //GltfDracoCompressor dracoCompressor(gltfModel);
-    //GltfMeshOptCompressor meshOptCompressor(gltfModel);
+    GltfMeshOptCompressor meshOptCompressor(gltfModel);
     bool isSuccess = writer.WriteGltfSceneToFile(
         &gltfModel,
         output,
@@ -136,7 +136,7 @@ void convertOsgModel2Gltf3(const std::string& filename) {
     //mesh optimizer
     MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
     MeshOptimizer mov(meshOptimizer, 1.0);
-    node->accept(mov);
+    //node->accept(mov);
     const std::string textureExt = "jpg";
     const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "_quantization\\" + textureExt;
     osgDB::makeDirectory(textureCachePath);
@@ -160,7 +160,7 @@ int main() {
 #endif // _WIN32
     //convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
     convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站.fbx)");
-    convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
+    //convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
 
     return 1;
 }

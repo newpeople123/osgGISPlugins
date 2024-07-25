@@ -4,11 +4,15 @@
 
 class GltfMeshOptCompressor :public GltfCompressor {
 private:
-	int _positionBit = 14;
-	int _normalBit = 8;
-	int _texBit = 12;
-	int _colorBit = 12;
+	int _positionBit = 14;//[1,16]
+	int _normalBit = 8;//[1,16]
+	int _texBit = 12;//[1,16]
+	int _colorBit = 8;//[1,16]
 	bool _compressmore = true;
+	bool _posFloat = false;
+
+	std::vector<int> _materialIndexes;
+	//bool _posNormalized = false;
 
 	static void encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits);
 
@@ -30,57 +34,35 @@ private:
 
 	void processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
 
-	std::tuple<double, double, double, double> calculateTexcoordScales(
-		const tinygltf::Model& model,
+	std::tuple<double, double, double, double> getTexcoordBounds(
 		const tinygltf::Primitive& primitive,
 		const tinygltf::Accessor& accessor);
+
+	std::tuple<double, double, double, double> getPositionBounds();
 public:
 	//启用该扩展需要展开变换矩阵
     KHR_mesh_quantization meshQuanExtension;
     EXT_meshopt_compression meshOptExtension;
     GltfMeshOptCompressor(tinygltf::Model& model) :GltfCompressor(model)
     {
+		_positionBit = osg::clampTo(_positionBit, 1, 16);
+		_normalBit = osg::clampTo(_normalBit, 1, 16);
+		_texBit = osg::clampTo(_texBit, 1, 16);
+		_colorBit = osg::clampTo(_colorBit, 1, 16);
+
         model.extensionsRequired.push_back(meshQuanExtension.name);
         //model.extensionsRequired.push_back(meshOptExtension.name);
         model.extensionsUsed.push_back(meshQuanExtension.name);
         //model.extensionsUsed.push_back(meshOptExtension.name);
+
+		_materialIndexes.clear();
+
 		
-		
-		double minVX = FLT_MAX, minVY = FLT_MAX, minVZ = FLT_MAX, scaleV = -FLT_MAX, maxVX = -FLT_MAX, maxVY = -FLT_MAX, maxVZ = -FLT_MAX;
-		double minTX = FLT_MAX, minTY = FLT_MAX, scaleTx = -FLT_MAX, scaleTy = -FLT_MAX, maxTX = -FLT_MAX, maxTY = -FLT_MAX;
-		for (auto& mesh : _model.meshes)
-		{
-			for (const tinygltf::Primitive& primitive : mesh.primitives)
-			{
-				for (const auto& pair : primitive.attributes)
-				{
-					tinygltf::Accessor& accessor = _model.accessors[pair.second];
-					if (accessor.type == TINYGLTF_TYPE_VEC3 && pair.first == "POSITION")
-					{
-						minVX = std::min(double(accessor.minValues[0]), minVX);
-						minVY = std::min(double(accessor.minValues[1]), minVY);
-						minVZ = std::min(double(accessor.minValues[2]), minVZ);
-
-						maxVX = std::max(double(accessor.maxValues[0]), maxVX);
-						maxVY = std::max(double(accessor.maxValues[1]), maxVY);
-						maxVZ = std::max(double(accessor.maxValues[2]), maxVZ);
-					}
-					else if (accessor.type == TINYGLTF_TYPE_VEC2 && pair.first == "TEXCOORD_0")
-					{
-						minTX = std::min(double(accessor.minValues[0]), minTX);
-						minTY = std::min(double(accessor.minValues[1]), minTY);
-
-						maxTX = std::max(double(accessor.maxValues[0]), maxTX);
-						maxTY = std::max(double(accessor.maxValues[1]), maxTY);
-					}
-
-				}
-
-			}
-		}
-		scaleV = std::max(std::max(maxVX - minVX, maxVY - minVY), maxVZ - minVZ);
-		scaleTx = maxTX - minTX;
-		scaleTy = maxTY - minTY;
+		std::tuple<double, double, double, double> result = getPositionBounds();
+		const double minVX = std::get<0>(result);
+		const double minVY = std::get<1>(result);
+		const double minVZ = std::get<2>(result);
+		const double scaleV = std::get<3>(result);
         for (auto& mesh : _model.meshes) {
 			quantizeMesh(mesh, minVX, minVY, minVZ, scaleV);
         }
