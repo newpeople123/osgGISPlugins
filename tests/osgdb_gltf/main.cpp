@@ -19,11 +19,11 @@
 #include <utils/FlattenTransformVisitor.h>
 
 using namespace std;
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 /// <summary>
 /// 导出gltf
@@ -115,7 +115,7 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
     tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
     GltfMeshQuantizeCompressor meshQuantize(gltfModel);
     //GltfDracoCompressor dracoCompressor(gltfModel);
-    //GltfMeshOptCompressor meshOptCompressor(gltfModel);
+    GltfMeshOptCompressor meshOptCompressor(gltfModel);
     bool isSuccess = writer.WriteGltfSceneToFile(
         &gltfModel,
         output,

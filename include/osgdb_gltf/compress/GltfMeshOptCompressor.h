@@ -6,6 +6,7 @@ class GltfMeshOptCompressor :public GltfCompressor {
 private:
 	void compressMesh(tinygltf::Mesh& mesh);
 
+    std::vector<unsigned char> encodeVertexBuffer(const tinygltf::Accessor& attributeAccessor);
 public:
     EXT_meshopt_compression meshOptExtension;
     GltfMeshOptCompressor(tinygltf::Model& model) :GltfCompressor(model)

@@ -87,7 +87,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input = R"(E:\Code\2023\Other\data\卡拉电站.fbx)", output = R"(D:\nginx-1.22.1\html\gltf\cow.gltf)";
+    std::string input, output;
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 

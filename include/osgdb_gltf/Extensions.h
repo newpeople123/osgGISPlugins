@@ -672,7 +672,43 @@ struct KHR_mesh_quantization :GltfExtension
 
 struct EXT_meshopt_compression :GltfExtension
 {
-    EXT_meshopt_compression() :GltfExtension("EXT_meshopt_compression") {}
+    EXT_meshopt_compression() :GltfExtension("EXT_meshopt_compression") {
+        setBuffer(-1);
+        setByteLength(-1);
+        setByteStride(-1);
+        setCount(-1);
+        setMode("");
+    }
+    void setBuffer(int val) {
+        Set("buffer", val);
+    }
+    int getBuffer() {
+        return Get<int>("buffer");
+    }
+    void setByteLength(int val) {
+        Set("byteLength", val);
+    }
+    int getByteLength() {
+        return Get<int>("byteLength");
+    }
+    void setByteStride(int val) {
+        Set("byteStride", val);
+    }
+    int getByteStride() {
+        return Get<int>("byteStride");
+    }
+    void setCount(int val) {
+        Set("count", val);
+    }
+    int getCount() {
+        return Get<int>("count");
+    }
+    void setMode(std::string val) {
+        Set("mode", val);
+    }
+    std::string getMode() {
+        return Get<std::string>("mode");
+    }
 };
 
 struct EXT_mesh_gpu_instancing :GltfExtension
