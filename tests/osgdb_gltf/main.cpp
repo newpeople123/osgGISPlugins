@@ -5,6 +5,7 @@
 #include "osgdb_gltf/Osg2Gltf.h"
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"//必须放在<windows.h>前面
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
+#include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -112,8 +113,9 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
     const std::string output = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + "_quantization.gltf";
     tinygltf::TinyGLTF writer;
     tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
+    GltfMeshQuantizeCompressor meshQuantize(gltfModel);
     //GltfDracoCompressor dracoCompressor(gltfModel);
-    GltfMeshOptCompressor meshOptCompressor(gltfModel);
+    //GltfMeshOptCompressor meshOptCompressor(gltfModel);
     bool isSuccess = writer.WriteGltfSceneToFile(
         &gltfModel,
         output,
