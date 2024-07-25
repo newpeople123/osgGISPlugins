@@ -28,6 +28,8 @@ private:
 
 	void quantizeMesh(tinygltf::Mesh& mesh, const double minVX, const double minVY, const double minVZ, const double scaleV);
 
+	void compressMesh(tinygltf::Mesh& mesh);
+
 	void restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData);
 
 	void recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap,tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
@@ -51,13 +53,11 @@ public:
 		_colorBit = osg::clampTo(_colorBit, 1, 16);
 
         model.extensionsRequired.push_back(meshQuanExtension.name);
-        //model.extensionsRequired.push_back(meshOptExtension.name);
+        model.extensionsRequired.push_back(meshOptExtension.name);
         model.extensionsUsed.push_back(meshQuanExtension.name);
-        //model.extensionsUsed.push_back(meshOptExtension.name);
+        model.extensionsUsed.push_back(meshOptExtension.name);
 
 		_materialIndexes.clear();
-
-		
 		std::tuple<double, double, double, double> result = getPositionBounds();
 		const double minVX = std::get<0>(result);
 		const double minVY = std::get<1>(result);
@@ -66,7 +66,6 @@ public:
         for (auto& mesh : _model.meshes) {
 			quantizeMesh(mesh, minVX, minVY, minVZ, scaleV);
         }
-
 		for (auto& mesh : _model.meshes)
 		{
 			for (const tinygltf::Primitive& primitive : mesh.primitives)
@@ -78,7 +77,9 @@ public:
 
 			}
 		}
-		
+		for (auto& mesh : _model.meshes) {
+			compressMesh(mesh);
+		}
     }
 };
 #endif // !OSG_GIS_PLUGINS_GLTF_MESHOPT_COMPRESSOR_H
