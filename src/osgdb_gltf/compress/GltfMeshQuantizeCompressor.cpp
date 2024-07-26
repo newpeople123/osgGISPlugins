@@ -20,8 +20,8 @@ void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMa
 		offsets[1] += minTy;
 		texture_transform_extension.setOffset(offsets);
 		std::array<double, 2> scales = texture_transform_extension.getScale();
-		scales[0] *= scaleTx / float((1 << _texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
-		scales[1] *= scaleTy / float((1 << _texBit) - 1) * (accessor.normalized ? 65535.f : 1.f);
+		scales[0] *= scaleTx / float((1 << _compressionOptions.TexCoordQuantizationBits) - 1) * (accessor.normalized ? 65535.f : 1.f);
+		scales[1] *= scaleTy / float((1 << _compressionOptions.TexCoordQuantizationBits) - 1) * (accessor.normalized ? 65535.f : 1.f);
 		texture_transform_extension.setScale(scales);
 
 		findResult->second = texture_transform_extension.GetValue();
@@ -252,19 +252,19 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 				{
 					if (pair.first == "POSITION") {
 
-						if (_posFloat) {
+						if (_compressionOptions.PositionFloat) {
 							osg::ref_ptr<osg::Vec3Array> newBufferData = new osg::Vec3Array(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const float x = meshopt_quantizeFloat(bufferData[i * 3 + 0], _positionBit + 1);
-								const float y = meshopt_quantizeFloat(bufferData[i * 3 + 1], _positionBit + 1);
-								const float z = meshopt_quantizeFloat(bufferData[i * 3 + 2], _positionBit + 1);
+								const float x = meshopt_quantizeFloat(bufferData[i * 3 + 0], _compressionOptions.PositionQuantizationBits + 1);
+								const float y = meshopt_quantizeFloat(bufferData[i * 3 + 1], _compressionOptions.PositionQuantizationBits + 1);
+								const float z = meshopt_quantizeFloat(bufferData[i * 3 + 2], _compressionOptions.PositionQuantizationBits + 1);
 								newBufferData->at(i) = osg::Vec3(x, y, z);
 							}
 							for (int k = 0; k < 3; ++k)
 							{
-								accessor.minValues[k] = meshopt_quantizeFloat(accessor.minValues[k], _positionBit);
-								accessor.maxValues[k] = meshopt_quantizeFloat(accessor.maxValues[k], _positionBit);
+								accessor.minValues[k] = meshopt_quantizeFloat(accessor.minValues[k], _compressionOptions.PositionQuantizationBits);
+								accessor.maxValues[k] = meshopt_quantizeFloat(accessor.maxValues[k], _compressionOptions.PositionQuantizationBits);
 							}
 
 
@@ -278,17 +278,17 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 							osg::ref_ptr<osg::Vec4usArray> newBufferData = new osg::Vec4usArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 3 + 0] - minVX) / scaleV, _positionBit);
-								const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 3 + 1] - minVY) / scaleV, _positionBit);
-								const unsigned short z = meshopt_quantizeUnorm((bufferData[i * 3 + 2] - minVZ) / scaleV, _positionBit);
+								const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 3 + 0] - minVX) / scaleV, _compressionOptions.PositionQuantizationBits);
+								const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 3 + 1] - minVY) / scaleV, _compressionOptions.PositionQuantizationBits);
+								const unsigned short z = meshopt_quantizeUnorm((bufferData[i * 3 + 2] - minVZ) / scaleV, _compressionOptions.PositionQuantizationBits);
 								newBufferData->at(i) = osg::Vec4us(x, y, z, 0);
 							}
-							accessor.minValues[0] = meshopt_quantizeUnorm((accessor.minValues[0] - minVX) / scaleV, _positionBit);
-							accessor.minValues[1] = meshopt_quantizeUnorm((accessor.minValues[1] - minVY) / scaleV, _positionBit);
-							accessor.minValues[2] = meshopt_quantizeUnorm((accessor.minValues[2] - minVZ) / scaleV, _positionBit);
-							accessor.maxValues[0] = meshopt_quantizeUnorm((accessor.maxValues[0] - minVX) / scaleV, _positionBit);
-							accessor.maxValues[1] = meshopt_quantizeUnorm((accessor.maxValues[1] - minVY) / scaleV, _positionBit);
-							accessor.maxValues[2] = meshopt_quantizeUnorm((accessor.maxValues[2] - minVZ) / scaleV, _positionBit);
+							accessor.minValues[0] = meshopt_quantizeUnorm((accessor.minValues[0] - minVX) / scaleV, _compressionOptions.PositionQuantizationBits);
+							accessor.minValues[1] = meshopt_quantizeUnorm((accessor.minValues[1] - minVY) / scaleV, _compressionOptions.PositionQuantizationBits);
+							accessor.minValues[2] = meshopt_quantizeUnorm((accessor.minValues[2] - minVZ) / scaleV, _compressionOptions.PositionQuantizationBits);
+							accessor.maxValues[0] = meshopt_quantizeUnorm((accessor.maxValues[0] - minVX) / scaleV, _compressionOptions.PositionQuantizationBits);
+							accessor.maxValues[1] = meshopt_quantizeUnorm((accessor.maxValues[1] - minVY) / scaleV, _compressionOptions.PositionQuantizationBits);
+							accessor.maxValues[2] = meshopt_quantizeUnorm((accessor.maxValues[2] - minVZ) / scaleV, _compressionOptions.PositionQuantizationBits);
 
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
 							bufferView.byteStride = 2 * 4;
@@ -298,23 +298,23 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 					else if (pair.first == "NORMAL")
 					{
 
-						if (_normalBit < 9) {
-							const bool oct = _compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
+						if (_compressionOptions.NormalQuantizationBits < 9) {
+							const bool oct = _compressionOptions.Compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
 							osg::ref_ptr<osg::Vec4bArray> newBufferData = new osg::Vec4bArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
 								if (oct) {
 									int fu, fv;
-									encodeOct(fu, fv, bufferData[i * 3 + 0], bufferData[i * 3 + 1], bufferData[i * 3 + 2], _normalBit);
+									encodeOct(fu, fv, bufferData[i * 3 + 0], bufferData[i * 3 + 1], bufferData[i * 3 + 2], _compressionOptions.NormalQuantizationBits);
 									const signed char x = fu;
 									const signed char y = fv;
-									const signed char z = meshopt_quantizeSnorm(1.f, _normalBit);
+									const signed char z = meshopt_quantizeSnorm(1.f, _compressionOptions.NormalQuantizationBits);
 									newBufferData->at(i) = osg::Vec4b(x, y, z, 0);
 								}
 								else {
-									const signed char x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], _normalBit);
-									const signed char y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], _normalBit);
-									const signed char z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], _normalBit);
+									const signed char x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], _compressionOptions.NormalQuantizationBits);
+									const signed char y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], _compressionOptions.NormalQuantizationBits);
+									const signed char z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], _compressionOptions.NormalQuantizationBits);
 									newBufferData->at(i) = osg::Vec4b(x, y, z, 0);
 								}
 							}
@@ -329,9 +329,9 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 							osg::ref_ptr<osg::Vec4sArray> newBufferData = new osg::Vec4sArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const short x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], _normalBit);
-								const short y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], _normalBit);
-								const short z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], _normalBit);
+								const short x = meshopt_quantizeSnorm(bufferData[i * 3 + 0], _compressionOptions.NormalQuantizationBits);
+								const short y = meshopt_quantizeSnorm(bufferData[i * 3 + 1], _compressionOptions.NormalQuantizationBits);
+								const short z = meshopt_quantizeSnorm(bufferData[i * 3 + 2], _compressionOptions.NormalQuantizationBits);
 								newBufferData->at(i) = osg::Vec4s(x, y, z, 0);
 
 							}
@@ -357,8 +357,8 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 						osg::ref_ptr<osg::Vec2usArray> newBufferData = new osg::Vec2usArray(accessor.count);
 						for (size_t i = 0; i < accessor.count; ++i)
 						{
-							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 2 + 0] - minTx) / scaleTx, _texBit);
-							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 2 + 1] - minTy) / scaleTy, _texBit);
+							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 2 + 0] - minTx) / scaleTx, _compressionOptions.TexCoordQuantizationBits);
+							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 2 + 1] - minTy) / scaleTy, _compressionOptions.TexCoordQuantizationBits);
 							newBufferData->at(i) = osg::Vec2us(x, y);
 						}
 						accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
@@ -372,8 +372,8 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 				else {
 					if (pair.first == "TANGENT")
 					{
-						const int bits = _normalBit > 8 ? 8 : _normalBit;
-						const bool oct = _compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
+						const int bits = _compressionOptions.NormalQuantizationBits > 8 ? 8 : _compressionOptions.NormalQuantizationBits;
+						const bool oct = _compressionOptions.Compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER;
 						osg::ref_ptr<osg::Vec4bArray> newBufferData = new osg::Vec4bArray(accessor.count);
 						for (size_t i = 0; i < accessor.count; ++i)
 						{
@@ -401,15 +401,15 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 					}
 					else if (pair.first == "COLOR_0")
 					{
-						if (_colorBit < 9)
+						if (_compressionOptions.ColorQuantizationBits < 9)
 						{
 							osg::ref_ptr<osg::Vec4bArray> newBufferData = new osg::Vec4bArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const signed char x = quantizeColor(bufferData[i * 4 + 0], 8, _colorBit);
-								const signed char y = quantizeColor(bufferData[i * 4 + 1], 8, _colorBit);
-								const signed char z = quantizeColor(bufferData[i * 4 + 2], 8, _colorBit);
-								const signed char w = quantizeColor(bufferData[i * 4 + 3], 8, _colorBit);
+								const signed char x = quantizeColor(bufferData[i * 4 + 0], 8, _compressionOptions.ColorQuantizationBits);
+								const signed char y = quantizeColor(bufferData[i * 4 + 1], 8, _compressionOptions.ColorQuantizationBits);
+								const signed char z = quantizeColor(bufferData[i * 4 + 2], 8, _compressionOptions.ColorQuantizationBits);
+								const signed char w = quantizeColor(bufferData[i * 4 + 3], 8, _compressionOptions.ColorQuantizationBits);
 
 								newBufferData->at(i) = osg::Vec4b(x, y, z, w);
 							}
@@ -423,10 +423,10 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 							osg::ref_ptr<osg::Vec4sArray> newBufferData = new osg::Vec4sArray(accessor.count);
 							for (size_t i = 0; i < accessor.count; ++i)
 							{
-								const short x = quantizeColor(bufferData[i * 4 + 0], 16, _colorBit);
-								const short y = quantizeColor(bufferData[i * 4 + 1], 16, _colorBit);
-								const short z = quantizeColor(bufferData[i * 4 + 2], 16, _colorBit);
-								const short w = quantizeColor(bufferData[i * 4 + 3], 16, _colorBit);
+								const short x = quantizeColor(bufferData[i * 4 + 0], 16, _compressionOptions.ColorQuantizationBits);
+								const short y = quantizeColor(bufferData[i * 4 + 1], 16, _compressionOptions.ColorQuantizationBits);
+								const short z = quantizeColor(bufferData[i * 4 + 2], 16, _compressionOptions.ColorQuantizationBits);
+								const short w = quantizeColor(bufferData[i * 4 + 3], 16, _compressionOptions.ColorQuantizationBits);
 
 								newBufferData->at(i) = osg::Vec4s(x, y, z, w);
 

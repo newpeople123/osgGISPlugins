@@ -1,13 +1,20 @@
+#include <osgDB/Options>
+#include <osgDB/Registry>
 #include <osgdb_gltf/ReaderWriterGLTF.h>
-#include <osg/MatrixTransform>
-#include <utils/TextureOptimizier.h>
 #include <osgDB/FileNameUtils>
+#include "osgdb_gltf/Osg2Gltf.h"
+#include "osgdb_gltf/compress/GltfDracoCompressor.h"
+#include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
+#include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
+#include "utils/FlattenTransformVisitor.h"
+
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const {
 
-    std::cout << "Error:this gltf plugins can't read gltf to osg,because it is for processing data rather than displaying it in osg engine!" << std::endl;
+    osg::notify(osg::FATAL) << "Error: this gltf plugin can't read gltf to osg, because it is for processing data rather than displaying it in osg engine!" << std::endl;
     return ReadResult::ERROR_IN_READING_FILE;
 }
+
 osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     const osg::Node& node,
     const std::string& filename,
@@ -15,108 +22,127 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     std::string ext = osgDB::getLowerCaseFileExtension(filename);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
-    bool embedImages = false, embedBuffers = false, prettyPrint = false, isBinary = ext == "glb";
-    TextureType textureType = TextureType::PNG;
-    CompressionType comporessionType = CompressionType::NONE;
-    int comporessLevel = 1;
-    if (options)
-    {
-        std::string compressionTypeStr;
-        std::string textureTypeStr;
+    osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
+    osg::ref_ptr<osg::Node> copyNode = osg::clone(nc_node.asNode(), osg::CopyOp::DEEP_COPY_ALL);
+
+    Osg2Gltf osg2gltf;
+    copyNode->accept(osg2gltf);
+    tinygltf::Model gltfModel = osg2gltf.getGltfModel();
+
+    const bool embedImages = true;
+    bool embedBuffers = false, prettyPrint = false, isBinary = ext == "glb";
+    bool quantize = false;
+    GltfDracoCompressor::DracoCompressionOptions dracoCompressOption;
+    GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions quantizeCompressOption;
+
+    if (options) {
         std::istringstream iss(options->getOptionString());
         std::string opt;
-        while (iss >> opt)
-        {
-            if (opt == "embedImages")
-            {
-                embedImages = true;
+
+        while (iss >> opt) {
+            if (opt == "q") {
+                quantize = true;
             }
-            else if (opt == "embedBuffers")
-            {
+            else if (opt == "eb") {
                 embedBuffers = true;
             }
-            else if (opt == "prettyPrint")
-            {
+            else if (opt == "pp") {
                 prettyPrint = true;
             }
 
-            // split opt into pre= and post=
             std::string key;
             std::string val;
-
             size_t found = opt.find("=");
-            if (found != std::string::npos)
-            {
+            if (found != std::string::npos) {
                 key = opt.substr(0, found);
                 val = opt.substr(found + 1);
             }
-            else
-            {
+            else {
                 key = opt;
             }
-            if (key == "textureType")
-            {             
-                textureTypeStr = osgDB::convertToLowerCase(val);
-                if (textureTypeStr == "ktx") {
-                    textureType = TextureType::KTX;
-                }else if (textureTypeStr == "ktx2") {
-                    textureType = TextureType::KTX2;
-                }else if (textureTypeStr == "jpg") {
-                    textureType = TextureType::JPG;
-                }else if (textureTypeStr == "webp") {
-                    textureType = TextureType::WEBP;
-                }
+
+            if (key == "vp") {
+                dracoCompressOption.PositionQuantizationBits = std::atoi(val.c_str());
+                quantizeCompressOption.PositionQuantizationBits = dracoCompressOption.PositionQuantizationBits;
             }
-            else if (key == "compressionType")
-            {
-                compressionTypeStr = osgDB::convertToLowerCase(val);
+            else if (key == "vt") {
+                dracoCompressOption.TexCoordQuantizationBits = std::atoi(val.c_str());
+                quantizeCompressOption.TexCoordQuantizationBits = dracoCompressOption.TexCoordQuantizationBits;
+            }
+            else if (key == "vn") {
+                dracoCompressOption.NormalQuantizationBits = std::atoi(val.c_str());
+                quantizeCompressOption.NormalQuantizationBits = dracoCompressOption.NormalQuantizationBits;
+            }
+            else if (key == "vc") {
+                dracoCompressOption.ColorQuantizationBits = std::atoi(val.c_str());
+                quantizeCompressOption.ColorQuantizationBits = dracoCompressOption.ColorQuantizationBits;
+            }
+            else if (key == "vg") {
+                dracoCompressOption.GenericQuantizationBits = std::atoi(val.c_str());
+            }
+        }
+
+        iss.clear();
+        iss.str(options->getOptionString());
+        while (iss >> opt) {
+            std::string key;
+            std::string val;
+            size_t found = opt.find("=");
+            if (found != std::string::npos) {
+                key = opt.substr(0, found);
+                val = opt.substr(found + 1);
+            }
+            else {
+                key = opt;
+            }
+
+            if (key == "ct") {
+                const std::string compressionTypeStr = osgDB::convertToLowerCase(val);
                 if (compressionTypeStr == "draco") {
-                    comporessionType = CompressionType::DRACO;
+                    if (quantize) {
+                        osg::notify(osg::WARN) << "Warning: Draco compression and vector quantization cannot be enabled simultaneously. If both are enabled, only vector quantization will be performed!" << std::endl;
+                        FlattenTransformVisitor ftv;
+                        copyNode->accept(ftv);
+                        GltfMeshQuantizeCompressor compressor(gltfModel, quantizeCompressOption);
+                    }
+                    else {
+                        GltfDracoCompressor compressor(gltfModel, dracoCompressOption);
+                    }
                 }
                 else if (compressionTypeStr == "meshopt") {
-                    comporessionType = CompressionType::MESHOPT;
-                }
-            }
-            else if (key == "comporessLevel") {
-                if (val == "low") {
-                    comporessLevel = 0;
-                }
-                else if (val == "high") {
-                    comporessLevel = 2;
-                }
-                else {
-                    comporessLevel = 1;
+                    if (quantize) {
+                        FlattenTransformVisitor ftv;
+                        copyNode->accept(ftv);
+                        GltfMeshQuantizeCompressor compressor(gltfModel, quantizeCompressOption);
+                    }
+                    GltfMeshOptCompressor compressor(gltfModel);
                 }
             }
         }
     }
 
-    OsgToGltf osg2gltf(textureType, comporessionType, comporessLevel);
-    osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
-    osg::ref_ptr<osg::Node> copyNode = osg::clone(nc_node.asNode(), osg::CopyOp::DEEP_COPY_ALL);//(osg::Node*)(nc_node.clone(osg::CopyOp::DEEP_COPY_ALL));
-    // GLTF uses a +X=right +y=up -z=forward coordinate system,but if using osg to process external data does not require this
-    //osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
-    //transform->setMatrix(osg::Matrixd::rotate(osg::Vec3d(0.0, 0.0, 1.0), osg::Vec3d(0.0, 1.0, 0.0)));
-    //transform->addChild(&nc_node);;
-    //transform->accept(osg2gltf);
-    //transform->removeChild(&nc_node);
-    TextureOptimizerProxy* to = new TextureOptimizerProxy(copyNode, textureType,2048);
-    delete to;
-    GeometryNodeVisitor gnv;
-    copyNode->accept(gnv);
-    TransformNodeVisitor tnv;
-    copyNode->accept(tnv);
-    copyNode->accept(osg2gltf);//if using osg to process external data
-    tinygltf::Model gltfModel = osg2gltf.getGltf();
-    copyNode.release();
-    tinygltf::TinyGLTF writer;
-    bool isSuccess = writer.WriteGltfSceneToFile(
-        &gltfModel,
-        filename,
-        embedImages,           // embedImages
-        embedBuffers,           // embedBuffers
-        prettyPrint,           // prettyPrint
-        true);
-    return isSuccess ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
+    if (ext != "b3dm") {
+        try {
+            tinygltf::TinyGLTF writer;
+            bool isSuccess = writer.WriteGltfSceneToFile(
+                &gltfModel,
+                filename,
+                embedImages,           // embedImages
+                embedBuffers,           // embedBuffers
+                prettyPrint,           // prettyPrint
+                isBinary);
+            copyNode = nullptr;
+            return isSuccess ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
+        }
+        catch (const std::exception& e) {
+            osg::notify(osg::FATAL) << "Exception caught while writing file: " << e.what() << std::endl;
+            copyNode = nullptr;
+            return WriteResult::ERROR_IN_WRITING_FILE;
+        }
+    }
+
+    copyNode = nullptr;
+    return WriteResult::ERROR_IN_WRITING_FILE;
 }
+
 REGISTER_OSGPLUGIN(gltf, ReaderWriterGLTF)

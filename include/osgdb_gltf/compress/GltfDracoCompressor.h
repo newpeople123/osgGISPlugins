@@ -6,17 +6,22 @@
 class GltfDracoCompressor :public GltfCompressor
 {
 public:
-	struct DracoCompressionOptions {
+	struct DracoCompressionOptions:CompressionOptions {
 		//Default value is medium level
-		int PositionQuantizationBits = 14;
-		int TexCoordQuantizationBits = 12;
-		int NormalQuantizationBits = 10;
-		int ColorQuantizationBits = 8;
 		int GenericQuantizationBits = 16;
 		int EncodeSpeed = 0;
 		int DecodeSpeed = 10;
+		DracoCompressionOptions() {
+			//Default value is medium level
+			PositionQuantizationBits = 14;
+			TexCoordQuantizationBits = 12;
+			NormalQuantizationBits = 10;
+			ColorQuantizationBits = 8;
+		}
 	};
 private:
+	DracoCompressionOptions _compressionOptions;
+
 	draco::GeometryAttribute::Type getTypeFromAttributeName(const std::string& name);
 
 	draco::DataType getDataType(const int componentType);
@@ -27,9 +32,9 @@ private:
 	template<typename T>
 	int initPointAttributeFromGltf(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor);
 
-	void compressMesh(tinygltf::Mesh& mesh, DracoCompressionOptions dco);
+	void compressMesh(tinygltf::Mesh& mesh);
 
-	void setDracoEncoderOptions(draco::Encoder& encoder, const DracoCompressionOptions& options);
+	void setDracoEncoderOptions(draco::Encoder& encoder);
 
 	template<typename T>
 	void initDracoMeshFaces(T& indices, draco::Mesh& dracoMesh);
@@ -40,13 +45,13 @@ private:
 	void removeBufferViews(const std::unordered_set<int>& bufferViewsToRemove);
 public:
 
-	GltfDracoCompressor(tinygltf::Model& model) :GltfCompressor(model)
+	GltfDracoCompressor(tinygltf::Model& model,const DracoCompressionOptions compressionOptions) :GltfCompressor(model),_compressionOptions(compressionOptions)
 	{
 		model.extensionsRequired.push_back(extension.name);
 		model.extensionsUsed.push_back(extension.name);
 
 		for (auto& mesh : _model.meshes) {
-			compressMesh(mesh, DracoCompressionOptions());
+			compressMesh(mesh);
 		}
 	}
 

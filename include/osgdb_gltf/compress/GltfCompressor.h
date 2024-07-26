@@ -1,6 +1,12 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H
 #define OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H 1
 #include "osgdb_gltf/Extensions.h"
+struct CompressionOptions {
+    int PositionQuantizationBits = 14;
+    int TexCoordQuantizationBits = 12;
+    int NormalQuantizationBits = 10;
+    int ColorQuantizationBits = 8;
+};
 class GltfCompressor
 {
 protected:

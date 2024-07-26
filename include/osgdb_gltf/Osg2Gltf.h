@@ -14,7 +14,6 @@ class Osg2Gltf :public osg::NodeVisitor {
     typedef std::vector<osg::ref_ptr<osg::StateSet>> StateSetStack;
 
     std::vector<osg::ref_ptr<osg::Texture>> _textures;
-    GltfCompressor* _gltfCompressor;
 
     std::stack<tinygltf::Node*> _gltfNodeStack;
     OsgNodeSequenceMap _osgNodeSeqMap;
@@ -72,8 +71,6 @@ class Osg2Gltf :public osg::NodeVisitor {
 public:
 
     Osg2Gltf();
-
-    Osg2Gltf(GltfCompressor* gltfComporessor);
 
     tinygltf::Model getGltfModel();
 

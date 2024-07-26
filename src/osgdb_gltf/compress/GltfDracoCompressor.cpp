@@ -52,7 +52,7 @@ draco::DataType GltfDracoCompressor::getDataType(const int componentType)
 	return draco::DataType::DT_INVALID;
 }
 
-void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh, DracoCompressionOptions dco)
+void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 {
 	draco::Encoder encoder;
 	/*
@@ -88,12 +88,13 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh, DracoCompressionOpt
 	*/
 
 	std::unordered_set<int> bufferViewsToRemove;
-	setDracoEncoderOptions(encoder, dco);
+	setDracoEncoderOptions(encoder);
 
 	for (auto& j : mesh.primitives)
 	{
 		const auto& primitive = j;
-
+		if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
+			continue;
 		draco::Mesh dracoMesh;
 
 		if (primitive.indices != -1) {
@@ -289,14 +290,14 @@ void GltfDracoCompressor::removeBufferViews(const std::unordered_set<int>& buffe
 	}
 }
 
-void GltfDracoCompressor::setDracoEncoderOptions(draco::Encoder& encoder, const DracoCompressionOptions& options)
+void GltfDracoCompressor::setDracoEncoderOptions(draco::Encoder& encoder)
 {
-	encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, options.PositionQuantizationBits);
-	encoder.SetAttributeQuantization(draco::GeometryAttribute::TEX_COORD, options.TexCoordQuantizationBits);
-	encoder.SetAttributeQuantization(draco::GeometryAttribute::NORMAL, options.NormalQuantizationBits);
-	encoder.SetAttributeQuantization(draco::GeometryAttribute::COLOR, options.ColorQuantizationBits);
-	encoder.SetAttributeQuantization(draco::GeometryAttribute::GENERIC, options.GenericQuantizationBits);
-	encoder.SetSpeedOptions(options.EncodeSpeed, options.DecodeSpeed);
+	encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, _compressionOptions.PositionQuantizationBits);
+	encoder.SetAttributeQuantization(draco::GeometryAttribute::TEX_COORD, _compressionOptions.TexCoordQuantizationBits);
+	encoder.SetAttributeQuantization(draco::GeometryAttribute::NORMAL, _compressionOptions.NormalQuantizationBits);
+	encoder.SetAttributeQuantization(draco::GeometryAttribute::COLOR, _compressionOptions.ColorQuantizationBits);
+	encoder.SetAttributeQuantization(draco::GeometryAttribute::GENERIC, _compressionOptions.GenericQuantizationBits);
+	encoder.SetSpeedOptions(_compressionOptions.EncodeSpeed, _compressionOptions.DecodeSpeed);
 	encoder.SetTrackEncodedProperties(true);
 }
 

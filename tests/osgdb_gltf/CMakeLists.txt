@@ -46,6 +46,9 @@ source_group("src/material" FILES ${MATERIAL_SOURCE_FILES})
 source_group("src/merge" FILES ${MERGE_SOURCE_FILES})
 source_group("src/utils" FILES ${UTILS_SOURCE_FILES}) 
 
+source_group("include/test" FILES ${TEST_HEADER_FILES}) 
+source_group("src/test" FILES ${TEST_SOURCE_FILES})
+
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
 include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include ${TEST_HEADER_FILES})

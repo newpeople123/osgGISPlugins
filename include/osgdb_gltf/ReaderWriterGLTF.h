@@ -6,16 +6,23 @@ class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
 public:
     ReaderWriterGLTF() {
-        supportsExtension("gltf", "gltf format");
-        supportsExtension("glb", "glb format");
-        supportsOption("embedImages", "");
-        supportsOption("embedBuffers", "");
-        supportsOption("prettyPrint", "");
-        supportsOption("textureType=<value>", "value enum values:jpg、png、webp、ktx、ktx2，default value is png");
-        supportsOption("compressionType=<value>", "value enum values:draco、meshopt,default is none");
-        supportsOption("comporessLevel=<string>", "default is medium,value enum values:low、medium、high");
-        //supportsOption("batchId", "Enable batchid attribute");
-
+        supportsExtension("gltf", "GLTF format");
+        supportsExtension("glb", "GLB format");
+        supportsExtension("b3dm", "B3DM format");
+        supportsOption("eb", "eb is short for embedBuffers, determines whether to embed buffers into the resulting file");
+        supportsOption("pp", "pp is short for prettyPrint, determines whether the JSON in the resulting file is formatted");
+        supportsOption("q", "q is short for quantize, enables vector quantization; if quantization is enabled, Draco cannot be used");
+        supportsOption("ct=<string>", "ct is short for compression type, possible values are: draco, meshopt; default is none");
+        supportsOption("vp=<number>", "use number-bit quantization for positions (for Quantize: default: 14; range: 1-17; "
+            "for Draco: default: 14; range: 12-16; higher values result in lower compression but higher precision); the value must be an integer");
+        supportsOption("vt=<number>", "use number-bit quantization for texture coordinates (for Quantize: default: 12; range: 1-16; "
+            "for Draco: default: 12; range: 10-14; higher values result in lower compression but higher precision); the value must be an integer");
+        supportsOption("vn=<number>", "use number-bit quantization for normals and tangents (for Quantize: default: 8; range: 1-16; "
+            "for Draco: default: 10; range: 8-12; higher values result in lower compression but higher precision); the value must be an integer");
+        supportsOption("vc=<number>", "use number-bit quantization for colors (for Quantize: default: 8; range: 1-16; "
+            "for Draco: default: 8; range: 8-10; higher values result in lower compression but higher precision); the value must be an integer");
+        supportsOption("vg=<number>", "use number-bit quantization for generics (only effective when ct is draco, "
+            "default: 16; range: 14-18; higher values result in lower compression but higher precision); the value must be an integer");
     }
 
     const char* className() const override { return "GLTF reader/writer"; }

@@ -333,16 +333,7 @@ void Osg2Gltf::flipGltfTextureYAxis(KHR_texture_transform& texture_transform_ext
     texture_transform_extension.setScale({ scaleX,scaleY });
 }
 
-Osg2Gltf::Osg2Gltf() : _gltfCompressor(NULL), NodeVisitor(TRAVERSE_ALL_CHILDREN)
-{
-    setNodeMaskOverride(~0);
-    _model.asset.version = "2.0";
-    _model.scenes.emplace_back();
-    tinygltf::Scene& scene = _model.scenes.back();
-    _model.defaultScene = 0;
-}
-
-Osg2Gltf::Osg2Gltf(GltfCompressor* gltfCompressor) :NodeVisitor(TRAVERSE_ALL_CHILDREN), _gltfCompressor(gltfCompressor)
+Osg2Gltf::Osg2Gltf() : NodeVisitor(TRAVERSE_ALL_CHILDREN)
 {
     setNodeMaskOverride(~0);
     _model.asset.version = "2.0";

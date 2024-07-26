@@ -3,16 +3,21 @@
 #include "osgdb_gltf/compress/GltfCompressor.h"
 class GltfMeshQuantizeCompressor :public GltfCompressor
 {
+public:
+	struct MeshQuantizeCompressionOptions :CompressionOptions {
+		bool Compressmore = true;
+		bool PositionFloat = false;
+		MeshQuantizeCompressionOptions() {
+			PositionQuantizationBits = 14;//[1,16]
+			TexCoordQuantizationBits = 12;//[1,16]
+			NormalQuantizationBits = 8;//[1,16]
+			ColorQuantizationBits = 8;//[1,16]
+		}
+	};
 private:
-	int _positionBit = 14;//[1,16]
-	int _normalBit = 8;//[1,16]
-	int _texBit = 12;//[1,16]
-	int _colorBit = 8;//[1,16]
-	bool _compressmore = true;
-	bool _posFloat = false;
 
 	std::vector<int> _materialIndexes;
-	//bool _posNormalized = false;
+	MeshQuantizeCompressionOptions _compressionOptions;
 
 	static void encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits);
 
@@ -43,11 +48,11 @@ private:
 public:
 	//启用该扩展需要展开变换矩阵
 	KHR_mesh_quantization meshQuanExtension;
-	GltfMeshQuantizeCompressor(tinygltf::Model& model) :GltfCompressor(model) {
-		_positionBit = osg::clampTo(_positionBit, 1, 16);
-		_normalBit = osg::clampTo(_normalBit, 1, 16);
-		_texBit = osg::clampTo(_texBit, 1, 16);
-		_colorBit = osg::clampTo(_colorBit, 1, 16);
+	GltfMeshQuantizeCompressor(tinygltf::Model& model,const MeshQuantizeCompressionOptions compressionOptions) :GltfCompressor(model), _compressionOptions(compressionOptions){
+		_compressionOptions.PositionQuantizationBits = osg::clampTo(_compressionOptions.PositionQuantizationBits, 1, 16);
+		_compressionOptions.NormalQuantizationBits = osg::clampTo(_compressionOptions.NormalQuantizationBits, 1, 16);
+		_compressionOptions.TexCoordQuantizationBits = osg::clampTo(_compressionOptions.TexCoordQuantizationBits, 1, 16);
+		_compressionOptions.ColorQuantizationBits = osg::clampTo(_compressionOptions.ColorQuantizationBits, 1, 16);
 		model.extensionsRequired.push_back(meshQuanExtension.name);
 		model.extensionsUsed.push_back(meshQuanExtension.name);
 
@@ -73,14 +78,14 @@ public:
 
 			}
 		}
-		if (!_posFloat) {
+		if (!_compressionOptions.PositionFloat) {
 			for (const auto index : _model.scenes[0].nodes) {
 				_model.nodes[index].translation.resize(3);
 				_model.nodes[index].translation[0] = minVX;
 				_model.nodes[index].translation[1] = minVY;
 				_model.nodes[index].translation[2] = minVZ;
 
-				const float nodeScale = scaleV / float((1 << _positionBit) - 1) * 65535.f;
+				const float nodeScale = scaleV / float((1 << _compressionOptions.PositionQuantizationBits) - 1) * 65535.f;
 				_model.nodes[index].scale.resize(3);
 				_model.nodes[index].scale[0] = nodeScale;
 				_model.nodes[index].scale[1] = nodeScale;

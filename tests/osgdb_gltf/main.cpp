@@ -18,6 +18,7 @@
 #include <osgViewer/Viewer>
 #include <utils/FlattenTransformVisitor.h>
 #include <osgUtil/Optimizer>
+#include <osgDB/WriteFile>
 
 using namespace std;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
@@ -116,7 +117,7 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
 	const std::string output = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + "_quantization.gltf";
 	tinygltf::TinyGLTF writer;
 	tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
-	//GltfMeshQuantizeCompressor meshQuantize(gltfModel);
+	GltfMeshQuantizeCompressor meshQuantize(gltfModel, GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions());
 	//GltfDracoCompressor dracoCompressor(gltfModel);
 	GltfMeshOptCompressor meshOptCompressor(gltfModel);
 	bool isSuccess = writer.WriteGltfSceneToFile(
@@ -133,15 +134,15 @@ void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, cons
 /// <param name="filename"></param>
 void convertOsgModel2Gltf3(const std::string& filename) {
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
-	//FlattenTransformVisitor ftv;
-	//node->accept(ftv);
+	FlattenTransformVisitor ftv;
+	node->accept(ftv);
 	//index mesh
 	osgUtil::Optimizer optimizer;
 	optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
 	//mesh optimizer
 	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
 	MeshOptimizer mov(meshOptimizer, 1.0);
-	//node->accept(mov);
+	node->accept(mov);
 	const std::string textureExt = "jpg";
 	const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "_quantization\\" + textureExt;
 	osgDB::makeDirectory(textureCachePath);
@@ -164,8 +165,30 @@ int main() {
 	setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
 	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
-	convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站.fbx)");
-	convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
+	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站.fbx)");
+	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
+	osgUtil::Optimizer optimizer;
+	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+	//options->setOptionString("eb");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.gltf)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.glb)", options.get());
 
+	//options->setOptionString("eb ct=draco");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.gltf)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.glb)", options.get());
+
+	//options->setOptionString("eb ct=meshopt");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-meshopt.gltf)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-meshopt.glb)", options.get());
+
+	//options->setOptionString("eb q");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization.gltf)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization.glb)", options.get());
+
+	options->setOptionString("eb q ct=meshopt");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.gltf)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.glb)", options.get());
 	return 1;
 }
