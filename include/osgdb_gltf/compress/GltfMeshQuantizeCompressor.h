@@ -39,6 +39,7 @@ private:
 		const tinygltf::Accessor& accessor);
 
 	std::tuple<double, double, double, double> getPositionBounds();
+
 public:
 	//启用该扩展需要展开变换矩阵
 	KHR_mesh_quantization meshQuanExtension;
@@ -51,6 +52,7 @@ public:
 		model.extensionsUsed.push_back(meshQuanExtension.name);
 
 		_materialIndexes.clear();
+		
 		std::tuple<double, double, double, double> result = getPositionBounds();
 		const double minVX = std::get<0>(result);
 		const double minVY = std::get<1>(result);
@@ -59,6 +61,7 @@ public:
 		for (auto& mesh : _model.meshes) {
 			quantizeMesh(mesh, minVX, minVY, minVZ, scaleV);
 		}
+		
 		for (auto& mesh : _model.meshes)
 		{
 			for (const tinygltf::Primitive& primitive : mesh.primitives)
@@ -68,6 +71,20 @@ public:
 					_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].minValues.clear();
 				}
 
+			}
+		}
+		if (!_posFloat) {
+			for (const auto index : _model.scenes[0].nodes) {
+				_model.nodes[index].translation.resize(3);
+				_model.nodes[index].translation[0] = minVX;
+				_model.nodes[index].translation[1] = minVY;
+				_model.nodes[index].translation[2] = minVZ;
+
+				const float nodeScale = scaleV / float((1 << _positionBit) - 1) * 65535.f;
+				_model.nodes[index].scale.resize(3);
+				_model.nodes[index].scale[0] = nodeScale;
+				_model.nodes[index].scale[1] = nodeScale;
+				_model.nodes[index].scale[2] = nodeScale;
 			}
 		}
 	}

@@ -319,6 +319,7 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 								}
 							}
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
+							accessor.normalized = true;
 
 							restoreBuffer(buffer, bufferView, newBufferData);
 							bufferView.byteStride = 1 * 4;
@@ -335,6 +336,8 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 
 							}
 							accessor.componentType = TINYGLTF_COMPONENT_TYPE_SHORT;
+							accessor.normalized = true;
+
 							restoreBuffer(buffer, bufferView, newBufferData);
 							bufferView.byteStride = 2 * 4;
 						}
