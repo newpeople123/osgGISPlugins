@@ -21,11 +21,11 @@
 #include <osgDB/WriteFile>
 
 using namespace std;
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 
 
@@ -168,15 +168,26 @@ int main() {
 	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站.fbx)");
 	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
-	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+	FlattenTransformVisitor ftv;
+	node->accept(ftv);
+	//osgUtil::Optimizer optimizer;
+	//optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
+	MeshOptimizer mov(meshOptimizer, 0.5);
+	node->accept(mov);
+	const std::string textureExt = "jpg";
+	const std::string textureCachePath = OUTPUT_BASE_PATH + "卡拉电站_quantization\\" + textureExt;
+	osgDB::makeDirectory(textureCachePath);
+	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
+	node->accept(tpv);
+	tpv.packTextures();
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 	//options->setOptionString("eb");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.gltf)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.glb)", options.get());
 
-	//options->setOptionString("eb ct=draco");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.gltf)", options.get());
+	options->setOptionString("eb ct=draco pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.gltf)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.glb)", options.get());
 
 	//options->setOptionString("eb ct=meshopt");
@@ -187,7 +198,7 @@ int main() {
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization.gltf)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization.glb)", options.get());
 
-	options->setOptionString("eb q ct=meshopt");
+	options->setOptionString("eb q ct=meshopt pp");
 	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.gltf)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.glb)", options.get());
 	return 1;

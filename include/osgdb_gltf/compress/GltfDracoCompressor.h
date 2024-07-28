@@ -27,20 +27,17 @@ private:
 	draco::DataType getDataType(const int componentType);
 
 	template<typename T>
-	int initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const std::vector<T>& bufferData, const tinygltf::Accessor& accessor);
-
-	template<typename T>
-	int initPointAttributeFromGltf(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor);
-
+	int initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor);
+	/// <summary>
+	/// 目前只处理gl_triangles的情况
+	/// </summary>
+	/// <param name="mesh"></param>
 	void compressMesh(tinygltf::Mesh& mesh);
 
 	void setDracoEncoderOptions(draco::Encoder& encoder);
 
 	template<typename T>
-	void initDracoMeshFaces(T& indices, draco::Mesh& dracoMesh);
-
-	template<typename T>
-	void initDracoMeshFromGltf(draco::Mesh& dracoMesh, const tinygltf::Accessor indicesAccessor, const tinygltf::BufferView indicesBv, tinygltf::Buffer indicesBuffer);
+	void initDracoMeshFaces(const tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh);
 
 	void removeBufferViews(const std::unordered_set<int>& bufferViewsToRemove);
 public:
@@ -59,8 +56,10 @@ public:
 };
 
 template<typename T>
-inline int GltfDracoCompressor::initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const std::vector<T>& bufferData, const tinygltf::Accessor& accessor)
+inline int GltfDracoCompressor::initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor)
 {
+	std::vector<T> bufferData = getBufferData<T>(accessor);
+
 	const auto numComponents = calculateNumComponents(accessor.type);
 	const auto stride = sizeof(T) * numComponents;
 	const auto dracoBbuffer = std::make_unique<draco::DataBuffer>();
@@ -86,16 +85,11 @@ inline int GltfDracoCompressor::initPointAttribute(draco::Mesh& dracoMesh, const
 	return attId;
 }
 
-template<typename T>
-inline int GltfDracoCompressor::initPointAttributeFromGltf(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor)
-{
-	std::vector<T> bufferData = getBufferData<T>(accessor);
-	return initPointAttribute<T>(dracoMesh, attributeName, bufferData, accessor);
-}
 
 template<typename T>
-inline void GltfDracoCompressor::initDracoMeshFaces(T& indices, draco::Mesh& dracoMesh)
+inline void GltfDracoCompressor::initDracoMeshFaces(const tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh)
 {
+	std::vector<T> indices = getBufferData<T>(indicesAccessor);
 	assert(indices.size() % 3 == 0);
 	size_t numFaces = indices.size() / 3;
 	dracoMesh.SetNumFaces(numFaces);
@@ -107,13 +101,5 @@ inline void GltfDracoCompressor::initDracoMeshFaces(T& indices, draco::Mesh& dra
 		face[2] = indices[(i * 3) + 2];
 		dracoMesh.SetFace(draco::FaceIndex(i), face);
 	}
-}
-
-template<typename T>
-inline void GltfDracoCompressor::initDracoMeshFromGltf(draco::Mesh& dracoMesh, const tinygltf::Accessor indicesAccessor, const tinygltf::BufferView indicesBv, tinygltf::Buffer indicesBuffer)
-{
-	auto indicesPtr = reinterpret_cast<const T*>(indicesBuffer.data.data() + indicesBv.byteOffset);
-	std::vector<T> indices(indicesPtr, indicesPtr + indicesAccessor.count);
-	initDracoMeshFaces(indices, dracoMesh);
 }
 #endif // !OSG_GIS_PLUGINS_GLTF_DRACO_COMPRESSOR_H

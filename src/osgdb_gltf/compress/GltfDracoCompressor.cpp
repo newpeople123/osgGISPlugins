@@ -104,27 +104,28 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 
 			switch (indicesAccessor.componentType) {
 			case TINYGLTF_COMPONENT_TYPE_BYTE:
-				initDracoMeshFromGltf<int8_t>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<int8_t>(indicesAccessor, dracoMesh);
 				break;
 			case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-				initDracoMeshFromGltf<uint8_t>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<uint8_t>(indicesAccessor, dracoMesh);
 				break;
 			case TINYGLTF_COMPONENT_TYPE_SHORT:
-				initDracoMeshFromGltf<int16_t>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<int16_t>(indicesAccessor, dracoMesh);
 				break;
 			case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-				initDracoMeshFromGltf<uint16_t>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<uint16_t>(indicesAccessor, dracoMesh);
 				break;
 			case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-				initDracoMeshFromGltf<uint32_t>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<uint32_t>(indicesAccessor, dracoMesh);
 				break;
 			case TINYGLTF_COMPONENT_TYPE_FLOAT:
-				initDracoMeshFromGltf<float>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<float>(indicesAccessor, dracoMesh);
 				break;
 			case TINYGLTF_COMPONENT_TYPE_DOUBLE:
-				initDracoMeshFromGltf<double>(dracoMesh, indicesAccessor, indicesBv, indicesBuffer);
+				initDracoMeshFaces<double>(indicesAccessor, dracoMesh);
 				break;
 			default:
+				initDracoMeshFaces<uint32_t>(indicesAccessor, dracoMesh);
 				// Handle unsupported component types or throw an error.
 				break;
 			}
@@ -134,44 +135,69 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 			indicesAccessor.byteOffset = 0;
 		}
 
-		for (const auto& attribute : primitive.attributes) {
-			const auto& accessor = _model.accessors[attribute.second];
-			tinygltf::Accessor attributeAccessor(accessor);
-			int attId = -1;
+		else {
+			// 对于gl_triangles和drawArrays的情况
+			std::vector<uint32_t> indices;
+			const size_t vertexCount = _model.accessors[primitive.attributes.begin()->second].count;
 
-			switch (accessor.componentType) {
-			case TINYGLTF_COMPONENT_TYPE_BYTE:
-				attId = initPointAttributeFromGltf<int8_t>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-				attId = initPointAttributeFromGltf<uint8_t>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			case TINYGLTF_COMPONENT_TYPE_SHORT:
-				attId = initPointAttributeFromGltf<int16_t>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-				attId = initPointAttributeFromGltf<uint16_t>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-				attId = initPointAttributeFromGltf<uint32_t>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			case TINYGLTF_COMPONENT_TYPE_FLOAT:
-				attId = initPointAttributeFromGltf<float>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			case TINYGLTF_COMPONENT_TYPE_DOUBLE:
-				attId = initPointAttributeFromGltf<double>(dracoMesh, attribute.first, attributeAccessor);
-				break;
-			default:
-				// Handle unsupported component types or throw an error.
-				break;
+			for (size_t i = 0; i < vertexCount; i += 3) {
+				indices.push_back(static_cast<uint32_t>(i));
+				indices.push_back(static_cast<uint32_t>(i + 1));
+				indices.push_back(static_cast<uint32_t>(i + 2));
 			}
 
-			if (attId != -1) {
-				bufferViewsToRemove.emplace(accessor.bufferView);
-				attributeAccessor.bufferView = -1;
-				attributeAccessor.byteOffset = 0;
-				_model.accessors[attribute.second] = attributeAccessor;
-				extension.Set(attribute.first, static_cast<int>(dracoMesh.attribute(attId)->unique_id()));
+			const size_t numFaces = vertexCount / 3;
+			dracoMesh.SetNumFaces(numFaces);
+			for (size_t i = 0; i < numFaces; i++)
+			{
+				draco::Mesh::Face face;
+				face[0] = indices[(i * 3) + 0];
+				face[1] = indices[(i * 3) + 1];
+				face[2] = indices[(i * 3) + 2];
+				dracoMesh.SetFace(draco::FaceIndex(i), face);
+			}
+		}
+
+		for (const auto& attribute : primitive.attributes) {
+			if (attribute.second != -1) {
+				const auto& accessor = _model.accessors[attribute.second];
+				tinygltf::Accessor attributeAccessor(accessor);
+				int attId = -1;
+
+				switch (accessor.componentType) {
+				case TINYGLTF_COMPONENT_TYPE_BYTE:
+					attId = initPointAttribute<int8_t>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					attId = initPointAttribute<uint8_t>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_SHORT:
+					attId = initPointAttribute<int16_t>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					attId = initPointAttribute<uint16_t>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					attId = initPointAttribute<uint32_t>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_FLOAT:
+					attId = initPointAttribute<float>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_DOUBLE:
+					attId = initPointAttribute<double>(dracoMesh, attribute.first, attributeAccessor);
+					break;
+				default:
+					// Handle unsupported component types or throw an error.
+					break;
+				}
+
+				if (attId != -1) {
+					bufferViewsToRemove.emplace(accessor.bufferView);
+					attributeAccessor.bufferView = -1;
+					attributeAccessor.byteOffset = 0;
+					_model.accessors[attribute.second] = attributeAccessor;
+					extension.Set(attribute.first, static_cast<int>(dracoMesh.attribute(attId)->unique_id()));
+				}
 			}
 		}
 
@@ -185,16 +211,16 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 			std::cerr << "draco:Failed to encode the mesh: " << status.error_msg() << '\n';
 		}
 
-		/*
-		draco::Decoder decoder;
-		draco::DecoderBuffer decoderBuffer;
-		decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
-		auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
-		if (!decodeResult.ok()) {
-			std::cerr << "draco:Draco failed to decode mesh" << '\n';
-			return;
-		}
-		*/
+		
+		//draco::Decoder decoder;
+		//draco::DecoderBuffer decoderBuffer;
+		//decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
+		//auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
+		//if (!decodeResult.ok()) {
+		//	std::cerr << "draco:Draco failed to decode mesh" << '\n';
+		//	return;
+		//}
+		
 
 		if (primitive.indices != -1) {
 			assert(_model.accessors.size() > primitive.indices);

@@ -6,7 +6,6 @@
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
-#include "utils/FlattenTransformVisitor.h"
 
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const {
@@ -23,10 +22,9 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
     osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
-    osg::ref_ptr<osg::Node> copyNode = osg::clone(nc_node.asNode(), osg::CopyOp::DEEP_COPY_ALL);
-
+    nc_node.ref();
     Osg2Gltf osg2gltf;
-    copyNode->accept(osg2gltf);
+    nc_node.accept(osg2gltf);
     tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
     const bool embedImages = true;
@@ -101,8 +99,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
                 if (compressionTypeStr == "draco") {
                     if (quantize) {
                         osg::notify(osg::WARN) << "Warning: Draco compression and vector quantization cannot be enabled simultaneously. If both are enabled, only vector quantization will be performed!" << std::endl;
-                        FlattenTransformVisitor ftv;
-                        copyNode->accept(ftv);
                         GltfMeshQuantizeCompressor compressor(gltfModel, quantizeCompressOption);
                     }
                     else {
@@ -111,8 +107,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
                 }
                 else if (compressionTypeStr == "meshopt") {
                     if (quantize) {
-                        FlattenTransformVisitor ftv;
-                        copyNode->accept(ftv);
                         GltfMeshQuantizeCompressor compressor(gltfModel, quantizeCompressOption);
                     }
                     GltfMeshOptCompressor compressor(gltfModel);
@@ -131,17 +125,17 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
                 embedBuffers,           // embedBuffers
                 prettyPrint,           // prettyPrint
                 isBinary);
-            copyNode = nullptr;
+            nc_node.unref_nodelete();
             return isSuccess ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
         }
         catch (const std::exception& e) {
             osg::notify(osg::FATAL) << "Exception caught while writing file: " << e.what() << std::endl;
-            copyNode = nullptr;
+            nc_node.unref_nodelete();
             return WriteResult::ERROR_IN_WRITING_FILE;
         }
     }
 
-    copyNode = nullptr;
+    nc_node.unref_nodelete();
     return WriteResult::ERROR_IN_WRITING_FILE;
 }
 
