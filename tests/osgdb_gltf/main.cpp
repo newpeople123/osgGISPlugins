@@ -21,11 +21,11 @@
 #include <osgDB/WriteFile>
 
 using namespace std;
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 
 
@@ -182,12 +182,12 @@ int main() {
 	node->accept(tpv);
 	tpv.packTextures();
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	//options->setOptionString("eb");
+	options->setOptionString("eb pp");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.gltf)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站.glb)", options.get());
 
-	options->setOptionString("eb ct=draco pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.gltf)", options.get());
+	//options->setOptionString("eb ct=draco pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-draco.glb)", options.get());
 
 	//options->setOptionString("eb ct=meshopt");
@@ -198,8 +198,8 @@ int main() {
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization.gltf)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization.glb)", options.get());
 
-	options->setOptionString("eb q ct=meshopt pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.gltf)", options.get());
+	//options->setOptionString("eb q ct=meshopt pp");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + R"(卡拉电站-quantization-meshopt.glb)", options.get());
 	return 1;
 }

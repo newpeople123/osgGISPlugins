@@ -9,56 +9,6 @@
 TexturePackingVisitor::TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext, std::string cachePath, bool bPackTexture) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
 _maxWidth(maxWidth), _maxHeight(maxHeight), _ext(ext), _cachePath(cachePath), _bPackTexture(bPackTexture) {}
 
-const std::string TexturePackingVisitor::Filename = "osgGisPlugins-filename";
-const std::string TexturePackingVisitor::ExtensionName = "osgGisPlugins-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionOffsetX = "osgGisPlugins-offsetX";
-const std::string TexturePackingVisitor::ExtensionOffsetY = "osgGisPlugins-offsetY";
-const std::string TexturePackingVisitor::ExtensionScaleX = "osgGisPlugins-scaleX";
-const std::string TexturePackingVisitor::ExtensionScaleY = "osgGisPlugins-scaleY";
-const std::string TexturePackingVisitor::ExtensionTexCoord = "osgGisPlugins-texCoord";
-
-const std::string TexturePackingVisitor::ExtensionNormalTextureName = "osgGisPlugins-normal-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionNormalTextureOffsetX = "osgGisPlugins-normal-offsetX";
-const std::string TexturePackingVisitor::ExtensionNormalTextureOffsetY = "osgGisPlugins-normal-offsetY";
-const std::string TexturePackingVisitor::ExtensionNormalTextureScaleX = "osgGisPlugins-normal-scaleX";
-const std::string TexturePackingVisitor::ExtensionNormalTextureScaleY = "osgGisPlugins-normal-scaleY";
-const std::string TexturePackingVisitor::ExtensionNormalTextureTexCoord = "osgGisPlugins-normal-texCoord";
-
-const std::string TexturePackingVisitor::ExtensionOcclusionTextureName = "osgGisPlugins-occlusion-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionOcclusionTextureOffsetX = "osgGisPlugins-occlusion-offsetX";
-const std::string TexturePackingVisitor::ExtensionOcclusionTextureOffsetY = "osgGisPlugins-occlusion-offsetY";
-const std::string TexturePackingVisitor::ExtensionOcclusionTextureScaleX = "osgGisPlugins-occlusion-scaleX";
-const std::string TexturePackingVisitor::ExtensionOcclusionTextureScaleY = "osgGisPlugins-occlusion-scaleY";
-const std::string TexturePackingVisitor::ExtensionOcclusionTextureTexCoord = "osgGisPlugins-occlusion-texCoord";
-
-const std::string TexturePackingVisitor::ExtensionEmissiveTextureName = "osgGisPlugins-emissive-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionEmissiveTextureOffsetX = "osgGisPlugins-emissive-offsetX";
-const std::string TexturePackingVisitor::ExtensionEmissiveTextureOffsetY = "osgGisPlugins-emissive-offsetY";
-const std::string TexturePackingVisitor::ExtensionEmissiveTextureScaleX = "osgGisPlugins-emissive-scaleX";
-const std::string TexturePackingVisitor::ExtensionEmissiveTextureScaleY = "osgGisPlugins-emissive-scaleY";
-const std::string TexturePackingVisitor::ExtensionEmissiveTextureTexCoord = "osgGisPlugins-emissive-texCoord";
-
-const std::string TexturePackingVisitor::ExtensionMRTextureName = "osgGisPlugins-MR-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionMRTextureOffsetX = "osgGisPlugins-MR-offsetX";
-const std::string TexturePackingVisitor::ExtensionMRTextureOffsetY = "osgGisPlugins-MR-offsetY";
-const std::string TexturePackingVisitor::ExtensionMRTextureScaleX = "osgGisPlugins-MR-scaleX";
-const std::string TexturePackingVisitor::ExtensionMRTextureScaleY = "osgGisPlugins-MR-scaleY";
-const std::string TexturePackingVisitor::ExtensionMRTexCoord = "osgGisPlugins-MR-texCoord";
-
-const std::string TexturePackingVisitor::ExtensionDiffuseTextureName = "osgGisPlugins-diffuse-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionDiffuseTextureOffsetX = "osgGisPlugins-diffuse-offsetX";
-const std::string TexturePackingVisitor::ExtensionDiffuseTextureOffsetY = "osgGisPlugins-diffuse-offsetY";
-const std::string TexturePackingVisitor::ExtensionDiffuseTextureScaleX = "osgGisPlugins-diffuse-scaleX";
-const std::string TexturePackingVisitor::ExtensionDiffuseTextureScaleY = "osgGisPlugins-diffuse-scaleY";
-const std::string TexturePackingVisitor::ExtensionDiffuseTexCoord = "osgGisPlugins-diffuse-texCoord";
-
-const std::string TexturePackingVisitor::ExtensionSGTextureName = "osgGisPlugins-SG-KHR_texture_transform";
-const std::string TexturePackingVisitor::ExtensionSGTextureOffsetX = "osgGisPlugins-SG-offsetX";
-const std::string TexturePackingVisitor::ExtensionSGTextureOffsetY = "osgGisPlugins-SG-offsetY";
-const std::string TexturePackingVisitor::ExtensionSGTextureScaleX = "osgGisPlugins-SG-scaleX";
-const std::string TexturePackingVisitor::ExtensionSGTextureScaleY = "osgGisPlugins-SG-scaleY";
-const std::string TexturePackingVisitor::ExtensionSGTexCoord = "osgGisPlugins-SG-texCoord";
-
 void TexturePackingVisitor::apply(osg::Drawable& drawable)
 {
     const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
@@ -123,7 +73,7 @@ void TexturePackingVisitor::optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>
                     else
                     {
                         std::string name;
-                        image->getUserValue(Filename, name);
+                        image->getUserValue(BASECOLOR_TEXTURE_FILENAME, name);
                         if (name.empty()) {
                             exportImage(image);
                         }
@@ -131,7 +81,7 @@ void TexturePackingVisitor::optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>
                 }
                 else {
                     std::string name;
-                    image->getUserValue(Filename, name);
+                    image->getUserValue(BASECOLOR_TEXTURE_FILENAME, name);
                     if (name.empty()) {
                         exportImage(image);
                     }
@@ -139,7 +89,7 @@ void TexturePackingVisitor::optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>
             }
             else {
                 std::string name;
-                image->getUserValue(Filename, name);
+                image->getUserValue(BASECOLOR_TEXTURE_FILENAME, name);
                 if (name.empty()) {
                     exportImage(image);
                 }
@@ -167,7 +117,7 @@ void TexturePackingVisitor::exportOsgTexture(osg::ref_ptr<osg::Texture2D> textur
             osg::ref_ptr<osg::Image> image = texture->getImage(0);
             if (image.valid()) {
                 std::string name;
-                image->getUserValue(Filename, name);
+                image->getUserValue(BASECOLOR_TEXTURE_FILENAME, name);
                 if (name.empty()) {
                     exportImage(image);
                 }
@@ -290,16 +240,16 @@ void TexturePackingVisitor::packOsgTextures()
                 const size_t id = packer.getId(image);
                 if (packer.getPackingData(id, x, y, w, h))
                 {
-                    packedTexture->setUserValue(ExtensionName, true);
+                    packedTexture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, true);
                     double offsetX = x / width;
-                    packedTexture->setUserValue(ExtensionOffsetX, osg::clampTo(offsetX, 0.0, 1.0));
+                    packedTexture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, osg::clampTo(offsetX, 0.0, 1.0));
                     double offsetY = y / height;
-                    packedTexture->setUserValue(ExtensionOffsetY, osg::clampTo(offsetY, 0.0, 1.0));
+                    packedTexture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_Y, osg::clampTo(offsetY, 0.0, 1.0));
                     double scaleX = static_cast<double>(w) / width;
-                    packedTexture->setUserValue(ExtensionScaleX, osg::clampTo(scaleX, 0.0, 1.0));
+                    packedTexture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_X, osg::clampTo(scaleX, 0.0, 1.0));
                     double scaleY = static_cast<double>(h) / height;
-                    packedTexture->setUserValue(ExtensionScaleY, osg::clampTo(scaleY, 0.0, 1.0));
-                    packedTexture->setUserValue(ExtensionTexCoord, 0);
+                    packedTexture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_Y, osg::clampTo(scaleY, 0.0, 1.0));
+                    packedTexture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXCOORD, 0);
                     stateSetCopy->setTextureAttribute(0, packedTexture.get());
                     geometry->setStateSet(stateSetCopy.get());
                 }
@@ -359,60 +309,60 @@ void TexturePackingVisitor::updateGltfMaterialUserValue(
     switch (type)
     {
     case GltfTextureType::NORMAL:
-        textureNameExtension = ExtensionNormalTextureName;
-        textureOffsetXExtension = ExtensionNormalTextureOffsetX;
-        textureOffsetYExtension = ExtensionNormalTextureOffsetY;
-        textureScaleXExtension = ExtensionNormalTextureScaleX;
-        textureScaleYExtension = ExtensionNormalTextureScaleY;
-        textureTecCoord = ExtensionNormalTextureTexCoord;
+        textureNameExtension = TEX_TRANSFORM_NORMAL_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_NORMAL_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_NORMAL_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_NORMAL_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_NORMAL_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_NORMAL_TEXCOORD;
         break;
     case GltfTextureType::OCCLUSION:
-        textureNameExtension = ExtensionOcclusionTextureName;
-        textureOffsetXExtension = ExtensionOcclusionTextureOffsetX;
-        textureOffsetYExtension = ExtensionOcclusionTextureOffsetY;
-        textureScaleXExtension = ExtensionOcclusionTextureScaleX;
-        textureScaleYExtension = ExtensionOcclusionTextureScaleY;
-        textureTecCoord = ExtensionOcclusionTextureTexCoord;
+        textureNameExtension = TEX_TRANSFORM_OCCLUSION_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_OCCLUSION_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_OCCLUSION_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_OCCLUSION_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_OCCLUSION_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_OCCLUSION_TEXCOORD;
         break;
     case GltfTextureType::EMISSIVE:
-        textureNameExtension = ExtensionEmissiveTextureName;
-        textureOffsetXExtension = ExtensionEmissiveTextureOffsetX;
-        textureOffsetYExtension = ExtensionEmissiveTextureOffsetY;
-        textureScaleXExtension = ExtensionEmissiveTextureScaleX;
-        textureScaleYExtension = ExtensionEmissiveTextureScaleY;
-        textureTecCoord = ExtensionEmissiveTextureTexCoord;
+        textureNameExtension = TEX_TRANSFORM_EMISSIVE_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_EMISSIVE_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_EMISSIVE_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_EMISSIVE_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_EMISSIVE_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_EMISSIVE_TEXCOORD;
         break;
     case GltfTextureType::METALLICROUGHNESS:
-        textureNameExtension = ExtensionMRTextureName;
-        textureOffsetXExtension = ExtensionMRTextureOffsetX;
-        textureOffsetYExtension = ExtensionMRTextureOffsetY;
-        textureScaleXExtension = ExtensionMRTextureScaleX;
-        textureScaleYExtension = ExtensionMRTextureScaleY;
-        textureTecCoord = ExtensionMRTexCoord;
+        textureNameExtension = TEX_TRANSFORM_MR_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_MR_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_MR_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_MR_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_MR_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_MR_TEXCOORD;
         break;
     case GltfTextureType::BASECOLOR:
-        textureNameExtension = ExtensionName;
-        textureOffsetXExtension = ExtensionOffsetX;
-        textureOffsetYExtension = ExtensionOffsetY;
-        textureScaleXExtension = ExtensionScaleX;
-        textureScaleYExtension = ExtensionScaleY;
-        textureTecCoord = ExtensionTexCoord;
+        textureNameExtension = TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_BASECOLOR_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_BASECOLOR_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_BASECOLOR_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_BASECOLOR_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_BASECOLOR_TEXCOORD;
         break;
     case GltfTextureType::DIFFUSE:
-        textureNameExtension = ExtensionDiffuseTextureName;
-        textureOffsetXExtension = ExtensionDiffuseTextureOffsetX;
-        textureOffsetYExtension = ExtensionDiffuseTextureOffsetY;
-        textureScaleXExtension = ExtensionDiffuseTextureScaleX;
-        textureScaleYExtension = ExtensionDiffuseTextureScaleY;
-        textureTecCoord = ExtensionDiffuseTexCoord;
+        textureNameExtension = TEX_TRANSFORM_DIFFUSE_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_DIFFUSE_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_DIFFUSE_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_DIFFUSE_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_DIFFUSE_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_DIFFUSE_TEXCOORD;
         break;
     case GltfTextureType::SPECULARGLOSSINESS:
-        textureNameExtension = ExtensionSGTextureName;
-        textureOffsetXExtension = ExtensionSGTextureOffsetX;
-        textureOffsetYExtension = ExtensionSGTextureOffsetY;
-        textureScaleXExtension = ExtensionSGTextureScaleX;
-        textureScaleYExtension = ExtensionSGTextureScaleY;
-        textureTecCoord = ExtensionSGTexCoord;
+        textureNameExtension = TEX_TRANSFORM_SG_TEXTURE_NAME;
+        textureOffsetXExtension = TEX_TRANSFORM_SG_OFFSET_X;
+        textureOffsetYExtension = TEX_TRANSFORM_SG_OFFSET_Y;
+        textureScaleXExtension = TEX_TRANSFORM_SG_SCALE_X;
+        textureScaleYExtension = TEX_TRANSFORM_SG_SCALE_Y;
+        textureTecCoord = TEX_TRANSFORM_SG_TEXCOORD;
         break;
     default:
         break;
@@ -690,7 +640,7 @@ void TexturePackingVisitor::exportImage(const osg::ref_ptr<osg::Image>& img)
             fileExistedPng.close();
         }
     }
-    img->setUserValue(Filename, fullPath);
+    img->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
 }
 
 bool TexturePackingVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img)

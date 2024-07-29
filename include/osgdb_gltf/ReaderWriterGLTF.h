@@ -2,13 +2,18 @@
 #define READERWRITERGLTF_H 1
 #include <osgDB/ReaderWriter>
 #include "osgdb_gltf/Osg2Gltf.h"
+#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
+#include "osgdb_gltf/b3dm/B3DM.h"
 class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
+private:
+    template<class T>
+    void putVal(std::vector<unsigned char>& buf, T val) const;
 public:
     ReaderWriterGLTF() {
         supportsExtension("gltf", "GLTF format");
         supportsExtension("glb", "GLB format");
-        supportsExtension("b3dm", "B3DM format");
+        supportsExtension("b3dm", "3D Tiles Batch 3D Model");
         supportsOption("eb", "eb is short for embedBuffers, determines whether to embed buffers into the resulting file");
         supportsOption("pp", "pp is short for prettyPrint, determines whether the JSON in the resulting file is formatted");
         supportsOption("q", "q is short for quantize, enables vector quantization; if quantization is enabled, Draco cannot be used");
@@ -39,5 +44,18 @@ public:
 
     ReadResult readNode(const std::string& filename, const Options*) const override;
     WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const override;
+
+    std::string createFeatureTableJSON(const osg::Vec3& center,  unsigned short batchLength) const;
+
+    std::string createBatchTableJSON(BatchIdVisitor& batchIdVisitor) const;
+
+    WriteResult writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const;
 };
 #endif // !READERWRITERGLTF_H
+
+template<class T>
+inline void ReaderWriterGLTF::putVal(std::vector<unsigned char>& buffer, T val) const
+{
+    unsigned char const* p = reinterpret_cast<unsigned char const*>(&val);
+    buffer.insert(buffer.end(), p, p + sizeof(T));
+}

@@ -6,7 +6,10 @@
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
-
+#include <nlohmann/json.hpp>
+#include <osgDB/ConvertUTF>
+#include "osgdb_gltf/b3dm/BatchTableHierarchy.h"
+using namespace nlohmann;
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const {
 
@@ -21,10 +24,15 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     std::string ext = osgDB::getLowerCaseFileExtension(filename);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
-    osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
-    nc_node.ref();
+    // 创建一个副本以便修改，而不是修改原始节点
+    osg::ref_ptr<osg::Node> nc_node = dynamic_cast<osg::Node*>(node.clone(osg::CopyOp::DEEP_COPY_ALL));
+    if (!nc_node) return WriteResult::ERROR_IN_WRITING_FILE;
+    BatchIdVisitor biv;
+    if (ext == "b3dm")
+        nc_node->accept(biv);
+
     Osg2Gltf osg2gltf;
-    nc_node.accept(osg2gltf);
+    nc_node->accept(osg2gltf);
     tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
     const bool embedImages = true;
@@ -115,9 +123,9 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
         }
     }
 
+    tinygltf::TinyGLTF writer;
     if (ext != "b3dm") {
         try {
-            tinygltf::TinyGLTF writer;
             bool isSuccess = writer.WriteGltfSceneToFile(
                 &gltfModel,
                 filename,
@@ -125,18 +133,89 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
                 embedBuffers,           // embedBuffers
                 prettyPrint,           // prettyPrint
                 isBinary);
-            nc_node.unref_nodelete();
             return isSuccess ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
         }
         catch (const std::exception& e) {
-            osg::notify(osg::FATAL) << "Exception caught while writing file: " << e.what() << std::endl;
-            nc_node.unref_nodelete();
+            OSG_FATAL << "Exception caught while writing file: " << e.what() << std::endl;
             return WriteResult::ERROR_IN_WRITING_FILE;
         }
     }
+    else {
+        std::ostringstream gltfBuf;
+        writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, false, true);
 
-    nc_node.unref_nodelete();
+        B3DMFile b3dmFile;
+        const osg::Vec3 center;
+        b3dmFile.featureTableJSON = createFeatureTableJSON(center, biv.getBatchId());
+        b3dmFile.batchTableJSON = createBatchTableJSON(biv);
+        b3dmFile.glbData = gltfBuf.str();
+        b3dmFile.calculateHeaderSizes();
+
+        return writeB3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), b3dmFile);
+    }
+
     return WriteResult::ERROR_IN_WRITING_FILE;
+}
+
+std::string ReaderWriterGLTF::createFeatureTableJSON(const osg::Vec3& center, unsigned short batchLength) const
+{
+    json featureTable;
+    featureTable["BATCH_LENGTH"] = batchLength;
+    featureTable["RTC_CENTER"] = { center.x(), center.y(), center.z() };
+    std::string featureTableStr = featureTable.dump();
+    while ((featureTableStr.size() + 28) % 8 != 0) {
+        featureTableStr.push_back(' ');
+    }
+    return featureTableStr;
+}
+
+std::string ReaderWriterGLTF::createBatchTableJSON(BatchIdVisitor& batchIdVisitor) const
+{
+    json batchTable = json::object();
+
+    //json extensions;
+    //json batchTableHierarchy;
+    //BatchTableHierarchy hierarchy;
+    //batchTable["extensions"] = extensions;
+
+    std::string batchTableStr = batchTable.dump();
+    while (batchTableStr.size() % 8 != 0) {
+        batchTableStr.push_back(' ');
+    }
+    return batchTableStr;
+}
+
+osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const
+{
+    std::vector<unsigned char> b3dmBuffer;
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.header.magic, b3dmFile.header.magic + 4);
+    putVal(b3dmBuffer, b3dmFile.header.version);
+    putVal(b3dmBuffer, b3dmFile.header.byteLength);
+    putVal(b3dmBuffer, b3dmFile.header.featureTableJSONByteLength);
+    putVal(b3dmBuffer, b3dmFile.header.featureTableBinaryByteLength);
+    putVal(b3dmBuffer, b3dmFile.header.batchTableJSONByteLength);
+    putVal(b3dmBuffer, b3dmFile.header.batchTableBinaryByteLength);
+
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.featureTableJSON.begin(), b3dmFile.featureTableJSON.end());
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.featureTableBinary.begin(), b3dmFile.featureTableBinary.end());
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.batchTableJSON.begin(), b3dmFile.batchTableJSON.end());
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.batchTableBinary.begin(), b3dmFile.batchTableBinary.end());
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.glbData.begin(), b3dmFile.glbData.end());
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.glbPadding, 0);
+    b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.totalPadding, 0);
+
+    std::ofstream fout(filename, std::ios::binary);
+    if (!fout) {
+        return WriteResult::ERROR_IN_WRITING_FILE;
+    }
+
+    fout.write(reinterpret_cast<const char*>(b3dmBuffer.data()), b3dmBuffer.size());
+    if (fout.fail()) {
+        return WriteResult::ERROR_IN_WRITING_FILE;
+    }
+
+    fout.close();
+    return WriteResult::FILE_SAVED;
 }
 
 REGISTER_OSGPLUGIN(gltf, ReaderWriterGLTF)

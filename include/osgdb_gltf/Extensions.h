@@ -10,6 +10,57 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tinygltf/tiny_gltf.h>
 #include <type_traits>
+#define BASECOLOR_TEXTURE_FILENAME "osgGisPlugins-filename"
+
+#define TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME "osgGisPlugins-basecolor-KHR_texture_transform"
+#define TEX_TRANSFORM_BASECOLOR_OFFSET_X "osgGisPlugins-basecolor-offsetX"
+#define TEX_TRANSFORM_BASECOLOR_OFFSET_Y "osgGisPlugins-basecolor-offsetY"
+#define TEX_TRANSFORM_BASECOLOR_SCALE_X "osgGisPlugins-basecolor-scaleX"
+#define TEX_TRANSFORM_BASECOLOR_SCALE_Y "osgGisPlugins-basecolor-scaleY"
+#define TEX_TRANSFORM_BASECOLOR_TEXCOORD "osgGisPlugins-basecolor-texCoord"
+
+#define TEX_TRANSFORM_NORMAL_TEXTURE_NAME "osgGisPlugins-normal-KHR_texture_transform"
+#define TEX_TRANSFORM_NORMAL_OFFSET_X "osgGisPlugins-normal-offsetX"
+#define TEX_TRANSFORM_NORMAL_OFFSET_Y "osgGisPlugins-normal-offsetY"
+#define TEX_TRANSFORM_NORMAL_SCALE_X "osgGisPlugins-normal-scaleX"
+#define TEX_TRANSFORM_NORMAL_SCALE_Y "osgGisPlugins-normal-scaleY"
+#define TEX_TRANSFORM_NORMAL_TEXCOORD "osgGisPlugins-normal-texCoord"
+
+#define TEX_TRANSFORM_OCCLUSION_TEXTURE_NAME "osgGisPlugins-occlusion-KHR_texture_transform"
+#define TEX_TRANSFORM_OCCLUSION_OFFSET_X "osgGisPlugins-occlusion-offsetX"
+#define TEX_TRANSFORM_OCCLUSION_OFFSET_Y "osgGisPlugins-occlusion-offsetY"
+#define TEX_TRANSFORM_OCCLUSION_SCALE_X "osgGisPlugins-occlusion-scaleX"
+#define TEX_TRANSFORM_OCCLUSION_SCALE_Y "osgGisPlugins-occlusion-scaleY"
+#define TEX_TRANSFORM_OCCLUSION_TEXCOORD "osgGisPlugins-occlusion-texCoord"
+
+#define TEX_TRANSFORM_EMISSIVE_TEXTURE_NAME "osgGisPlugins-emissive-KHR_texture_transform"
+#define TEX_TRANSFORM_EMISSIVE_OFFSET_X "osgGisPlugins-emissive-offsetX"
+#define TEX_TRANSFORM_EMISSIVE_OFFSET_Y "osgGisPlugins-emissive-offsetY"
+#define TEX_TRANSFORM_EMISSIVE_SCALE_X "osgGisPlugins-emissive-scaleX"
+#define TEX_TRANSFORM_EMISSIVE_SCALE_Y "osgGisPlugins-emissive-scaleY"
+#define TEX_TRANSFORM_EMISSIVE_TEXCOORD "osgGisPlugins-emissive-texCoord"
+
+#define TEX_TRANSFORM_MR_TEXTURE_NAME "osgGisPlugins-MR-KHR_texture_transform"
+#define TEX_TRANSFORM_MR_OFFSET_X "osgGisPlugins-MR-offsetX"
+#define TEX_TRANSFORM_MR_OFFSET_Y "osgGisPlugins-MR-offsetY"
+#define TEX_TRANSFORM_MR_SCALE_X "osgGisPlugins-MR-scaleX"
+#define TEX_TRANSFORM_MR_SCALE_Y "osgGisPlugins-MR-scaleY"
+#define TEX_TRANSFORM_MR_TEXCOORD "osgGisPlugins-MR-texCoord"
+
+#define TEX_TRANSFORM_DIFFUSE_TEXTURE_NAME "osgGisPlugins-diffuse-KHR_texture_transform"
+#define TEX_TRANSFORM_DIFFUSE_OFFSET_X "osgGisPlugins-diffuse-offsetX"
+#define TEX_TRANSFORM_DIFFUSE_OFFSET_Y "osgGisPlugins-diffuse-offsetY"
+#define TEX_TRANSFORM_DIFFUSE_SCALE_X "osgGisPlugins-diffuse-scaleX"
+#define TEX_TRANSFORM_DIFFUSE_SCALE_Y "osgGisPlugins-diffuse-scaleY"
+#define TEX_TRANSFORM_DIFFUSE_TEXCOORD "osgGisPlugins-diffuse-texCoord"
+
+#define TEX_TRANSFORM_SG_TEXTURE_NAME "osgGisPlugins-SG-KHR_texture_transform"
+#define TEX_TRANSFORM_SG_OFFSET_X "osgGisPlugins-SG-offsetX"
+#define TEX_TRANSFORM_SG_OFFSET_Y "osgGisPlugins-SG-offsetY"
+#define TEX_TRANSFORM_SG_SCALE_X "osgGisPlugins-SG-scaleX"
+#define TEX_TRANSFORM_SG_SCALE_Y "osgGisPlugins-SG-scaleY"
+#define TEX_TRANSFORM_SG_TEXCOORD "osgGisPlugins-SG-texCoord"
+
 struct GltfExtension {
 protected:
     tinygltf::Value::Object value;

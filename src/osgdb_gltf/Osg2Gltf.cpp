@@ -13,7 +13,6 @@
 #include <osgDB/ConvertUTF>
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
-#include "utils/TextureOptimizer.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
@@ -298,7 +297,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                     }
                 }
 
-                const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
+                const osg::ref_ptr<osg::UShortArray> batchIds = dynamic_cast<osg::UShortArray*>(geom->getVertexAttribArray(0));
                 if (batchIds.valid()) {
                     if (batchIds->size() == positions->size()) {
                         getOrCreateBufferView(batchIds, GL_ARRAY_BUFFER_ARB);
@@ -595,7 +594,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
         return -1;
     }
     std::string filename;
-    osgImage->getUserValue(TexturePackingVisitor::Filename, filename);
+    osgImage->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
     if (filename.empty()) {
         filename = osgImage->getFileName();
     }
@@ -613,7 +612,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
     {
         const osg::ref_ptr<osg::Texture> existTexture = _textures[i].get();
         std::string existPathName;
-        existTexture->getImage(0)->getUserValue(TexturePackingVisitor::Filename, existPathName);
+        existTexture->getImage(0)->getUserValue(BASECOLOR_TEXTURE_FILENAME, existPathName);
         if (existPathName.empty()) {
             existPathName = existTexture->getImage(0)->getFileName();
         }
@@ -761,15 +760,15 @@ int Osg2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg
     if (osgTexture.valid()) {
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
-        osgTexture->getUserValue(TexturePackingVisitor::ExtensionName, enableExtension);
+        osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, enableExtension);
         if (enableExtension) {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
-            osgTexture->getUserValue(TexturePackingVisitor::ExtensionOffsetX, offsetX);
-            osgTexture->getUserValue(TexturePackingVisitor::ExtensionOffsetY, offsetY);
-            osgTexture->getUserValue(TexturePackingVisitor::ExtensionScaleX, scaleX);
-            osgTexture->getUserValue(TexturePackingVisitor::ExtensionScaleY, scaleY);
-            osgTexture->getUserValue(TexturePackingVisitor::ExtensionTexCoord, texCoord);
+            osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, offsetX);
+            osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_Y, offsetY);
+            osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_X, scaleX);
+            osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_Y, scaleY);
+            osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_TEXCOORD, texCoord);
             texture_transform_extension.setOffset({ offsetX,offsetY });
             texture_transform_extension.setScale({ scaleX,scaleY });
             texture_transform_extension.setTexCoord(texCoord);
@@ -800,15 +799,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
-        osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureName, enableExtension);
+        osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_TEXTURE_NAME, enableExtension);
         if (enableExtension) {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureOffsetX, offsetX);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureOffsetY, offsetY);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureScaleX, scaleX);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureScaleY, scaleY);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionNormalTextureTexCoord, texCoord);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_OFFSET_X, offsetX);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_OFFSET_Y, offsetY);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_SCALE_X, scaleX);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_SCALE_Y, scaleY);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_TEXCOORD, texCoord);
             texture_transform_extension.setOffset({ offsetX,offsetY });
             texture_transform_extension.setScale({ scaleX,scaleY });
             texture_transform_extension.setTexCoord(texCoord);
@@ -825,15 +824,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
-        osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureName, enableExtension);
+        osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_TEXTURE_NAME, enableExtension);
         if (enableExtension) {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureOffsetX, offsetX);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureOffsetY, offsetY);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureScaleX, scaleX);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureScaleY, scaleY);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionOcclusionTextureTexCoord, texCoord);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_OFFSET_X, offsetX);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_OFFSET_Y, offsetY);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_SCALE_X, scaleX);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_SCALE_Y, scaleY);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_TEXCOORD, texCoord);
             texture_transform_extension.setOffset({ offsetX,offsetY });
             texture_transform_extension.setScale({ scaleX,scaleY });
             texture_transform_extension.setTexCoord(texCoord);
@@ -850,15 +849,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
-        osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureName, enableExtension);
+        osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_TEXTURE_NAME, enableExtension);
         if (enableExtension) {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureOffsetX, offsetX);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureOffsetY, offsetY);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureScaleX, scaleX);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureScaleY, scaleY);
-            osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionEmissiveTextureTexCoord, texCoord);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_OFFSET_X, offsetX);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_OFFSET_Y, offsetY);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_SCALE_X, scaleX);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_SCALE_Y, scaleY);
+            osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_TEXCOORD, texCoord);
             texture_transform_extension.setOffset({ offsetX,offsetY });
             texture_transform_extension.setScale({ scaleX,scaleY });
             texture_transform_extension.setTexCoord(texCoord);
@@ -878,15 +877,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
             KHR_texture_transform texture_transform_extension;
             bool enableExtension = false;
-            osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureName, enableExtension);
+            osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_TEXTURE_NAME, enableExtension);
             if (enableExtension) {
                 double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                 int texCoord = 0;
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureOffsetX, offsetX);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureOffsetY, offsetY);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureScaleX, scaleX);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTextureScaleY, scaleY);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionMRTexCoord, texCoord);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_OFFSET_X, offsetX);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_OFFSET_Y, offsetY);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_SCALE_X, scaleX);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_SCALE_Y, scaleY);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_TEXCOORD, texCoord);
                 texture_transform_extension.setOffset({ offsetX,offsetY });
                 texture_transform_extension.setScale({ scaleX,scaleY });
                 texture_transform_extension.setTexCoord(texCoord);
@@ -902,15 +901,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
             KHR_texture_transform texture_transform_extension;
             bool enableExtension = false;
-            osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionName, enableExtension);
+            osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, enableExtension);
             if (enableExtension) {
                 double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                 int texCoord = 0;
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionOffsetX, offsetX);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionOffsetY, offsetY);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionScaleX, scaleX);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionScaleY, scaleY);
-                osgGltfMRMaterial->getUserValue(TexturePackingVisitor::ExtensionTexCoord, texCoord);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, offsetX);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_Y, offsetY);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_X, scaleX);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_Y, scaleY);
+                osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_TEXCOORD, texCoord);
                 texture_transform_extension.setOffset({ offsetX,offsetY });
                 texture_transform_extension.setScale({ scaleX,scaleY });
                 texture_transform_extension.setTexCoord(texCoord);
@@ -939,15 +938,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
                 KHR_texture_transform texture_transform_extension;
                 bool enableExtension = false;
-                osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureName, enableExtension);
+                osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_TEXTURE_NAME, enableExtension);
                 if (enableExtension) {
                     double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                     int texCoord = 0;
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureOffsetX, offsetX);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureOffsetY, offsetY);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureScaleX, scaleX);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTextureScaleY, scaleY);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionDiffuseTexCoord, texCoord);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_OFFSET_X, offsetX);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_OFFSET_Y, offsetY);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_SCALE_X, scaleX);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_SCALE_Y, scaleY);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_TEXCOORD, texCoord);
                     texture_transform_extension.setOffset({ offsetX,offsetY });
                     texture_transform_extension.setScale({ scaleX,scaleY });
                     texture_transform_extension.setTexCoord(texCoord);
@@ -963,15 +962,15 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
 
                 KHR_texture_transform texture_transform_extension;
                 bool enableExtension = false;
-                osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureName, enableExtension);
+                osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_TEXTURE_NAME, enableExtension);
                 if (enableExtension) {
                     double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                     int texCoord = 0;
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureOffsetX, offsetX);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureOffsetY, offsetY);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureScaleX, scaleX);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTextureScaleY, scaleY);
-                    osgGltfMaterial->getUserValue(TexturePackingVisitor::ExtensionSGTexCoord, texCoord);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_OFFSET_X, offsetX);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_OFFSET_Y, offsetY);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_SCALE_X, scaleX);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_SCALE_Y, scaleY);
+                    osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_TEXCOORD, texCoord);
                     texture_transform_extension.setOffset({ offsetX,offsetY });
                     texture_transform_extension.setScale({ scaleX,scaleY });
                     texture_transform_extension.setTexCoord(texCoord);

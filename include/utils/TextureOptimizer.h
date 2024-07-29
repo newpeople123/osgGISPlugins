@@ -23,56 +23,6 @@ enum class GltfTextureType {
 class TexturePackingVisitor : public osg::NodeVisitor
 {
 public:
-    static const std::string Filename;
-    static const std::string ExtensionName;
-    static const std::string ExtensionOffsetX;
-    static const std::string ExtensionOffsetY;
-    static const std::string ExtensionScaleX;
-    static const std::string ExtensionScaleY;
-    static const std::string ExtensionTexCoord;
-
-    static const std::string ExtensionNormalTextureName;
-    static const std::string ExtensionNormalTextureOffsetX;
-    static const std::string ExtensionNormalTextureOffsetY;
-    static const std::string ExtensionNormalTextureScaleX;
-    static const std::string ExtensionNormalTextureScaleY;
-    static const std::string ExtensionNormalTextureTexCoord;
-
-    static const std::string ExtensionOcclusionTextureName;
-    static const std::string ExtensionOcclusionTextureOffsetX;
-    static const std::string ExtensionOcclusionTextureOffsetY;
-    static const std::string ExtensionOcclusionTextureScaleX;
-    static const std::string ExtensionOcclusionTextureScaleY;
-    static const std::string ExtensionOcclusionTextureTexCoord;
-
-    static const std::string ExtensionEmissiveTextureName;
-    static const std::string ExtensionEmissiveTextureOffsetX;
-    static const std::string ExtensionEmissiveTextureOffsetY;
-    static const std::string ExtensionEmissiveTextureScaleX;
-    static const std::string ExtensionEmissiveTextureScaleY;
-    static const std::string ExtensionEmissiveTextureTexCoord;
-
-    static const std::string ExtensionMRTextureName;
-    static const std::string ExtensionMRTextureOffsetX;
-    static const std::string ExtensionMRTextureOffsetY;
-    static const std::string ExtensionMRTextureScaleX;
-    static const std::string ExtensionMRTextureScaleY;
-    static const std::string ExtensionMRTexCoord;
-
-    static const std::string ExtensionDiffuseTextureName;
-    static const std::string ExtensionDiffuseTextureOffsetX;
-    static const std::string ExtensionDiffuseTextureOffsetY;
-    static const std::string ExtensionDiffuseTextureScaleX;
-    static const std::string ExtensionDiffuseTextureScaleY;
-    static const std::string ExtensionDiffuseTexCoord;
-
-    static const std::string ExtensionSGTextureName;
-    static const std::string ExtensionSGTextureOffsetX;
-    static const std::string ExtensionSGTextureOffsetY;
-    static const std::string ExtensionSGTextureScaleX;
-    static const std::string ExtensionSGTextureScaleY;
-    static const std::string ExtensionSGTexCoord;
-
 
     TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext = ".png", std::string cachePath = "./", bool bPackTexture = true);
 
