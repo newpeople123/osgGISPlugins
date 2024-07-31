@@ -7,6 +7,7 @@ public:
 	struct MeshQuantizeCompressionOptions :CompressionOptions {
 		bool Compressmore = true;
 		bool PositionFloat = false;
+		bool PositionNormalized = false;//对应-vpi
 		MeshQuantizeCompressionOptions() {
 			PositionQuantizationBits = 14;//[1,16]
 			TexCoordQuantizationBits = 12;//[1,16]
@@ -85,7 +86,7 @@ public:
 				_model.nodes[index].translation[1] = minVY;
 				_model.nodes[index].translation[2] = minVZ;
 
-				const float nodeScale = scaleV / float((1 << _compressionOptions.PositionQuantizationBits) - 1) * 65535.f;
+				const float nodeScale = scaleV / float((1 << _compressionOptions.PositionQuantizationBits) - 1) * (_compressionOptions.PositionNormalized ? 65535.f : 1.f);
 				_model.nodes[index].scale.resize(3);
 				_model.nodes[index].scale[0] = nodeScale;
 				_model.nodes[index].scale[1] = nodeScale;

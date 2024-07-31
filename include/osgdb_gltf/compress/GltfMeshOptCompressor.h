@@ -4,6 +4,7 @@
 
 class GltfMeshOptCompressor :public GltfCompressor {
 private:
+    bool _compressmore = true;
 	void compressMesh(tinygltf::Mesh& mesh);
 
     std::vector<unsigned char> encodeVertexBuffer(const tinygltf::Accessor& attributeAccessor, const unsigned int byteStride);

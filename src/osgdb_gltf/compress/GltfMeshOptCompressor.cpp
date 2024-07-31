@@ -38,9 +38,7 @@ void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 			}
 			//POSITION、NORMAL、TANGENT、TEXCOORD_0、_BATCHID
 			std::vector<unsigned char> vbuf = encodeVertexBuffer(attributeAccessor, byteStride);
-			if (vbuf.size() == 0) {
-				int kk = 0;
-			}
+
 			buffer.data.resize(vbuf.size());
 			for (unsigned int i = 0; i < vbuf.size(); ++i)
 				buffer.data[i] = vbuf[i];
@@ -49,6 +47,8 @@ void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 			meshOptExtension.setByteLength(vbuf.size());
 			meshOptExtension.setByteStride(byteStride);
 			meshOptExtension.setCount(attributeAccessor.count);
+			if (attribute.first == "NORMAL" && _compressmore && bufferView.target == TINYGLTF_TARGET_ARRAY_BUFFER)
+				meshOptExtension.Set("filter", "OCTAHEDRAL");
 			meshOptExtension.setMode("ATTRIBUTES");
 			bufferView.extensions[meshOptExtension.name] = meshOptExtension.GetValue();
 

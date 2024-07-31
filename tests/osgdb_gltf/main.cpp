@@ -170,21 +170,21 @@ void test1(const std::string& filename)
 	node->accept(tpv);
 	tpv.packTextures();
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	options->setOptionString("eb pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
+	//options->setOptionString("eb pp");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
 
-	options->setOptionString("eb ct=draco pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
+	//options->setOptionString("eb ct=draco pp");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
 
-	options->setOptionString("eb ct=meshopt");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.glb)", options.get());
+	//options->setOptionString("eb ct=meshopt");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.glb)", options.get());
 
-	options->setOptionString("eb q");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.glb)", options.get());
+	//options->setOptionString("eb q");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.glb)", options.get());
 
 	options->setOptionString("eb q ct=meshopt");
 	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
@@ -220,8 +220,8 @@ int main() {
 
 	//test1(R"(广州塔)");
 	test1(R"(卡拉电站)");
-	test1(R"(龙翔桥站)");
-	test1(R"(龙翔桥站厅)");
-	test1(R"(芜湖水厂总装单位M)");
+	//test1(R"(龙翔桥站)");
+	//test1(R"(龙翔桥站厅)");
+	//test1(R"(芜湖水厂总装单位M)");
 	return 1;
 }
