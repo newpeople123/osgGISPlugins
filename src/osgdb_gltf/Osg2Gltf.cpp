@@ -138,18 +138,13 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
         osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
         if (normals.valid())
         {
-            bool normalValid = true;
             for (auto& normal : *normals) {
                 const float tolerance = std::fabs(normal.length() - 1.0);
                 if (tolerance > 0.01) {
-                    normalValid = false;
                     break;
                 }
             }
-            if (normalValid) {
-                normals->dirty();
-                getOrCreateBufferView(normals, GL_ARRAY_BUFFER_ARB);
-            }
+            getOrCreateBufferView(normals, GL_ARRAY_BUFFER_ARB);
         }
 
         osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
@@ -228,6 +223,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
             }
 
             primitive.mode = mode;
+
             if (positions.valid()) {
                 const int posAccessorIndex = getOrCreateAccessor(positions, pset, primitive, "POSITION");
                 if (posAccessorIndex > -1) {
@@ -297,7 +293,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                     }
                 }
 
-                const osg::ref_ptr<osg::UShortArray> batchIds = dynamic_cast<osg::UShortArray*>(geom->getVertexAttribArray(0));
+                const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
                 if (batchIds.valid()) {
                     if (batchIds->size() == positions->size()) {
                         getOrCreateBufferView(batchIds, GL_ARRAY_BUFFER_ARB);

@@ -89,6 +89,7 @@ std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getPositi
 		{
 			for (const auto& pair : primitive.attributes)
 			{
+				if (pair.second == -1) continue;
 				tinygltf::Accessor& accessor = _model.accessors[pair.second];
 				if (accessor.type == TINYGLTF_TYPE_VEC3 && pair.first == "POSITION")
 				{
@@ -241,6 +242,7 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 	for (const tinygltf::Primitive& primitive : mesh.primitives)
 	{
 		for (const auto& pair : primitive.attributes) {
+			if (pair.second == -1) continue;
 			tinygltf::Accessor& accessor = _model.accessors[pair.second];
 			if (accessor.type == TINYGLTF_TYPE_VEC2 || accessor.type == TINYGLTF_TYPE_VEC3 || accessor.type == TINYGLTF_TYPE_VEC4)
 			{

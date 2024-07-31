@@ -5,6 +5,7 @@ void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 	for (const auto& primitive : mesh.primitives)
 	{
 		for (const auto& attribute : primitive.attributes) {
+			if (attribute.second == -1) return;
 			const auto& accessor = _model.accessors[attribute.second];
 			const tinygltf::Accessor attributeAccessor(accessor);
 			tinygltf::BufferView& bufferView = _model.bufferViews[attributeAccessor.bufferView];
@@ -43,7 +44,7 @@ void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 			buffer.data.resize(vbuf.size());
 			for (unsigned int i = 0; i < vbuf.size(); ++i)
 				buffer.data[i] = vbuf[i];
-			
+
 			meshOptExtension.setBuffer(bufferView.buffer);
 			meshOptExtension.setByteLength(vbuf.size());
 			meshOptExtension.setByteStride(byteStride);

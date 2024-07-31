@@ -140,13 +140,13 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
             return WriteResult::ERROR_IN_WRITING_FILE;
         }
     }
-    else {
+    else  {
         std::ostringstream gltfBuf;
         writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, false, true);
 
         B3DMFile b3dmFile;
         const osg::Vec3 center;
-        b3dmFile.featureTableJSON = createFeatureTableJSON(center, biv.getBatchId());
+        b3dmFile.featureTableJSON = createFeatureTableJSON(center, biv.getMaxBatchId());
         b3dmFile.batchTableJSON = createBatchTableJSON(biv);
         b3dmFile.glbData = gltfBuf.str();
         b3dmFile.calculateHeaderSizes();
@@ -173,10 +173,46 @@ std::string ReaderWriterGLTF::createBatchTableJSON(BatchIdVisitor& batchIdVisito
 {
     json batchTable = json::object();
 
-    //json extensions;
-    //json batchTableHierarchy;
-    //BatchTableHierarchy hierarchy;
-    //batchTable["extensions"] = extensions;
+    const auto attributeNameBatchIdsMap = batchIdVisitor.getAttributeNameBatchIdsMap();
+    if (!attributeNameBatchIdsMap.empty()) {
+        json extensions;
+        BatchTableHierarchy hierarchy;
+        const auto batchIdAttributesMap = batchIdVisitor.getBatchIdAttributesMap();
+        const auto parentIdMap = batchIdVisitor.getBatchParentIdMap();
+
+        hierarchy.instancesLength = batchIdVisitor.getMaxBatchId();
+        hierarchy.classIds.resize(batchIdVisitor.getMaxBatchId(), -1);
+        hierarchy.parentIds.resize(batchIdVisitor.getMaxBatchId(), -1);
+
+        int classIndex = 0;
+        for (const auto& attributeNameBatchIds : attributeNameBatchIdsMap) {
+            Class currentClass;
+            currentClass.name = "type_" + std::to_string(classIndex);
+            currentClass.length = attributeNameBatchIds.second.size();
+            currentClass.instances = json::object();
+
+            for (const auto& attributeName : attributeNameBatchIds.first) {
+                currentClass.instances[attributeName] = json::array();
+            }
+
+            for (const auto batchId : attributeNameBatchIds.second) {
+                const auto& attributes = batchIdAttributesMap.at(batchId);
+                hierarchy.classIds[batchId] = classIndex;
+                hierarchy.parentIds[batchId] = parentIdMap.at(batchId);
+
+                for (const auto& attribute : attributes) {
+                    currentClass.instances[attribute.first].push_back(attribute.second);
+                }
+            }
+
+            hierarchy.classes.push_back(currentClass);
+            classIndex++;
+        }
+
+        extensions["3DTILES_batch_table_hierarchy"] = hierarchy.toJson();
+        batchTable["extensions"] = extensions;
+    }
+
 
     std::string batchTableStr = batchTable.dump();
     while (batchTableStr.size() % 8 != 0) {

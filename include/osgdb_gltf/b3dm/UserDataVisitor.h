@@ -1,23 +1,37 @@
 #ifndef OSG_GIS_PLUGINS_B3DM_USERDATA_H
 #define OSG_GIS_PLUGINS_B3DM_USERDATA_H 1
 #include <osg/ValueObject>
-#include <nlohmann/json.hpp>
-using namespace nlohmann;
+#include <osg/io_utils>
+
 class UserDataVisitor : public osg::ValueObject::GetValueVisitor
 {
 public:
-    UserDataVisitor(json& item) :_item(item) {};
-    void apply(bool value) override { _item.push_back(value); }
-    void apply(char value) override { _item.push_back(value); }
-    void apply(unsigned char value) override { _item.push_back(value); }
-    void apply(short value) override { _item.push_back(value); }
-    void apply(unsigned short value) override { _item.push_back(value); }
-    void apply(int value) override { _item.push_back(value); }
-    void apply(unsigned int value) override { _item.push_back(value); }
-    void apply(float value) override { _item.push_back(value); }
-    void apply(double value) override { _item.push_back(value); }
-    void apply(const std::string& value) override { _item.push_back(value); }
+    virtual void apply(bool value) { _ss << value; }
+    virtual void apply(char value) { _ss << value; }
+    virtual void apply(unsigned char value) { _ss << value; }
+    virtual void apply(short value) { _ss << value; }
+    virtual void apply(unsigned short value) { _ss << value; }
+    virtual void apply(int value) { _ss << value; }
+    virtual void apply(unsigned int value) { _ss << value; }
+    virtual void apply(float value) { _ss << value; }
+    virtual void apply(double value) { _ss << value; }
+    virtual void apply(const std::string& value) { _ss << value; }
+    virtual void apply(const osg::Vec2f& value) { _ss << value; }
+    virtual void apply(const osg::Vec3f& value) { _ss << value; }
+    virtual void apply(const osg::Vec4f& value) { _ss << value; }
+    virtual void apply(const osg::Vec2d& value) { _ss << value; }
+    virtual void apply(const osg::Vec3d& value) { _ss << value; }
+    virtual void apply(const osg::Vec4d& value) { _ss << value; }
+    virtual void apply(const osg::Quat& value) { _ss << value; }
+    virtual void apply(const osg::Plane& value) { _ss << value; }
+    virtual void apply(const osg::Matrixf& value) { _ss << value; }
+    virtual void apply(const osg::Matrixd& value) { _ss << value; }
+    std::string value() const { return _ss.str(); }
+    void clear() { 
+        _ss.str(""); // 将流的内容重置为空字符串
+        _ss.clear(); // 重置流的状态标志
+    }
 private:
-    json& _item;
+    std::ostringstream _ss;
 };
 #endif // !OSG_GIS_PLUGINS_B3DM_USERDATA_H

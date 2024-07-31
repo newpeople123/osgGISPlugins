@@ -92,7 +92,16 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 
 	for (auto& j : mesh.primitives)
 	{
+		extension.setPosition(-1);
+		extension.setNormal(-1);
+		extension.setTexCoord0(-1);
+		extension.setTexCoord1(-1);
+		extension.setWeights0(-1);
+		extension.setJoints0(-1);
+		extension.setBatchId(-1);
+
 		const auto& primitive = j;
+
 		if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
 			continue;
 		draco::Mesh dracoMesh;
@@ -138,7 +147,7 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		else {
 			// 对于gl_triangles和drawArrays的情况
 			std::vector<uint32_t> indices;
-			const size_t vertexCount = _model.accessors[primitive.attributes.begin()->second].count;
+			const size_t vertexCount = _model.accessors[primitive.attributes.at("POSITION")].count;
 
 			for (size_t i = 0; i < vertexCount; i += 3) {
 				indices.push_back(static_cast<uint32_t>(i));
@@ -160,31 +169,33 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 
 		for (const auto& attribute : primitive.attributes) {
 			if (attribute.second != -1) {
-				const auto& accessor = _model.accessors[attribute.second];
-				tinygltf::Accessor attributeAccessor(accessor);
+				auto& accessor = _model.accessors[attribute.second];
 				int attId = -1;
 
 				switch (accessor.componentType) {
 				case TINYGLTF_COMPONENT_TYPE_BYTE:
-					attId = initPointAttribute<int8_t>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<int8_t>(dracoMesh, attribute.first, accessor);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-					attId = initPointAttribute<uint8_t>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<uint8_t>(dracoMesh, attribute.first, accessor);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_SHORT:
-					attId = initPointAttribute<int16_t>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<int16_t>(dracoMesh, attribute.first, accessor);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-					attId = initPointAttribute<uint16_t>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<uint16_t>(dracoMesh, attribute.first, accessor);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_INT:
+					attId = initPointAttribute<int32_t>(dracoMesh, attribute.first, accessor);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-					attId = initPointAttribute<uint32_t>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<uint32_t>(dracoMesh, attribute.first, accessor);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_FLOAT:
-					attId = initPointAttribute<float>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<float>(dracoMesh, attribute.first, accessor);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_DOUBLE:
-					attId = initPointAttribute<double>(dracoMesh, attribute.first, attributeAccessor);
+					attId = initPointAttribute<double>(dracoMesh, attribute.first, accessor);
 					break;
 				default:
 					// Handle unsupported component types or throw an error.
@@ -193,9 +204,8 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 
 				if (attId != -1) {
 					bufferViewsToRemove.emplace(accessor.bufferView);
-					attributeAccessor.bufferView = -1;
-					attributeAccessor.byteOffset = 0;
-					_model.accessors[attribute.second] = attributeAccessor;
+					accessor.bufferView = -1;
+					accessor.byteOffset = 0;
 					extension.Set(attribute.first, static_cast<int>(dracoMesh.attribute(attId)->unique_id()));
 				}
 			}
@@ -211,22 +221,21 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 			std::cerr << "draco:Failed to encode the mesh: " << status.error_msg() << '\n';
 		}
 
-		
-		//draco::Decoder decoder;
-		//draco::DecoderBuffer decoderBuffer;
-		//decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
-		//auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
-		//if (!decodeResult.ok()) {
-		//	std::cerr << "draco:Draco failed to decode mesh" << '\n';
-		//	return;
-		//}
-		
+
+		draco::Decoder decoder;
+		draco::DecoderBuffer decoderBuffer;
+		decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
+		auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
+		if (!decodeResult.ok()) {
+			std::cerr << "draco:Draco failed to decode mesh" << '\n';
+			return;
+		}
+
 
 		if (primitive.indices != -1) {
 			assert(_model.accessors.size() > primitive.indices);
-			tinygltf::Accessor encodedIndexAccessor(_model.accessors[primitive.indices]);
+			tinygltf::Accessor& encodedIndexAccessor = _model.accessors[primitive.indices];
 			encodedIndexAccessor.count = encoder.num_encoded_faces() * 3;
-			_model.accessors[primitive.indices] = encodedIndexAccessor;
 		}
 
 		for (const auto& dracoAttribute : extension.GetValueObject()) {
@@ -234,11 +243,12 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 			if (accessorAttr == primitive.attributes.end())
 				continue;
 			const int accessorId = accessorAttr->second;
+			if (accessorId == -1)
+				continue;
 			assert(_model.accessors.size() > accessorId);
 
-			tinygltf::Accessor encodedAccessor(_model.accessors[accessorId]);
+			tinygltf::Accessor& encodedAccessor = _model.accessors[accessorId];
 			encodedAccessor.count = encoder.num_encoded_points();
-			_model.accessors[accessorId] = encodedAccessor;
 		}
 
 		_model.buffers.emplace_back();

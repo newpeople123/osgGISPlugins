@@ -24,9 +24,9 @@ struct Class {
 struct BatchTableHierarchy {
     osg::MixinVector<Class> classes;
     uint32_t instancesLength;
-    osg::MixinVector<uint32_t> classIds;
-    osg::MixinVector<uint32_t> parentCounts;
-    osg::MixinVector<uint32_t> parentIds;
+    osg::MixinVector<int32_t> classIds;
+    osg::MixinVector<int32_t> parentCounts;
+    osg::MixinVector<int32_t> parentIds;
 
     json toJson() const {
         json jClasses = json::array();
