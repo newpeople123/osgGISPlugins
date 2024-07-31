@@ -1,6 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_MESHSIMPLIFIER_H
 #define OSG_GIS_PLUGINS_MESHSIMPLIFIER_H
 #include "MeshSimplifierBase.h"
+#include <unordered_set>
 class MeshSimplifier :public MeshSimplifierBase {
 public:
     void simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float simplifyRatio) override;
@@ -19,41 +20,77 @@ inline void MeshSimplifier::simplifyPrimitiveSet(osg::ref_ptr<osg::Geometry> geo
 
     const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
     if (!positions.valid()) return;
+    const osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
+    const osg::ref_ptr<osg::Vec2Array> texcoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
 
     const unsigned int indiceCount = drawElements->getNumIndices();
     const unsigned int positionCount = positions->size();
-    std::vector<float> vertices(positionCount * 3);
-    for (size_t i = 0; i < positionCount; ++i) {
-        const osg::Vec3& vertex = positions->at(i);
-        vertices[i * 3] = vertex.x();
-        vertices[i * 3 + 1] = vertex.y();
-        vertices[i * 3 + 2] = vertex.z();
-    }
+    std::vector<float> vertices;
+    vertices.reserve(positionCount * 3);  // 预先分配足够的空间
 
+    for (const auto& pos : *positions) {
+        vertices.push_back(pos.x());
+        vertices.push_back(pos.y());
+        vertices.push_back(pos.z());
+    }
     osg::ref_ptr<IndexArrayType> indices = new IndexArrayType;
-    for (unsigned int i = 0; i < indiceCount; ++i) {
-        indices->push_back(drawElements->at(i));
+    indices->reserve(indiceCount);
+    indices->insert(indices->end(), drawElements->begin(), drawElements->begin() + indiceCount);
+
+    osg::ref_ptr<IndexArrayType> destination = new IndexArrayType(indiceCount);
+    const unsigned int targetIndexCount = static_cast<unsigned int>(indiceCount * simplifyRatio);
+    const size_t stride = sizeof(osg::Vec3);
+    destination->resize(meshopt_simplify(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, target_error, options));
+
+    if (aggressive && destination->size() > targetIndexCount) {
+        destination->resize(meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, target_error_aggressive));
     }
 
-    osg::ref_ptr<IndexArrayType> destination = new IndexArrayType;
-    destination->resize(indiceCount);
-    const unsigned int targetIndexCount = indiceCount * simplifyRatio;
-    size_t newLength = meshopt_simplify(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error, options);
-    if (aggressive && newLength > targetIndexCount) {
-        newLength = meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], static_cast<size_t>(indiceCount), vertices.data(), static_cast<size_t>(positionCount), (size_t)(sizeof(float) * 3), static_cast<size_t>(targetIndexCount), target_error_aggressive);
-    }
+    // 创建用于查找使用过的顶点的集合
+    std::unordered_set<size_t> usedVertices(destination->begin(), destination->end());
 
-    if (newLength > 0) {
-        osg::ref_ptr<IndexArrayType> newIndices = new IndexArrayType;
-        for (size_t i = 0; i < static_cast<size_t>(newLength); ++i) {
-            newIndices->push_back(destination->at(i));
+    // 创建映射，用于重新排列顶点
+    std::vector<unsigned int> remap(positionCount, -1);
+    unsigned int newIndex = 0;
+
+    for (size_t i = 0; i < positionCount; ++i) {
+        if (usedVertices.find(i) != usedVertices.end()) {
+            remap[i] = newIndex++;
         }
-        geom->setPrimitiveSet(psetIndex, new DrawElementsType(osg::PrimitiveSet::TRIANGLES, newIndices->size(), &(*newIndices)[0]));
     }
-    else {
-        geom->removePrimitiveSet(psetIndex);
-        psetIndex--;
+
+    // 创建新的顶点数组
+    osg::ref_ptr<osg::Vec3Array> newPositions = new osg::Vec3Array;
+    osg::ref_ptr<osg::Vec3Array> newNormals = new osg::Vec3Array;
+    osg::ref_ptr<osg::Vec2Array> newTexcoords = new osg::Vec2Array;
+
+    for (size_t i = 0; i < positionCount; ++i) {
+        if (remap[i] != -1) {
+            newPositions->push_back(positions->at(i));
+            if (normals.valid()) {
+                newNormals->push_back(normals->at(i));
+            }
+            if (texcoords.valid()) {
+                newTexcoords->push_back(texcoords->at(i));
+            }
+        }
     }
+
+    // 重新排列索引
+    for (size_t i = 0; i < destination->size(); ++i) {
+        destination->at(i) = remap[destination->at(i)];
+    }
+
+    // 更新几何图形的顶点数组、法线和纹理坐标
+    geom->setVertexArray(newPositions);
+    if (normals.valid()) {
+        geom->setNormalArray(newNormals);
+    }
+    if (texcoords.valid()) {
+        geom->setTexCoordArray(0, newTexcoords);
+    }
+
+    geom->setPrimitiveSet(psetIndex, new DrawElementsType(osg::PrimitiveSet::TRIANGLES, destination->size(), &(*destination)[0]));
 }
 
 #endif // !OSG_GIS_PLUGINS_MESHSIMPLIFIER_H

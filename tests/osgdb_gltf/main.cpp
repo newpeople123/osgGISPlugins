@@ -21,11 +21,11 @@
 #include <osgDB/WriteFile>
 #include <future>
 using namespace std;
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 
 
@@ -166,29 +166,29 @@ void test1(const std::string& filename)
 	const std::string textureExt = "jpg";
 	const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
 	osgDB::makeDirectory(textureCachePath);
-	//TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
-	//node->accept(tpv);
-	//tpv.packTextures();
+	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
+	node->accept(tpv);
+	tpv.packTextures();
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	//options->setOptionString("eb pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
+	options->setOptionString("eb pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
 
 	options->setOptionString("eb ct=draco pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco050.gltf)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
 
-	//options->setOptionString("eb ct=meshopt");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.glb)", options.get());
+	options->setOptionString("eb ct=meshopt");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.glb)", options.get());
 
-	//options->setOptionString("eb q");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.glb)", options.get());
+	options->setOptionString("eb q");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.glb)", options.get());
 
-	//options->setOptionString("eb q ct=meshopt");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.glb)", options.get());
+	options->setOptionString("eb q ct=meshopt");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.glb)", options.get());
 }
 
 int main() {
@@ -219,9 +219,9 @@ int main() {
 	//}
 
 	//test1(R"(广州塔)");
-	//test1(R"(卡拉电站1)");
-	//test1(R"(龙翔桥站)");
+	test1(R"(卡拉电站)");
+	test1(R"(龙翔桥站)");
 	test1(R"(龙翔桥站厅)");
-	//test1(R"(芜湖水厂总装单位M)");
+	test1(R"(芜湖水厂总装单位M)");
 	return 1;
 }
