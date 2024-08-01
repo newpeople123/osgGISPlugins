@@ -28,20 +28,20 @@ int main(int argc, char** argv)
     while (arguments.read("-o", output));
 
     if (input.empty()) {
-        std::cout << "input file can not be null!" << '\n';
+        OSG_FATAL << "input file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
 
     if (output.empty()) {
-        std::cout << "output file can not be null!" << '\n';
+        OSG_FATAL << "output file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
 
     std::ifstream b3dmFile(input, std::ios::binary);
     if (!b3dmFile) {
-        std::cout << "can not open this b3dm file:" << input << '\n';
+        OSG_FATAL << "can not open this b3dm file:" << input << '\n';
         return 0;
     }
 
@@ -51,14 +51,14 @@ int main(int argc, char** argv)
     char magic[4];
     b3dmFile.read(magic, 4);
     if (std::strncmp(magic, "b3dm", 4) != 0) {
-        std::cout << "invalid b3dm file,b3dm header's magic is not \"b3dm\":" << input << '\n';
+        OSG_FATAL << "invalid b3dm file,b3dm header's magic is not \"b3dm\":" << input << '\n';
         return 0;
     }
     //version:1
     uint32_t version;
     b3dmFile.read(reinterpret_cast<char*>(&version), 4);
     if (version != 1) {
-        std::cout << "invalid b3dm file,b3dm header's version is not \"1\":" << input << '\n';
+        OSG_FATAL << "invalid b3dm file,b3dm header's version is not \"1\":" << input << '\n';
         return 0;
     }
     //byteLength=28+featureTableJSONByteLength+featureTableBinaryByteLength+batchTableJSONByteLength+batchTableBinaryByteLength+glbLength
@@ -88,7 +88,7 @@ int main(int argc, char** argv)
 
     std::ofstream gltfFile(output, std::ios::binary);
     if (!gltfFile) {
-        std::cout << "create gltf/glb file failed:" << output << '\n';
+        OSG_FATAL << "create gltf/glb file failed:" << output << '\n';
         return false;
     }
 
@@ -101,15 +101,15 @@ int main(int argc, char** argv)
         if (result) {
             result = writer.WriteGltfSceneToFile(&model, output, true, true, false, false);
             if (result)
-                std::cout << "Successfully converted B3DM to GLTF:" << input << " -> " << output << '\n';
+                OSG_NOTICE << "Successfully converted B3DM to GLTF:" << input << " -> " << output << '\n';
         }
         else {
             std::remove(output.c_str());
-            std::cout << "Failed converted B3DM to GLTF:" << input << " -> " << output << '\n';
+            OSG_FATAL << "Failed converted B3DM to GLTF:" << input << " -> " << output << '\n';
         }
     }
     else {
-        std::cout << "Successfully converted B3DM to GLB:" << input << " -> " << output << '\n';
+        OSG_NOTICE << "Successfully converted B3DM to GLB:" << input << " -> " << output << '\n';
     }
     return 1;
 }

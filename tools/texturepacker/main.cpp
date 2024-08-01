@@ -35,13 +35,13 @@ int main(int argc, char** argv)
     while (arguments.read("-o", output));
 
     //if (input.empty()) {
-    //    std::cout << "input file can not be null!" << '\n';
+    //    OSG_FATAL << "input file can not be null!" << '\n';
     //    arguments.getApplicationUsage()->write(std::cout);
     //    return 0;
     //}
 
     //if (output.empty()) {
-    //    std::cout << "output file can not be null!" << '\n';
+    //    OSG_FATAL << "output file can not be null!" << '\n';
     //    arguments.getApplicationUsage()->write(std::cout);
     //    return 0;
     //}

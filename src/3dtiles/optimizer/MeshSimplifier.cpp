@@ -21,7 +21,7 @@ void MeshSimplifier::simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float 
             }
         }
         else {
-            std::cerr << "Geometry primitive's mode is not Triangles,please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
+            OSG_FATAL << "Geometry primitive's mode is not Triangles,please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
         }
     }
 

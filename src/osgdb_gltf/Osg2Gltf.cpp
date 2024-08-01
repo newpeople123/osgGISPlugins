@@ -138,12 +138,6 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
         osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
         if (normals.valid())
         {
-            for (auto& normal : *normals) {
-                const float tolerance = std::fabs(normal.length() - 1.0);
-                if (tolerance > 0.01) {
-                    break;
-                }
-            }
             getOrCreateBufferView(normals, GL_ARRAY_BUFFER_ARB);
         }
 
@@ -188,21 +182,21 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
             switch (mode)
             {
             case osg::PrimitiveSet::Mode::QUADS:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::QUADS,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::QUADS,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
             case osg::PrimitiveSet::Mode::QUAD_STRIP:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::QUAD_STRIP,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::QUAD_STRIP,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
             case osg::PrimitiveSet::Mode::POLYGON:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::POLYGON,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::POLYGON,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
             case osg::PrimitiveSet::Mode::LINES_ADJACENCY:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::LINES_ADJACENCY,that is not supported!" << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::LINES_ADJACENCY,that is not supported!" << std::endl;
             case osg::PrimitiveSet::Mode::LINE_STRIP_ADJACENCY:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::LINE_STRIP_ADJACENCY,that is not supported!" << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::LINE_STRIP_ADJACENCY,that is not supported!" << std::endl;
             case osg::PrimitiveSet::Mode::TRIANGLES_ADJACENCY:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::TRIANGLES_ADJACENCY,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::TRIANGLES_ADJACENCY,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
             case osg::PrimitiveSet::Mode::TRIANGLE_STRIP_ADJACENCY:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::TRIANGLE_STRIP_ADJACENCY,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::TRIANGLE_STRIP_ADJACENCY,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
             case osg::PrimitiveSet::Mode::PATCHES:
-                std::cerr << "primitiveSet mode is osg::PrimitiveSet::Mode::PATCHES,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
+                OSG_FATAL << "primitiveSet mode is osg::PrimitiveSet::Mode::PATCHES,that is not supported!Please optimize the Geometry using osgUtil::Optimizer::TRISTRIP_GEOMETRY." << std::endl;
             default:
                 break;
             }
@@ -229,9 +223,8 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                 if (posAccessorIndex > -1) {
                     osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
                     osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-                    for (size_t i = 0; i < positions->size(); ++i)
+                    for (const auto& v : *positions)
                     {
-                        const osg::Vec3f& v = (*positions)[i];
                         if (!v.isNaN()) {
                             posMin.x() = osg::minimum(posMin.x(), v.x());
                             posMin.y() = osg::minimum(posMin.y(), v.y());
@@ -243,12 +236,8 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                     }
                     // record min/max for position array (required):
                     tinygltf::Accessor& posacc = _model.accessors[posAccessorIndex];
-                    posacc.minValues.push_back(posMin.x());
-                    posacc.minValues.push_back(posMin.y());
-                    posacc.minValues.push_back(posMin.z());
-                    posacc.maxValues.push_back(posMax.x());
-                    posacc.maxValues.push_back(posMax.y());
-                    posacc.maxValues.push_back(posMax.z());
+                    posacc.minValues = { posMin.x(), posMin.y(), posMin.z() };
+                    posacc.maxValues = { posMax.x(), posMax.y(), posMax.z() };
                 }
                 if (normals.valid()) {
                     getOrCreateAccessor(normals, pset, primitive, "NORMAL");
@@ -261,9 +250,8 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                     if (texAccessorIndex > -1) {
                         osg::Vec2f texMin(FLT_MAX, FLT_MAX);
                         osg::Vec2f texMax(-FLT_MAX, -FLT_MAX);
-                        for (size_t i = 0; i < texCoords->size(); ++i)
+                        for (const auto& t : *texCoords)
                         {
-                            const osg::Vec2f& t = (*texCoords)[i];
                             if (!t.isNaN()) {
                                 texMin.x() = osg::minimum(texMin.x(), t.x());
                                 texMin.y() = osg::minimum(texMin.y(), t.y());
@@ -285,11 +273,9 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                         //    texMax.y() = 1.0;
                         //}
                         // record min/max for position array (required):
-                        tinygltf::Accessor& posacc = _model.accessors[texAccessorIndex];
-                        posacc.minValues.push_back(texMin.x());
-                        posacc.minValues.push_back(texMin.y());
-                        posacc.maxValues.push_back(texMax.x());
-                        posacc.maxValues.push_back(texMax.y());
+                        tinygltf::Accessor& texacc = _model.accessors[texAccessorIndex];
+                        texacc.minValues = { texMin.x(), texMin.y() };
+                        texacc.maxValues = { texMax.x(), texMax.y() };
                     }
                 }
 
@@ -302,7 +288,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                     else
                     {
                         if (batchIds)
-                            std::cerr << "Osg2Gltf error:batchid's length is not equal position's length!" << '\n';
+                            OSG_FATAL << "Osg2Gltf error:batchid's length is not equal position's length!" << '\n';
                     }
                 }
             }
@@ -416,8 +402,7 @@ int Osg2Gltf::getOrCreateBuffer(const osg::BufferData* data)
 
     //TODO: account for endianess
     const unsigned char* ptr = (unsigned char*)(data->getDataPointer());
-    for (size_t i = 0; i < data->getTotalDataSize(); ++i)
-        buffer.data[i] = *ptr++;
+    std::copy(ptr, ptr + data->getTotalDataSize(), buffer.data.begin());
 
     return id;
 }
@@ -450,7 +435,7 @@ int Osg2Gltf::getOrCreateBufferView(const osg::BufferData* data, const GLenum ta
     }
     catch (const std::exception& e)
     {
-        std::cout << e.what() << '\n';
+        OSG_FATAL << e.what() << std::endl;
         return -1;
     }
 }
@@ -530,7 +515,7 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
         }
     }
     else {
-        std::cerr << "primitiveSet type is " << type << ",that is not supported!Please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
+        OSG_FATAL << "primitiveSet type is " << type << ",that is not supported!Please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
     }
 }
 
@@ -600,7 +585,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
     }
     std::ifstream file(osgDB::convertStringFromUTF8toCurrentCodePage(filename), std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "Texture file \"" << filename << "\" exists,but failed to read.";
+        OSG_FATAL << "Texture file \"" << filename << "\" exists,but failed to read.";
         return -1;
     }
 
@@ -656,7 +641,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
         mimeType = "image/webp";
     }
     else {
-        std::cerr << "Error:texture's extension is: " << ext << " ,that is not supported!" << std::endl;
+        OSG_FATAL << "Error:texture's extension is: " << ext << " ,that is not supported!" << std::endl;
         return -1;
     }
 

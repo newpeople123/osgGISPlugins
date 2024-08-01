@@ -47,13 +47,13 @@ int main(int argc, char** argv)
     while (arguments.read("-o", output));
 
     if (input.empty()) {
-        std::cout << "input file can not be null!" << '\n';
+        OSG_FATAL << "input file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
 
     if (output.empty()) {
-        std::cout << "output file can not be null!" << '\n';
+        OSG_FATAL << "output file can not be null!" << '\n';
         arguments.getApplicationUsage()->write(std::cout);
         return 0;
     }
@@ -113,15 +113,15 @@ int main(int argc, char** argv)
             Write3DTiles(threeDTilesNode, options, output, ratio, multi_threading, rootTransform);
         }
         catch (const std::invalid_argument& e) {
-            std::cerr << "invalid input: " << e.what() << '\n';
+            OSG_FATAL << "invalid input: " << e.what() << '\n';
         }
         catch (const std::out_of_range& e) {
-            std::cerr << "value out of range: " << e.what() << '\n';
+            OSG_FATAL << "value out of range: " << e.what() << '\n';
         }
 
     }
     else {
-        std::cout << "Error:can not read 3d model file!" << '\n';
+        OSG_FATAL << "Error:can not read 3d model file!" << '\n';
     }
 
     return 1;

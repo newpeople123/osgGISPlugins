@@ -77,7 +77,7 @@ osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool sto
         osg::Vec4 v(r.x, r.y, r.w, r.h);
 
         if (r.id != itr->first || !r.was_packed) {
-            OSG_NOTICE << "[TexturePacker] Bad packing element: " << pair.first->getFileName()
+            OSG_INFO << "[TexturePacker] Bad packing element: " << pair.first->getFileName()
                 << ", order = " << ptr << "/" << _input.size() << ", rect = " << v
                 << ", packed = " << r.was_packed << std::endl;
             if (stopIfFailed) return NULL;

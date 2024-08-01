@@ -106,13 +106,13 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
     if (topProp.GetPropertyDataType() == FbxCompoundDT) {
         const FbxProperty physicalProps = topProp.Find("Parameters", false);
         if (physicalProps.IsValid()) {
-            OSG_INFO << ("3dsMax Physical Material.") << std::endl;
+            OSG_INFO << "3dsMax Physical Material." << std::endl;
             pOsgMat->setName(pFbxMat->GetName());
 
             osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
 
             if (!shadingModel.IsEmpty() && shadingModel != "unknown") {
-                std::cout <<
+                OSG_INFO <<
                     "Warning: Material %s has surprising shading model: %s\n" <<
                     pFbxMat->GetName() <<
                     shadingModel << std::endl;
@@ -237,7 +237,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
         if (pbrProps.IsValid()) {
             const FbxProperty metalnessProps = pbrProps.Find("metalness");
             if (metalnessProps.IsValid()) {
-                OSG_INFO << ("3dsMax Metalness/Roughness Material.") << std::endl;
+                OSG_INFO << "3dsMax Metalness/Roughness Material." << std::endl;
                 pOsgMat->setName(pFbxMat->GetName());
                 osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
 
@@ -327,7 +327,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
             }
             else {
-                OSG_INFO << ("3dsMax Specular/Glossiness Material.") << std::endl;
+                OSG_INFO << "3dsMax Specular/Glossiness Material." << std::endl;
                 pOsgMat = new GltfPbrSGMaterial;
                 pOsgMat->setName(pFbxMat->GetName());
                 result.material = pOsgMat;
@@ -498,7 +498,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
             // get more factors here...
         }
 
-        OSG_INFO << ("3dsMax Traditional Material.") << std::endl;
+        OSG_INFO << "3dsMax Traditional Material." << std::endl;
         osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
 
         FbxFileTexture* diffuseTexture = selectFbxFileTexture(pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse));
