@@ -7,11 +7,14 @@ file(GLOB COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/compress/
 file(GLOB MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/*.h)
 file(GLOB MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/merge/*.h)
 file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
+file(GLOB B3DM_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/*.h)
+
 file(GLOB COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/compress/*.cpp)
 file(GLOB MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/*.cpp)
 file(GLOB MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/merge/*.cpp)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
 set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp)
+file(GLOB B3DM_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/*.cpp)
 
 file(GLOB_RECURSE TEST_HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/*.h)
 file(GLOB_RECURSE TEST_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/optimizer/*.cpp)
@@ -27,6 +30,7 @@ ${MATERIAL_HEADER_FILES} ${MATERIAL_SOURCE_FILES}
 ${MERGE_HEADER_FILES} ${MERGE_SOURCE_FILES}
 ${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES}
 ${TEST_HEADER_FILES} ${TEST_SOURCE_FILES}
+${B3DM_HEADER_FILES} ${B3DM_SOURCE_FILES}
 )
 
 # 链接库
@@ -40,11 +44,14 @@ source_group("include/compress" FILES ${COMPRESS_HEADER_FILES})
 source_group("include/material" FILES ${MATERIAL_HEADER_FILES})
 source_group("include/merge" FILES ${MERGE_HEADER_FILES})
 source_group("include/utils" FILES ${UTILS_HEADER_FILES}) 
+source_group("include/b3dm" FILES ${B3DM_HEADER_FILES}) 
+
 source_group("src" FILES ${DIR_SRCS} ${SOURCE_FILES})
 source_group("src/compress" FILES ${COMPRESS_SOURCE_FILES})
 source_group("src/material" FILES ${MATERIAL_SOURCE_FILES})
 source_group("src/merge" FILES ${MERGE_SOURCE_FILES})
 source_group("src/utils" FILES ${UTILS_SOURCE_FILES}) 
+source_group("src/b3dm" FILES ${B3DM_SOURCE_FILES}) 
 
 source_group("include/test" FILES ${TEST_HEADER_FILES}) 
 source_group("src/test" FILES ${TEST_SOURCE_FILES})

@@ -8,7 +8,6 @@
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 #include <nlohmann/json.hpp>
 #include <osgDB/ConvertUTF>
-#include "osgdb_gltf/b3dm/BatchTableHierarchy.h"
 using namespace nlohmann;
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const {
@@ -24,15 +23,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     std::string ext = osgDB::getLowerCaseFileExtension(filename);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
-    // 创建一个副本以便修改，而不是修改原始节点
-    osg::ref_ptr<osg::Node> nc_node = dynamic_cast<osg::Node*>(node.clone(osg::CopyOp::DEEP_COPY_ALL));
-    if (!nc_node) return WriteResult::ERROR_IN_WRITING_FILE;
-    BatchIdVisitor biv;
+    osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
+    nc_node.ref();
+    BatchTableHierarchyVisitor bthv;
     if (ext == "b3dm")
-        nc_node->accept(biv);
+        nc_node.accept(bthv);
 
     Osg2Gltf osg2gltf;
-    nc_node->accept(osg2gltf);
+    nc_node.accept(osg2gltf);
     tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
     const bool embedImages = true;
@@ -133,9 +131,11 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
                 embedBuffers,           // embedBuffers
                 prettyPrint,           // prettyPrint
                 isBinary);
+            nc_node.unref_nodelete();
             return isSuccess ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
         }
         catch (const std::exception& e) {
+            nc_node.unref_nodelete();
             OSG_FATAL << "Exception caught while writing file: " << e.what() << std::endl;
             return WriteResult::ERROR_IN_WRITING_FILE;
         }
@@ -146,14 +146,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 
         B3DMFile b3dmFile;
         const osg::Vec3 center;
-        b3dmFile.featureTableJSON = createFeatureTableJSON(center, biv.getMaxBatchId());
-        b3dmFile.batchTableJSON = createBatchTableJSON(biv);
+        b3dmFile.featureTableJSON = createFeatureTableJSON(center, bthv.getBatchLength());
+        b3dmFile.batchTableJSON = createBatchTableJSON(bthv);
         b3dmFile.glbData = gltfBuf.str();
         b3dmFile.calculateHeaderSizes();
-
+        nc_node.unref_nodelete();
         return writeB3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), b3dmFile);
     }
-
+    nc_node.unref_nodelete();
     return WriteResult::ERROR_IN_WRITING_FILE;
 }
 
@@ -169,20 +169,20 @@ std::string ReaderWriterGLTF::createFeatureTableJSON(const osg::Vec3& center, un
     return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createBatchTableJSON(BatchIdVisitor& batchIdVisitor) const
+std::string ReaderWriterGLTF::createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const
 {
     json batchTable = json::object();
 
-    const auto attributeNameBatchIdsMap = batchIdVisitor.getAttributeNameBatchIdsMap();
+    const auto attributeNameBatchIdsMap = batchTableHierarchyVisitor.getAttributeNameBatchIdsMap();
     if (!attributeNameBatchIdsMap.empty()) {
         json extensions;
         BatchTableHierarchy hierarchy;
-        const auto batchIdAttributesMap = batchIdVisitor.getBatchIdAttributesMap();
-        const auto parentIdMap = batchIdVisitor.getBatchParentIdMap();
+        const auto batchIdAttributesMap = batchTableHierarchyVisitor.getBatchIdAttributesMap();
+        const auto parentIdMap = batchTableHierarchyVisitor.getBatchParentIdMap();
 
-        hierarchy.instancesLength = batchIdVisitor.getMaxBatchId();
-        hierarchy.classIds.resize(batchIdVisitor.getMaxBatchId(), -1);
-        hierarchy.parentIds.resize(batchIdVisitor.getMaxBatchId(), -1);
+        hierarchy.instancesLength = batchTableHierarchyVisitor.getBatchLength();
+        hierarchy.classIds.resize(batchTableHierarchyVisitor.getBatchLength(), -1);
+        hierarchy.parentIds.resize(batchTableHierarchyVisitor.getBatchLength(), -1);
 
         int classIndex = 0;
         for (const auto& attributeNameBatchIds : attributeNameBatchIdsMap) {

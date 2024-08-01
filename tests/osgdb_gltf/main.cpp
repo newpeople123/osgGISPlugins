@@ -6,6 +6,7 @@
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"//必须放在<windows.h>前面
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
+#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -169,9 +170,11 @@ void test1(const std::string& filename)
 	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
 	node->accept(tpv);
 	tpv.packTextures();
+	BatchIdVisitor biv;
+	node->accept(biv);
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	//options->setOptionString("eb pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
+	options->setOptionString("eb pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(11111.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
 
 	//options->setOptionString("eb ct=draco pp");
@@ -186,9 +189,9 @@ void test1(const std::string& filename)
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.glb)", options.get());
 
-	options->setOptionString("eb q ct=meshopt");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.glb)", options.get());
+	//options->setOptionString("eb q ct=meshopt");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.glb)", options.get());
 }
 
 int main() {
@@ -219,9 +222,9 @@ int main() {
 	//}
 
 	//test1(R"(广州塔)");
-	test1(R"(卡拉电站)");
+	//test1(R"(卡拉电站)");
 	//test1(R"(龙翔桥站)");
 	//test1(R"(龙翔桥站厅)");
-	//test1(R"(芜湖水厂总装单位M)");
+	test1(R"(芜湖水厂总装单位M)");
 	return 1;
 }

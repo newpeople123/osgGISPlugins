@@ -2,8 +2,8 @@
 #define READERWRITERGLTF_H 1
 #include <osgDB/ReaderWriter>
 #include "osgdb_gltf/Osg2Gltf.h"
-#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #include "osgdb_gltf/b3dm/B3DM.h"
+#include "osgdb_gltf/b3dm/BatchTableHierarchy.h"
 class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
 private:
@@ -47,7 +47,7 @@ public:
 
     std::string createFeatureTableJSON(const osg::Vec3& center,  unsigned short batchLength) const;
 
-    std::string createBatchTableJSON(BatchIdVisitor& batchIdVisitor) const;
+    std::string createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const;
 
     WriteResult writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const;
 };
