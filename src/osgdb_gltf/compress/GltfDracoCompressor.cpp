@@ -135,7 +135,6 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 				break;
 			default:
 				initDracoMeshFaces<uint32_t>(indicesAccessor, dracoMesh);
-				// Handle unsupported component types or throw an error.
 				break;
 			}
 
@@ -143,7 +142,6 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 			indicesAccessor.bufferView = -1;
 			indicesAccessor.byteOffset = 0;
 		}
-
 		else {
 			// 对于gl_triangles和drawArrays的情况
 			std::vector<uint32_t> indices;
@@ -218,18 +216,18 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		draco::EncoderBuffer encoderBuffer;
 		const draco::Status status = encoder.EncodeMeshToBuffer(dracoMesh, &encoderBuffer);
 		if (!status.ok()) {
-			std::cerr << "draco:Failed to encode the mesh: " << status.error_msg() << '\n';
+			OSG_FATAL << "draco:Failed to encode the mesh: " << status.error_msg() << '\n';
 		}
 
 
-		draco::Decoder decoder;
-		draco::DecoderBuffer decoderBuffer;
-		decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
-		auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
-		if (!decodeResult.ok()) {
-			std::cerr << "draco:Draco failed to decode mesh" << '\n';
-			return;
-		}
+		//draco::Decoder decoder;
+		//draco::DecoderBuffer decoderBuffer;
+		//decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
+		//auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
+		//if (!decodeResult.ok()) {
+		//	OSG_FATAL << "draco:Draco failed to decode mesh" << '\n';
+		//	return;
+		//}
 
 
 		if (primitive.indices != -1) {
@@ -253,76 +251,61 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 
 		_model.buffers.emplace_back();
 		tinygltf::Buffer& gltfBuffer = _model.buffers.back();
-		int bufferId = _model.buffers.size() - 1;
-		gltfBuffer.data.resize(encoderBuffer.size());
-		const char* dracoBuffer = encoderBuffer.data();
-		for (unsigned int i = 0; i < encoderBuffer.size(); ++i)
-			gltfBuffer.data[i] = *dracoBuffer++;
+		gltfBuffer.data.assign(encoderBuffer.data(), encoderBuffer.data() + encoderBuffer.size());
+
 		_model.bufferViews.emplace_back();
 		tinygltf::BufferView& bv = _model.bufferViews.back();
-		int id = _model.bufferViews.size() - 1;
-		bv.buffer = bufferId;
+		bv.buffer = static_cast<int>(_model.buffers.size()) - 1;
 		bv.byteLength = encoderBuffer.size();
 		bv.byteOffset = 0;
 
 		tinygltf::Value::Object dracoExtensionObj;
 		dracoExtensionObj["attributes"] = extension.GetValue();
-		dracoExtensionObj["bufferView"] = tinygltf::Value(id);
+		dracoExtensionObj["bufferView"] = tinygltf::Value(static_cast<int>(_model.bufferViews.size()) - 1);
 		tinygltf::Primitive resultPrimitive(primitive);
 		resultPrimitive.extensions.insert(std::make_pair(extension.name, tinygltf::Value(dracoExtensionObj)));
 		j = resultPrimitive;
 	}
 
-	removeBufferViews(bufferViewsToRemove);
+	adjustIndices(bufferViewsToRemove);
 }
 
-void GltfDracoCompressor::removeBufferViews(const std::unordered_set<int>& bufferViewsToRemove)
+void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferViewsToRemove)
 {
 	std::vector<int> bufferViewsToRemoveVector(bufferViewsToRemove.begin(), bufferViewsToRemove.end());
-	for (int i = 0; i < bufferViewsToRemoveVector.size(); ++i) {
-		int bufferViewId = bufferViewsToRemoveVector.at(i);
-		tinygltf::BufferView bufferView = _model.bufferViews[bufferViewId];
-		const int bufferId = bufferView.buffer;
-		_model.buffers.erase(_model.buffers.begin() + bufferId);
-		for (auto& bv : _model.bufferViews) {
-			if (bv.buffer > bufferId) {
-				bv.buffer -= 1;
-			}
-		}
+	std::sort(bufferViewsToRemoveVector.begin(), bufferViewsToRemoveVector.end(), std::greater<int>());
 
+	for (int bufferViewId : bufferViewsToRemoveVector) {
 		_model.bufferViews.erase(_model.bufferViews.begin() + bufferViewId);
+
 		for (auto& accessor : _model.accessors) {
 			if (accessor.bufferView > bufferViewId) {
 				accessor.bufferView -= 1;
 			}
 		}
+
 		for (auto& image : _model.images) {
 			if (image.bufferView > bufferViewId) {
 				image.bufferView -= 1;
 			}
 		}
+
 		for (auto& mesh : _model.meshes) {
 			for (auto& primitive : mesh.primitives) {
-				auto dracoExtension = primitive.extensions.find(extension.name);
-				if (dracoExtension != primitive.extensions.end()) {
-					auto dracoBufferViewId = dracoExtension->second.Get("bufferView").GetNumberAsInt();
-
-					tinygltf::Value::Object obj;
-					obj.insert(std::make_pair("bufferView", tinygltf::Value(dracoBufferViewId - 1)));
-					tinygltf::Value attributesValue = dracoExtension->second.Get("attributes");
-					tinygltf::Value::Object attributesObject = attributesValue.Get<tinygltf::Value::Object>();
-					obj.insert(std::make_pair("attributes", attributesObject));
-					dracoExtension->second = tinygltf::Value(obj);
+				auto dracoExtensionIt = primitive.extensions.find(extension.name);
+				if (dracoExtensionIt != primitive.extensions.end()) {
+					auto& dracoExtension = dracoExtensionIt->second.Get<tinygltf::Value::Object>();
+					auto bufferViewIt = dracoExtension.find("bufferView");
+					if (bufferViewIt != dracoExtension.end()) {
+						int dracoBufferViewId = bufferViewIt->second.GetNumberAsInt();
+						if (dracoBufferViewId > bufferViewId) {
+							bufferViewIt->second = tinygltf::Value(dracoBufferViewId - 1);
+						}
+					}
 				}
 			}
 		}
 
-		for (int j = i; j < bufferViewsToRemoveVector.size(); ++j) {
-			int id = bufferViewsToRemoveVector.at(j);
-			if (id > bufferViewId) {
-				bufferViewsToRemoveVector.at(j) -= 1;
-			}
-		}
 	}
 }
 

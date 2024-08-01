@@ -1,11 +1,11 @@
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 #include <meshoptimizer.h>
+#include <algorithm>
 void GltfMeshQuantizeCompressor::restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData)
 {
 	buffer.data.resize(newBufferData->getTotalDataSize());
 	const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
-	for (size_t i = 0; i < newBufferData->getTotalDataSize(); ++i)
-		buffer.data[i] = *ptr++;
+	std::copy(ptr, ptr + newBufferData->getTotalDataSize(), buffer.data.begin());
 	bufferView.byteLength = buffer.data.size();
 }
 

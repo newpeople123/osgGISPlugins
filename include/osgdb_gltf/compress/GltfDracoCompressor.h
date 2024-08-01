@@ -39,7 +39,7 @@ private:
 	template<typename T>
 	void initDracoMeshFaces(const tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh);
 
-	void removeBufferViews(const std::unordered_set<int>& bufferViewsToRemove);
+	void adjustIndices(const std::unordered_set<int>& bufferViewsToRemove);
 public:
 
 	GltfDracoCompressor(tinygltf::Model& model,const DracoCompressionOptions compressionOptions) :GltfCompressor(model),_compressionOptions(compressionOptions)
@@ -79,7 +79,7 @@ inline int GltfDracoCompressor::initPointAttribute(draco::Mesh& dracoMesh, const
 	}
 	else if (dracoMesh.num_points() != accessor.count)
 	{
-		std::cerr << "draco:Inconsistent points count." << '\n';
+		OSG_FATAL << "draco:Inconsistent points count." << '\n';
 	}
 
 	return attId;
