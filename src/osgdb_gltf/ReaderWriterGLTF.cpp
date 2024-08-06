@@ -34,7 +34,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
     const bool embedImages = true;
-    bool embedBuffers = false, prettyPrint = false, isBinary = ext == "glb";
+    bool embedBuffers = false, prettyPrint = false, isBinary = ext != "gltf";
     bool quantize = false;
     GltfDracoCompressor::DracoCompressionOptions dracoCompressOption;
     GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions quantizeCompressOption;
@@ -121,6 +121,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
         }
     }
 
+    mergeMeshes(gltfModel);
     tinygltf::TinyGLTF writer;
     if (ext != "b3dm") {
         try {
@@ -142,7 +143,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     }
     else  {
         std::ostringstream gltfBuf;
-        writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, false, true);
+        writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, false, isBinary);
 
         B3DMFile b3dmFile;
         const osg::Vec3 center;

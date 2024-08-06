@@ -47,7 +47,7 @@ private:
 	std::tuple<double, double, double, double> getPositionBounds();
 
 public:
-	//启用该扩展需要展开变换矩阵
+	//启用该扩展需要展开变换矩阵，如果不展开的话，压缩率很低，所以这里要求必须展开
 	KHR_mesh_quantization meshQuanExtension;
 	GltfMeshQuantizeCompressor(tinygltf::Model& model,const MeshQuantizeCompressionOptions compressionOptions) :GltfCompressor(model), _compressionOptions(compressionOptions){
 		_compressionOptions.PositionQuantizationBits = osg::clampTo(_compressionOptions.PositionQuantizationBits, 1, 16);

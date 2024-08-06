@@ -22,11 +22,11 @@
 #include <osgDB/WriteFile>
 #include <future>
 using namespace std;
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 
 
@@ -156,26 +156,30 @@ void convertOsgModel2Gltf3(const std::string& filename) {
 void test1(const std::string& filename)
 {
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename +R"(.fbx)");
-
-	FlattenTransformVisitor ftv;
-	node->accept(ftv);
+	//1
+	//FlattenTransformVisitor ftv;
+	//node->accept(ftv);
+	//2
 	osgUtil::Optimizer optimizer;
 	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+	//3
 	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
 	MeshOptimizer mov(meshOptimizer, 0.5);
 	node->accept(mov);
 	const std::string textureExt = "jpg";
 	const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
 	osgDB::makeDirectory(textureCachePath);
+	//4
 	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
 	node->accept(tpv);
 	tpv.packTextures();
+	//5
 	BatchIdVisitor biv;
 	node->accept(biv);
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 	options->setOptionString("eb pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(11111.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(11111.b3dm)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
 
 	//options->setOptionString("eb ct=draco pp");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());

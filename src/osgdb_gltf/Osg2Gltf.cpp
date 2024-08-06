@@ -83,27 +83,27 @@ void Osg2Gltf::apply(osg::MatrixTransform& xform)
     osg::Matrix matrix;
     xform.computeLocalToWorldMatrix(matrix, this);
     if (matrix != osg::Matrix::identity()) {
-        const osg::Vec3 translation = matrix.getTrans();
-        _model.nodes.back().translation.push_back(translation.x());
-        _model.nodes.back().translation.push_back(translation.y());
-        _model.nodes.back().translation.push_back(translation.z());
-        const osg::Vec3 scale = matrix.getScale();
-        _model.nodes.back().scale.push_back(scale.x());
-        _model.nodes.back().scale.push_back(scale.y());
-        _model.nodes.back().scale.push_back(scale.z());
-        osg::Vec4 rotation = matrix.getRotate().asVec4();
-        rotation.normalize();
-        _model.nodes.back().rotation.push_back(rotation.x());
-        _model.nodes.back().rotation.push_back(rotation.y());
-        _model.nodes.back().rotation.push_back(rotation.z());
-        _model.nodes.back().rotation.push_back(rotation.w());
+        //const osg::Vec3 translation = matrix.getTrans();
+        //_model.nodes.back().translation.push_back(translation.x());
+        //_model.nodes.back().translation.push_back(translation.y());
+        //_model.nodes.back().translation.push_back(translation.z());
+        //const osg::Vec3 scale = matrix.getScale();
+        //_model.nodes.back().scale.push_back(scale.x());
+        //_model.nodes.back().scale.push_back(scale.y());
+        //_model.nodes.back().scale.push_back(scale.z());
+        //osg::Vec4 rotation = matrix.getRotate().asVec4();
+        //rotation.normalize();
+        //_model.nodes.back().rotation.push_back(rotation.x());
+        //_model.nodes.back().rotation.push_back(rotation.y());
+        //_model.nodes.back().rotation.push_back(rotation.z());
+        //_model.nodes.back().rotation.push_back(rotation.w());
 
-        //const double* ptr = matrix.ptr();
-        //constexpr int size = 16;
-        //for (unsigned i = 0; i < size; ++i)
-        //{
-        //    _model.nodes.back().matrix.push_back(*ptr++);
-        //}
+        const double* ptr = matrix.ptr();
+        constexpr int size = 16;
+        for (unsigned i = 0; i < size; ++i)
+        {
+            _model.nodes.back().matrix.push_back(*ptr++);
+        }
     }
 }
 
@@ -127,6 +127,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 
         _model.meshes.emplace_back();
         tinygltf::Mesh& mesh = _model.meshes.back();
+        mesh.name = _model.nodes.back().name;
         _model.nodes.back().mesh = _model.meshes.size() - 1;
 
         osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
