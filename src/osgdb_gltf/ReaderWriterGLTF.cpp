@@ -6,6 +6,7 @@
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
+#include "osgdb_gltf/merge/GltfMerge.h"
 #include <nlohmann/json.hpp>
 #include <osgDB/ConvertUTF>
 using namespace nlohmann;
@@ -32,6 +33,9 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     Osg2Gltf osg2gltf;
     nc_node.accept(osg2gltf);
     tinygltf::Model gltfModel = osg2gltf.getGltfModel();
+
+    GltfMerger gltfMerger(gltfModel);
+    gltfMerger.mergeMeshes();
 
     const bool embedImages = true;
     bool embedBuffers = false, prettyPrint = false, isBinary = ext != "gltf";
@@ -121,7 +125,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
         }
     }
 
-    mergeMeshes(gltfModel);
     tinygltf::TinyGLTF writer;
     if (ext != "b3dm") {
         try {

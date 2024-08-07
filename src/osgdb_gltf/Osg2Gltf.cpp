@@ -83,27 +83,40 @@ void Osg2Gltf::apply(osg::MatrixTransform& xform)
     osg::Matrix matrix;
     xform.computeLocalToWorldMatrix(matrix, this);
     if (matrix != osg::Matrix::identity()) {
-        //const osg::Vec3 translation = matrix.getTrans();
-        //_model.nodes.back().translation.push_back(translation.x());
-        //_model.nodes.back().translation.push_back(translation.y());
-        //_model.nodes.back().translation.push_back(translation.z());
-        //const osg::Vec3 scale = matrix.getScale();
-        //_model.nodes.back().scale.push_back(scale.x());
-        //_model.nodes.back().scale.push_back(scale.y());
-        //_model.nodes.back().scale.push_back(scale.z());
-        //osg::Vec4 rotation = matrix.getRotate().asVec4();
-        //rotation.normalize();
-        //_model.nodes.back().rotation.push_back(rotation.x());
-        //_model.nodes.back().rotation.push_back(rotation.y());
-        //_model.nodes.back().rotation.push_back(rotation.z());
-        //_model.nodes.back().rotation.push_back(rotation.w());
-
-        const double* ptr = matrix.ptr();
-        constexpr int size = 16;
-        for (unsigned i = 0; i < size; ++i)
+        //向gltf中写入translation、rotation、scale，与matrix互斥
         {
-            _model.nodes.back().matrix.push_back(*ptr++);
+            osg::Vec3d translation;
+            osg::Quat rotation;
+            osg::Vec3d scale;
+            osg::Quat so; // scale orientation, not used in glTF but required by decompose
+
+            matrix.decompose(translation, rotation, scale, so);
+
+            _model.nodes.back().translation.push_back(translation.x());
+            _model.nodes.back().translation.push_back(translation.y());
+            _model.nodes.back().translation.push_back(translation.z());
+
+            _model.nodes.back().scale.push_back(scale.x());
+            _model.nodes.back().scale.push_back(scale.y());
+            _model.nodes.back().scale.push_back(scale.z());
+
+            osg::Vec4 rotationVec = rotation.asVec4();
+            _model.nodes.back().rotation.push_back(rotationVec.x());
+            _model.nodes.back().rotation.push_back(rotationVec.y());
+            _model.nodes.back().rotation.push_back(rotationVec.z());
+            _model.nodes.back().rotation.push_back(rotationVec.w());
+
         }
+
+        //向gltf中写入matrix，与translation、rotation、scale互斥
+        //{
+        //    const double* ptr = matrix.ptr();
+        //    constexpr int size = 16;
+        //    for (unsigned i = 0; i < size; ++i)
+        //    {
+        //        _model.nodes.back().matrix.push_back(*ptr++);
+        //    }
+        //}
     }
 }
 

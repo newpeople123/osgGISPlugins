@@ -177,25 +177,25 @@ void test1(const std::string& filename)
 	BatchIdVisitor biv;
 	node->accept(biv);
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	options->setOptionString("eb pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(11111.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
+	//options->setOptionString("eb pp");
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
 
-	//options->setOptionString("eb ct=draco pp");
+	options->setOptionString("eb ct=draco pp");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
 
 	//options->setOptionString("eb ct=meshopt");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.glb)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.gltf)", options.get());
 
 	//options->setOptionString("eb q");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.glb)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.gltf)", options.get());
 
 	//options->setOptionString("eb q ct=meshopt");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.glb)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.gltf)", options.get());
 }
 
 int main() {
@@ -226,9 +226,14 @@ int main() {
 	//}
 
 	//test1(R"(广州塔)");
+	//OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
 	//test1(R"(卡拉电站)");
+	//OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
 	//test1(R"(龙翔桥站)");
-	//test1(R"(龙翔桥站厅)");
-	test1(R"(芜湖水厂总装单位M)");
+	//OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
+	test1(R"(龙翔桥站厅)");
+	OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
+	//test1(R"(芜湖水厂总装单位M)");
+	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 	return 1;
 }

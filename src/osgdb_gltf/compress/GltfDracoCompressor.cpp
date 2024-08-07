@@ -105,7 +105,8 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
 			continue;
 		draco::Mesh dracoMesh;
-
+		if (primitive.indices == 201)
+			OSG_NOTICE << std::endl;
 		if (primitive.indices != -1) {
 			tinygltf::Accessor& indicesAccessor = _model.accessors[primitive.indices];
 			const tinygltf::BufferView& indicesBv = _model.bufferViews[indicesAccessor.bufferView];
@@ -225,7 +226,7 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		//decoderBuffer.Init(encoderBuffer.data(), encoderBuffer.size());
 		//auto decodeResult = decoder.DecodeMeshFromBuffer(&decoderBuffer);
 		//if (!decodeResult.ok()) {
-		//	OSG_FATAL << "draco:Draco failed to decode mesh" << '\n';
+		//	OSG_FATAL << "draco:Draco failed to decode mesh: " << decodeResult.status().error_msg() << '\n';
 		//	return;
 		//}
 
