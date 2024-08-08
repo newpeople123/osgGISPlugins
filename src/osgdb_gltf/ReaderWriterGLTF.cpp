@@ -124,6 +124,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
             }
         }
     }
+    gltfMerger.mergeBuffers();
 
     tinygltf::TinyGLTF writer;
     if (ext != "b3dm") {

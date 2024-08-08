@@ -44,7 +44,7 @@ public:
     static osg::Matrixd convertGltfNodeToOsgMatrix(const tinygltf::Node& node);
     static void decomposeMatrix(const osg::Matrixd& matrix, tinygltf::Node& node);
 private:
-    void findMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix);
+    void collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix);
     void reindexBufferAndAccessor(const tinygltf::Accessor& accessor, tinygltf::BufferView& bufferView, tinygltf::Buffer& buffer, tinygltf::Accessor& newAccessor, unsigned int sum = 0, bool isIndices = false);
 };
 #endif // !OSG_GIS_PLUGINS_GLTF_MERGE_H

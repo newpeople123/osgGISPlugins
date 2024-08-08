@@ -4,7 +4,7 @@
 void GltfMerger::mergeMeshes()
 {
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual> matrixPrimitiveMap;
-	findMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap, osg::Matrixd::identity());
+	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap, osg::Matrixd::identity());
 	if (matrixPrimitiveMap.size() <= 1)
 		return;
 
@@ -372,14 +372,14 @@ void GltfMerger::decomposeMatrix(const osg::Matrixd& matrix, tinygltf::Node& nod
 	node.rotation = { rotationVec.x(), rotationVec.y(), rotationVec.z(), rotationVec.w() };
 }
 
-void GltfMerger::findMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix)
+void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix)
 {
 	const tinygltf::Node& node = _model.nodes[index];
 	matrix.preMult(convertGltfNodeToOsgMatrix(node));
 
 	if (node.mesh == -1) {
 		for (size_t childIndex : node.children) {
-			findMeshNodes(childIndex, matrixPrimitiveMap, osg::Matrixd(matrix));
+			collectMeshNodes(childIndex, matrixPrimitiveMap, osg::Matrixd(matrix));
 		}
 	}
 	else {

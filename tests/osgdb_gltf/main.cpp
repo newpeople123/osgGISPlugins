@@ -185,15 +185,15 @@ void test1(const std::string& filename)
 	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
 
-	//options->setOptionString("eb ct=meshopt");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
+	options->setOptionString("eb ct=meshopt pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.gltf)", options.get());
 
-	//options->setOptionString("eb q");
+	//options->setOptionString("eb q pp");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.gltf)", options.get());
 
-	//options->setOptionString("eb q ct=meshopt");
+	//options->setOptionString("eb q ct=meshopt pp");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.gltf)", options.get());
 }
@@ -225,14 +225,14 @@ int main() {
 	//	task.get();
 	//}
 
-	test1(R"(广州塔)");
-	OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
-	test1(R"(卡拉电站)");
-	OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
-	test1(R"(龙翔桥站)");
-	OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
-	test1(R"(龙翔桥站厅)");
-	OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
+	//test1(R"(广州塔)");
+	//OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
+	//test1(R"(卡拉电站)");
+	//OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
+	//test1(R"(龙翔桥站)");
+	//OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
+	//test1(R"(龙翔桥站厅)");
+	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
 	test1(R"(芜湖水厂总装单位M)");
 	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 	return 1;
