@@ -177,13 +177,13 @@ void test1(const std::string& filename)
 	BatchIdVisitor biv;
 	node->accept(biv);
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	//options->setOptionString("eb pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
+	options->setOptionString("eb pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
 
 	options->setOptionString("eb ct=draco pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
+	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
 
 	//options->setOptionString("eb ct=meshopt");
 	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
@@ -204,7 +204,7 @@ int main() {
 	instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
 	instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-	std::cout << instance->createLibraryNameForExtension("glb") << std::endl;
+	OSG_NOTICE << instance->createLibraryNameForExtension("glb") << std::endl;
 #ifdef _WIN32
 	SetConsoleOutputCP(CP_UTF8);
 #else
@@ -225,15 +225,15 @@ int main() {
 	//	task.get();
 	//}
 
-	//test1(R"(广州塔)");
-	//OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
-	//test1(R"(卡拉电站)");
-	//OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
-	//test1(R"(龙翔桥站)");
-	//OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
+	test1(R"(广州塔)");
+	OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
+	test1(R"(卡拉电站)");
+	OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
+	test1(R"(龙翔桥站)");
+	OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
 	test1(R"(龙翔桥站厅)");
 	OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
-	//test1(R"(芜湖水厂总装单位M)");
-	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
+	test1(R"(芜湖水厂总装单位M)");
+	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 	return 1;
 }
