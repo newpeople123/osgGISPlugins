@@ -41,18 +41,9 @@ private:
 
 	void adjustIndices(const std::unordered_set<int>& bufferViewsToRemove);
 public:
-
-	GltfDracoCompressor(tinygltf::Model& model,const DracoCompressionOptions compressionOptions) :GltfCompressor(model),_compressionOptions(compressionOptions)
-	{
-		model.extensionsRequired.push_back(extension.name);
-		model.extensionsUsed.push_back(extension.name);
-
-		for (auto& mesh : _model.meshes) {
-			compressMesh(mesh);
-		}
-	}
-
 	KHR_draco_mesh_compression extension;
+	GltfDracoCompressor(tinygltf::Model& model,const DracoCompressionOptions compressionOptions) :GltfCompressor(model,"KHR_draco_mesh_compression"), _compressionOptions(compressionOptions) {}
+	void apply() override;
 };
 
 template<typename T>

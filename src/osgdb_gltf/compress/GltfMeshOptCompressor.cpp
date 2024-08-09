@@ -93,3 +93,10 @@ std::vector<unsigned char> GltfMeshOptCompressor::encodeVertexBuffer(const tinyg
 	vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), buffer.data.data() + bufferView.byteOffset, attributeAccessor.count, byteStride));
 	return vbuf;
 }
+
+void GltfMeshOptCompressor::apply()
+{
+	for (auto& mesh : _model.meshes) {
+		compressMesh(mesh);
+	}
+}

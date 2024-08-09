@@ -310,6 +310,13 @@ void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferVie
 	}
 }
 
+void GltfDracoCompressor::apply()
+{
+	for (auto& mesh : _model.meshes) {
+		compressMesh(mesh);
+	}
+}
+
 void GltfDracoCompressor::setDracoEncoderOptions(draco::Encoder& encoder)
 {
 	encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, _compressionOptions.PositionQuantizationBits);

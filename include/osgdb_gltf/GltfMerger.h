@@ -1,10 +1,6 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_MERGE_H
 #define OSG_GIS_PLUGINS_GLTF_MERGE_H 1
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_WRITE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tinygltf/tiny_gltf.h>
+#include "osgdb_gltf/GltfOptimizer.h"
 #include <osg/Matrixd>
 #include <unordered_map>
 const double TOLERANCE = 0.001;
@@ -33,18 +29,24 @@ struct MatrixEqual {
     }
 };
 
-class GltfMerger
+class GltfMerger:public GltfOptimizer
 {
-private:
-    tinygltf::Model& _model;
 public:
-    GltfMerger(tinygltf::Model& model) :_model(model) {}
-    void mergeMeshes();
+    GltfMerger(tinygltf::Model& model) :GltfOptimizer(model), _bMergeMaterials(true), _bMergeMeshes(true){}
+    GltfMerger(tinygltf::Model& model,const bool bMergeMaterials,const bool bMergeMeshes) :GltfOptimizer(model), _bMergeMaterials(bMergeMaterials), _bMergeMeshes(bMergeMeshes) {}
+    void apply() override;
+    //减少缓存切换次数
     void mergeBuffers();
-    static osg::Matrixd convertGltfNodeToOsgMatrix(const tinygltf::Node& node);
-    static void decomposeMatrix(const osg::Matrixd& matrix, tinygltf::Node& node);
 private:
+    bool _bMergeMaterials = true, _bMergeMeshes = true;
     void collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix);
     void reindexBufferAndAccessor(const tinygltf::Accessor& accessor, tinygltf::BufferView& bufferView, tinygltf::Buffer& buffer, tinygltf::Accessor& newAccessor, unsigned int sum = 0, bool isIndices = false);
+    //合并mesh和primitive但是会破坏node树的结构
+    void mergeMeshes();
+    //合并后能减少draw call次数，但是纹理坐标会改变，而且纹理占用的GPU内存量会上涨(合并后导致增加了纹理绑定次数)，需要权衡
+    //如果GPU内存即显存充足推荐开启该功能
+    void mergeMaterials();
+    static osg::Matrixd convertGltfNodeToOsgMatrix(const tinygltf::Node& node);
+    static void decomposeMatrix(const osg::Matrixd& matrix, tinygltf::Node& node);
 };
 #endif // !OSG_GIS_PLUGINS_GLTF_MERGE_H

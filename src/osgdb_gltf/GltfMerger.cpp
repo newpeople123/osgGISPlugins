@@ -1,4 +1,4 @@
-#include "osgdb_gltf/merge/GltfMerge.h"
+#include "osgdb_gltf/GltfMerger.h"
 #include <osg/Math>
 #include <osg/MatrixTransform>
 void GltfMerger::mergeMeshes()
@@ -326,6 +326,112 @@ void GltfMerger::mergeBuffers()
 	}
 }
 
+void GltfMerger::mergeMaterials()
+{
+	const std::string transformExtensionName = "KHR_texture_transform";
+	std::vector<int> textureIndexes;
+	for (const auto& mesh : _model.meshes)
+	{
+		for (const auto& primitive : mesh.primitives)
+		{
+			auto& material = _model.materials[primitive.material];
+			//如果含有emissive、normal、occlusion贴图则不合并
+			if (!(material.emissiveTexture.index == -1 &&
+				material.normalTexture.index == -1 &&
+				material.occlusionTexture.index == -1))
+				break;
+			//如果含有其他纹理扩展或者metallicRoughness贴图不为空则不合并
+			if (!(material.extensions.size() == 0 && material.pbrMetallicRoughness.metallicRoughnessTexture.index == -1))
+				break;
+
+			auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
+			//如果没有baseColor贴图则不合并
+			if (baseColorTexture.index == -1)
+				break;
+			//如果没有纹理坐标则不合并
+			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
+			if (findTexcoordIndex == primitive.attributes.end())
+				break;
+			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
+			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
+			if (extensionItem == baseColorTexture.extensions.end())
+				break;
+			const tinygltf::Value extensionVal = extensionItem->second;
+			const auto offset = extensionVal.Get("offset").Get<tinygltf::Value::Array>();
+			const auto scale = extensionVal.Get("scale").Get<tinygltf::Value::Array>();
+			const double offsetX = offset[0].GetNumberAsDouble();
+			const double offsetY = offset[1].GetNumberAsDouble();
+			const double scaleX = scale[0].GetNumberAsDouble();
+			const double scaleY = scale[1].GetNumberAsDouble();
+
+			const int texcoordIndex = findTexcoordIndex->second;
+			const tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
+			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
+
+			if (oldTexcoords.size() != texcoordAccessor.count * 2)
+				break;
+
+			bool bResetTexcoords = true;
+			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
+			for (size_t j = 0; j < texcoordAccessor.count; ++j)
+			{
+				const float x = oldTexcoords[2 * j + 0];
+				const float y = oldTexcoords[2 * j + 1];
+				if (osg::absolute(x) > 1 || osg::absolute(y) > 1)
+				{
+					bResetTexcoords = false;
+					break;
+				}
+				// 提取结果
+				const osg::Vec2 resultUv(x * scaleX + offsetX, y * scaleY + offsetY);
+				texcoords->at(j) = (resultUv);
+			}
+
+			if (bResetTexcoords) {
+				tinygltf::BufferView& texcoordBufferView = _model.bufferViews[texcoordAccessor.bufferView];
+				tinygltf::Buffer& buffer = _model.buffers[texcoordBufferView.buffer];
+				restoreBuffer(buffer, texcoordBufferView, texcoords);
+				textureIndexes.push_back(primitive.material);
+			}
+		}
+	}
+	for (const auto index : textureIndexes)
+	{
+		_model.materials[index].pbrMetallicRoughness.baseColorTexture.extensions.clear();
+	}
+
+	std::vector<tinygltf::Material> newMaterials;
+	std::map<int, int> materialRemap;
+
+	for (size_t i = 0; i < _model.materials.size(); i++)
+	{
+		auto& oldMaterial = _model.materials.at(i);
+
+		int index = -1;
+		for (size_t j = 0; j < newMaterials.size(); j++)
+		{
+			auto& newMateiral = newMaterials.at(j);
+			if (newMateiral == oldMaterial)
+				index = j;
+		}
+		if (index == -1)
+		{
+			index = newMaterials.size();
+			newMaterials.push_back(oldMaterial);
+		}
+		materialRemap[i] = index;
+	}
+
+	_model.materials = newMaterials;
+	for (auto& mesh : _model.meshes)
+	{
+		for (auto& primitive : mesh.primitives)
+		{
+			primitive.material = materialRemap[primitive.material];
+		}
+	}
+}
+
 osg::Matrixd GltfMerger::convertGltfNodeToOsgMatrix(const tinygltf::Node& node)
 {
 	osg::Matrixd osgMatrix;
@@ -370,6 +476,14 @@ void GltfMerger::decomposeMatrix(const osg::Matrixd& matrix, tinygltf::Node& nod
 	node.scale = { scale.x(), scale.y(), scale.z() };
 	osg::Vec4 rotationVec = rotation.asVec4();
 	node.rotation = { rotationVec.x(), rotationVec.y(), rotationVec.z(), rotationVec.w() };
+}
+
+void GltfMerger::apply()
+{
+	if (_bMergeMaterials)
+		mergeMaterials();
+	if(_bMergeMeshes)
+		mergeMeshes();
 }
 
 void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix)

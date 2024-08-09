@@ -34,8 +34,6 @@ private:
 
 	void quantizeMesh(tinygltf::Mesh& mesh, const double minVX, const double minVY, const double minVZ, const double scaleV);
 
-	void restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData);
-
 	void recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
 
 	void processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
@@ -49,50 +47,15 @@ private:
 public:
 	//启用该扩展需要展开变换矩阵，如果不展开的话，压缩率很低，所以这里要求必须展开
 	KHR_mesh_quantization meshQuanExtension;
-	GltfMeshQuantizeCompressor(tinygltf::Model& model,const MeshQuantizeCompressionOptions compressionOptions) :GltfCompressor(model), _compressionOptions(compressionOptions){
+	GltfMeshQuantizeCompressor(tinygltf::Model& model,const MeshQuantizeCompressionOptions compressionOptions) :GltfCompressor(model, "KHR_mesh_quantization"), _compressionOptions(compressionOptions) {
+		if (_compressionOptions.PositionQuantizationBits > 16)
+			_compressionOptions.PositionFloat = true;
 		_compressionOptions.PositionQuantizationBits = osg::clampTo(_compressionOptions.PositionQuantizationBits, 1, 16);
 		_compressionOptions.NormalQuantizationBits = osg::clampTo(_compressionOptions.NormalQuantizationBits, 1, 16);
 		_compressionOptions.TexCoordQuantizationBits = osg::clampTo(_compressionOptions.TexCoordQuantizationBits, 1, 16);
 		_compressionOptions.ColorQuantizationBits = osg::clampTo(_compressionOptions.ColorQuantizationBits, 1, 16);
-		model.extensionsRequired.push_back(meshQuanExtension.name);
-		model.extensionsUsed.push_back(meshQuanExtension.name);
-
-		_materialIndexes.clear();
-		
-		std::tuple<double, double, double, double> result = getPositionBounds();
-		const double minVX = std::get<0>(result);
-		const double minVY = std::get<1>(result);
-		const double minVZ = std::get<2>(result);
-		const double scaleV = std::get<3>(result);
-		for (auto& mesh : _model.meshes) {
-			quantizeMesh(mesh, minVX, minVY, minVZ, scaleV);
-		}
-		
-		for (auto& mesh : _model.meshes)
-		{
-			for (const tinygltf::Primitive& primitive : mesh.primitives)
-			{
-				if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
-					_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].maxValues.clear();
-					_model.accessors[primitive.attributes.find("TEXCOORD_0")->second].minValues.clear();
-				}
-
-			}
-		}
-		if (!_compressionOptions.PositionFloat) {
-			for (const auto index : _model.scenes[0].nodes) {
-				_model.nodes[index].translation.resize(3);
-				_model.nodes[index].translation[0] = minVX;
-				_model.nodes[index].translation[1] = minVY;
-				_model.nodes[index].translation[2] = minVZ;
-
-				const float nodeScale = scaleV / float((1 << _compressionOptions.PositionQuantizationBits) - 1) * (_compressionOptions.PositionNormalized ? 65535.f : 1.f);
-				_model.nodes[index].scale.resize(3);
-				_model.nodes[index].scale[0] = nodeScale;
-				_model.nodes[index].scale[1] = nodeScale;
-				_model.nodes[index].scale[2] = nodeScale;
-			}
-		}
 	}
+
+	void apply() override;
 };
 #endif // !OSG_GIS_PLUGINS_GLTF_MESH_QUANTIZE_COMPRESSOR_H

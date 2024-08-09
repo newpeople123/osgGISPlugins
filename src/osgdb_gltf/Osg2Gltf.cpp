@@ -16,12 +16,8 @@
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
-    json matJson;
-    tinygltf::SerializeGltfMaterial(gltfMaterial, matJson);
     for (int i = 0; i < _model.materials.size(); ++i) {
-        json existMatJson;
-        SerializeGltfMaterial(_model.materials.at(i), existMatJson);
-        if (matJson == existMatJson) {
+        if (gltfMaterial == _model.materials.at(i)) {
             return i;
         }
     }

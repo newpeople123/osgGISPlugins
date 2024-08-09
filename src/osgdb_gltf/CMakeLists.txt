@@ -1,35 +1,41 @@
 set(LIB_NAME osgdb_gltf)
-#查找当前目录下的所有源文件
-#并将名称保存到DIR_SRCS变量
-aux_source_directory(. DIR_SRCS)
-set(HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Extensions.h ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Osg2Gltf.h ${PROJECT_ROOT_DIR}/include/osgdb_gltf/ReaderWriterGLTF.h)
-set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp ${PROJECT_ROOT_DIR}/src/osgdb_gltf/ReaderWriterGLTF.cpp)
+
+set(HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Osg2Gltf.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/ReaderWriterGLTF.h)
+set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/ReaderWriterGLTF.cpp)
+set(OPTIMIZE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Extensions.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfMerger.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfOptimizer.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfOptimizerManager.h 
+)
+set(OPTIMIZE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/GltfMerger.cpp 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/GltfOptimizer.cpp 
+)
 file(GLOB COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/compress/*.h)
 file(GLOB MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/*.h)
-file(GLOB MERGE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/merge/*.h)
 file(GLOB B3DM_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/*.h)
-file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
 file(GLOB COMPRESS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/compress/*.cpp)
 file(GLOB MATERIAL_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/*.cpp)
-file(GLOB MERGE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/merge/*.cpp)
 file(GLOB B3DM_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/*.cpp)
 
-add_library(${LIB_NAME} ${DIR_SRCS} 
+add_library(${LIB_NAME}
 ${HEADER_FILES} ${SOURCE_FILES} 
 ${COMPRESS_HEADER_FILES} ${COMPRESS_SOURCE_FILES} 
 ${MATERIAL_HEADER_FILES} ${MATERIAL_SOURCE_FILES} 
-${MERGE_HEADER_FILES} ${MERGE_SOURCE_FILES} 
 ${B3DM_HEADER_FILES} ${B3DM_SOURCE_FILES}
+${OPTIMIZE_HEADER_FILES} ${OPTIMIZE_SOURCE_FILES}
 )
 source_group("include" FILES ${HEADER_FILES})
-source_group("include/compress" FILES ${COMPRESS_HEADER_FILES})
-source_group("include/material" FILES ${MATERIAL_HEADER_FILES})
-source_group("include/merge" FILES ${MERGE_HEADER_FILES})
+source_group("include/optimizer" FILES ${OPTIMIZE_HEADER_FILES}) 
+source_group("include/optimizer/compress" FILES ${COMPRESS_HEADER_FILES})
+source_group("include/optimizer/material" FILES ${MATERIAL_HEADER_FILES})
 source_group("include/b3dm" FILES ${B3DM_HEADER_FILES}) 
-source_group("src" FILES ${DIR_SRCS} ${SOURCE_FILES})
-source_group("src/compress" FILES ${COMPRESS_SOURCE_FILES})
-source_group("src/material" FILES ${MATERIAL_SOURCE_FILES})
-source_group("src/merge" FILES ${MERGE_SOURCE_FILES})
+
+source_group("src" FILES ${SOURCE_FILES})
+source_group("src/optimizer/" FILES ${OPTIMIZE_SOURCE_FILES}) 
+source_group("src/optimizer/compress" FILES ${COMPRESS_SOURCE_FILES})
+source_group("src/optimizer/material" FILES ${MATERIAL_SOURCE_FILES})
 source_group("src/b3dm" FILES ${B3DM_SOURCE_FILES}) 
 
 if (OPENSCENEGRAPH_FOUND)

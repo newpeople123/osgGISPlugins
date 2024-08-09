@@ -3,7 +3,6 @@
 #include <osg/NodeVisitor>
 #include "material/GltfPbrMRMaterial.h"
 #include "compress/GltfCompressor.h"
-#include "merge/GltfMerge.h"
 #include <stack>
 #include <osg/PrimitiveSet>
 #include <iostream>

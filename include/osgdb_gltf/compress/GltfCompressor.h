@@ -1,37 +1,21 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H
 #define OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H 1
 #include "osgdb_gltf/Extensions.h"
-struct CompressionOptions {
-    int PositionQuantizationBits = 14;
-    int TexCoordQuantizationBits = 12;
-    int NormalQuantizationBits = 10;
-    int ColorQuantizationBits = 8;
-};
-class GltfCompressor
+#include "osgdb_gltf/GltfOptimizer.h"
+class GltfCompressor:public GltfOptimizer
 {
-protected:
-    tinygltf::Model& _model;
-
-    template<typename T>
-    std::vector<T> getBufferData(const tinygltf::Accessor& accessor);
-
-    size_t calculateNumComponents(const int type);
 public:
+    struct CompressionOptions {
+        int PositionQuantizationBits = 14;
+        int TexCoordQuantizationBits = 12;
+        int NormalQuantizationBits = 10;
+        int ColorQuantizationBits = 8;
+    };
     GltfCompressor() = default;
-    GltfCompressor(tinygltf::Model& model) :_model(model) {}
+    GltfCompressor(tinygltf::Model& model,const std::string extensionName) :GltfOptimizer(model) {
+        model.extensionsRequired.push_back(extensionName);
+        model.extensionsUsed.push_back(extensionName);
+    }
     virtual ~GltfCompressor() = default;
 };
-
-template<typename T>
-inline std::vector<T> GltfCompressor::getBufferData(const tinygltf::Accessor& accessor)
-{
-    const auto numComponents = calculateNumComponents(accessor.type);
-    const auto& bufferView = _model.bufferViews[accessor.bufferView];
-    const auto& gltfBuffer = _model.buffers[bufferView.buffer];
-    std::vector<T> values;
-    const void* data_ptr = gltfBuffer.data.data() + bufferView.byteOffset;
-    values.assign(static_cast<const T*>(data_ptr),
-        static_cast<const T*>(data_ptr) + accessor.count * numComponents);
-    return values;
-}
 #endif // !OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H

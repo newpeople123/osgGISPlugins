@@ -2,10 +2,7 @@
 #include <iostream>
 #include <osgDB/ReadFile>
 #include <osgDB/FileNameUtils>
-#include "osgdb_gltf/Osg2Gltf.h"
-#include "osgdb_gltf/compress/GltfDracoCompressor.h"//必须放在<windows.h>前面
-#include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
-#include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
+//#include "osgdb_gltf/compress/GltfDracoCompressor.h"//必须放在<windows.h>前面
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -27,175 +24,51 @@ using namespace std;
 
 const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
 const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
-
-
-
 /// <summary>
-/// 导出gltf
+/// 导出gltf/glb/b3dm
 /// </summary>
-/// <param name="node"></param>
-/// <param name="filename"></param>
-/// <param name="path"></param>
-void exportGltf(osg::ref_ptr<osg::Node> node, const std::string& filename, const std::string& path) {
-	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node, osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
-	Osg2Gltf osgb2Gltf;
-	node->accept(osgb2Gltf);
-
-	const std::string output = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + ".gltf";
-	tinygltf::TinyGLTF writer;
-	tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
-	bool isSuccess = writer.WriteGltfSceneToFile(
-		&gltfModel,
-		output,
-		false,           // embedImages
-		true,           // embedBuffers
-		true,           // prettyPrint
-		false);
-}
-/// <summary>
-/// 测试纹理图集
-/// </summary>
-/// <param name="filename"></param>
-/// <param name="packTextures"></param>
-void convertOsgModel2Gltf(const std::string& filename, bool packTextures = true) {
-	std::string s1 = osgDB::findDataFile(filename, new osgDB::Options);
-	std::string s2 = osgDB::findDataFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), new osgDB::Options);
-
-	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
-	FlattenTransformVisitor ftv;
-	node->accept(ftv);
-	//index mesh
-	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-	exportGltf(node, filename, "关闭纹理尺寸优化");
-
-	std::string path = "启用纹理图集";
-	if (!packTextures)
-		path = "关闭纹理图集";
-	const std::string textureExt = "jpg";
-	const std::string textureCachePath = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + "\\" + textureExt;
-	osgDB::makeDirectory(textureCachePath);
-	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, packTextures);
-	node->accept(tpv);
-	tpv.packTextures();
-	exportGltf(node, filename, path);
-}
-/// <summary>
-/// 测试网格优化，主要是简化、vertexCacheOptimize、overdrawOptimize、vertexFetchOptimize等
-/// </summary>
-/// <param name="filename"></param>
-void convertOsgModel2Gltf2(const std::string& filename) {
-	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
-
-	//index mesh
-	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-	//mesh optimizer
-	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
-	MeshOptimizer mov(meshOptimizer, 1.0);
-	//node->accept(mov);
-	const std::string textureExt = "jpg";
-	const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "\\" + textureExt;
-	osgDB::makeDirectory(textureCachePath);
-	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
-	node->accept(tpv);
-	tpv.packTextures();
-	exportGltf(node, filename, "");
-}
-/// <summary>
-/// 导出gltf，测试网格压缩、向量化
-/// </summary>
-/// <param name="node"></param>
-/// <param name="filename"></param>
-/// <param name="path"></param>
-void exportGltf3(osg::ref_ptr<osg::Node> node, const std::string& filename, const std::string& path) {
-	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node, osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
-	Osg2Gltf osgb2Gltf;
-	node->accept(osgb2Gltf);
-
-	const std::string output = OUTPUT_BASE_PATH + path + "\\" + osgDB::getStrippedName(filename) + "_quantization.gltf";
-	tinygltf::TinyGLTF writer;
-	tinygltf::Model gltfModel = osgb2Gltf.getGltfModel();
-	GltfMeshQuantizeCompressor meshQuantize(gltfModel, GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions());
-	//GltfDracoCompressor dracoCompressor(gltfModel);
-	GltfMeshOptCompressor meshOptCompressor(gltfModel);
-	bool isSuccess = writer.WriteGltfSceneToFile(
-		&gltfModel,
-		output,
-		false,           // embedImages
-		true,           // embedBuffers
-		true,           // prettyPrint
-		false);
-}
-/// <summary>
-/// 测试网格压缩、向量化
-/// </summary>
-/// <param name="filename"></param>
-void convertOsgModel2Gltf3(const std::string& filename) {
-	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(filename);
-	FlattenTransformVisitor ftv;
-	node->accept(ftv);
-	//index mesh
-	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
-	//mesh optimizer
-	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
-	MeshOptimizer mov(meshOptimizer, 1.0);
-	node->accept(mov);
-	const std::string textureExt = "jpg";
-	const std::string textureCachePath = OUTPUT_BASE_PATH + osgDB::getStrippedName(filename) + "_quantization\\" + textureExt;
-	osgDB::makeDirectory(textureCachePath);
-	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
-	node->accept(tpv);
-	tpv.packTextures();
-	exportGltf3(node, filename, "");
-}
-
-void test1(const std::string& filename)
+/// <param name="filename">原始三维模型文件名</param>
+/// <param name="ext">输出文件后缀名，不带.</param>
+/// <param name="options">输出文件选项</param>
+/// <param name="textureExt">纹理格式，如果为空值则不启用纹理图集</param>
+/// <param name="ratio">简化比例</param>
+/// <param name="bFlatternTransform">是否展开变换矩阵</param>
+void exportGltfWithOptions(const std::string& filename,const std::string ext,const osg::ref_ptr<osgDB::Options> options,const std::string textureExt,const float ratio,const bool bFlatternTransform)
 {
+	std::string lowerExtStr = ext;
+	std::transform(lowerExtStr.begin(), lowerExtStr.end(), lowerExtStr.begin(),
+		[](unsigned char c) { return std::tolower(c); });
+	if (lowerExtStr != "gltf" && lowerExtStr != "glb" && lowerExtStr != "b3dm")
+		return;
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename +R"(.fbx)");
 	//1
-	//FlattenTransformVisitor ftv;
-	//node->accept(ftv);
+	if (bFlatternTransform) {
+		FlattenTransformVisitor ftv;
+		node->accept(ftv);
+	}
 	//2
 	osgUtil::Optimizer optimizer;
 	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
 	//3
 	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
-	MeshOptimizer mov(meshOptimizer, 0.5);
+	MeshOptimizer mov(meshOptimizer, ratio);
 	node->accept(mov);
-	const std::string textureExt = "jpg";
-	const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
-	osgDB::makeDirectory(textureCachePath);
-	//4
-	TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
-	node->accept(tpv);
-	tpv.packTextures();
+	if (!textureExt.empty())
+	{
+		const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
+		osgDB::makeDirectory(textureCachePath);
+		//4
+		TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
+		node->accept(tpv);
+		tpv.packTextures();
+	}
 	//5
-	BatchIdVisitor biv;
-	node->accept(biv);
-	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	options->setOptionString("eb pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options.get());
-
-	options->setOptionString("eb ct=draco pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-draco.gltf)", options.get());
-
-	options->setOptionString("eb ct=meshopt pp");
-	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-meshopt.gltf)", options.get());
-
-	//options->setOptionString("eb q pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization.gltf)", options.get());
-
-	//options->setOptionString("eb q ct=meshopt pp");
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.b3dm)", options.get());
-	//osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(-quantization-meshopt.gltf)", options.get());
+	if (lowerExtStr == "b3dm")
+	{
+		BatchIdVisitor biv;
+		node->accept(biv);
+	}
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.)" + lowerExtStr, options.get());
 }
 
 int main() {
@@ -204,36 +77,32 @@ int main() {
 	instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
 	instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-	OSG_NOTICE << instance->createLibraryNameForExtension("glb") << std::endl;
+	//OSG_NOTICE << instance->createLibraryNameForExtension("glb") << std::endl;
 #ifdef _WIN32
 	SetConsoleOutputCP(CP_UTF8);
 #else
 	setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
-	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(卡拉电站.fbx)");
-	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站.fbx)");
-	//convertOsgModel2Gltf3(INPUT_BASE_PATH + R"(龙翔桥站厅.fbx)");
+	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 
-	//std::vector<std::future<void>> tasks;
-	//tasks.push_back(std::async(std::launch::async, test1, R"(广州塔)"));
-	//tasks.push_back(std::async(std::launch::async, test1, R"(卡拉电站1)"));
-	//tasks.push_back(std::async(std::launch::async, test1, R"(龙翔桥站)"));
-	//tasks.push_back(std::async(std::launch::async, test1, R"(龙翔桥站厅)"));
-	//tasks.push_back(std::async(std::launch::async, test1, R"(芜湖水厂总装单位M)"));
-
-	//for (auto& task : tasks) {
-	//	task.get();
-	//}
-
-	//test1(R"(广州塔)");
+	//options->setOptionString("eb pp ct=draco");
+	//exportGltfWithOptions(R"(广州塔)", "gltf", options, "jpg", 0.5, false);
 	//OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
-	//test1(R"(卡拉电站)");
-	//OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
-	//test1(R"(龙翔桥站)");
-	//OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
-	//test1(R"(龙翔桥站厅)");
+
+	options->setOptionString("eb ct=draco");
+	exportGltfWithOptions(R"(卡拉电站)", "gltf", options, "webp", 0.5, false);
+	OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
+
+	options->setOptionString("eb quantize");
+	exportGltfWithOptions(R"(龙翔桥站)", "gltf", options, "ktx", 0.5, true);
+	OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
+
+	//options->setOptionString("eb quantize ct=meshopt");
+	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
 	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
-	test1(R"(芜湖水厂总装单位M)");
-	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
+
+	//options->setOptionString("eb pp ct=meshopt");
+	//exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
+	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 	return 1;
 }
