@@ -89,12 +89,12 @@ int main() {
 	//exportGltfWithOptions(R"(广州塔)", "gltf", options, "jpg", 0.5, false);
 	//OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
 
-	options->setOptionString("eb ct=draco");
-	exportGltfWithOptions(R"(卡拉电站)", "gltf", options, "webp", 0.5, false);
-	OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
+	//options->setOptionString("eb pp ct=meshopt");
+	//exportGltfWithOptions(R"(卡拉电站)", "gltf", options, "webp", 0.5, false);
+	//OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
 
-	options->setOptionString("eb quantize");
-	exportGltfWithOptions(R"(龙翔桥站)", "gltf", options, "ktx", 0.5, true);
+	options->setOptionString("eb pp quantize ct=meshopt");
+	exportGltfWithOptions(R"(龙翔桥站)", "gltf", options, "ktx2", 0.5, true);
 	OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
 
 	//options->setOptionString("eb quantize ct=meshopt");

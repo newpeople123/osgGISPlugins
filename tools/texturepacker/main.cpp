@@ -3,13 +3,17 @@
 #include <osg/ArgumentParser>
 #include <iostream>
 #include <osgDB/ConvertUTF>
+#include <osgDB/FileNameUtils>
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 #include <osgUtil/Optimizer>
-#include <osgViewer/Viewer>
+#include <nlohmann/json.hpp>
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <osgDB/FileUtils>
+
+using namespace nlohmann;
 
 int main(int argc, char** argv)
 {
@@ -18,63 +22,158 @@ int main(int argc, char** argv)
 #else
     setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
+
     osg::ArgumentParser arguments(&argc, argv);
-    arguments.getApplicationUsage()->setDescription(arguments.getApplicationName() + "this tool is used to convert and simplify 3D model.");
-    arguments.getApplicationUsage()->addCommandLineOption("-i <file>", "input 3D model file full path");
-    arguments.getApplicationUsage()->addCommandLineOption("-o <file>", "output simplified 3D model file full path");
-    arguments.getApplicationUsage()->addCommandLineOption("-ratio <number>", "Simplified ratio of intermediate nodes.default is 0.5.");
-    arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters");
+    arguments.getApplicationUsage()->setDescription(arguments.getApplicationName() + " this tool is used to convert and simplify 3D model.");
+    arguments.getApplicationUsage()->addCommandLineOption("-i <files/folder>", "Input image files or folder path containing images.");
+    arguments.getApplicationUsage()->addCommandLineOption("-o <file>", "Output image file full path.");
+    arguments.getApplicationUsage()->addCommandLineOption("-width <number>", "Texture atlas width, must be a power of 2.");
+    arguments.getApplicationUsage()->addCommandLineOption("-height <number>", "Texture atlas height, must be a power of 2.");
+    arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters.");
+
     if (arguments.read("-h") || arguments.read("--help"))
     {
         arguments.getApplicationUsage()->write(std::cout);
         return 1;
     }
 
-    std::string input = "", output = "";
-    while (arguments.read("-i", input));
-    while (arguments.read("-o", output));
+    std::vector<std::string> inputFiles;
+    std::string output = "";
+    int width = 0, height = 0;
 
-    //if (input.empty()) {
-    //    OSG_FATAL << "input file can not be null!" << '\n';
-    //    arguments.getApplicationUsage()->write(std::cout);
-    //    return 0;
-    //}
-
-    //if (output.empty()) {
-    //    OSG_FATAL << "output file can not be null!" << '\n';
-    //    arguments.getApplicationUsage()->write(std::cout);
-    //    return 0;
-    //}
+    // 读取输入文件或文件夹
+    std::string input;
+    while (arguments.read("-i", input)) {
 #ifndef NDEBUG
 #else
-    input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+        input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+#endif // !NDEBUG
+        if (osgDB::fileType(input) == osgDB::DIRECTORY) {
+            osgDB::DirectoryContents files = osgDB::getDirectoryContents(input);
+            for (const auto& file : files) {
+                std::string fullPath = osgDB::concatPaths(input, file);
+                std::string extension = osgDB::convertToLowerCase(osgDB::getFileExtension(fullPath));
+                if (extension == "jpg" || extension == "jpeg" || extension == "png" || extension == "ktx" || extension == "ktx2" || extension == "webp") {
+                    inputFiles.push_back(fullPath);
+                }
+            }
+        }
+        else if (osgDB::fileType(input) == osgDB::REGULAR_FILE) {
+            inputFiles.push_back(input);
+        }
+    }
+
+
+    // 读取输出文件
+    arguments.read("-o", output);
+#ifndef NDEBUG
+#else
     output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
 #endif // !NDEBUG
-    const std::string basePath = R"(E:\Code\2023\Other\data\1芜湖水厂总装.fbm\)";
-    std::vector<std::string> imgPaths = {
-        basePath+R"(01 - Default_Base_Color.jpg)",
-        basePath + R"(城南污水处理厂地形-4.jpg)",
-        basePath + R"(440305A003GHJZA001T008.png)",
-        basePath + R"(出水泵二期颜色666.jpg)",
-        basePath + R"(MXGMB003 - 副本.png)",
-        basePath + R"(办公室单开门.jpg)",
-        basePath + R"(办公室双开门.png)",
+    // 读取纹理图集的宽度和高度
+    arguments.read("-width", width);
+    arguments.read("-height", height);
 
-    };
-    std::vector<osg::ref_ptr<osg::Image>> images;
-    std::map<size_t, size_t> geometryIdMap;
-    std::string imageName; size_t numImages = 0;
-    for (auto str : imgPaths) {
-        osg::ref_ptr<osg::Image> img = osgDB::readImageFile(str);
-        images.push_back(img);
+    // 检查输入文件是否为空
+    if (inputFiles.empty()) {
+        std::cerr << "Input files cannot be empty!" << '\n';
+        arguments.getApplicationUsage()->write(std::cout);
+        return 0;
     }
 
-    osg::ref_ptr<TexturePacker> packer = new TexturePacker(8192, 8192);
+    // 检查输出路径是否为空
+    if (output.empty()) {
+        std::cerr << "Output file cannot be empty!" << '\n';
+        arguments.getApplicationUsage()->write(std::cout);
+        return 0;
+    }
+
+    // 检查宽度和高度是否为2的幂次
+    auto isPowerOfTwo = [](int n) {
+        return (n > 0) && ((n & (n - 1)) == 0);
+        };
+
+    if (width <= 0 || !isPowerOfTwo(width)) {
+        std::cerr << "Width must be a positive power of 2!" << '\n';
+        return 0;
+    }
+
+    if (height <= 0 || !isPowerOfTwo(height)) {
+        std::cerr << "Height must be a positive power of 2!" << '\n';
+        return 0;
+    }
+
+    std::vector<osg::ref_ptr<osg::Image>> images;
+    std::map<std::string, size_t> geometryIdMap;
+    size_t numImages = 0;
+
+    for (const auto& str : inputFiles) {
+        osg::ref_ptr<osg::Image> img = osgDB::readImageFile(str);
+        if (img->valid())
+            images.push_back(img);
+        else
+            OSG_WARN << "Failed to read file: " << str << '\n';
+    }
+
+    osg::ref_ptr<TexturePacker> packer = new TexturePacker(width, height);
     for (size_t i = 0; i < images.size(); ++i)
     {
-        geometryIdMap[i] = packer->addElement(images[i].get());
+        geometryIdMap[images[i]->getFileName()] = packer->addElement(images[i].get());
     }
+
     osg::ref_ptr<osg::Image> atlas = packer->pack(numImages, true);
-    osgDB::writeImageFile(*atlas.get(), "./test.png");
+    if (atlas->valid()) 
+    {
+        if (osgDB::writeImageFile(*atlas.get(), output))
+        {
+            json info = json::object();
+            info["filename"] = input;
+            info["w"] = width;
+            info["h"] = height;
+            json children = json::array();
+            for (const auto& item : geometryIdMap)
+            {
+                double x, y;
+                int w, h;
+                if (packer->getPackingData(item.second, x, y, w, h))
+                {
+                    json jsonItem = json::object();
+                    jsonItem["filename"] = item.first;
+                    jsonItem["x"] = x;
+                    jsonItem["y"] = y;
+                    jsonItem["w"] = w;
+                    jsonItem["h"] = h;
+                    children.push_back(jsonItem);
+                }
+            }
+            info["images"] = children;
+            const std::string atlasInfo = info.dump(4);
+#ifndef NDEBUG
+            const std::string infoOutputPath = osgDB::getFilePath(output) + "\\" + osgDB::getStrippedName(output) + "-info.json";
+#else
+            const std::string infoOutputPath = osgDB::convertStringFromUTF8toCurrentCodePage(osgDB::getFilePath(output)) + "\\" + osgDB::getStrippedName(output) + "-info.json";
+#endif // !NDEBUG
+            // 尝试创建目录（如果不存在）
+            if (!osgDB::fileExists(osgDB::getFilePath(output))) {
+                if (!osgDB::makeDirectory(osgDB::getFilePath(output))) {
+                    std::cerr << "Failed to create directory: " << osgDB::getFilePath(output) << '\n';
+                    return 1;
+                }
+            }
+            std::ofstream infoOutFile(infoOutputPath);
+            if (!infoOutFile.is_open()) {
+                std::cerr << "Failed to open file for writing: " << osgDB::convertStringFromCurrentCodePageToUTF8(infoOutputPath) << '\n';
+                std::cerr << "Erro code: " << errno << " (" << std::strerror(errno) << ")" << std::endl;
+                return 1;
+            }
+            infoOutFile << atlasInfo;
+            infoOutFile.close();
+            std::cout << "Successfully packed texture atlas!" << '\n';
+        }
+        else
+            std::cerr << "Failed to pack texture atlas!" << '\n';
+    }
+    else
+        std::cerr << "Failed to pack texture atlas! The texture atlas size is too small!" << '\n';
     return 1;
 }
