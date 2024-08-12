@@ -1,12 +1,9 @@
 #include <osg/ArgumentParser>
-#include <3dtiles/Write3DTiles.h>
 #include <osgDB/Options>
 #include <osgDB/ConvertUTF>
 #include <osgDB/ReadFile>
 #include <iostream>
 #include <osgDB/FileUtils>
-#include <3dtiles/OctreeBuilder.h>
-#include <3dtiles/QuadTreeBuilder.h>
 
 int main(int argc, char** argv)
 {

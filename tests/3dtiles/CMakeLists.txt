@@ -1,4 +1,4 @@
-set(TOOL_TEST_NAME "test_osgdb_webp")
+set(TOOL_TEST_NAME "test_3dtiles")
 aux_source_directory(. DIR_SRCS)
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS})
 source_group("src" FILES ${DIR_SRCS})

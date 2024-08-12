@@ -5,9 +5,9 @@ find_package(OpenSceneGraph 3.6.5 REQUIRED osg osgDB osgUtil osgGA osgViewer osg
 add_subdirectory(osgdb_fbx)
 add_subdirectory(osgdb_gltf)
 add_subdirectory(osgdb_ktx)
-add_subdirectory(osgdb_webp)
+add_subdirectory(3dtiles)
 
 set_target_properties(test_osgdb_fbx PROPERTIES FOLDER "Tests/Plugins")
 set_target_properties(test_osgdb_gltf PROPERTIES FOLDER "Tests/Plugins")
 set_target_properties(test_osgdb_ktx PROPERTIES FOLDER "Tests/Plugins")
-set_target_properties(test_osgdb_webp PROPERTIES FOLDER "Tests/Plugins")
+set_target_properties(test_3dtiles PROPERTIES FOLDER "Tests/Tools")
