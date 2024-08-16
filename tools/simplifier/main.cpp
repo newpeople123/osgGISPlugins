@@ -10,6 +10,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+using namespace osgGISPlugins;
 class TestVisitor : public osg::NodeVisitor {
 public:
     double area = 0.0;

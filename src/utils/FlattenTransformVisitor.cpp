@@ -1,4 +1,5 @@
 #include "utils/FlattenTransformVisitor.h"
+using namespace osgGISPlugins;
 FlattenTransformVisitor::FlattenTransformVisitor()
     : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
 

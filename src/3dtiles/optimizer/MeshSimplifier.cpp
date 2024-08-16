@@ -3,7 +3,7 @@
 #include <meshoptimizer.h>
 #include <osgUtil/Optimizer>
 #include <iostream>
-
+using namespace osgGISPlugins;
 void MeshSimplifier::simplifyMesh(osg::ref_ptr<osg::Geometry> geom, const float simplifyRatio)
 {
     if (!geom.valid()) return;

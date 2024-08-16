@@ -4,6 +4,7 @@
 #include "osgdb_gltf/Osg2Gltf.h"
 #include "osgdb_gltf/b3dm/B3DM.h"
 #include "osgdb_gltf/b3dm/BatchTableHierarchy.h"
+using namespace osgGISPlugins;
 class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
 private:

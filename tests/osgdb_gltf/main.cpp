@@ -18,7 +18,9 @@
 #include <osgUtil/Optimizer>
 #include <osgDB/WriteFile>
 #include <future>
+#include "utils/Simplifier.h"
 using namespace std;
+using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 //const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
@@ -42,13 +44,16 @@ void exportGltfWithOptions(const std::string& filename,const std::string ext,con
 		return;
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename +R"(.fbx)");
 	//1
-	if (bFlatternTransform) {
-		FlattenTransformVisitor ftv;
-		node->accept(ftv);
-	}
+	//if (bFlatternTransform) {
+	//	FlattenTransformVisitor ftv;
+	//	node->accept(ftv);
+	//}
 	//2
 	osgUtil::Optimizer optimizer;
-	optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+	osg::setNotifyLevel(osg::INFO);
+	//optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH|osgUtil::Optimizer::STATIC_OBJECT_DETECTION|osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
+	optimizer.optimize(node, osgUtil::Optimizer::STATIC_OBJECT_DETECTION| osgUtil::Optimizer::OPTIMIZE_TEXTURE_SETTINGS | 
+		osgUtil::Optimizer::SHARE_DUPLICATE_STATE | osgUtil::Optimizer::COPY_SHARED_NODES | osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
 	//3
 	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
 	MeshOptimizer mov(meshOptimizer, ratio);
@@ -71,6 +76,14 @@ void exportGltfWithOptions(const std::string& filename,const std::string ext,con
 	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.)" + lowerExtStr, options.get());
 }
 
+void testSimplifier(const std::string& filename)
+{
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)");
+	Simplifier simplifier(0.5);
+	node->accept(simplifier);
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(_simplify_05.fbx)");
+}
+
 int main() {
 	osgDB::Registry* instance = osgDB::Registry::instance();
 	instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
@@ -90,12 +103,12 @@ int main() {
 	//OSG_NOTICE << R"(广州塔处理完毕)" << std::endl;
 
 	//options->setOptionString("eb pp ct=meshopt");
-	//exportGltfWithOptions(R"(卡拉电站)", "gltf", options, "webp", 0.5, false);
+    //exportGltfWithOptions(R"(卡拉电站)", "gltf", options, "webp", 0.5, false);
 	//OSG_NOTICE << R"(卡拉电站处理完毕)" << std::endl;
 
-	options->setOptionString("eb pp quantize ct=meshopt");
-	exportGltfWithOptions(R"(龙翔桥站)", "gltf", options, "ktx2", 0.5, true);
-	OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
+	//options->setOptionString("eb pp quantize ct=meshopt");
+	//exportGltfWithOptions(R"(龙翔桥站)", "gltf", options, "ktx2", 0.5, true);
+	//OSG_NOTICE << R"(龙翔桥站处理完毕)" << std::endl;
 
 	//options->setOptionString("eb quantize ct=meshopt");
 	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
@@ -104,5 +117,7 @@ int main() {
 	//options->setOptionString("eb pp ct=meshopt");
 	//exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
 	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
+
+	testSimplifier(R"(芜湖水厂总装单位M)");
 	return 1;
 }

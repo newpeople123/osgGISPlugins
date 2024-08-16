@@ -6,6 +6,7 @@
 #include <iomanip>
 #include "osgdb_gltf/material/GltfPbrMRMaterial.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
+using namespace osgGISPlugins;
 TexturePackingVisitor::TexturePackingVisitor(int maxWidth, int maxHeight, std::string ext, std::string cachePath, bool bPackTexture) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
 _maxWidth(maxWidth), _maxHeight(maxHeight), _ext(ext), _cachePath(cachePath), _bPackTexture(bPackTexture) {}
 

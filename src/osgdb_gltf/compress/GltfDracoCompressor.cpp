@@ -1,6 +1,6 @@
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"
 #include "draco/compression/decode.h"
-
+using namespace osgGISPlugins;
 draco::GeometryAttribute::Type GltfDracoCompressor::getTypeFromAttributeName(const std::string& name)
 {
 	if (name == "POSITION")

@@ -1,7 +1,7 @@
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #include <osg/Geometry>
 #include <osg/Geode>
-
+using namespace osgGISPlugins;
 void BatchIdVisitor::apply(osg::Drawable& drawable) {
     osg::Geometry* geometry = drawable.asGeometry();
     if (geometry) {

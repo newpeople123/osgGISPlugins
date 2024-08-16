@@ -1,5 +1,6 @@
 #include "3dtiles/optimizer/MeshOptimizer.h"
 #include <meshoptimizer.h>
+using namespace osgGISPlugins;
 MeshOptimizer::MeshOptimizer(MeshSimplifierBase* meshSimplifier, float simplifyRatio)
     : _meshSimplifier(meshSimplifier), _simplifyRatio(simplifyRatio), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
 

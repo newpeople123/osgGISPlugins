@@ -1,6 +1,7 @@
 #include "osgdb_gltf/GltfMerger.h"
 #include <osg/Math>
 #include <osg/MatrixTransform>
+using namespace osgGISPlugins;
 void GltfMerger::mergeMeshes()
 {
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual> matrixPrimitiveMap;

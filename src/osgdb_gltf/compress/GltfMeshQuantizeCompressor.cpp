@@ -1,7 +1,7 @@
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 #include <meshoptimizer.h>
 #include <algorithm>
-
+using namespace osgGISPlugins;
 void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
 {
 	KHR_texture_transform texture_transform_extension;

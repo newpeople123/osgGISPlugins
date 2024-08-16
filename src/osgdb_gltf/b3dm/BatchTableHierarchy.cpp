@@ -3,7 +3,7 @@
 #include <osg/Geometry>
 #include <osg/ValueObject>
 #include "osgdb_gltf/b3dm/UserDataVisitor.h"
-
+using namespace osgGISPlugins;
 void BatchTableHierarchyVisitor::apply(osg::Group& group) {
     _currentParentBatchId = _currentBatchId == 0 ? 0 : _currentBatchId - 1;
     traverse(group);

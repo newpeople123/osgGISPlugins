@@ -12,7 +12,7 @@
 #include <windows.h>
 #endif
 #include <osgDB/FileUtils>
-
+using namespace osgGISPlugins;
 using namespace nlohmann;
 
 int main(int argc, char** argv)

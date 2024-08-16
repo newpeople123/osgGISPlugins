@@ -7,13 +7,14 @@
 #include <osg/Geometry>
 #include <osg/MatrixTransform>
 #include <osg/PositionAttitudeTransform>
+namespace osgGISPlugins {
+    class FlattenTransformVisitor : public osg::NodeVisitor {
+    public:
+        FlattenTransformVisitor();
 
-class FlattenTransformVisitor : public osg::NodeVisitor {
-public:
-    FlattenTransformVisitor();
-
-    void apply(osg::Drawable& drawable) override;
-    void apply(osg::Transform& transform) override;
-    void apply(osg::Group& group) override;
-};
+        void apply(osg::Drawable& drawable) override;
+        void apply(osg::Transform& transform) override;
+        void apply(osg::Group& group) override;
+    };
+}
 #endif // !OSG_GIS_PLUGINS_FLATTENTRANSFORMVISITOR_H

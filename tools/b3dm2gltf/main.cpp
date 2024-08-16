@@ -9,6 +9,7 @@
 #include <cstdio>
 #include "osgdb_gltf/b3dm/B3DM.h"
 #include <osgDB/ConvertUTF>
+using namespace osgGISPlugins;
 int main(int argc, char** argv)
 {
 #ifdef _WIN32

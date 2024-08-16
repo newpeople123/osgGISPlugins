@@ -1,5 +1,5 @@
 #include "osgdb_gltf/material/GltfPbrMRMaterial.h"
-
+using namespace osgGISPlugins;
 osg::ref_ptr<osg::Image> GltfPbrMRMaterial::mergeImages(const osg::ref_ptr<osg::Image>& metalnessImage, const osg::ref_ptr<osg::Image>& roughnessImage)
 {
     int width = metalnessImage->s();

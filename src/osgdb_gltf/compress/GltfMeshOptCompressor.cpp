@@ -1,5 +1,6 @@
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include <meshoptimizer.h>
+using namespace osgGISPlugins;
 void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 {
 	for (const auto& primitive : mesh.primitives)

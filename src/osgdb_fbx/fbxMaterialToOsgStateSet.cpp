@@ -8,6 +8,7 @@
 #include <osgDB/FileUtils>
 #include <osgDB/FileNameUtils>
 #include <osgDB/ConvertUTF>
+using namespace osgGISPlugins;
 TextureDetails::TextureDetails() :
     factor(1.0),
     scale(1.0, 1.0)

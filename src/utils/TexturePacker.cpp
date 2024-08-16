@@ -3,6 +3,7 @@
 #include <osg/ImageUtils>
 #define STB_RECT_PACK_IMPLEMENTATION
 #include <stb_rect_pack.h>
+using namespace osgGISPlugins;
 void TexturePacker::clear() {
     _input.clear();
     _result.clear();

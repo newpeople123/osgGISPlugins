@@ -1,4 +1,5 @@
 #include "3dtiles/optimizer/MeshSimplifierBase.h"
+using namespace osgGISPlugins;
 void MeshSimplifierBase::mergePrimitives(osg::ref_ptr<osg::Geometry> geom) {
     if (geom.valid()) {
         osg::ref_ptr<osg::PrimitiveSet> mergePrimitiveset = nullptr;

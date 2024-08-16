@@ -1,4 +1,5 @@
 #include "osgdb_gltf/GltfOptimizer.h"
+using namespace osgGISPlugins;
 size_t GltfOptimizer::calculateNumComponents(const int type)
 {
 	switch (type) {

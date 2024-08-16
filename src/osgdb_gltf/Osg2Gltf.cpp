@@ -14,6 +14,7 @@
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
+using namespace osgGISPlugins;
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
     for (int i = 0; i < _model.materials.size(); ++i) {
