@@ -78,7 +78,7 @@ namespace osgGISPlugins {
             }
             if (_optimizers.size() > 0)
             {
-                GltfMerger* mergeOptimizer = dynamic_cast<GltfMerger*>(_optimizers[0]);
+                GltfMerger* mergeOptimizer = dynamic_cast<GltfMerger*>(_optimizers[_optimizers.size() - 1]);
                 if (mergeOptimizer)
                     mergeOptimizer->mergeBuffers();
             }

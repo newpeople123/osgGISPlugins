@@ -10,7 +10,7 @@ void TexturePacker::clear() {
     _dictIndex = 0;
 }
 
-size_t TexturePacker::addElement(osg::Image* image) {
+size_t TexturePacker::addElement(osg::ref_ptr<osg::Image> image) {
     _input[++_dictIndex] = InputPair(image, osg::Vec4());
     return _dictIndex;
 }

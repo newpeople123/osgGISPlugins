@@ -19,13 +19,21 @@
 #include <osgDB/WriteFile>
 #include <future>
 #include "utils/Simplifier.h"
+#include <utils/GltfOptimizer.h>
+
+#define _CRTDBG_MAP_ALLOC
+#include <stdlib.h>
+#include <crtdbg.h>
+
 using namespace std;
 using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 //const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
+const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
 /// <summary>
 /// 导出gltf/glb/b3dm
 /// </summary>
@@ -84,6 +92,32 @@ void testSimplifier(const std::string& filename)
 	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(_simplify_05.fbx)");
 }
 
+void testGltfOptimizer(const std::string& filename)
+{
+	osg::ref_ptr<osgDB::Options> options1 = new osgDB::Options;
+	options1->setOptionString("TessellatePolygons");
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options1.get());
+
+	GltfOptimizer gltfOptimzier;
+	GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
+	gltfTextureOptions.cachePath = R"(C:\wty\work\test\)" + filename + R"(_imgs)";
+	gltfTextureOptions.maxWidth = 4096;
+	gltfTextureOptions.maxHeight = 4096;
+	gltfTextureOptions.ext = ".jpg";
+	gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
+	osgDB::makeDirectory(gltfTextureOptions.cachePath);
+	//osg::setNotifyLevel(osg::INFO);
+	gltfOptimzier.optimize(node.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
+
+	//osgUtil::Optimizer optimizer;
+	//optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
+
+	osg::ref_ptr<osgDB::Options> options2 = new osgDB::Options;
+
+	options2->setOptionString("pp");
+	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options2.get());
+}
+
 int main() {
 	osgDB::Registry* instance = osgDB::Registry::instance();
 	instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
@@ -118,6 +152,16 @@ int main() {
 	//exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
 	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 
-	testSimplifier(R"(芜湖水厂总装单位M)");
+	//testSimplifier(R"(芜湖水厂总装单位M)");
+
+	//testGltfOptimizer(R"(02-输水洞)");
+	//testGltfOptimizer(R"(20240529卢沟桥分洪枢纽1)");
+
+	testGltfOptimizer(R"(20240529卢沟桥分洪枢纽)");
+
+
+	//_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+	//_CrtSetBreakAlloc(1172754);
+	//_CrtDumpMemoryLeaks();
 	return 1;
 }

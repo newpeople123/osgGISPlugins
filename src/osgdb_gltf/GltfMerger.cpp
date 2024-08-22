@@ -76,6 +76,7 @@ void GltfMerger::mergeMeshes()
 				unsigned int count = 0;
 
 				for (const auto& prim : attributePrimitiveItem.second) {
+					if (prim.indices == -1) continue;
 					tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
 					totalIndicesAccessor = oldIndicesAccessor;
 					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
@@ -120,7 +121,7 @@ void GltfMerger::mergeMeshes()
 
 				unsigned int sum = 0;
 				for (const auto& prim : attributePrimitiveItem.second) {
-
+					if (prim.indices == -1) continue;
 					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
 					reindexBufferAndAccessor(oldVerticesAccessor, totalVerticesBufferView, totalVerticesBuffer, totalVerticesAccessor);
 
@@ -330,33 +331,132 @@ void GltfMerger::mergeBuffers()
 void GltfMerger::mergeMaterials()
 {
 	const std::string transformExtensionName = "KHR_texture_transform";
-	std::vector<int> textureIndexes;
+	std::vector<tinygltf::Material> newMaterials;
+
+	std::vector<tinygltf::Material> materials;
+	std::set<int> uniqueNoMergeMaterialIndex, uniqueMergeMaterialIndex;
 	for (const auto& mesh : _model.meshes)
 	{
 		for (const auto& primitive : mesh.primitives)
 		{
-			auto& material = _model.materials[primitive.material];
+			if (primitive.material == -1) break;
+			auto material = _model.materials[primitive.material];
 			//如果含有emissive、normal、occlusion贴图则不合并
 			if (!(material.emissiveTexture.index == -1 &&
 				material.normalTexture.index == -1 &&
 				material.occlusionTexture.index == -1))
+
+			{
+				uniqueNoMergeMaterialIndex.insert(primitive.material);
 				break;
+			}
 			//如果含有其他纹理扩展或者metallicRoughness贴图不为空则不合并
 			if (!(material.extensions.size() == 0 && material.pbrMetallicRoughness.metallicRoughnessTexture.index == -1))
+			{
+				uniqueNoMergeMaterialIndex.insert(primitive.material);
 				break;
+			}
 
 			auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
 			//如果没有baseColor贴图则不合并
 			if (baseColorTexture.index == -1)
+			{
+				uniqueNoMergeMaterialIndex.insert(primitive.material);
 				break;
+			}
 			//如果没有纹理坐标则不合并
 			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
 			if (findTexcoordIndex == primitive.attributes.end())
+			{
+				uniqueNoMergeMaterialIndex.insert(primitive.material);
 				break;
+			}
 			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
 			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
 			if (extensionItem == baseColorTexture.extensions.end())
+			{
+				uniqueNoMergeMaterialIndex.insert(primitive.material);
 				break;
+			}
+
+			const int texcoordIndex = findTexcoordIndex->second;
+			const tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
+			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
+
+			if (oldTexcoords.size() != texcoordAccessor.count * 2)
+			{
+				uniqueNoMergeMaterialIndex.insert(primitive.material);
+				break;
+			}
+
+			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
+			for (size_t j = 0; j < texcoordAccessor.count; ++j)
+			{
+				const float x = oldTexcoords[2 * j + 0];
+				const float y = oldTexcoords[2 * j + 1];
+				if (osg::absolute(x) > 1 || osg::absolute(y) > 1)
+				{
+					uniqueNoMergeMaterialIndex.insert(primitive.material);
+					break;
+				}
+			}
+		}
+
+	}
+	
+	for (const auto& mesh : _model.meshes)
+	{
+		for (const auto& primitive : mesh.primitives)
+		{
+			if (primitive.material == -1) break;
+			if (uniqueNoMergeMaterialIndex.find(primitive.material) == uniqueNoMergeMaterialIndex.end())
+			{
+				auto material = _model.materials[primitive.material];
+				materials.push_back(material);
+				uniqueMergeMaterialIndex.insert(primitive.material);
+			}
+		}
+	}
+
+	for (size_t i = 0; i < materials.size(); i++)
+	{
+		auto& oldMaterial = materials.at(i);
+		oldMaterial.pbrMetallicRoughness.baseColorTexture.extensions.clear();
+		int index = -1;
+		for (size_t j = 0; j < newMaterials.size(); j++)
+		{
+			auto& newMateiral = newMaterials.at(j);
+			if (newMateiral == oldMaterial)
+				index = j;
+		}
+		if (index == -1)
+		{
+			index = newMaterials.size();
+			newMaterials.push_back(oldMaterial);
+		}
+	}
+	
+	if (newMaterials.size() + uniqueNoMergeMaterialIndex.size() == _model.materials.size())
+		return;
+
+	newMaterials.clear();
+	std::map<int, int> materialRemap;
+
+
+	for (const auto& mesh : _model.meshes)
+	{
+		for (const auto& primitive : mesh.primitives)
+		{
+			if (primitive.material == -1) break;
+			if (uniqueMergeMaterialIndex.find(primitive.material) == uniqueMergeMaterialIndex.end()) break;
+
+			auto& material = _model.materials[primitive.material];
+
+			auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
+			//如果没有纹理坐标则不合并
+			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
+			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
+			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
 			const tinygltf::Value extensionVal = extensionItem->second;
 			const auto offset = extensionVal.Get("offset").Get<tinygltf::Value::Array>();
 			const auto scale = extensionVal.Get("scale").Get<tinygltf::Value::Array>();
@@ -369,40 +469,25 @@ void GltfMerger::mergeMaterials()
 			const tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
 			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
 
-			if (oldTexcoords.size() != texcoordAccessor.count * 2)
-				break;
-
-			bool bResetTexcoords = true;
 			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
 			for (size_t j = 0; j < texcoordAccessor.count; ++j)
 			{
 				const float x = oldTexcoords[2 * j + 0];
 				const float y = oldTexcoords[2 * j + 1];
-				if (osg::absolute(x) > 1 || osg::absolute(y) > 1)
-				{
-					bResetTexcoords = false;
-					break;
-				}
 				// 提取结果
 				const osg::Vec2 resultUv(x * scaleX + offsetX, y * scaleY + offsetY);
 				texcoords->at(j) = (resultUv);
 			}
-
-			if (bResetTexcoords) {
-				tinygltf::BufferView& texcoordBufferView = _model.bufferViews[texcoordAccessor.bufferView];
-				tinygltf::Buffer& buffer = _model.buffers[texcoordBufferView.buffer];
-				restoreBuffer(buffer, texcoordBufferView, texcoords);
-				textureIndexes.push_back(primitive.material);
-			}
+			tinygltf::BufferView& texcoordBufferView = _model.bufferViews[texcoordAccessor.bufferView];
+			tinygltf::Buffer& buffer = _model.buffers[texcoordBufferView.buffer];
+			restoreBuffer(buffer, texcoordBufferView, texcoords);
 		}
 	}
-	for (const auto index : textureIndexes)
+
+	for (const auto index : uniqueMergeMaterialIndex)
 	{
 		_model.materials[index].pbrMetallicRoughness.baseColorTexture.extensions.clear();
 	}
-
-	std::vector<tinygltf::Material> newMaterials;
-	std::map<int, int> materialRemap;
 
 	for (size_t i = 0; i < _model.materials.size(); i++)
 	{

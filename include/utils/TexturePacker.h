@@ -10,7 +10,7 @@ namespace osgGISPlugins {
         void setMaxSize(int w, int h) { _maxWidth = w; _maxHeight = h; }
         void clear();
 
-        size_t addElement(osg::Image* image);
+        size_t addElement(osg::ref_ptr<osg::Image> image);
         size_t addElement(int width, int height);
         void removeElement(size_t id);
 

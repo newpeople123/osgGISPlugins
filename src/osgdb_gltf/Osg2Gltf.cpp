@@ -17,8 +17,10 @@
 using namespace osgGISPlugins;
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
-    for (int i = 0; i < _model.materials.size(); ++i) {
-        if (gltfMaterial == _model.materials.at(i)) {
+    for (int i = 0; i < _model.materials.size(); ++i)
+    {
+        if (gltfMaterial == _model.materials.at(i))
+        {
             return i;
         }
     }
@@ -79,7 +81,8 @@ void Osg2Gltf::apply(osg::MatrixTransform& xform)
 
     osg::Matrix matrix;
     xform.computeLocalToWorldMatrix(matrix, this);
-    if (matrix != osg::Matrix::identity()) {
+    if (matrix != osg::Matrix::identity())
+    {
         //向gltf中写入translation、rotation、scale，与matrix互斥
         {
             osg::Vec3d translation;
@@ -172,11 +175,14 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
         if (colors.valid())
         {
             const osg::Geometry::AttributeBinding colorAttrBinding = geom->getColorBinding();
-            if (colorAttrBinding & osg::Geometry::AttributeBinding::BIND_PER_VERTEX) {
+            if (colorAttrBinding & osg::Geometry::AttributeBinding::BIND_PER_VERTEX)
+            {
                 getOrCreateBufferView(colors, GL_ARRAY_BUFFER_ARB);
             }
-            else if (colorAttrBinding & osg::Geometry::AttributeBinding::BIND_PER_PRIMITIVE_SET) {
-                if (colors->size()) {
+            else if (colorAttrBinding & osg::Geometry::AttributeBinding::BIND_PER_PRIMITIVE_SET)
+            {
+                if (colors->size())
+                {
                     osg::ref_ptr<osg::Vec4Array> colorsPerVertex = new osg::Vec4Array(positions->size());
                     std::fill(colorsPerVertex->begin(), colorsPerVertex->end(), colors->at(0));
                     colors = colorsPerVertex;
@@ -215,55 +221,26 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
             mesh.primitives.emplace_back();
             tinygltf::Primitive& primitive = mesh.primitives.back();
 
-            const int currentMaterial = getCurrentMaterial();
-            if (currentMaterial >= 0)
+            if (texCoords.valid())
             {
-                // Cesium may crash if using texture without texCoords
-                // gltf_validator will report it as errors
-                // ThreeJS seems to be fine though
-                primitive.material = currentMaterial;
-                if (texCoords.valid())
+                const int currentMaterial = getCurrentMaterial();
+                if (currentMaterial >= 0)
+                {
+                    // Cesium may crash if using texture without texCoords
+                    // gltf_validator will report it as errors
+                    // ThreeJS seems to be fine though
+                    primitive.material = currentMaterial;
                     getOrCreateBufferView(texCoords.get(), GL_ARRAY_BUFFER_ARB);
 
-            }
-
-            primitive.mode = mode;
-
-            if (positions.valid()) {
-                const int posAccessorIndex = getOrCreateAccessor(positions, pset, primitive, "POSITION");
-                if (posAccessorIndex > -1) {
-                    osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
-                    osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-                    for (const auto& v : *positions)
-                    {
-                        if (!v.isNaN()) {
-                            posMin.x() = osg::minimum(posMin.x(), v.x());
-                            posMin.y() = osg::minimum(posMin.y(), v.y());
-                            posMin.z() = osg::minimum(posMin.z(), v.z());
-                            posMax.x() = osg::maximum(posMax.x(), v.x());
-                            posMax.y() = osg::maximum(posMax.y(), v.y());
-                            posMax.z() = osg::maximum(posMax.z(), v.z());
-                        }
-                    }
-                    // record min/max for position array (required):
-                    tinygltf::Accessor& posacc = _model.accessors[posAccessorIndex];
-                    posacc.minValues = { posMin.x(), posMin.y(), posMin.z() };
-                    posacc.maxValues = { posMax.x(), posMax.y(), posMax.z() };
-                }
-                if (normals.valid()) {
-                    getOrCreateAccessor(normals, pset, primitive, "NORMAL");
-                }
-                if (colors.valid()) {
-                    getOrCreateAccessor(colors, pset, primitive, "COLOR_0");
-                }
-                if (texCoords.valid() && currentMaterial >= 0) {
                     const int texAccessorIndex = getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
-                    if (texAccessorIndex > -1) {
+                    if (texAccessorIndex > -1)
+                    {
                         osg::Vec2f texMin(FLT_MAX, FLT_MAX);
                         osg::Vec2f texMax(-FLT_MAX, -FLT_MAX);
                         for (const auto& t : *texCoords)
                         {
-                            if (!t.isNaN()) {
+                            if (!t.isNaN())
+                            {
                                 texMin.x() = osg::minimum(texMin.x(), t.x());
                                 texMin.y() = osg::minimum(texMin.y(), t.y());
 
@@ -289,10 +266,48 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
                         texacc.maxValues = { texMax.x(), texMax.y() };
                     }
                 }
+            }
+
+            primitive.mode = mode;
+
+            if (positions.valid())
+            {
+                const int posAccessorIndex = getOrCreateAccessor(positions, pset, primitive, "POSITION");
+                if (posAccessorIndex > -1)
+                {
+                    osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
+                    osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+                    for (const auto& v : *positions)
+                    {
+                        if (!v.isNaN())
+                        {
+                            posMin.x() = osg::minimum(posMin.x(), v.x());
+                            posMin.y() = osg::minimum(posMin.y(), v.y());
+                            posMin.z() = osg::minimum(posMin.z(), v.z());
+                            posMax.x() = osg::maximum(posMax.x(), v.x());
+                            posMax.y() = osg::maximum(posMax.y(), v.y());
+                            posMax.z() = osg::maximum(posMax.z(), v.z());
+                        }
+                    }
+                    // record min/max for position array (required):
+                    tinygltf::Accessor& posacc = _model.accessors[posAccessorIndex];
+                    posacc.minValues = { posMin.x(), posMin.y(), posMin.z() };
+                    posacc.maxValues = { posMax.x(), posMax.y(), posMax.z() };
+                }
+                if (normals.valid())
+                {
+                    getOrCreateAccessor(normals, pset, primitive, "NORMAL");
+                }
+                if (colors.valid())
+                {
+                    getOrCreateAccessor(colors, pset, primitive, "COLOR_0");
+                }
 
                 const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
-                if (batchIds.valid()) {
-                    if (batchIds->size() == positions->size()) {
+                if (batchIds.valid())
+                {
+                    if (batchIds->size() == positions->size())
+                    {
                         getOrCreateBufferView(batchIds, GL_ARRAY_BUFFER_ARB);
                         getOrCreateAccessor(batchIds, pset, primitive, "_BATCHID");
                     }
@@ -420,7 +435,8 @@ int Osg2Gltf::getOrCreateBuffer(const osg::BufferData* data)
 
 int Osg2Gltf::getOrCreateBufferView(const osg::BufferData* data, const GLenum target)
 {
-    try {
+    try
+    {
         const auto a = _bufferViews.find(data);
         if (a != _bufferViews.end())
             return a->second;
@@ -480,7 +496,8 @@ int Osg2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pse
     accessor.normalized = data->getNormalize();
 
 
-    if (attr == "POSITION") {
+    if (attr == "POSITION")
+    {
         setPositionAccessor(data, pset, prim, accessor);
     }
     return accessorId;
@@ -489,9 +506,11 @@ int Osg2Gltf::getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pse
 void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, tinygltf::Accessor& accessor)
 {
     const osg::PrimitiveSet::Type type = pset->getType();
-    if (type == osg::PrimitiveSet::DrawArraysPrimitiveType) {
+    if (type == osg::PrimitiveSet::DrawArraysPrimitiveType)
+    {
         const auto da = dynamic_cast<const osg::DrawArrays*>(pset);
-        if (da) {
+        if (da)
+        {
             const GLint first = da->getFirst();
             unsigned int bytes = getBytesPerElement(data);
             accessor.byteOffset = static_cast<unsigned int>(first) * static_cast<size_t>(bytes);
@@ -501,9 +520,11 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
     }
     else if (type == osg::PrimitiveSet::DrawElementsUBytePrimitiveType ||
         type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType ||
-        type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType) {
+        type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType)
+    {
         const auto de = dynamic_cast<osg::DrawElements*>(pset);
-        if (de) {
+        if (de)
+        {
             prim.indices = _model.accessors.size();
             _model.accessors.emplace_back();
             tinygltf::Accessor& idxAccessor = _model.accessors.back();
@@ -525,7 +546,8 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
             idxAccessor.bufferView = idxBV;
         }
     }
-    else {
+    else
+    {
         OSG_FATAL << "primitiveSet type is " << type << ",that is not supported!Please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
     }
 }
@@ -537,10 +559,12 @@ int Osg2Gltf::getCurrentMaterial()
         const osg::ref_ptr<osg::StateSet> stateSet = _ssStack.back();
         tinygltf::Material gltfMaterial;
         gltfMaterial.doubleSided = ((stateSet->getMode(GL_CULL_FACE) & osg::StateAttribute::ON) == 0);
-        if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON) {
+        if (stateSet->getMode(GL_BLEND) & osg::StateAttribute::ON)
+        {
             gltfMaterial.alphaMode = "BLEND";
         }
-        else {
+        else
+        {
             //gltf规范中alphaMode的默认值为OPAQUE
             gltfMaterial.alphaMode = "OPAQUE";
 
@@ -549,13 +573,16 @@ int Osg2Gltf::getCurrentMaterial()
             //gltfMaterial.alphaCutoff = 0.5;
         }
         const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-        if (osgMaterial.valid()) {
+        if (osgMaterial.valid())
+        {
+
             const std::type_info& materialId = typeid(*osgMaterial.get());
             if (materialId == typeid(GltfMaterial) || materialId == typeid(GltfPbrMRMaterial) || materialId == typeid(GltfPbrSGMaterial))
             {
                 return getOsgMaterial2Material(gltfMaterial, dynamic_cast<GltfMaterial*>(osgMaterial.get()));
             }
-            else {
+            else
+            {
                 const osg::Vec4 baseColor = osgMaterial->getDiffuse(osg::Material::FRONT_AND_BACK);
                 gltfMaterial.pbrMetallicRoughness.baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
                 gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
@@ -564,7 +591,8 @@ int Osg2Gltf::getCurrentMaterial()
                     return getOsgTexture2Material(gltfMaterial, osgTexture);
             }
         }
-        else {
+        else
+        {
             const osg::ref_ptr<osg::Texture> osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
             if (osgTexture.valid())
                 return getOsgTexture2Material(gltfMaterial, osgTexture);
@@ -575,27 +603,34 @@ int Osg2Gltf::getCurrentMaterial()
 
 int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 {
-    if (!osgTexture.valid()) {
+    if (!osgTexture.valid())
+    {
         return -1;
     }
-    if (osgTexture->getNumImages() < 0) {
+    if (osgTexture->getNumImages() < 0)
+    {
         return -1;
     }
     osg::ref_ptr<osg::Image> osgImage = osgTexture->getImage(0);
-    if (!osgImage.valid()) {
+    if (!osgImage.valid())
+    {
         return -1;
     }
     std::string filename;
     osgImage->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
-    if (filename.empty()) {
+
+    if (filename.empty())
+    {
         filename = osgImage->getFileName();
     }
 
-    if (!osgDB::fileExists(filename)) {
+    if (!osgDB::fileExists(filename))
+    {
         return -1;
     }
     std::ifstream file(osgDB::convertStringFromUTF8toCurrentCodePage(filename), std::ios::binary);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         OSG_FATAL << "Texture file \"" << filename << "\" exists,but failed to read.";
         return -1;
     }
@@ -605,7 +640,8 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
         const osg::ref_ptr<osg::Texture> existTexture = _textures[i].get();
         std::string existPathName;
         existTexture->getImage(0)->getUserValue(BASECOLOR_TEXTURE_FILENAME, existPathName);
-        if (existPathName.empty()) {
+        if (existPathName.empty())
+        {
             existPathName = existTexture->getImage(0)->getFileName();
         }
         osg::Texture::WrapMode existWrapS = existTexture->getWrap(osg::Texture::WRAP_S);
@@ -636,22 +672,28 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
     const std::string ext = osgDB::getLowerCaseFileExtension(filename);
     std::string mimeType;
 
-    if (ext == "ktx") {
+    if (ext == "ktx")
+    {
         mimeType = "image/ktx";
     }
-    else if (ext == "ktx2") {
+    else if (ext == "ktx2")
+    {
         mimeType = "image/ktx2";
     }
-    else if (ext == "png") {
+    else if (ext == "png")
+    {
         mimeType = "image/png";
     }
-    else if (ext == "jpeg" || ext == "jpg") {
+    else if (ext == "jpeg" || ext == "jpg")
+    {
         mimeType = "image/jpeg";
     }
-    else if (ext == "webp") {
+    else if (ext == "webp")
+    {
         mimeType = "image/webp";
     }
-    else {
+    else
+    {
         OSG_FATAL << "Error:texture's extension is: " << ext << " ,that is not supported!" << std::endl;
         return -1;
     }
@@ -699,7 +741,8 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
     sampler.wrapS = wrapS;
     sampler.wrapT = wrapT;
 
-    if (ext == "ktx2" || ext == "ktx") {
+    if (ext == "ktx2" || ext == "ktx")
+    {
         sampler.minFilter = TINYGLTF_TEXTURE_FILTER_LINEAR;
     }
     else
@@ -708,13 +751,16 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
     }
     sampler.magFilter = osgTexture->getFilter(osg::Texture::MAG_FILTER);
     int samplerIndex = -1;
-    for (int i = 0; i < _model.samplers.size(); ++i) {
+    for (int i = 0; i < _model.samplers.size(); ++i)
+    {
         const tinygltf::Sampler existSampler = _model.samplers.at(i);
-        if (existSampler.wrapR == sampler.wrapR && existSampler.wrapT == sampler.wrapT && existSampler.minFilter == sampler.minFilter && existSampler.magFilter == sampler.magFilter) {
+        if (existSampler.wrapR == sampler.wrapR && existSampler.wrapT == sampler.wrapT && existSampler.minFilter == sampler.minFilter && existSampler.magFilter == sampler.magFilter)
+        {
             samplerIndex = i;
         }
     }
-    if (samplerIndex == -1) {
+    if (samplerIndex == -1)
+    {
         samplerIndex = _model.samplers.size();
         _model.samplers.push_back(sampler);
     }
@@ -729,7 +775,8 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
         texture_basisu_extension.setSource(imageIndex);
         texture.extensions[texture_basisu_extension.name] = texture_basisu_extension.GetValue();
     }
-    else if (ext == "webp") {
+    else if (ext == "webp")
+    {
         EXT_texture_webp texture_webp_extension;
         _model.extensionsRequired.emplace_back(texture_webp_extension.name);
         _model.extensionsUsed.emplace_back(texture_webp_extension.name);
@@ -737,7 +784,8 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
         texture_webp_extension.setSource(imageIndex);
         texture.extensions[texture_webp_extension.name] = texture_webp_extension.GetValue();
     }
-    else {
+    else
+    {
         texture.source = imageIndex;
     }
     texture.sampler = samplerIndex;
@@ -749,11 +797,13 @@ int Osg2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg
 {
     int index = -1;
     gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgTexture);
-    if (osgTexture.valid()) {
+    if (osgTexture.valid())
+    {
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
         osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, enableExtension);
-        if (enableExtension) {
+        if (enableExtension)
+        {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
             osgTexture->getUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, offsetX);
@@ -772,7 +822,8 @@ int Osg2Gltf::getOsgTexture2Material(tinygltf::Material& gltfMaterial, const osg
     }
 
     index = getCurrentMaterial(gltfMaterial);
-    if (index == -1) {
+    if (index == -1)
+    {
         index = _model.materials.size();
         _model.materials.push_back(gltfMaterial);
     }
@@ -785,14 +836,16 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
     int index = -1;
 
     const osg::ref_ptr<osg::Texture2D> normalTexture = osgGltfMaterial->normalTexture;
-    if (normalTexture.valid()) {
+    if (normalTexture.valid())
+    {
         gltfMaterial.normalTexture.index = getOrCreateTexture(normalTexture);
         gltfMaterial.normalTexture.texCoord = 0;
 
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
         osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_TEXTURE_NAME, enableExtension);
-        if (enableExtension) {
+        if (enableExtension)
+        {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
             osgGltfMaterial->getUserValue(TEX_TRANSFORM_NORMAL_OFFSET_X, offsetX);
@@ -810,14 +863,16 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
         gltfMaterial.normalTexture.extensions[texture_transform_extension.name] = texture_transform_extension.GetValue();
     }
     const osg::ref_ptr<osg::Texture2D> occlusionTexture = osgGltfMaterial->occlusionTexture;
-    if (occlusionTexture.valid()) {
+    if (occlusionTexture.valid())
+    {
         gltfMaterial.occlusionTexture.index = getOrCreateTexture(occlusionTexture);
         gltfMaterial.occlusionTexture.texCoord = 0;
 
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
         osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_TEXTURE_NAME, enableExtension);
-        if (enableExtension) {
+        if (enableExtension)
+        {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
             osgGltfMaterial->getUserValue(TEX_TRANSFORM_OCCLUSION_OFFSET_X, offsetX);
@@ -835,14 +890,16 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
         gltfMaterial.occlusionTexture.extensions[texture_transform_extension.name] = texture_transform_extension.GetValue();
     }
     const osg::ref_ptr<osg::Texture2D> emissiveTexture = osgGltfMaterial->emissiveTexture;
-    if (emissiveTexture.valid()) {
+    if (emissiveTexture.valid())
+    {
         gltfMaterial.emissiveTexture.index = getOrCreateTexture(emissiveTexture);
         gltfMaterial.emissiveTexture.texCoord = 0;
 
         KHR_texture_transform texture_transform_extension;
         bool enableExtension = false;
         osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_TEXTURE_NAME, enableExtension);
-        if (enableExtension) {
+        if (enableExtension)
+        {
             double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
             int texCoord = 0;
             osgGltfMaterial->getUserValue(TEX_TRANSFORM_EMISSIVE_OFFSET_X, offsetX);
@@ -861,16 +918,19 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
     }
     gltfMaterial.emissiveFactor = { osgGltfMaterial->emissiveFactor[0],osgGltfMaterial->emissiveFactor[1], osgGltfMaterial->emissiveFactor[2] };
 
-    if (typeid(*osgGltfMaterial.get()) == typeid(GltfPbrMRMaterial)) {
+    if (typeid(*osgGltfMaterial.get()) == typeid(GltfPbrMRMaterial))
+    {
         const osg::ref_ptr<GltfPbrMRMaterial> osgGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(osgGltfMaterial.get());
-        if (osgGltfMRMaterial->metallicRoughnessTexture.valid()) {
+        if (osgGltfMRMaterial->metallicRoughnessTexture.valid())
+        {
             gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index = getOrCreateTexture(osgGltfMRMaterial->metallicRoughnessTexture);
             gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.texCoord = 0;
 
             KHR_texture_transform texture_transform_extension;
             bool enableExtension = false;
             osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_TEXTURE_NAME, enableExtension);
-            if (enableExtension) {
+            if (enableExtension)
+            {
                 double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                 int texCoord = 0;
                 osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_MR_OFFSET_X, offsetX);
@@ -887,14 +947,17 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
             _model.extensionsUsed.emplace_back(texture_transform_extension.name);
             gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.extensions[texture_transform_extension.name] = texture_transform_extension.GetValue();
         }
-        if (osgGltfMRMaterial->baseColorTexture.valid()) {
+        if (osgGltfMRMaterial->baseColorTexture.valid())
+        {
+
             gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = getOrCreateTexture(osgGltfMRMaterial->baseColorTexture);
             gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord = 0;
 
             KHR_texture_transform texture_transform_extension;
             bool enableExtension = false;
             osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, enableExtension);
-            if (enableExtension) {
+            if (enableExtension)
+            {
                 double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                 int texCoord = 0;
                 osgGltfMRMaterial->getUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, offsetX);
@@ -920,18 +983,22 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
         gltfMaterial.pbrMetallicRoughness.metallicFactor = osgGltfMRMaterial->metallicFactor;
         gltfMaterial.pbrMetallicRoughness.roughnessFactor = osgGltfMRMaterial->roughnessFactor;
     }
-    for (size_t i = 0; i < osgGltfMaterial->materialExtensionsByCesiumSupport.size(); ++i) {
+    for (size_t i = 0; i < osgGltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
+    {
         GltfExtension* extension = osgGltfMaterial->materialExtensionsByCesiumSupport.at(i);
-        if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
+        if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+        {
             KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-            if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) {
+            if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid())
+            {
                 pbrSpecularGlossiness_extension->diffuseTexture.texCoord = 0;
                 pbrSpecularGlossiness_extension->diffuseTexture.index = getOrCreateTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture);
 
                 KHR_texture_transform texture_transform_extension;
                 bool enableExtension = false;
                 osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_TEXTURE_NAME, enableExtension);
-                if (enableExtension) {
+                if (enableExtension)
+                {
                     double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                     int texCoord = 0;
                     osgGltfMaterial->getUserValue(TEX_TRANSFORM_DIFFUSE_OFFSET_X, offsetX);
@@ -948,14 +1015,16 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
                 _model.extensionsUsed.emplace_back(texture_transform_extension.name);
                 pbrSpecularGlossiness_extension->diffuseTexture.extensions[texture_transform_extension.name] = texture_transform_extension.GetValue();
             }
-            if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) {
+            if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid())
+            {
                 pbrSpecularGlossiness_extension->specularGlossinessTexture.texCoord = 0;
                 pbrSpecularGlossiness_extension->specularGlossinessTexture.index = getOrCreateTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
 
                 KHR_texture_transform texture_transform_extension;
                 bool enableExtension = false;
                 osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_TEXTURE_NAME, enableExtension);
-                if (enableExtension) {
+                if (enableExtension)
+                {
                     double offsetX = 0.0, offsetY = 0.0, scaleX = 1.0, scaleY = 1.0;
                     int texCoord = 0;
                     osgGltfMaterial->getUserValue(TEX_TRANSFORM_SG_OFFSET_X, offsetX);
@@ -980,7 +1049,8 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const os
     }
 
     index = getCurrentMaterial(gltfMaterial);
-    if (index == -1) {
+    if (index == -1)
+    {
         index = _model.materials.size();
         _model.materials.push_back(gltfMaterial);
     }
