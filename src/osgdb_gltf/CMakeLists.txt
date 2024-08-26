@@ -6,11 +6,11 @@ set(SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/Osg2Gltf.cpp
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/ReaderWriterGLTF.cpp)
 set(OPTIMIZE_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/Extensions.h 
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfMerger.h 
-${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfOptimizer.h 
-${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfOptimizerManager.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfProcessor.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/GltfProcessorManager.h 
 )
 set(OPTIMIZE_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/osgdb_gltf/GltfMerger.cpp 
-${PROJECT_ROOT_DIR}/src/osgdb_gltf/GltfOptimizer.cpp 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/GltfProcessor.cpp 
 )
 file(GLOB COMPRESS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/compress/*.h)
 file(GLOB MATERIAL_HEADER_FILES ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/*.h)

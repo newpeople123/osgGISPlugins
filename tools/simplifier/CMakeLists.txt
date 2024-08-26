@@ -2,25 +2,12 @@ set(TOOL_NAME "simplifier")
 
 # 查找源文件
 aux_source_directory(. DIR_SRCS)
-file(GLOB_RECURSE SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/optimizer/*.cpp)
-source_group("src" FILES ${DIR_SRCS})
-source_group("src/optimizer/mesh" FILES ${SOURCE_FILES})
-source_group("src/optimizer/texture" FILES 
-${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp 
-${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
-)
+file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
+file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
+source_group("src" FILES ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} )
 
 # 定义可执行文件
-file(GLOB_RECURSE HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/*.h)
-add_executable(${TOOL_NAME} ${DIR_SRCS} ${HEADER_FILES} ${SOURCE_FILES} ${UTILS_HEADER_FILES} 
-${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h ${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp 
-${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
-)
-source_group("include/optimizer/mesh" FILES ${HEADER_FILES}) 
-source_group("include/optimizer/texture" FILES 
-${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h 
-${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
-) 
+add_executable(${TOOL_NAME} ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES})
 # 包含外部工具链文件
 include(${CMAKE_TOOLCHAIN_FILE})
 

@@ -1,5 +1,5 @@
-#include "3dtiles/optimizer/MeshSimplifier.h"
-#include "3dtiles/optimizer/MeshOptimizer.h"
+#include "utils/Simplifier.h"
+#include "utils/GltfOptimizer.h"
 #include <osg/ArgumentParser>
 #include <iostream>
 #include <osgDB/ConvertUTF>
@@ -116,15 +116,14 @@ int main(int argc, char** argv)
         //flatten transform、index mesh(顺序很重要，
         //还可以使用osgUtil::Optimizer::VERTEX_POSTTRANSFORM | osgUtil::Optimizer::VERTEX_PRETRANSFORM，
         // 但是由于还要进行简化，所以选择使用meshoptimizer进行VERTEX_POSTTRANSFORM和VERTEX_PRETRANSFORM优化)
-        osgUtil::Optimizer optimizer;
-        optimizer.optimize(node, osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS|osgUtil::Optimizer::INDEX_MESH);
+        GltfOptimizer optimizer;
+        optimizer.optimize(node, GltfOptimizer::FLATTEN_TRANSFORMS| GltfOptimizer::INDEX_MESH);
         TestVisitor tv1;
         node->accept(tv1);
         const double area1 = tv1.area;
         //mesh optimizer
-        MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
-        MeshOptimizer mov(meshOptimizer, ratio);
-        node->accept(mov);
+        Simplifier simplifier(ratio);
+        node->accept(simplifier);
         TestVisitor tv2;
         node->accept(tv2);
         const double area2 = tv2.area;

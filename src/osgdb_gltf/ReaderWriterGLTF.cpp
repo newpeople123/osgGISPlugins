@@ -3,7 +3,7 @@
 #include <osgdb_gltf/ReaderWriterGLTF.h>
 #include <osgDB/FileNameUtils>
 #include "osgdb_gltf/Osg2Gltf.h"
-#include "osgdb_gltf/GltfOptimizerManager.h"
+#include "osgdb_gltf/GltfProcessorManager.h"
 #include <nlohmann/json.hpp>
 #include <osgDB/ConvertUTF>
 using namespace nlohmann;
@@ -35,7 +35,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 	bool embedBuffers = false, prettyPrint = false, isBinary = ext != "gltf", quantize = false, mergeMaterial = true, mergeMesh = true;
 	GltfDracoCompressor::DracoCompressionOptions dracoCompressOption;
 	GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions quantizeCompressOption;
-	GltfOptimizerManager optimizerManager;
+	GltfProcessorManager processorManager;
 
 	if (options) {
 		std::istringstream iss(options->getOptionString());
@@ -107,25 +107,25 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 				if (compressionTypeStr == "draco") {
 					if (quantize) {
 						osg::notify(osg::WARN) << "Warning: Draco compression and vector quantization cannot be enabled simultaneously. If both are enabled, only vector quantization will be performed!" << std::endl;
-						optimizerManager.addOptimizer(new GltfMeshQuantizeCompressor(gltfModel, quantizeCompressOption));
+						processorManager.addProcessor(new GltfMeshQuantizeCompressor(gltfModel, quantizeCompressOption));
 					}
 					else {
-						optimizerManager.addOptimizer(new GltfDracoCompressor(gltfModel, dracoCompressOption));
+						processorManager.addProcessor(new GltfDracoCompressor(gltfModel, dracoCompressOption));
 					}
 				}
 				else if (compressionTypeStr == "meshopt") {
 					if (quantize) {
-						optimizerManager.addOptimizer(new GltfMeshQuantizeCompressor(gltfModel, quantizeCompressOption));
+						processorManager.addProcessor(new GltfMeshQuantizeCompressor(gltfModel, quantizeCompressOption));
 					}
-					optimizerManager.addOptimizer(new GltfMeshOptCompressor(gltfModel));
+					processorManager.addProcessor(new GltfMeshOptCompressor(gltfModel));
 				}
 			}
 		}
 	}
 
 	GltfMerger* gltfMerger = new GltfMerger(gltfModel, mergeMaterial, mergeMesh);
-	optimizerManager.addOptimizer(gltfMerger);
-	optimizerManager.optimize();
+	processorManager.addProcessor(gltfMerger);
+	processorManager.process();
 
 	tinygltf::TinyGLTF writer;
 	if (ext != "b3dm") {

@@ -1,6 +1,6 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_MERGE_H
 #define OSG_GIS_PLUGINS_GLTF_MERGE_H 1
-#include "osgdb_gltf/GltfOptimizer.h"
+#include "osgdb_gltf/GltfProcessor.h"
 #include <osg/Matrixd>
 #include <unordered_map>
 namespace osgGISPlugins {
@@ -30,11 +30,11 @@ namespace osgGISPlugins {
         }
     };
 
-    class GltfMerger :public GltfOptimizer
+    class GltfMerger :public GltfProcessor
     {
     public:
-        GltfMerger(tinygltf::Model& model) :GltfOptimizer(model), _bMergeMaterials(true), _bMergeMeshes(true) {}
-        GltfMerger(tinygltf::Model& model, const bool bMergeMaterials, const bool bMergeMeshes) :GltfOptimizer(model), _bMergeMaterials(bMergeMaterials), _bMergeMeshes(bMergeMeshes) {}
+        GltfMerger(tinygltf::Model& model) :GltfProcessor(model), _bMergeMaterials(true), _bMergeMeshes(true) {}
+        GltfMerger(tinygltf::Model& model, const bool bMergeMaterials, const bool bMergeMeshes) :GltfProcessor(model), _bMergeMaterials(bMergeMaterials), _bMergeMeshes(bMergeMeshes) {}
         void apply() override;
         //减少缓存切换次数
         void mergeBuffers();

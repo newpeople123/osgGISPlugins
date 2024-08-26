@@ -4,17 +4,14 @@ set(TOOL_NAME "texturepacker")
 aux_source_directory(. DIR_SRCS)
 source_group("src" FILES ${DIR_SRCS})
 source_group("src/optimizer/texture" FILES 
-${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp 
 ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 )
 
 # 定义可执行文件
 add_executable(${TOOL_NAME} ${DIR_SRCS} 
-${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h ${PROJECT_ROOT_DIR}/src/utils/TextureOptimizer.cpp
 ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 )
 source_group("include/optimizer/texture" FILES 
-${PROJECT_ROOT_DIR}/include/utils/TextureOptimizer.h
 ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
 ) 
 # 包含外部工具链文件

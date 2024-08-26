@@ -7,8 +7,6 @@ set(B3DM_HADER_FILE ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h
 set(B3DM_SOURCE_FILE ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
 file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
-file(GLOB_RECURSE TEST_HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/optimizer/*.h)
-file(GLOB_RECURSE TEST_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/optimizer/*.cpp)
 
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
@@ -26,10 +24,8 @@ target_link_libraries(${TOOL_TEST_NAME}
 
 source_group("include" FILES ${B3DM_HADER_FILE}) 
 source_group("include/utils" FILES ${UTILS_HEADER_FILES}) 
-source_group("include/test" FILES ${TEST_HEADER_FILES})
 source_group("src" FILES ${B3DM_SOURCE_FILE}) 
 source_group("src/utils" FILES ${UTILS_SOURCE_FILES})  
-source_group("src/test" FILES ${TEST_SOURCE_FILES})
 
 include(${CMAKE_TOOLCHAIN_FILE})
 #设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到

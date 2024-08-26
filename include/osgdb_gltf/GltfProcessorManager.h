@@ -1,41 +1,41 @@
-#ifndef OSG_GIS_PLUGINS_GLTF_OPTIMIZER_MANAGER_H
-#define OSG_GIS_PLUGINS_GLTF_OPTIMIZER_MANAGER_H 1
-#include "osgdb_gltf/GltfOptimizer.h"
+#ifndef OSG_GIS_PLUGINS_GLTF_PROCESSOR_MANAGER_H
+#define OSG_GIS_PLUGINS_GLTF_PROCESSOR_MANAGER_H 1
+#include "osgdb_gltf/GltfProcessor.h"
 #include "osgdb_gltf/compress/GltfDracoCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 #include "osgdb_gltf/GltfMerger.h"
 #include <algorithm>
 namespace osgGISPlugins {
-    class GltfOptimizerManager
+    class GltfProcessorManager
     {
     private:
-        std::vector<GltfOptimizer*> _optimizers;
+        std::vector<GltfProcessor*> _processors;
     public:
-        GltfOptimizerManager() {};
+        GltfProcessorManager() {};
 
-        void addOptimizer(GltfOptimizer* optimizer)
+        void addProcessor(GltfProcessor* processor)
         {
             // 检查是否已有相同类型的优化器
-            for (auto* existingOptimizer : _optimizers)
+            for (auto* existingProcessor : _processors)
             {
-                if (typeid(*existingOptimizer) == typeid(*optimizer))
+                if (typeid(*existingProcessor) == typeid(*processor))
                 {
-                    delete optimizer; // 避免内存泄漏
+                    delete processor; // 避免内存泄漏
                     return;
                 }
             }
 
             // 检查是否要添加的优化器是GltfDracoCompressor类型
-            GltfDracoCompressor* dracoCompressor = dynamic_cast<GltfDracoCompressor*>(optimizer);
+            GltfDracoCompressor* dracoCompressor = dynamic_cast<GltfDracoCompressor*>(processor);
             if (dracoCompressor)
             {
                 // 如果存在GltfMeshOptCompressor或GltfMeshQuantizeCompressor，拒绝添加GltfDracoCompressor
-                for (auto* existingOptimizer : _optimizers)
+                for (auto* existingProcessor : _processors)
                 {
-                    if (dynamic_cast<GltfMeshOptCompressor*>(existingOptimizer) || dynamic_cast<GltfMeshQuantizeCompressor*>(existingOptimizer))
+                    if (dynamic_cast<GltfMeshOptCompressor*>(existingProcessor) || dynamic_cast<GltfMeshQuantizeCompressor*>(existingProcessor))
                     {
-                        delete optimizer; // 避免内存泄漏
+                        delete processor; // 避免内存泄漏
                         return;
                     }
                 }
@@ -43,20 +43,20 @@ namespace osgGISPlugins {
             else
             {
                 // 如果要添加的是GltfMeshOptCompressor或GltfMeshQuantizeCompressor，且已经存在GltfDracoCompressor，拒绝添加
-                for (auto* existingOptimizer : _optimizers)
+                for (auto* existingProcessor : _processors)
                 {
-                    if (dynamic_cast<GltfDracoCompressor*>(existingOptimizer))
+                    if (dynamic_cast<GltfDracoCompressor*>(existingProcessor))
                     {
-                        delete optimizer; // 避免内存泄漏
+                        delete processor; // 避免内存泄漏
                         return;
                     }
                 }
             }
 
-            _optimizers.push_back(optimizer);
+            _processors.push_back(processor);
 
             // 按照指定顺序排序
-            std::sort(_optimizers.begin(), _optimizers.end(), [](GltfOptimizer* a, GltfOptimizer* b) {
+            std::sort(_processors.begin(), _processors.end(), [](GltfProcessor* a, GltfProcessor* b) {
                 if (dynamic_cast<GltfMerger*>(a)) return true;
                 if (dynamic_cast<GltfMerger*>(b)) return false;
 
@@ -70,28 +70,28 @@ namespace osgGISPlugins {
                 });
         }
 
-        void optimize()
+        void process()
         {
-            for (auto* optimizer : _optimizers)
+            for (auto* processor : _processors)
             {
-                optimizer->apply();
+                processor->apply();
             }
-            if (_optimizers.size() > 0)
+            if (_processors.size() > 0)
             {
-                GltfMerger* mergeOptimizer = dynamic_cast<GltfMerger*>(_optimizers[_optimizers.size() - 1]);
-                if (mergeOptimizer)
-                    mergeOptimizer->mergeBuffers();
+                GltfMerger* mergeProcessor = dynamic_cast<GltfMerger*>(_processors[_processors.size() - 1]);
+                if (mergeProcessor)
+                    mergeProcessor->mergeBuffers();
             }
         }
 
-        ~GltfOptimizerManager()
+        ~GltfProcessorManager()
         {
-            for (auto* optimizer : _optimizers)
+            for (auto* processor : _processors)
             {
-                delete optimizer;
+                delete processor;
             }
-            _optimizers.clear();
+            _processors.clear();
         }
     };
 }
-#endif // !OSG_GIS_PLUGINS_GLTF_OPTIMIZER_MANAGER_H
+#endif // !OSG_GIS_PLUGINS_GLTF_PROCESSOR_MANAGER_H

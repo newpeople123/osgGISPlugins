@@ -1,5 +1,5 @@
-#ifndef OSG_GIS_PLUGINS_GLTFOPTIMIZER_H
-#define OSG_GIS_PLUGINS_GLTFOPTIMIZER_H
+#ifndef OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H
+#define OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H
 #include <osgUtil/Optimizer>
 #include <meshoptimizer.h>
 #include <osgdb_gltf/material/GltfMaterial.h>
@@ -451,4 +451,4 @@ namespace osgGISPlugins
         }
     }
 }
-#endif // !OSG_GIS_PLUGINS_GLTFOPTIMIZER_H
+#endif // !OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H

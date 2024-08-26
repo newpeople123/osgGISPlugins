@@ -1,9 +1,9 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H
 #define OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H 1
 #include "osgdb_gltf/Extensions.h"
-#include "osgdb_gltf/GltfOptimizer.h"
+#include "osgdb_gltf/GltfProcessor.h"
 namespace osgGISPlugins {
-    class GltfCompressor :public GltfOptimizer
+    class GltfCompressor :public GltfProcessor
     {
     public:
         struct CompressionOptions {
@@ -13,7 +13,7 @@ namespace osgGISPlugins {
             int ColorQuantizationBits = 8;
         };
         GltfCompressor() = default;
-        GltfCompressor(tinygltf::Model& model, const std::string extensionName) :GltfOptimizer(model) {
+        GltfCompressor(tinygltf::Model& model, const std::string extensionName) :GltfProcessor(model) {
             model.extensionsRequired.push_back(extensionName);
             model.extensionsUsed.push_back(extensionName);
         }

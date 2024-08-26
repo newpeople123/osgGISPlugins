@@ -1,6 +1,6 @@
-#include "osgdb_gltf/GltfOptimizer.h"
+#include "osgdb_gltf/GltfProcessor.h"
 using namespace osgGISPlugins;
-size_t GltfOptimizer::calculateNumComponents(const int type)
+size_t GltfProcessor::calculateNumComponents(const int type)
 {
 	switch (type) {
 	case TINYGLTF_TYPE_SCALAR:
@@ -17,7 +17,7 @@ size_t GltfOptimizer::calculateNumComponents(const int type)
 	}
 }
 
-void GltfOptimizer::restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData)
+void GltfProcessor::restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData)
 {
 	buffer.data.resize(newBufferData->getTotalDataSize());
 	const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());

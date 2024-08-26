@@ -9,12 +9,8 @@
 #endif
 #include <osgDB/ConvertUTF>
 #include <osgDB/FileUtils>
-#include <utils/TextureOptimizer.h>
 #include <osgUtil/Optimizer>
-#include <3dtiles/optimizer/MeshSimplifier.h>
-#include <3dtiles/optimizer/MeshOptimizer.h>
 #include <osgViewer/Viewer>
-#include <utils/FlattenTransformVisitor.h>
 #include <osgUtil/Optimizer>
 #include <osgDB/WriteFile>
 #include <future>
@@ -30,10 +26,10 @@ using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 //const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
-const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
-const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
+//const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
 /// <summary>
 /// 导出gltf/glb/b3dm
 /// </summary>
@@ -50,30 +46,27 @@ void exportGltfWithOptions(const std::string& filename,const std::string ext,con
 		[](unsigned char c) { return std::tolower(c); });
 	if (lowerExtStr != "gltf" && lowerExtStr != "glb" && lowerExtStr != "b3dm")
 		return;
-	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename +R"(.fbx)");
+	osg::ref_ptr<osgDB::Options> fbxOptions = new osgDB::Options;
+	fbxOptions->setOptionString("TessellatePolygons");
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", fbxOptions.get());
+
+	GltfOptimizer gltfOptimizer;
 	//1
-	//if (bFlatternTransform) {
-	//	FlattenTransformVisitor ftv;
-	//	node->accept(ftv);
-	//}
+	if (bFlatternTransform) {
+		gltfOptimizer.optimize(node, GltfOptimizer::FLATTEN_TRANSFORMS);
+	}
 	//2
-	osgUtil::Optimizer optimizer;
-	osg::setNotifyLevel(osg::INFO);
-	//optimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH|osgUtil::Optimizer::STATIC_OBJECT_DETECTION|osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
-	optimizer.optimize(node, osgUtil::Optimizer::STATIC_OBJECT_DETECTION| osgUtil::Optimizer::OPTIMIZE_TEXTURE_SETTINGS | 
-		osgUtil::Optimizer::SHARE_DUPLICATE_STATE | osgUtil::Optimizer::COPY_SHARED_NODES | osgUtil::Optimizer::FLATTEN_STATIC_TRANSFORMS);
+	//osg::setNotifyLevel(osg::INFO);
+	gltfOptimizer.optimize(node, GltfOptimizer::INDEX_MESH);
 	//3
-	MeshSimplifierBase* meshOptimizer = new MeshSimplifier;
-	MeshOptimizer mov(meshOptimizer, ratio);
-	node->accept(mov);
+	Simplifier simplifier(ratio);
+	node->accept(simplifier);
 	if (!textureExt.empty())
 	{
 		const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
 		osgDB::makeDirectory(textureCachePath);
 		//4
-		TexturePackingVisitor tpv(4096, 4096, "." + textureExt, textureCachePath, true);
-		node->accept(tpv);
-		tpv.packTextures();
+		gltfOptimizer.optimize(node, GltfOptimizer::TEXTURE_ATLAS_BUILDER_BY_STB);
 	}
 	//5
 	if (lowerExtStr == "b3dm")
@@ -147,17 +140,17 @@ int main() {
 	//options->setOptionString("eb quantize ct=meshopt");
 	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
 	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
-
-	//options->setOptionString("eb pp ct=meshopt");
-	//exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
-	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
-
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+	options->setOptionString("eb pp ct=meshopt");
+	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
+	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
+	_CrtDumpMemoryLeaks();
 	//testSimplifier(R"(芜湖水厂总装单位M)");
 
 	//testGltfOptimizer(R"(02-输水洞)");
 	//testGltfOptimizer(R"(20240529卢沟桥分洪枢纽1)");
 
-	testGltfOptimizer(R"(20240529卢沟桥分洪枢纽)");
+	//testGltfOptimizer(R"(20240529卢沟桥分洪枢纽)");
 
 
 	//_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);

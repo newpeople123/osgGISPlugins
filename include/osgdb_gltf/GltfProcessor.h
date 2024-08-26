@@ -1,5 +1,5 @@
-#ifndef OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H
-#define OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H 1
+#ifndef OSG_GIS_PLUGINS_GLTF_PROCESSOR_H
+#define OSG_GIS_PLUGINS_GLTF_PROCESSOR_H 1
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
@@ -7,7 +7,7 @@
 #include <tinygltf/tiny_gltf.h>
 #include <osg/Array>
 namespace osgGISPlugins {
-    class GltfOptimizer
+    class GltfProcessor
     {
     protected:
         tinygltf::Model& _model;
@@ -19,12 +19,12 @@ namespace osgGISPlugins {
 
         void restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData);
     public:
-        GltfOptimizer(tinygltf::Model& model) :_model(model) {}
+        GltfProcessor(tinygltf::Model& model) :_model(model) {}
         virtual void apply() = 0;
     };
 
     template<typename T>
-    inline std::vector<T> GltfOptimizer::getBufferData(const tinygltf::Accessor& accessor)
+    inline std::vector<T> GltfProcessor::getBufferData(const tinygltf::Accessor& accessor)
     {
         const auto numComponents = calculateNumComponents(accessor.type);
         const auto& bufferView = _model.bufferViews[accessor.bufferView];
@@ -36,4 +36,4 @@ namespace osgGISPlugins {
         return values;
     }
 }
-#endif // !OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H
+#endif // !OSG_GIS_PLUGINS_GLTF_PROCESSOR_H
