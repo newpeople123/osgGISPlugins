@@ -20,6 +20,12 @@ namespace osgGISPlugins
             SPECULARGLOSSINESS
         };
 
+        enum class SpatialTreeType
+        {
+            QUADTREE,
+            OCTREE
+        };
+
         struct GltfTextureOptimizationOptions
         {
             int maxWidth = 2048;
@@ -72,15 +78,19 @@ namespace osgGISPlugins
             VERTEX_FETCH_BY_MESHOPTIMIZER = (1 << 25),
             TEXTURE_ATLAS_BUILDER_BY_STB = (1 << 26),
             FLATTEN_TRANSFORMS = (1 << 27),
+            SPATIALIZE_QUANDTREE_GROUPS = (1 << 28),
+            SPATIALIZE_OCTREE_GROUPS = (1 << 29),
 
-            EXPORT_GLTF_OPTIMIZATIONS = 
+
+            REDUCE_DRAWCALL_OPTIMIZATIONS = 
             TEXTURE_ATLAS_BUILDER_BY_STB |
-            //FLATTEN_TRANSFORMS |
-            INDEX_MESH |
             VERTEX_CACHE_BY_MESHOPTIMIZER |
             OVER_DRAW_BY_MESHOPTIMIZER |
             VERTEX_FETCH_BY_MESHOPTIMIZER,
 
+            EXPORT_GLTF_OPTIMIZATIONS=
+            INDEX_MESH |
+            REDUCE_DRAWCALL_OPTIMIZATIONS,
 
             DEFAULT_OPTIMIZATIONS = FLATTEN_STATIC_TRANSFORMS |
             REMOVE_REDUNDANT_NODES |
@@ -267,6 +277,29 @@ namespace osgGISPlugins
                 _geometryImgMap.clear();
 
             }
+        };
+
+        class SpatializeGroupsVisitor :public osgUtil::BaseOptimizerVisitor
+        {
+        private:
+            bool divide(osg::Group* group, unsigned int maxNumTreesPerCell);
+            bool divide(osg::Geode* geode, unsigned int maxNumTreesPerCell);
+
+            void apply(osg::Group& group) override;
+            void apply(osg::Geode& geode) override;
+
+            typedef std::set<osg::Group*> GroupsToDivideList;
+            GroupsToDivideList _groupsToDivideList;
+
+            typedef std::set<osg::Geode*> GeodesToDivideList;
+            GeodesToDivideList _geodesToDivideList;
+
+            SpatialTreeType _treeType;
+            
+        public:
+            SpatializeGroupsVisitor(const SpatialTreeType treeType, const unsigned int opretaion, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, opretaion), _treeType(treeType) {}
+
+            bool divide(unsigned int maxNumTreesPerCell = 4);
         };
     private:
         GltfTextureOptimizationOptions _gltfTextureOptions;

@@ -65,6 +65,12 @@ void exportGltfWithOptions(const std::string& filename,const std::string ext,con
 	{
 		const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
 		osgDB::makeDirectory(textureCachePath);
+		GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
+		gltfTextureOptions.cachePath = textureCachePath;
+		gltfTextureOptions.maxWidth = 4096;
+		gltfTextureOptions.maxHeight = 4096;
+		gltfTextureOptions.ext = ".jpg";
+		gltfOptimizer.setGltfTextureOptimizationOptions(gltfTextureOptions);
 		//4
 		gltfOptimizer.optimize(node, GltfOptimizer::TEXTURE_ATLAS_BUILDER_BY_STB);
 	}

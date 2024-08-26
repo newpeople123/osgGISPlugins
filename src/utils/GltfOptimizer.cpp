@@ -37,14 +37,14 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         bool combineStaticState = true;
         bool combineUnspecifiedState = true;
 
-        StateVisitor osv(combineDynamicState, combineStaticState, combineUnspecifiedState, this);
+        osgUtil::Optimizer::StateVisitor osv(combineDynamicState, combineStaticState, combineUnspecifiedState, this);
         node->accept(osv);
         osv.optimize();
     }
 
     if (options & STATIC_OBJECT_DETECTION)
     {
-        StaticObjectDetectionVisitor sodv;
+        osgUtil::Optimizer::StaticObjectDetectionVisitor sodv;
         node->accept(sodv);
     }
 
@@ -52,7 +52,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing TESSELLATE_GEOMETRY" << std::endl;
 
-        TessellateVisitor tsv;
+        osgUtil::Optimizer::TessellateVisitor tsv;
         node->accept(tsv);
     }
 
@@ -60,7 +60,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing REMOVE_LOADED_PROXY_NODES" << std::endl;
 
-        RemoveLoadedProxyNodesVisitor rlpnv(this);
+        osgUtil::Optimizer::RemoveLoadedProxyNodesVisitor rlpnv(this);
         node->accept(rlpnv);
         rlpnv.removeRedundantNodes();
 
@@ -70,7 +70,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing COMBINE_ADJACENT_LODS" << std::endl;
 
-        CombineLODsVisitor clv(this);
+        osgUtil::Optimizer::CombineLODsVisitor clv(this);
         node->accept(clv);
         clv.combineLODs();
     }
@@ -79,7 +79,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing OPTIMIZE_TEXTURE_SETTINGS" << std::endl;
 
-        TextureVisitor tv(true, true, // unref image
+        osgUtil::Optimizer::TextureVisitor tv(true, true, // unref image
             false, false, // client storage
             false, 1.0, // anisotropic filtering
             this);
@@ -94,7 +94,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         bool combineStaticState = true;
         bool combineUnspecifiedState = true;
 
-        StateVisitor osv(combineDynamicState, combineStaticState, combineUnspecifiedState, this);
+        osgUtil::Optimizer::StateVisitor osv(combineDynamicState, combineStaticState, combineUnspecifiedState, this);
         node->accept(osv);
         osv.optimize();
     }
@@ -104,7 +104,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         OSG_INFO << "Optimizer::optimize() doing TEXTURE_ATLAS_BUILDER" << std::endl;
 
         // traverse the scene collecting textures into texture atlas.
-        TextureAtlasVisitor tav(this);
+        osgUtil::Optimizer::TextureAtlasVisitor tav(this);
         node->accept(tav);
         tav.optimize();
 
@@ -113,7 +113,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         bool combineStaticState = true;
         bool combineUnspecifiedState = true;
 
-        StateVisitor osv(combineDynamicState, combineStaticState, combineUnspecifiedState, this);
+        osgUtil::Optimizer::StateVisitor osv(combineDynamicState, combineStaticState, combineUnspecifiedState, this);
         node->accept(osv);
         osv.optimize();
     }
@@ -123,7 +123,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing COPY_SHARED_NODES" << std::endl;
 
-        CopySharedSubgraphsVisitor cssv(this);
+        osgUtil::Optimizer::CopySharedSubgraphsVisitor cssv(this);
         node->accept(cssv);
         cssv.copySharedNodes();
     }
@@ -137,7 +137,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         do
         {
             OSG_DEBUG << "** RemoveStaticTransformsVisitor *** Pass " << i << std::endl;
-            FlattenStaticTransformsVisitor fstv(this);
+            osgUtil::Optimizer::FlattenStaticTransformsVisitor fstv(this);
             node->accept(fstv);
             result = fstv.removeTransforms(node);
             ++i;
@@ -145,7 +145,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         while (result);
 
         // now combine any adjacent static transforms.
-        CombineStaticTransformsVisitor cstv(this);
+        osgUtil::Optimizer::CombineStaticTransformsVisitor cstv(this);
         node->accept(cstv);
         cstv.removeTransforms(node);
     }
@@ -161,7 +161,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
         OSG_INFO << "Optimizer::optimize() doing FLATTEN_STATIC_TRANSFORMS_DUPLICATING_SHARED_SUBGRAPHS" << std::endl;
 
         // now combine any adjacent static transforms.
-        FlattenStaticTransformsDuplicatingSharedSubgraphsVisitor fstdssv(this);
+        osgUtil::Optimizer::FlattenStaticTransformsDuplicatingSharedSubgraphsVisitor fstdssv(this);
         node->accept(fstdssv);
 
     }
@@ -170,11 +170,11 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing REMOVE_REDUNDANT_NODES" << std::endl;
 
-        RemoveEmptyNodesVisitor renv(this);
+        osgUtil::Optimizer::RemoveEmptyNodesVisitor renv(this);
         node->accept(renv);
         renv.removeEmptyNodes();
 
-        RemoveRedundantNodesVisitor rrnv(this);
+        osgUtil::Optimizer::RemoveRedundantNodesVisitor rrnv(this);
         node->accept(rrnv);
         rrnv.removeRedundantNodes();
 
@@ -186,7 +186,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 
         osg::Timer_t startTick = osg::Timer::instance()->tick();
 
-        MergeGeodesVisitor visitor;
+        osgUtil::Optimizer::MergeGeodesVisitor visitor;
         node->accept(visitor);
 
         osg::Timer_t endTick = osg::Timer::instance()->tick();
@@ -198,7 +198,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing MAKE_FAST_GEOMETRY" << std::endl;
 
-        MakeFastGeometryVisitor mgv(this);
+        osgUtil::Optimizer::MakeFastGeometryVisitor mgv(this);
         node->accept(mgv);
     }
 
@@ -208,7 +208,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 
         osg::Timer_t startTick = osg::Timer::instance()->tick();
 
-        MergeGeometryVisitor mgv(this);
+        osgUtil::Optimizer::MergeGeometryVisitor mgv(this);
         mgv.setTargetMaximumNumberOfVertices(10000);
         node->accept(mgv);
 
@@ -220,7 +220,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 
     if (options & FLATTEN_BILLBOARDS)
     {
-        FlattenBillboardVisitor fbv(this);
+        osgUtil::Optimizer::FlattenBillboardVisitor fbv(this);
         node->accept(fbv);
         fbv.process();
     }
@@ -229,9 +229,27 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     {
         OSG_INFO << "Optimizer::optimize() doing SPATIALIZE_GROUPS" << std::endl;
 
-        SpatializeGroupsVisitor sv(this);
+        osgUtil::Optimizer::SpatializeGroupsVisitor sv(this);
         node->accept(sv);
         sv.divide();
+    }
+
+    if (options & SPATIALIZE_QUANDTREE_GROUPS)
+    {
+        OSG_INFO << "Optimizer::optimize() doing SPATIALIZE_QUANDTREE_GROUPS" << std::endl;
+
+        SpatializeGroupsVisitor sv(SpatialTreeType::QUADTREE, SPATIALIZE_QUANDTREE_GROUPS, this);
+        node->accept(sv);
+        sv.divide(4);
+    }
+
+    if (options & SPATIALIZE_OCTREE_GROUPS)
+    {
+        OSG_INFO << "Optimizer::optimize() doing SPATIALIZE_OCTREE_GROUPS" << std::endl;
+
+        SpatializeGroupsVisitor sv(SpatialTreeType::OCTREE, SPATIALIZE_OCTREE_GROUPS, this);
+        node->accept(sv);
+        sv.divide(8);
     }
 
     if (options & INDEX_MESH)
@@ -270,7 +288,7 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
     if (options & BUFFER_OBJECT_SETTINGS)
     {
         OSG_INFO << "Optimizer::optimize() doing BUFFER_OBJECT_SETTINGS" << std::endl;
-        BufferObjectVisitor bov(true, true, true, true, true, false);
+        osgUtil::Optimizer::BufferObjectVisitor bov(true, true, true, true, true, false);
         node->accept(bov);
     }
 
@@ -1399,4 +1417,289 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::Image* i
         return img1->s() > img2->s();
     }
     return img1->t() > img2->t();
+}
+
+/** TextureAtlasBuilderVisitor */
+void GltfOptimizer::SpatializeGroupsVisitor::apply(osg::Group& group)
+{
+    if (typeid(group) == typeid(osg::Group) || group.asTransform())
+    {
+        _groupsToDivideList.insert(&group);
+    }
+    traverse(group);
+}
+
+void GltfOptimizer::SpatializeGroupsVisitor::apply(osg::Geode& geode)
+{
+    if (typeid(geode) == typeid(osg::Geode))
+    {
+        _geodesToDivideList.insert(&geode);
+    }
+    traverse(geode);
+}
+
+bool GltfOptimizer::SpatializeGroupsVisitor::divide(unsigned int maxNumTreesPerCell)
+{
+    bool divided = false;
+    for (GroupsToDivideList::iterator itr = _groupsToDivideList.begin();
+        itr != _groupsToDivideList.end();
+        ++itr)
+    {
+        if (divide(*itr, maxNumTreesPerCell)) divided = true;
+    }
+
+    for (GeodesToDivideList::iterator geode_itr = _geodesToDivideList.begin();
+        geode_itr != _geodesToDivideList.end();
+        ++geode_itr)
+    {
+        if (divide(*geode_itr, maxNumTreesPerCell)) divided = true;
+    }
+
+    return divided;
+}
+
+bool GltfOptimizer::SpatializeGroupsVisitor::divide(osg::Group* group, unsigned int maxNumTreesPerCell)
+{
+    if (group->getNumChildren() <= maxNumTreesPerCell) return false;
+
+    // create the original box.
+    osg::BoundingBox bb;
+    for (unsigned int i = 0; i < group->getNumChildren(); ++i)
+    {
+        bb.expandBy(group->getChild(i)->getBound().center());
+    }
+
+    float radius = bb.radius();
+    float divide_distance = radius * 0.7f;
+    bool xAxis = (bb.xMax() - bb.xMin()) > divide_distance;
+    bool yAxis = (bb.yMax() - bb.yMin()) > divide_distance;
+    bool zAxis = (bb.zMax() - bb.zMin()) > divide_distance;
+
+    OSG_INFO << "Dividing " << group->className() << "  num children = " << group->getNumChildren() << "  xAxis=" << xAxis << "  yAxis=" << yAxis << "   zAxis=" << zAxis << std::endl;
+    if (_treeType == SpatialTreeType::OCTREE)
+    {
+        if (!xAxis && !yAxis && !zAxis)
+        {
+            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
+            return false;
+        }
+    }
+    else
+    {
+        if (!xAxis && !yAxis)
+        {
+            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
+            return false;
+        }
+    }
+    unsigned int numChildrenOnEntry = group->getNumChildren();
+
+    typedef std::pair< osg::BoundingBox, osg::ref_ptr<osg::Group> > BoxGroupPair;
+    typedef std::vector< BoxGroupPair > Boxes;
+    Boxes boxes;
+    boxes.push_back(BoxGroupPair(bb, new osg::Group));
+
+    // divide up on each axis
+    if (xAxis)
+    {
+        unsigned int numCellsToDivide = boxes.size();
+        for (unsigned int i = 0; i < numCellsToDivide; ++i)
+        {
+            osg::BoundingBox& orig_cell = boxes[i].first;
+            osg::BoundingBox new_cell = orig_cell;
+
+            float xCenter = (orig_cell.xMin() + orig_cell.xMax()) * 0.5f;
+            orig_cell.xMax() = xCenter;
+            new_cell.xMin() = xCenter;
+
+            boxes.push_back(BoxGroupPair(new_cell, new osg::Group));
+        }
+    }
+
+    if (yAxis)
+    {
+        unsigned int numCellsToDivide = boxes.size();
+        for (unsigned int i = 0; i < numCellsToDivide; ++i)
+        {
+            osg::BoundingBox& orig_cell = boxes[i].first;
+            osg::BoundingBox new_cell = orig_cell;
+
+            float yCenter = (orig_cell.yMin() + orig_cell.yMax()) * 0.5f;
+            orig_cell.yMax() = yCenter;
+            new_cell.yMin() = yCenter;
+
+            boxes.push_back(BoxGroupPair(new_cell, new osg::Group));
+        }
+    }
+    if (_treeType == SpatialTreeType::OCTREE)
+    {
+        if (zAxis)
+        {
+            unsigned int numCellsToDivide = boxes.size();
+            for (unsigned int i = 0; i < numCellsToDivide; ++i)
+            {
+                osg::BoundingBox& orig_cell = boxes[i].first;
+                osg::BoundingBox new_cell = orig_cell;
+
+                float zCenter = (orig_cell.zMin() + orig_cell.zMax()) * 0.5f;
+                orig_cell.zMax() = zCenter;
+                new_cell.zMin() = zCenter;
+
+                boxes.push_back(BoxGroupPair(new_cell, new osg::Group));
+            }
+        }
+    }
+
+
+    // create the groups to drop the children into
+
+
+    // bin each child into associated bb group
+    typedef std::vector< osg::ref_ptr<osg::Node> > NodeList;
+    NodeList unassignedList;
+    for (unsigned int i = 0; i < group->getNumChildren(); ++i)
+    {
+        bool assigned = false;
+        osg::Vec3 center = group->getChild(i)->getBound().center();
+        for (Boxes::iterator itr = boxes.begin();
+            itr != boxes.end() && !assigned;
+            ++itr)
+        {
+            if (itr->first.contains(center))
+            {
+                // move child from main group into bb group.
+                (itr->second)->addChild(group->getChild(i));
+                assigned = true;
+            }
+        }
+        if (!assigned)
+        {
+            unassignedList.push_back(group->getChild(i));
+        }
+    }
+
+
+    // now transfer nodes across, by :
+    //      first removing from the original group,
+    //      add in the bb groups
+    //      add then the unassigned children.
+
+
+    // first removing from the original group,
+    group->removeChildren(0, group->getNumChildren());
+
+    // add in the bb groups
+    typedef std::vector< osg::ref_ptr<osg::Group> > GroupList;
+    GroupList groupsToDivideList;
+    for (Boxes::iterator itr = boxes.begin();
+        itr != boxes.end();
+        ++itr)
+    {
+        // move child from main group into bb group.
+        osg::Group* bb_group = (itr->second).get();
+        if (bb_group->getNumChildren() > 0)
+        {
+            if (bb_group->getNumChildren() == 1)
+            {
+                group->addChild(bb_group->getChild(0));
+            }
+            else
+            {
+                group->addChild(bb_group);
+                if (bb_group->getNumChildren() > maxNumTreesPerCell)
+                {
+                    groupsToDivideList.push_back(bb_group);
+                }
+            }
+        }
+    }
+
+
+    // add then the unassigned children.
+    for (NodeList::iterator nitr = unassignedList.begin();
+        nitr != unassignedList.end();
+        ++nitr)
+    {
+        group->addChild(nitr->get());
+    }
+
+    // now call divide on all groups that require it.
+    for (GroupList::iterator gitr = groupsToDivideList.begin();
+        gitr != groupsToDivideList.end();
+        ++gitr)
+    {
+        divide(gitr->get(), maxNumTreesPerCell);
+    }
+
+    return (numChildrenOnEntry < group->getNumChildren());
+}
+
+bool GltfOptimizer::SpatializeGroupsVisitor::divide(osg::Geode* geode, unsigned int maxNumTreesPerCell)
+{
+    if (geode->getNumDrawables() <= maxNumTreesPerCell) return false;
+
+    // create the original box.
+    osg::BoundingBox bb;
+    unsigned int i;
+    for (i = 0; i < geode->getNumDrawables(); ++i)
+    {
+        bb.expandBy(geode->getDrawable(i)->getBoundingBox().center());
+    }
+
+    float radius = bb.radius();
+    float divide_distance = radius * 0.7f;
+    bool xAxis = (bb.xMax() - bb.xMin()) > divide_distance;
+    bool yAxis = (bb.yMax() - bb.yMin()) > divide_distance;
+    bool zAxis = (bb.zMax() - bb.zMin()) > divide_distance;
+
+    OSG_INFO << "INFO " << geode->className() << "  num drawables = " << geode->getNumDrawables() << "  xAxis=" << xAxis << "  yAxis=" << yAxis << "   zAxis=" << zAxis << std::endl;
+
+
+    if (_treeType == SpatialTreeType::OCTREE)
+    {
+        if (!xAxis && !yAxis && !zAxis)
+        {
+            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
+            return false;
+        }
+    }
+    else
+    {
+        if (!xAxis && !yAxis)
+        {
+            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
+            return false;
+        }
+    }
+
+    osg::Node::ParentList parents = geode->getParents();
+    if (parents.empty())
+    {
+        OSG_INFO << "  Cannot perform spatialize on root Geode, add a Group above it to allow subdivision." << std::endl;
+        return false;
+    }
+
+    osg::ref_ptr<osg::Group> group = new osg::Group;
+    group->setName(geode->getName());
+    group->setStateSet(geode->getStateSet());
+    for (i = 0; i < geode->getNumDrawables(); ++i)
+    {
+        osg::Geode* newGeode = new osg::Geode;
+        newGeode->addDrawable(geode->getDrawable(i));
+        group->addChild(newGeode);
+    }
+
+    divide(group.get(), maxNumTreesPerCell);
+
+    // keep reference around to prevent it being deleted.
+    osg::ref_ptr<osg::Geode> keepRefGeode = geode;
+
+    for (osg::Node::ParentList::iterator itr = parents.begin();
+        itr != parents.end();
+        ++itr)
+    {
+        (*itr)->replaceChild(geode, group.get());
+    }
+
+    return true;
 }
