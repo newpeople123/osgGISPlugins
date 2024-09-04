@@ -53,6 +53,8 @@ namespace osgGISPlugins {
     class BatchTableHierarchyVisitor :public osg::NodeVisitor
     {
     public:
+        META_NodeVisitor(osgGISPlugins, BatchTableHierarchyVisitor)
+
         BatchTableHierarchyVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentBatchId(0), _currentParentBatchId(0) {}
 
         void apply(osg::Geode& geode) override;

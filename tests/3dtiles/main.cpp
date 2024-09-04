@@ -2,331 +2,30 @@
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 #include <osg/NodeVisitor>
+#include <osg/ShapeDrawable>
+#include <osgViewer/Viewer>
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <utils/GltfOptimizer.h>
+#include <osg/ComputeBoundsVisitor>
+#include <osg/LineWidth>
+#include <3dtiles/Tileset.h>
+#include <3dtiles/hlod/QuadtreeBuilder.h>
 using namespace std;
+using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 //const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
 const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
 const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
-enum class SpatialTreeType
-{
-    QUADTREE,
-    OCTREE
-};
-class SpatializeGroupsVisitor :public osg::NodeVisitor
-{
-private:
-    SpatialTreeType _treeType;
-
-    bool divide(osg::Group* group, unsigned int maxNumTreesPerCell);
-    bool divide(osg::Geode* geode, unsigned int maxNumTreesPerCell);
-
-    void apply(osg::Group& group) override;
-    void apply(osg::Geode& geode) override;
-
-    typedef std::set<osg::Group*> GroupsToDivideList;
-    GroupsToDivideList _groupsToDivideList;
-
-    typedef std::set<osg::Geode*> GeodesToDivideList;
-    GeodesToDivideList _geodesToDivideList;
-public:
-
-    SpatializeGroupsVisitor(SpatialTreeType treeType=SpatialTreeType::OCTREE):osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN), _treeType(treeType) {}
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="maxNumTreesPerCell">group和geode节点的子节点最大数量</param>
-    /// <returns></returns>
-    bool divide(unsigned int maxNumTreesPerCell = 4);
-};
-
-void SpatializeGroupsVisitor::apply(osg::Group& group)
-{
-    if (typeid(group) == typeid(osg::Group) || group.asTransform())
-    {
-        _groupsToDivideList.insert(&group);
-    }
-    traverse(group);
-}
-
-void SpatializeGroupsVisitor::apply(osg::Geode& geode)
-{
-    if (typeid(geode) == typeid(osg::Geode))
-    {
-        _geodesToDivideList.insert(&geode);
-    }
-    traverse(geode);
-}
-
-bool SpatializeGroupsVisitor::divide(unsigned int maxNumTreesPerCell)
-{
-    bool divided = false;
-    for (GroupsToDivideList::iterator itr = _groupsToDivideList.begin();
-        itr != _groupsToDivideList.end();
-        ++itr)
-    {
-        if (divide(*itr, maxNumTreesPerCell)) divided = true;
-    }
-
-    for (GeodesToDivideList::iterator geode_itr = _geodesToDivideList.begin();
-        geode_itr != _geodesToDivideList.end();
-        ++geode_itr)
-    {
-        if (divide(*geode_itr, maxNumTreesPerCell)) divided = true;
-    }
-
-    return divided;
-}
-
-bool SpatializeGroupsVisitor::divide(osg::Group* group, unsigned int maxNumTreesPerCell)
-{
-    if (group->getNumChildren() <= maxNumTreesPerCell) return false;
-
-    // create the original box.
-    osg::BoundingBox bb;
-    for (unsigned int i = 0; i < group->getNumChildren(); ++i)
-    {
-        bb.expandBy(group->getChild(i)->getBound().center());
-    }
-
-    float radius = bb.radius();
-    float divide_distance = radius * 0.7f;
-    bool xAxis = (bb.xMax() - bb.xMin()) > divide_distance;
-    bool yAxis = (bb.yMax() - bb.yMin()) > divide_distance;
-    bool zAxis = (bb.zMax() - bb.zMin()) > divide_distance;
-
-    OSG_INFO << "Dividing " << group->className() << "  num children = " << group->getNumChildren() << "  xAxis=" << xAxis << "  yAxis=" << yAxis << "   zAxis=" << zAxis << std::endl;
-    if (_treeType == SpatialTreeType::OCTREE)
-    {
-        if (!xAxis && !yAxis && !zAxis)
-        {
-            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
-            return false;
-        }
-    }
-    else
-    {
-        if (!xAxis && !yAxis)
-        {
-            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
-            return false;
-        }
-    }
-    unsigned int numChildrenOnEntry = group->getNumChildren();
-
-    typedef std::pair< osg::BoundingBox, osg::ref_ptr<osg::Group> > BoxGroupPair;
-    typedef std::vector< BoxGroupPair > Boxes;
-    Boxes boxes;
-    boxes.push_back(BoxGroupPair(bb, new osg::Group));
-
-    // divide up on each axis
-    if (xAxis)
-    {
-        unsigned int numCellsToDivide = boxes.size();
-        for (unsigned int i = 0; i < numCellsToDivide; ++i)
-        {
-            osg::BoundingBox& orig_cell = boxes[i].first;
-            osg::BoundingBox new_cell = orig_cell;
-
-            float xCenter = (orig_cell.xMin() + orig_cell.xMax()) * 0.5f;
-            orig_cell.xMax() = xCenter;
-            new_cell.xMin() = xCenter;
-
-            boxes.push_back(BoxGroupPair(new_cell, new osg::Group));
-        }
-    }
-
-    if (yAxis)
-    {
-        unsigned int numCellsToDivide = boxes.size();
-        for (unsigned int i = 0; i < numCellsToDivide; ++i)
-        {
-            osg::BoundingBox& orig_cell = boxes[i].first;
-            osg::BoundingBox new_cell = orig_cell;
-
-            float yCenter = (orig_cell.yMin() + orig_cell.yMax()) * 0.5f;
-            orig_cell.yMax() = yCenter;
-            new_cell.yMin() = yCenter;
-
-            boxes.push_back(BoxGroupPair(new_cell, new osg::Group));
-        }
-    }
-    if (_treeType == SpatialTreeType::OCTREE)
-    {
-        if (zAxis)
-        {
-            unsigned int numCellsToDivide = boxes.size();
-            for (unsigned int i = 0; i < numCellsToDivide; ++i)
-            {
-                osg::BoundingBox& orig_cell = boxes[i].first;
-                osg::BoundingBox new_cell = orig_cell;
-
-                float zCenter = (orig_cell.zMin() + orig_cell.zMax()) * 0.5f;
-                orig_cell.zMax() = zCenter;
-                new_cell.zMin() = zCenter;
-
-                boxes.push_back(BoxGroupPair(new_cell, new osg::Group));
-            }
-        }
-    }
-
-
-    // create the groups to drop the children into
-
-
-    // bin each child into associated bb group
-    typedef std::vector< osg::ref_ptr<osg::Node> > NodeList;
-    NodeList unassignedList;
-    for (unsigned int i = 0; i < group->getNumChildren(); ++i)
-    {
-        bool assigned = false;
-        osg::Vec3 center = group->getChild(i)->getBound().center();
-        for (Boxes::iterator itr = boxes.begin();
-            itr != boxes.end() && !assigned;
-            ++itr)
-        {
-            if (itr->first.contains(center))
-            {
-                // move child from main group into bb group.
-                (itr->second)->addChild(group->getChild(i));
-                assigned = true;
-            }
-        }
-        if (!assigned)
-        {
-            unassignedList.push_back(group->getChild(i));
-        }
-    }
-
-
-    // now transfer nodes across, by :
-    //      first removing from the original group,
-    //      add in the bb groups
-    //      add then the unassigned children.
-
-
-    // first removing from the original group,
-    group->removeChildren(0, group->getNumChildren());
-
-    // add in the bb groups
-    typedef std::vector< osg::ref_ptr<osg::Group> > GroupList;
-    GroupList groupsToDivideList;
-    for (Boxes::iterator itr = boxes.begin();
-        itr != boxes.end();
-        ++itr)
-    {
-        // move child from main group into bb group.
-        osg::Group* bb_group = (itr->second).get();
-        if (bb_group->getNumChildren() > 0)
-        {
-            if (bb_group->getNumChildren() == 1)
-            {
-                group->addChild(bb_group->getChild(0));
-            }
-            else
-            {
-                group->addChild(bb_group);
-                if (bb_group->getNumChildren() > maxNumTreesPerCell)
-                {
-                    groupsToDivideList.push_back(bb_group);
-                }
-            }
-        }
-    }
-
-
-    // add then the unassigned children.
-    for (NodeList::iterator nitr = unassignedList.begin();
-        nitr != unassignedList.end();
-        ++nitr)
-    {
-        group->addChild(nitr->get());
-    }
-
-    // now call divide on all groups that require it.
-    for (GroupList::iterator gitr = groupsToDivideList.begin();
-        gitr != groupsToDivideList.end();
-        ++gitr)
-    {
-        divide(gitr->get(), maxNumTreesPerCell);
-    }
-
-    return (numChildrenOnEntry < group->getNumChildren());
-}
-
-bool SpatializeGroupsVisitor::divide(osg::Geode* geode, unsigned int maxNumTreesPerCell)
-{
-    if (geode->getNumDrawables() <= maxNumTreesPerCell) return false;
-
-    // create the original box.
-    osg::BoundingBox bb;
-    unsigned int i;
-    for (i = 0; i < geode->getNumDrawables(); ++i)
-    {
-        bb.expandBy(geode->getDrawable(i)->getBoundingBox().center());
-    }
-
-    float radius = bb.radius();
-    float divide_distance = radius * 0.7f;
-    bool xAxis = (bb.xMax() - bb.xMin()) > divide_distance;
-    bool yAxis = (bb.yMax() - bb.yMin()) > divide_distance;
-    bool zAxis = (bb.zMax() - bb.zMin()) > divide_distance;
-
-    OSG_INFO << "INFO " << geode->className() << "  num drawables = " << geode->getNumDrawables() << "  xAxis=" << xAxis << "  yAxis=" << yAxis << "   zAxis=" << zAxis << std::endl;
-
-
-    if (_treeType == SpatialTreeType::OCTREE)
-    {
-        if (!xAxis && !yAxis && !zAxis)
-        {
-            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
-            return false;
-        }
-    }
-    else
-    {
-        if (!xAxis && !yAxis)
-        {
-            OSG_INFO << "  No axis to divide, stopping division." << std::endl;
-            return false;
-        }
-    }
-
-    osg::Node::ParentList parents = geode->getParents();
-    if (parents.empty())
-    {
-        OSG_INFO << "  Cannot perform spatialize on root Geode, add a Group above it to allow subdivision." << std::endl;
-        return false;
-    }
-
-    osg::ref_ptr<osg::Group> group = new osg::Group;
-    group->setName(geode->getName());
-    group->setStateSet(geode->getStateSet());
-    for (i = 0; i < geode->getNumDrawables(); ++i)
-    {
-        osg::Geode* newGeode = new osg::Geode;
-        newGeode->addDrawable(geode->getDrawable(i));
-        group->addChild(newGeode);
-    }
-
-    divide(group.get(), maxNumTreesPerCell);
-
-    // keep reference around to prevent it being deleted.
-    osg::ref_ptr<osg::Geode> keepRefGeode = geode;
-
-    for (osg::Node::ParentList::iterator itr = parents.begin();
-        itr != parents.end();
-        ++itr)
-    {
-        (*itr)->replaceChild(geode, group.get());
-    }
-
-    return true;
-}
+osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<Tile> parent = nullptr);
+void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth);
+osg::Geometry* createBoundingBoxGeometry(const osg::BoundingBox& bbox);
+int getMaxDepth(osg::Node* node);
+void buildTree(const std::string& filename);
+osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node);
 
 class GroupCountVisitor :public osg::NodeVisitor
 {
@@ -350,20 +49,176 @@ public:
     }
 };
 
+void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth)
+{
+    if (node.valid())
+    {
+        depth++;
+        osg::ref_ptr<osg::Group> group = node->asGroup();
+        if (group.valid())
+        {
+            for (size_t i = 0; i < group->getNumChildren(); ++i)
+            {
+                int temp = depth;
+                computedTreeDepth(group->getChild(i), temp);
+                depth = osg::maximum(temp, depth);
+            }
+        }
+    }
+}
+
+osg::Geometry* createBoundingBoxGeometry(const osg::BoundingBox& bbox) {
+    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array(8);
+    (*vertices)[0] = osg::Vec3(bbox.xMin(), bbox.yMin(), bbox.zMin());
+    (*vertices)[1] = osg::Vec3(bbox.xMax(), bbox.yMin(), bbox.zMin());
+    (*vertices)[2] = osg::Vec3(bbox.xMax(), bbox.yMax(), bbox.zMin());
+    (*vertices)[3] = osg::Vec3(bbox.xMin(), bbox.yMax(), bbox.zMin());
+    (*vertices)[4] = osg::Vec3(bbox.xMin(), bbox.yMin(), bbox.zMax());
+    (*vertices)[5] = osg::Vec3(bbox.xMax(), bbox.yMin(), bbox.zMax());
+    (*vertices)[6] = osg::Vec3(bbox.xMax(), bbox.yMax(), bbox.zMax());
+    (*vertices)[7] = osg::Vec3(bbox.xMin(), bbox.yMax(), bbox.zMax());
+
+    osg::ref_ptr<osg::DrawElementsUInt> indices = new osg::DrawElementsUInt(GL_LINES);
+    indices->push_back(0); indices->push_back(1);
+    indices->push_back(1); indices->push_back(2);
+    indices->push_back(2); indices->push_back(3);
+    indices->push_back(3); indices->push_back(0);
+    indices->push_back(4); indices->push_back(5);
+    indices->push_back(5); indices->push_back(6);
+    indices->push_back(6); indices->push_back(7);
+    indices->push_back(7); indices->push_back(4);
+    indices->push_back(0); indices->push_back(4);
+    indices->push_back(1); indices->push_back(5);
+    indices->push_back(2); indices->push_back(6);
+    indices->push_back(3); indices->push_back(7);
+
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
+    geom->setVertexArray(vertices);
+    geom->addPrimitiveSet(indices);
+
+    osg::ref_ptr<osg::Vec4Array> colors = new osg::Vec4Array;
+    colors->push_back(osg::Vec4(1.0f, 0.0f, 0.0f, 1.0f));  // 红色
+    geom->setColorArray(colors, osg::Array::BIND_OVERALL);
+
+    geom->getOrCreateStateSet()->setAttribute(new osg::LineWidth(2.0f), osg::StateAttribute::ON);
+
+    return geom.release();
+}
+
+int getMaxDepth(osg::Node* node) {
+    if (!node) return 0; // 如果节点为空，返回0
+    if (typeid(*node) == typeid(osg::Geode))
+        return 1;
+    osg::Group* group = node->asGroup();
+    if (!group) return 1; // 如果节点不是Group，返回1（当前节点深度）
+
+    vector<osg::ref_ptr<osg::Geode>> geodes;
+    int maxDepth = 0;
+    for (unsigned int i = 0; i < group->getNumChildren(); ++i) {
+        // 获取每个子节点的深度
+        int childDepth = getMaxDepth(group->getChild(i));
+
+        osg::ComputeBoundsVisitor cbVisitor;
+        node->accept(cbVisitor);
+        osg::BoundingBox bbox = cbVisitor.getBoundingBox();
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+
+        geode->addDrawable(createBoundingBoxGeometry(bbox));
+        geodes.push_back(geode);
+
+        // 更新最大深度
+        if (childDepth > maxDepth) {
+            maxDepth = childDepth;
+        }
+    }
+    for (auto item : geodes) {
+        group->addChild(item);
+    }
+    return maxDepth + 1; // 加1表示包括当前Group节点的深度
+}
 
 void buildTree(const std::string& filename)
 {
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)");
+
+    osg::BoundingBox bb;
+    bb.expandBy(node->getBound());
+    const double xLength = bb.xMax() - bb.xMin();
+    const double yLength = bb.yMax() - bb.yMin();
+    const double zLength = bb.zMax() - bb.zMin();
+    const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
+
     GroupCountVisitor gcv;
     node->accept(gcv);
     std::cout << std::endl;
     std::cout << "-----------------------------------" << std::endl;
 
-    SpatializeGroupsVisitor sgv(SpatialTreeType::QUADTREE);
-    node->accept(sgv);
-    sgv.divide();
-    node->accept(gcv);
-    osgDB::writeNodeFile(*node.get(), "./test.osg");
+    GltfOptimizer gltfOptimizer;
+    gltfOptimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+
+    QuadtreeBuilder builder;
+    node->accept(builder);
+    osg::ref_ptr<Tile> root = builder.build();
+    root->buildHlod();
+    int maxLevel = root->getMaxLevel();
+
+    osg::ref_ptr<Tileset> tileset = new Tileset;
+    tileset->root = root;
+    tileset->computeGeometricError(node);
+    bool geometricErrorIsValid = tileset->geometricErrorValid();
+
+    //osgDB::writeNodeFile(*root->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T0_0_0.b3dm)");
+    //osgDB::writeNodeFile(*root->children[0]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_0_0.b3dm)");
+    //osgDB::writeNodeFile(*root->children[1]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_0_1.b3dm)");
+    //osgDB::writeNodeFile(*root->children[2]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_1_0.b3dm)");
+    //osgDB::writeNodeFile(*root->children[3]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_1_1.b3dm)");
+
+
+    tileset->root->write(R"(D:\nginx-1.22.1\html\3dtiles\tet)");
+    tileset->toFile(R"(D:\nginx-1.22.1\html\3dtiles\tet\tileset.json)");
+
+    //int depth = getMaxDepth(node);
+    //osgViewer::Viewer viewer;
+    //viewer.setSceneData(root->node.get());
+    //viewer.run();
+
+    //for (size_t i = 0; i < root->children.size(); ++i)
+    //{
+    //    osgViewer::Viewer viewer1;
+    //    viewer1.setSceneData(root->children[i]->node.get());
+    //    viewer1.run();
+    //}
+
+    //OSG_NOTICE << depth << endl;
+    //osgDB::writeNodeFile(*node.get(), "./test.osg");
+}
+
+osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_ptr<Tile> parent)
+{
+    osg::ref_ptr<Tile> tile = new Tile(group,parent);
+
+    if (group.valid())
+    {
+        if (typeid(*group) != typeid(osg::Geode))
+        {
+            for (size_t i = 0; i < group->getNumChildren(); ++i)
+            {
+                osg::ref_ptr<Tile> childTile = convertOsgGroup2Tile(group->getChild(i)->asGroup(), tile);
+                tile->children.push_back(childTile);
+            }
+        }
+    }
+    
+
+    return tile.release();
+}
+
+osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node)
+{
+    osg::ref_ptr<Tileset> tileset = new Tileset;
+    osg::ref_ptr<Tile> rootTile = convertOsgGroup2Tile(node->asGroup());
+    tileset->root = rootTile;
+    return tileset.release();
 }
 
 int main() {
@@ -372,7 +227,12 @@ int main() {
 #else
     setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
-    buildTree(R"(龙翔桥站厅)");
+    osgDB::Registry* instance = osgDB::Registry::instance();
+    instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
+    instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
+    instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
+
+    buildTree(R"(芜湖水厂总装单位M)");//芜湖水厂总装单位M
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

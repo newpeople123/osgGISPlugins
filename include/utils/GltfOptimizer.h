@@ -20,12 +20,6 @@ namespace osgGISPlugins
             SPECULARGLOSSINESS
         };
 
-        enum class SpatialTreeType
-        {
-            QUADTREE,
-            OCTREE
-        };
-
         struct GltfTextureOptimizationOptions
         {
             int maxWidth = 2048;
@@ -78,8 +72,6 @@ namespace osgGISPlugins
             VERTEX_FETCH_BY_MESHOPTIMIZER = (1 << 25),
             TEXTURE_ATLAS_BUILDER_BY_STB = (1 << 26),
             FLATTEN_TRANSFORMS = (1 << 27),
-            SPATIALIZE_QUANDTREE_GROUPS = (1 << 28),
-            SPATIALIZE_OCTREE_GROUPS = (1 << 29),
 
 
             REDUCE_DRAWCALL_OPTIMIZATIONS = 
@@ -279,28 +271,7 @@ namespace osgGISPlugins
             }
         };
 
-        class SpatializeGroupsVisitor :public osgUtil::BaseOptimizerVisitor
-        {
-        private:
-            bool divide(osg::Group* group, unsigned int maxNumTreesPerCell);
-            bool divide(osg::Geode* geode, unsigned int maxNumTreesPerCell);
 
-            void apply(osg::Group& group) override;
-            void apply(osg::Geode& geode) override;
-
-            typedef std::set<osg::Group*> GroupsToDivideList;
-            GroupsToDivideList _groupsToDivideList;
-
-            typedef std::set<osg::Geode*> GeodesToDivideList;
-            GeodesToDivideList _geodesToDivideList;
-
-            SpatialTreeType _treeType;
-            
-        public:
-            SpatializeGroupsVisitor(const SpatialTreeType treeType, const unsigned int opretaion, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, opretaion), _treeType(treeType) {}
-
-            bool divide(unsigned int maxNumTreesPerCell = 4);
-        };
     private:
         GltfTextureOptimizationOptions _gltfTextureOptions;
     };

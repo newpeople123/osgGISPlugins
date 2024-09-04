@@ -88,7 +88,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::string input, output;
+    std::string input = R"(C:\Users\ecidi-cve\Downloads\SM_YH090206_04.fbx)", output = R"(C:\Users\ecidi-cve\Downloads\test01.fbx)";
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
@@ -122,12 +122,17 @@ int main(int argc, char** argv)
         node->accept(tv1);
         const double area1 = tv1.area;
         //mesh optimizer
-        Simplifier simplifier(ratio);
+        Simplifier simplifier(ratio,true);
         node->accept(simplifier);
         TestVisitor tv2;
         node->accept(tv2);
         const double area2 = tv2.area;
         const double change = abs(area2 - area1);
+
+        osgViewer::Viewer viewer;
+        viewer.setSceneData(node);
+        viewer.run();
+
         //write node to file
         osgDB::writeNodeFile(*node.get(), output);
     }

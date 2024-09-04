@@ -69,6 +69,7 @@ namespace osgGISPlugins {
 
         void flipGltfTextureYAxis(KHR_texture_transform& texture_transform_extension);
     public:
+        META_NodeVisitor(osgGISPlugins, Osg2Gltf)
 
         Osg2Gltf();
 

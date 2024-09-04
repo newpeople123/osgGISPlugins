@@ -4,6 +4,8 @@
 namespace osgGISPlugins {
     class BatchIdVisitor : public osg::NodeVisitor {
     public:
+        META_NodeVisitor(osgGISPlugins, BatchIdVisitor)
+
         BatchIdVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentBatchId(0) {}
 
         void apply(osg::Drawable& drawable) override;
