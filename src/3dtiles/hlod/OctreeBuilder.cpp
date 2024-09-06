@@ -1,13 +1,16 @@
 #include "3dtiles/hlod/OctreeBuilder.h"
-osg::ref_ptr<Tile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent, const int level)
+osg::ref_ptr<Tile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent, const unsigned int x, const unsigned int y, const unsigned int z, const unsigned int level)
 {
 	osg::ref_ptr<Tile> tile = new Tile(parent);
 	tile->level = level;
+	tile->x = x;
+	tile->y = y;
+	tile->z = z;
+	tile->parent = parent;
 
 	const unsigned int numChildren = group->getNumChildren();
 	if (numChildren <= 4)
 	{
-		tile->parent = parent;
 		tile->node = group;
 		return tile;
 	}
@@ -21,7 +24,6 @@ osg::ref_ptr<Tile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, const o
 	// 如果纹理数量和三角面数量满足要求
 	if (textureCv.count <= _maxTextureCount && tcv.count <= _maxTriangleCount)
 	{
-		tile->parent = parent;
 		tile->node = group;
 		return tile;
 	}
@@ -29,7 +31,6 @@ osg::ref_ptr<Tile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, const o
 	// 如果当前树的深度超过最大深度或者当前节点为空节点
 	if (level >= _maxLevel || numChildren == 0)
 	{
-		tile->parent = parent;
 		tile->node = group;
 		return tile;
 	}
@@ -68,7 +69,7 @@ osg::ref_ptr<Tile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, const o
 				}
 				if (childGroup->getNumChildren() > 0)
 				{
-					tile->children.push_back(divide(childGroup, childBounds, tile, level + 1));
+					tile->children.push_back(divide(childGroup, childBounds, tile, tile->x * 2 + x, tile->y * 2 + y, tile->z * 2 + z, level + 1));
 				}
 			}
 		}

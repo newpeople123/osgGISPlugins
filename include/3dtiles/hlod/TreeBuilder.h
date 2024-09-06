@@ -110,11 +110,11 @@ namespace osgGISPlugins
         typedef std::set<osg::Geode*> GeodesToDivideList;
         GeodesToDivideList _geodesToDivideList;
 
-        int _maxLevel = -1;
+        unsigned int _maxLevel = -1;
 
         size_t _maxTriangleCount = 12e4;
 
-        unsigned int _maxTextureCount = 20;
+        unsigned int _maxTextureCount = 35;
 
         osg::Matrixd _currentMatrix;
 
@@ -122,7 +122,7 @@ namespace osgGISPlugins
 
         virtual void apply(osg::Geode& geode) override;
 
-        virtual osg::ref_ptr<Tile> divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent = nullptr, const int level = 0) = 0;
+        virtual osg::ref_ptr<Tile> divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent = nullptr, const unsigned int x = 0, const unsigned int y = 0, const unsigned int z = 0, const unsigned int level = 0) = 0;
 	};
 }
 

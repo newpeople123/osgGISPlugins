@@ -12,10 +12,11 @@ include(${CMAKE_TOOLCHAIN_FILE})
 include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
-
+find_package(TBB CONFIG REQUIRED)
 # 链接库
 target_link_libraries(${TOOL_TEST_NAME} 
     meshoptimizer::meshoptimizer
+    TBB::tbb TBB::tbbmalloc TBB::tbbmalloc_proxy
 )
 if (OPENSCENEGRAPH_FOUND)
         include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})

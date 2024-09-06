@@ -139,7 +139,9 @@ int getMaxDepth(osg::Node* node) {
 
 void buildTree(const std::string& filename)
 {
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)");
+    osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+    options->setOptionString("TessellatePolygons");
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options.get());
 
     osg::BoundingBox bb;
     bb.expandBy(node->getBound());
@@ -155,42 +157,21 @@ void buildTree(const std::string& filename)
 
     GltfOptimizer gltfOptimizer;
     gltfOptimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-
     QuadtreeBuilder builder;
     node->accept(builder);
     osg::ref_ptr<Tile> root = builder.build();
     root->buildHlod();
-    int maxLevel = root->getMaxLevel();
-
     osg::ref_ptr<Tileset> tileset = new Tileset;
     tileset->root = root;
     tileset->computeGeometricError(node);
-    bool geometricErrorIsValid = tileset->geometricErrorValid();
+    GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
+    gltfTextureOptions.maxWidth = 4096;
+    gltfTextureOptions.maxHeight = 4096;
+    gltfTextureOptions.ext = ".ktx2";
+    tileset->root->write(R"(D:\nginx-1.22.1\html\3dtiles\tet4)", 1.0, gltfTextureOptions);
+    tileset->computeTransform(116, 30, 100);
+    tileset->toFile(R"(D:\nginx-1.22.1\html\3dtiles\tet4\tileset.json)");
 
-    //osgDB::writeNodeFile(*root->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T0_0_0.b3dm)");
-    //osgDB::writeNodeFile(*root->children[0]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_0_0.b3dm)");
-    //osgDB::writeNodeFile(*root->children[1]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_0_1.b3dm)");
-    //osgDB::writeNodeFile(*root->children[2]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_1_0.b3dm)");
-    //osgDB::writeNodeFile(*root->children[3]->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\tet\T1_1_1.b3dm)");
-
-
-    tileset->root->write(R"(D:\nginx-1.22.1\html\3dtiles\tet)");
-    tileset->toFile(R"(D:\nginx-1.22.1\html\3dtiles\tet\tileset.json)");
-
-    //int depth = getMaxDepth(node);
-    //osgViewer::Viewer viewer;
-    //viewer.setSceneData(root->node.get());
-    //viewer.run();
-
-    //for (size_t i = 0; i < root->children.size(); ++i)
-    //{
-    //    osgViewer::Viewer viewer1;
-    //    viewer1.setSceneData(root->children[i]->node.get());
-    //    viewer1.run();
-    //}
-
-    //OSG_NOTICE << depth << endl;
-    //osgDB::writeNodeFile(*node.get(), "./test.osg");
 }
 
 osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_ptr<Tile> parent)
@@ -232,7 +213,7 @@ int main() {
     instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-    buildTree(R"(芜湖水厂总装单位M)");//芜湖水厂总装单位M
+    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

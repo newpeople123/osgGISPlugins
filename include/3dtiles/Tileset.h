@@ -9,15 +9,16 @@
 #include <memory>
 #include <osg/ComputeBoundsVisitor>
 #include "utils/ObbVisitor.h"
-
+#include <iostream>
+#include <utils/GltfOptimizer.h>
 using json = nlohmann::json;
 using namespace std;
 namespace osgGISPlugins
 {
-	constexpr double InitialPixelSize = 25.0;
+	constexpr double InitialPixelSize = 5.0;
 	constexpr double DetailPixelSize = InitialPixelSize * 5;
 	constexpr double CesiumCanvasClientWidth = 1920;
-	constexpr double CesiumCanvasClientHeight = 931;
+	constexpr double CesiumCanvasClientHeight = 1080;
 	constexpr double CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
 	const double CesiumFrustumFov = osg::PI / 3;
 	const double CesiumFrustumFovy = CesiumFrustumAspectRatio <= 1 ? CesiumFrustumFov : atan(tan(CesiumFrustumFov * 0.5) / CesiumFrustumAspectRatio) * 2.0;
@@ -27,67 +28,8 @@ namespace osgGISPlugins
 	constexpr double CesiumCanvasViewportHeight = CesiumCanvasClientHeight;
 	const double CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
 	constexpr double CesiumMaxScreenSpaceError = 16.0;
+	const double CesiumDistanceOperator = tan(osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight * InitialPixelSize / 2);
 	const double CesiumGeometricErrorOperator = CesiumSSEDenominator * CesiumMaxScreenSpaceError / (CesiumCanvasClientHeight * tan(osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight * InitialPixelSize / 2));
-
-
-	class TraingleAreaVisitor : public osg::NodeVisitor {
-	public:
-		double area = 0.0;
-		TraingleAreaVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
-		double computeTriangleArea(const osg::Vec3 a, const osg::Vec3 b, const osg::Vec3 c) {
-			osg::Vec3 ab = b - a;
-			osg::Vec3 ac = c - a;
-			return (ab ^ ac).length() * 0.5;
-		}
-		double computeTriangleAreaXY(const osg::Vec3& A, const osg::Vec3& B, const osg::Vec3& C) {
-			osg::Vec3 A_xy(A.x(), A.y(), 0.0);
-			osg::Vec3 B_xy(B.x(), B.y(), 0.0);
-			osg::Vec3 C_xy(C.x(), C.y(), 0.0);
-
-			osg::Vec3 AB = B_xy - A_xy;
-			osg::Vec3 AC = C_xy - A_xy;
-
-			return (AB ^ AC).length() * 0.5;
-		}
-
-		void apply(osg::Drawable& drawable) override
-		{
-			osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
-			const unsigned int psetCount = geom->getNumPrimitiveSets();
-			const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
-			if (psetCount <= 0) return;
-			for (size_t primIndex = 0; primIndex < psetCount; ++primIndex) {
-				osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
-				if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {
-					osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-					for (size_t i = 0; i < drawElementsUShort->size(); i += 3) {
-						const unsigned short aIndex = drawElementsUShort->at(i + 0);
-						const unsigned short bIndex = drawElementsUShort->at(i + 1);
-						const unsigned short cIndex = drawElementsUShort->at(i + 2);
-
-						const osg::Vec3 a = positions->at(aIndex);
-						const osg::Vec3 b = positions->at(bIndex);
-						const osg::Vec3 c = positions->at(cIndex);
-						area += computeTriangleAreaXY(a, b, c);
-					}
-				}
-				else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt)) {
-					osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-					for (size_t i = 0; i < drawElementsUInt->size(); i += 3) {
-						const unsigned int aIndex = drawElementsUInt->at(i + 0);
-						const unsigned int bIndex = drawElementsUInt->at(i + 1);
-						const unsigned int cIndex = drawElementsUInt->at(i + 2);
-
-						const osg::Vec3 a = positions->at(aIndex);
-						const osg::Vec3 b = positions->at(bIndex);
-						const osg::Vec3 c = positions->at(cIndex);
-						area += computeTriangleAreaXY(a, b, c);
-					}
-				}
-			}
-		}
-
-	};
 
 	enum class Refinement {
 		REPLACE,
@@ -203,7 +145,16 @@ namespace osgGISPlugins
 	};
 
 	class Tile :public osg::Object {
+	private:
+		void buildBaseHlodAndComputeGeometricError();
+
+		void rebuildHlodByRefinement();
+
+		bool descendantNodeIsEmpty();
+
+		osg::ref_ptr<osg::Group> getAllDescendantNodes();
 	public:
+		int axis = -1;
 		osg::ref_ptr<Tile> parent;
 		osg::ref_ptr<osg::Node> node;
 
@@ -222,8 +173,8 @@ namespace osgGISPlugins
 		Tile() = default;
 
 
-		Tile(osg::ref_ptr<osg::Node> node,osg::ref_ptr<Tile> parent)
-			: parent(parent) , node(node) {}
+		Tile(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent)
+			: parent(parent), node(node) {}
 
 		Tile(osg::ref_ptr<Tile> parent)
 			: parent(parent) {}
@@ -260,12 +211,16 @@ namespace osgGISPlugins
 
 		json toJson() {
 			json j;
-			boundingVolume.computeBox(node);
+			osg::ref_ptr<osg::Group> group = getAllDescendantNodes();
+			boundingVolume.computeBox(group);
+			if (this->node.valid() && this->node->asGroup()->getNumChildren())
+			{
+				contentUri = to_string(level) + "/" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm";
+			}
 			j["boundingVolume"] = boundingVolume.toJson();
 			j["geometricError"] = geometricError;
 			j["refine"] = (refine == Refinement::REPLACE) ? "REPLACE" : "ADD";
 
-			contentUri = to_string(level) + "/" + "Tile" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm";
 			if (!contentUri.empty()) {
 				j["content"]["uri"] = contentUri;
 			}
@@ -318,7 +273,9 @@ namespace osgGISPlugins
 
 		bool geometricErrorValid();
 
-		void write(const string& path);
+		void write(const string& path, const float simplifyRatio, GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions);
+
+		static double computeRadius(const osg::BoundingBox& bbox, int axis);
 	};
 
 	class Tileset :public osg::Object {
@@ -375,7 +332,7 @@ namespace osgGISPlugins
 			file.close();
 		}
 
-		Tileset() : root(new Tile),geometricError(0.0) {}
+		Tileset() : root(new Tile), geometricError(0.0) {}
 
 		Tileset(const Tileset& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: osg::Object(other, copyop),
@@ -394,7 +351,9 @@ namespace osgGISPlugins
 
 		void computeGeometricError(osg::ref_ptr<osg::Node> node);
 
-		bool geometricErrorValid();
+		bool valid();
+
+		void computeTransform(const double lng,const double lat, const double height);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_TILESET_H

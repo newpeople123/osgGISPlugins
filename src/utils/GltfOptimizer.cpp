@@ -860,7 +860,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 	}
 }
 
-osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::packImges(TexturePacker& packer, std::vector<osg::Image*>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
+osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
 {
 	int area = _options.maxWidth * _options.maxHeight;
 	std::sort(imgs.begin(), imgs.end(), GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight);
@@ -999,7 +999,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::updateGltfMaterialUserValue(
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::vector<osg::Image*>& imgs, const GltfTextureType type)
+void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::vector<osg::ref_ptr<osg::Image>>& imgs, const GltfTextureType type)
 {
 	removeRepeatImages(imgs);
 
@@ -1071,10 +1071,10 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 	}
 }
 
-void osgGISPlugins::GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<osg::Image*>& imgs)
+void osgGISPlugins::GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs)
 {
 	std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
-	for (auto* img : imgs)
+	for (osg::ref_ptr<osg::Image> img : imgs)
 	{
 		std::string ext = _options.ext;
 		std::string filename = computeImageHash(img);
@@ -1092,26 +1092,26 @@ void osgGISPlugins::GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImage
 	removePackedImages(imgs, deleteImgs);
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::Image*>& imgs)
+void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs)
 {
 	if (texture.valid())
 	{
 		if (texture->getNumImages())
 		{
 			bool bAdd = true;
-			osg::ref_ptr<osg::Image> normalImg = texture->getImage(0);
-			for (auto* img : imgs)
+			osg::ref_ptr<osg::Image> image = texture->getImage(0);
+			for (osg::ref_ptr<osg::Image> img : imgs)
 			{
-				if (img == normalImg)
+				if (img == image)
 					bAdd = false;
 			}
 			if (bAdd)
-				imgs.push_back(normalImg);
+				imgs.push_back(image);
 		}
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::removePackedImages(std::vector<osg::Image*>& imgs, const std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
+void GltfOptimizer::TextureAtlasBuilderVisitor::removePackedImages(std::vector<osg::ref_ptr<osg::Image>>& imgs, const std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
 {
 	for (osg::ref_ptr<osg::Image> img : deleteImgs)
 	{
@@ -1120,7 +1120,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::removePackedImages(std::vector<o
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vector<osg::Image*>& imageList, const GltfTextureType type)
+void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type)
 {
 	removeRepeatImages(imageList);
 
@@ -1168,8 +1168,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 				if (texture.valid() && texture->getNumImages())
 				{
 					// 释放旧的图像资源
-					osg::ref_ptr<osg::Image> img = texture->getImage(0); // 获取原始图像
-					img = nullptr; // 释放原始图像
+					//osg::ref_ptr<osg::Image> img = texture->getImage(0); // 获取原始图像
+					//img = nullptr; // 释放原始图像
 
 					texture->setImage(packedImage);
 
@@ -1189,7 +1189,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vector<osg::Image*>& images, const GltfTextureType type)
+void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& images, const GltfTextureType type)
 {
 	removeRepeatImages(images);
 	while (images.size())
@@ -1257,7 +1257,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgMaterials()
 {
 	if (_gltfMaterials.empty()) return;
-	std::vector<osg::Image*> normalImgs, occlusionImgs, emissiveImgs, mrImgs, baseColorImgs, diffuseImgs, sgImgs;
+	std::vector<osg::ref_ptr<osg::Image>> normalImgs, occlusionImgs, emissiveImgs, mrImgs, baseColorImgs, diffuseImgs, sgImgs;
 	for (auto* material : _gltfMaterials)
 	{
 		addImageFromTexture(material->normalTexture, normalImgs);
@@ -1308,7 +1308,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Ima
 	img = packer.pack(numImages, true);
 	if (!img.valid() || numImages != indexes.size())
 	{
-		img = NULL;
+		//img = nullptr;
 		packer.removeElement(indexes.back());
 		indexes.pop_back();
 		deleteImgs.pop_back();
@@ -1343,7 +1343,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 			}
 			fileExistedPng.close();
 		}
-		flipped = nullptr;
+		//flipped = nullptr;
 	}
 	img->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
 }
@@ -1402,7 +1402,7 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const os
 	return oss.str();
 }
 
-bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::Image* img1, osg::Image* img2)
+bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2)
 {
 	if (img1->t() == img2->t())
 	{

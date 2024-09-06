@@ -27,6 +27,7 @@ void GltfMerger::mergeMeshes()
 	for (const auto& matrixPrimitiveItem : matrixPrimitiveMap) {
 		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
 		for (auto& primitive : matrixPrimitiveItem.second) {
+
 			materialPrimitiveMap[primitive.material].push_back(primitive);
 		}
 
@@ -339,7 +340,7 @@ void GltfMerger::mergeMaterials()
 	{
 		for (const auto& primitive : mesh.primitives)
 		{
-			if (primitive.material == -1) break;
+			if (primitive.material == -1) continue;
 			auto material = _model.materials[primitive.material];
 			//如果含有emissive、normal、occlusion贴图则不合并
 			if (!(material.emissiveTexture.index == -1 &&
@@ -348,13 +349,13 @@ void GltfMerger::mergeMaterials()
 
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				break;
+				continue;
 			}
 			//如果含有其他纹理扩展或者metallicRoughness贴图不为空则不合并
 			if (!(material.extensions.size() == 0 && material.pbrMetallicRoughness.metallicRoughnessTexture.index == -1))
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				break;
+				continue;
 			}
 
 			auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
@@ -362,21 +363,24 @@ void GltfMerger::mergeMaterials()
 			if (baseColorTexture.index == -1)
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				break;
+				continue;
 			}
 			//如果没有纹理坐标则不合并
 			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
 			if (findTexcoordIndex == primitive.attributes.end())
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				break;
+				auto& material = _model.materials[primitive.material];
+				auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
+				baseColorTexture.extensions.erase(transformExtensionName);
+				continue;
 			}
 			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
 			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
 			if (extensionItem == baseColorTexture.extensions.end())
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				break;
+				continue;
 			}
 
 			const int texcoordIndex = findTexcoordIndex->second;
@@ -386,7 +390,7 @@ void GltfMerger::mergeMaterials()
 			if (oldTexcoords.size() != texcoordAccessor.count * 2)
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				break;
+				continue;
 			}
 
 			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
@@ -397,7 +401,7 @@ void GltfMerger::mergeMaterials()
 				if (osg::absolute(x) > 1 || osg::absolute(y) > 1)
 				{
 					uniqueNoMergeMaterialIndex.insert(primitive.material);
-					break;
+					continue;
 				}
 			}
 		}
@@ -408,7 +412,7 @@ void GltfMerger::mergeMaterials()
 	{
 		for (const auto& primitive : mesh.primitives)
 		{
-			if (primitive.material == -1) break;
+			if (primitive.material == -1) continue;
 			if (uniqueNoMergeMaterialIndex.find(primitive.material) == uniqueNoMergeMaterialIndex.end())
 			{
 				auto material = _model.materials[primitive.material];
@@ -447,8 +451,8 @@ void GltfMerger::mergeMaterials()
 	{
 		for (const auto& primitive : mesh.primitives)
 		{
-			if (primitive.material == -1) break;
-			if (uniqueMergeMaterialIndex.find(primitive.material) == uniqueMergeMaterialIndex.end()) break;
+			if (primitive.material == -1) continue;
+			if (uniqueMergeMaterialIndex.find(primitive.material) == uniqueMergeMaterialIndex.end()) continue;
 
 			auto& material = _model.materials[primitive.material];
 
@@ -466,7 +470,10 @@ void GltfMerger::mergeMaterials()
 			const double scaleY = scale[1].GetNumberAsDouble();
 
 			const int texcoordIndex = findTexcoordIndex->second;
-			const tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
+			tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
+			texcoordAccessor.maxValues.clear();
+			texcoordAccessor.minValues.clear();
+
 			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
 
 			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
@@ -513,7 +520,8 @@ void GltfMerger::mergeMaterials()
 	{
 		for (auto& primitive : mesh.primitives)
 		{
-			primitive.material = materialRemap[primitive.material];
+			if(primitive.material!=-1)
+				primitive.material = materialRemap[primitive.material];
 		}
 	}
 }
