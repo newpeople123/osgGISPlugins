@@ -107,8 +107,8 @@ namespace osgGISPlugins {
         if (texcoords.valid()) {
             geom.setTexCoordArray(0, newTexcoords);
         }
-
-        geom.setPrimitiveSet(psetIndex, new DrawElementsType(osg::PrimitiveSet::TRIANGLES, destination->size(), &(*destination)[0]));
+        if(destination->size())
+            geom.setPrimitiveSet(psetIndex, new DrawElementsType(osg::PrimitiveSet::TRIANGLES, destination->size(), &(*destination)[0]));
     }
 }
 #endif // !OSG_GIS_PLUGINS_SIMPLIFIER_H

@@ -1005,7 +1005,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 
 	while (imgs.size())
 	{
-		TexturePacker packer(_options.maxWidth, _options.maxHeight);
+		TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 		std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
 		osg::ref_ptr<osg::Image> packedImage = packImges(packer, imgs, deleteImgs);
 
@@ -1126,7 +1126,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 
 	while (imageList.size())
 	{
-		TexturePacker packer(_options.maxWidth, _options.maxHeight);
+		TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 		std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
 		osg::ref_ptr<osg::Image> packedImage = packImges(packer, imageList, deleteImgs);
 
@@ -1167,10 +1167,6 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 
 				if (texture.valid() && texture->getNumImages())
 				{
-					// 释放旧的图像资源
-					//osg::ref_ptr<osg::Image> img = texture->getImage(0); // 获取原始图像
-					//img = nullptr; // 释放原始图像
-
 					texture->setImage(packedImage);
 
 					osg::ref_ptr<osg::Texture2D> originalTexture = (type == GltfTextureType::METALLICROUGHNESS) ? gltfMRMaterial->metallicRoughnessTexture : gltfMRMaterial->baseColorTexture;
@@ -1194,7 +1190,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 	removeRepeatImages(images);
 	while (images.size())
 	{
-		TexturePacker packer(_options.maxWidth, _options.maxHeight);
+		TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 		std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
 		osg::ref_ptr<osg::Image> packedImage = packImges(packer, images, deleteImgs);
 
@@ -1308,7 +1304,6 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Ima
 	img = packer.pack(numImages, true);
 	if (!img.valid() || numImages != indexes.size())
 	{
-		//img = nullptr;
 		packer.removeElement(indexes.back());
 		indexes.pop_back();
 		deleteImgs.pop_back();
@@ -1325,6 +1320,14 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 	{
 		ext = ".png";
 	}
+
+	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+	if (ext == ".jpg" || ext == ".jpeg")
+		options->setOptionString("JPEG_QUALITY  75");
+	else if (ext == ".png")
+		options->setOptionString("PNG_COMPRESSION 5");
+
+
 	std::string fullPath = _options.cachePath + "/" + filename + ext;
 	bool isFileExists = osgDB::fileExists(fullPath);
 	if (!isFileExists)
@@ -1333,6 +1336,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 		if (!(osgDB::writeImageFile(*flipped.get(), fullPath)))
 		{
 			fullPath = _options.cachePath + "/" + filename + ".png";
+			options->setOptionString("PNG_COMPRESSION 5");
 			std::ifstream fileExistedPng(fullPath);
 			if ((!fileExistedPng.good()) || (fileExistedPng.peek() == std::ifstream::traits_type::eof()))
 			{
@@ -1343,7 +1347,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 			}
 			fileExistedPng.close();
 		}
-		//flipped = nullptr;
+		flipped = nullptr;
 	}
 	img->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
 }
@@ -1355,14 +1359,10 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 	int newWidth = findNearestPowerOfTwo(originalWidth);
 	int newHeight = findNearestPowerOfTwo(originalHeight);
 
-	if (!(originalWidth == newWidth && originalHeight == newHeight))
-	{
-		newWidth = newWidth > _options.maxWidth ? _options.maxWidth : newWidth;
-		newHeight = newHeight > _options.maxHeight ? _options.maxHeight : newHeight;
-		img->scaleImage(newWidth, newHeight, img->r());
-		return true;
-	}
-	return false;
+	newWidth = newWidth > _options.maxWidth ? _options.maxWidth : newWidth;
+	newHeight = newHeight > _options.maxHeight ? _options.maxHeight : newHeight;
+	img->scaleImage(newWidth, newHeight, img->r());
+	return true;
 }
 
 int GltfOptimizer::TextureAtlasBuilderVisitor::findNearestPowerOfTwo(int value)

@@ -140,7 +140,7 @@ int getMaxDepth(osg::Node* node) {
 void buildTree(const std::string& filename)
 {
     osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-    options->setOptionString("TessellatePolygons");
+    //options->setOptionString("TessellatePolygons");
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options.get());
 
     osg::BoundingBox bb;
@@ -165,10 +165,10 @@ void buildTree(const std::string& filename)
     tileset->root = root;
     tileset->computeGeometricError(node);
     GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
-    gltfTextureOptions.maxWidth = 4096;
-    gltfTextureOptions.maxHeight = 4096;
-    gltfTextureOptions.ext = ".ktx2";
-    tileset->root->write(R"(D:\nginx-1.22.1\html\3dtiles\tet4)", 1.0, gltfTextureOptions);
+    gltfTextureOptions.maxTextureAtlasWidth = 2048;
+    gltfTextureOptions.maxTextureAtlasHeight = 2048;
+    gltfTextureOptions.ext = ".jpg";
+    tileset->root->write(R"(D:\nginx-1.22.1\html\3dtiles\tet4)", 0.5, gltfTextureOptions);
     tileset->computeTransform(116, 30, 100);
     tileset->toFile(R"(D:\nginx-1.22.1\html\3dtiles\tet4\tileset.json)");
 
@@ -213,7 +213,7 @@ int main() {
     instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M
+    buildTree(R"(龙翔桥站厅)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

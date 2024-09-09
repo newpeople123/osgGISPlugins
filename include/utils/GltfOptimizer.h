@@ -22,8 +22,11 @@ namespace osgGISPlugins
 
         struct GltfTextureOptimizationOptions
         {
-            int maxWidth = 2048;
-            int maxHeight = 2048;
+            int maxWidth = 512;
+            int maxHeight = 512;
+            int maxTextureAtlasWidth = 2048;
+            int maxTextureAtlasHeight = 2048;
+
             std::string ext = ".png";
             std::string cachePath = "";
             bool packTexture = true;

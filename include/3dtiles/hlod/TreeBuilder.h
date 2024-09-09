@@ -103,6 +103,16 @@ namespace osgGISPlugins
         TreeBuilder() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {};
 
         virtual osg::ref_ptr<Tile> build();
+
+        std::map<osg::Geode*, std::vector<osg::Matrixd>> test;
+
+        static bool compareStateSet(osg::ref_ptr<osg::StateSet> stateSet1, osg::ref_ptr<osg::StateSet> stateSet2);
+
+        static bool comparePrimitiveSet(osg::ref_ptr<osg::PrimitiveSet> pSet1, osg::ref_ptr<osg::PrimitiveSet> pSet2);
+
+        static bool compareGeometry(osg::ref_ptr<osg::Geometry> geom1, osg::ref_ptr<osg::Geometry> geom2);
+
+        static bool compareGeode(osg::Geode& geode1, osg::Geode& geode2);
     protected:
         typedef std::set<osg::Group*> GroupsToDivideList;
         GroupsToDivideList _groupsToDivideList;
