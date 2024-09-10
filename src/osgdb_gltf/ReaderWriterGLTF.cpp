@@ -155,7 +155,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 		{
 			B3DMFile b3dmFile;
 			const osg::Vec3 center;
-			b3dmFile.featureTableJSON = createFeatureTableJSON(center, bthv.getBatchLength());
+			b3dmFile.featureTableJSON = createFeatureB3DMTableJSON(center, bthv.getBatchLength());
 			b3dmFile.batchTableJSON = createBatchTableJSON(bthv);
 			b3dmFile.glbData = gltfBuf.str();
 			b3dmFile.calculateHeaderSizes();
@@ -165,9 +165,26 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 		else
 		{ 
 			I3DMFile i3dmFile;
+			osg::Vec3f positionMin(FLT_MAX, FLT_MAX, FLT_MAX);
+			osg::Vec3f positionMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+			osg::ref_ptr<osg::Group> matrixTransforms = nc_node.asGroup();
+			const size_t length = matrixTransforms->getNumChildren();
+			for (size_t i = 0; i < length; ++i)
+			{
+				osg::ref_ptr<osg::MatrixTransform> matrixTransform = dynamic_cast<osg::MatrixTransform*>(matrixTransforms->getChild(i));
 
-			i3dmFile.featureTableJSON = createFeatureI3DMTableJSON(nc_node.asGroup()->getNumChildren());
-			i3dmFile.featureTableBinary = createFeatureI3DMTableBinary(nc_node.asGroup());
+				if (matrixTransform.valid())
+				{
+					const osg::Vec3f position = matrixTransform->getMatrix().getTrans();
+					positionMin.set(osg::minimum(positionMin.x(), position.x()), osg::minimum(positionMin.y(), position.y()), osg::minimum(positionMin.z(), position.z()));
+					positionMax.set(osg::maximum(positionMax.x(), position.x()), osg::maximum(positionMax.y(), position.y()), osg::maximum(positionMax.z(), position.z()));
+				}
+			}
+			const osg::Vec3f volumeOffset = positionMin;
+			const osg::Vec3f volumeScale = positionMax - positionMin;
+
+			i3dmFile.featureTableJSON = createFeatureI3DMTableJSON(length, volumeOffset, volumeScale);
+			i3dmFile.featureTableBinary = createFeatureI3DMTableBinary(matrixTransforms, volumeOffset, volumeScale);
 			i3dmFile.batchTableJSON = createBatchTableJSON(bthv);
 			i3dmFile.glbData = gltfBuf.str();
 			i3dmFile.calculateHeaderSizes();
@@ -179,7 +196,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 	return WriteResult::ERROR_IN_WRITING_FILE;
 }
 
-std::string ReaderWriterGLTF::createFeatureTableJSON(const osg::Vec3& center, unsigned short batchLength) const
+std::string ReaderWriterGLTF::createFeatureB3DMTableJSON(const osg::Vec3& center, unsigned short batchLength) const
 {
 	json featureTable;
 	featureTable["BATCH_LENGTH"] = batchLength;
@@ -191,135 +208,137 @@ std::string ReaderWriterGLTF::createFeatureTableJSON(const osg::Vec3& center, un
 	return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int length) const
+std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int length, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const
 {
 	json featureTable;
 	featureTable["INSTANCES_LENGTH"] = length;
 
-	// 更新JSON以包含byteLength  
-	featureTable["POSITION_QUANTIZED"]["byteLength"] = length * sizeof(uint16_t);
-	featureTable["NORMAL_UP_OCT32P"]["byteLength"] = length * sizeof(uint16_t);
-	featureTable["NORMAL_RIGHT_OCT32P"]["byteLength"] = length * sizeof(uint16_t);
-	featureTable["SCALE_NON_UNIFORM"]["byteLength"] = length * sizeof(float);
+	// 量化体积偏移和比例
+	featureTable["QUANTIZED_VOLUME_OFFSET"] = { volumeOffset.x(), volumeOffset.y(), volumeOffset.z() };
+	featureTable["QUANTIZED_VOLUME_SCALE"] = { volumeScale.x(), volumeScale.y(), volumeScale.z() };
+
+	// 计算每个字段的 byteOffset 和 byteLength
+	size_t byteOffset = 0;
+
+	// POSITION_QUANTIZED
+	featureTable["POSITION_QUANTIZED"]["byteOffset"] = byteOffset;
+	featureTable["POSITION_QUANTIZED"]["byteLength"] = length * 3 * sizeof(uint16_t);
+	featureTable["POSITION_QUANTIZED"]["componentType"] = "UNSIGNED_SHORT"; // uint16_t
+
+	byteOffset += length * 3 * sizeof(uint16_t);  // 3 components for each position
+	byteOffset += (4 - (byteOffset % 4)) % 4;
+
+	// NORMAL_UP_OCT32P
+	featureTable["NORMAL_UP_OCT32P"]["byteOffset"] = byteOffset;
+	featureTable["NORMAL_UP_OCT32P"]["byteLength"] = length * 2 * sizeof(uint16_t);
+	featureTable["NORMAL_UP_OCT32P"]["componentType"] = "UNSIGNED_SHORT"; // uint16_t
+
+	byteOffset += length * 2 * sizeof(uint16_t);  // 2 components for normal UP
+
+	// NORMAL_RIGHT_OCT32P
+	featureTable["NORMAL_RIGHT_OCT32P"]["byteOffset"] = byteOffset;
+	featureTable["NORMAL_RIGHT_OCT32P"]["byteLength"] = length * 2 * sizeof(uint16_t);
+	featureTable["NORMAL_RIGHT_OCT32P"]["componentType"] = "UNSIGNED_SHORT"; // uint16_t
+
+	byteOffset += length * 2 * sizeof(uint16_t);  // 2 components for normal RIGHT
+
+	// SCALE_NON_UNIFORM
+	featureTable["SCALE_NON_UNIFORM"]["byteOffset"] = byteOffset;
+	featureTable["SCALE_NON_UNIFORM"]["byteLength"] = length * 3 * sizeof(float);
+	featureTable["SCALE_NON_UNIFORM"]["componentType"] = "FLOAT"; // float
+
+	byteOffset += length * 3 * sizeof(float);  // 3 components for scale
+	byteOffset += (4 - (byteOffset % 4)) % 4;
+
+	// BATCH_ID
+	featureTable["BATCH_ID"]["byteOffset"] = byteOffset;
 	featureTable["BATCH_ID"]["byteLength"] = length * sizeof(uint32_t);
+	featureTable["BATCH_ID"]["componentType"] = "UNSIGNED_INT"; // uint32_t
 
-
-
+	// 调整 JSON 字符串长度到 8 字节对齐
 	std::string featureTableStr = featureTable.dump();
-	while ((featureTableStr.size() + 28) % 8 != 0) {
+	while (featureTableStr.size() % 8 != 0) {
 		featureTableStr.push_back(' ');
 	}
+
 	return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const
+std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const
 {
 	const unsigned int length = matrixTransforms->getNumChildren();
-	// 存储实例的量化位置、法线和缩放等数据
-	std::vector<int> positionQuantized;
-	std::vector<int> normalUpOct32P;
-	std::vector<int> normalRightOct32P;
-	std::vector<float> scaleNonUniform;
-	std::vector<unsigned int> batchID;
 
-	osg::Vec3f positionMin(FLT_MAX, FLT_MAX, FLT_MAX);
-	osg::Vec3f positionMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+	// 预先分配足够的内存空间，避免动态扩展
+	std::vector<uint16_t> positionQuantized(length * 3);
+	std::vector<uint16_t> normalUpOct32P(length * 2);
+	std::vector<uint16_t> normalRightOct32P(length * 2);
+	std::vector<float> scaleNonUniform(length * 3);
+	std::vector<uint32_t> batchID(length);
 
-	for (size_t i = 0; i < length; ++i)
+	for (unsigned int i = 0; i < length; ++i)
 	{
 		osg::ref_ptr<osg::MatrixTransform> matrixTransform = dynamic_cast<osg::MatrixTransform*>(matrixTransforms->getChild(i));
 
-		if (matrixTransform.valid())
-		{
-			const osg::Vec3f position = matrixTransform->getMatrix().getTrans();
-			positionMin.x() = positionMin.x() < position.x() ? positionMin.x() : position.x();
-			positionMin.y() = positionMin.y() < position.y() ? positionMin.y() : position.y();
-			positionMin.z() = positionMin.z() < position.z() ? positionMin.z() : position.z();
-
-			positionMax.x() = positionMax.x() > position.x() ? positionMax.x() : position.x();
-			positionMax.y() = positionMax.y() > position.y() ? positionMax.y() : position.y();
-			positionMax.z() = positionMax.z() > position.z() ? positionMax.z() : position.z();
-
+		if (!matrixTransform.valid()) {
+			continue;  // 跳过无效节点，增加健壮性
 		}
+
+		// 获取位置信息并进行量化
+		const osg::Vec3f position = matrixTransform->getMatrix().getTrans();
+		positionQuantized[i * 3] = static_cast<uint16_t>(((position.x() - volumeOffset.x()) / volumeScale.x()) * 65535);
+		positionQuantized[i * 3 + 1] = static_cast<uint16_t>(((position.y() - volumeOffset.y()) / volumeScale.y()) * 65535);
+		positionQuantized[i * 3 + 2] = static_cast<uint16_t>(((position.z() - volumeOffset.z()) / volumeScale.z()) * 65535);
+
+		// 进行OCT32P编码
+		const osg::Vec3f up = matrixTransform->getMatrix().getRotate() * osg::Vec3f(0.0f, 0.0f, 1.0f);  // 上方向
+		const osg::Vec3f right = matrixTransform->getMatrix().getRotate() * osg::Vec3f(1.0f, 0.0f, 0.0f);  // 右方向
+
+		auto encodedUp = osgGISPlugins::I3DMFile::encodeNormalToOct32P(up);
+		auto encodedRight = osgGISPlugins::I3DMFile::encodeNormalToOct32P(right);
+
+		normalUpOct32P[i * 2] = encodedUp.first;
+		normalUpOct32P[i * 2 + 1] = encodedUp.second;
+		normalRightOct32P[i * 2] = encodedRight.first;
+		normalRightOct32P[i * 2 + 1] = encodedRight.second;
+
+		// 提取缩放信息
+		const osg::Vec3f scale = matrixTransform->getMatrix().getScale();
+		scaleNonUniform[i * 3] = scale.x();
+		scaleNonUniform[i * 3 + 1] = scale.y();
+		scaleNonUniform[i * 3 + 2] = scale.z();
+
+		// 记录批次ID
+		batchID[i] = i;
 	}
 
-
-	// 假设QUANTIZED_VOLUME_OFFSET和QUANTIZED_VOLUME_SCALE已经预定义
-	osg::Vec3f volumeOffset = positionMin;
-	osg::Vec3f volumeScale = positionMax - positionMin;
-	for (size_t i = 0; i < length; ++i)
-	{
-		osg::ref_ptr<osg::MatrixTransform> matrixTransform = dynamic_cast<osg::MatrixTransform*>(matrixTransforms->getChild(i));
-
-		if (matrixTransform.valid())
-		{
-			// 获取位置信息，并进行量化
-			const osg::Vec3f position = matrixTransform->getMatrix().getTrans();
-			positionQuantized.push_back(static_cast<int>(((position.x() - volumeOffset.x()) / volumeScale.x()) * 65535));
-			positionQuantized.push_back(static_cast<int>(((position.y() - volumeOffset.y()) / volumeScale.y()) * 65535));
-			positionQuantized.push_back(static_cast<int>(((position.z() - volumeOffset.z()) / volumeScale.z()) * 65535));
-
-			// 提取朝向并进行OCT32P编码
-			const osg::Vec3f up = matrixTransform->getMatrix().getRotate() * osg::Vec3f(0.0f, 0.0f, 1.0f);  // 上方向
-			const osg::Vec3f right = matrixTransform->getMatrix().getRotate() * osg::Vec3f(1.0f, 0.0f, 0.0f);  // 右方向
-
-			auto encodedUp = osgGISPlugins::I3DMFile::encodeNormalToOct32P(up);
-			auto encodedRight = osgGISPlugins::I3DMFile::encodeNormalToOct32P(right);
-			normalUpOct32P.push_back(encodedUp.first);
-			normalUpOct32P.push_back(encodedUp.second);
-			normalRightOct32P.push_back(encodedRight.first);
-			normalRightOct32P.push_back(encodedRight.second);
-
-			// 提取缩放信息
-			const osg::Vec3f scale = matrixTransform->getMatrix().getScale();
-			scaleNonUniform.push_back(scale.x());
-			scaleNonUniform.push_back(scale.y());
-			scaleNonUniform.push_back(scale.z());
-
-			// 记录批次ID
-			batchID.push_back(i);
-
-		}
-	}
-
-
-	// 写入二进制数据的长度
-	//size_t totalBinarySize =
-	//	length * sizeof(uint16_t) +
-	//	length * sizeof(uint16_t) +
-	//	length * sizeof(uint16_t) +
-	//	length * sizeof(float) +
-	//	length * sizeof(uint32_t);
-
+	// 提前分配内存
 	std::ostringstream oss;
+	oss.write(reinterpret_cast<const char*>(positionQuantized.data()), length * 3 * sizeof(uint16_t));//6字节*length
+	//4字节对齐
+	// 计算当前写入的总字节数
+	size_t currentSize = oss.tellp();
+	size_t padding = (4 - (currentSize % 4)) % 4;  // 计算需要的填充字节数
+	oss.write(std::string(padding, 0).c_str(), padding);  // 写入填充字节
 
-	// 写入二进制数据的长度（这部分通常是可选的，取决于接收方是否需要预先知道数据长度）  
-	// 但这里我们直接写入数据，不单独写长度  
+	oss.write(reinterpret_cast<const char*>(normalUpOct32P.data()), length * 2 * sizeof(uint16_t));
+	oss.write(reinterpret_cast<const char*>(normalRightOct32P.data()), length * 2 * sizeof(uint16_t));
 
-	// 序列化数据  
-	for (size_t i = 0; i < length; ++i) {
-		// 写入位置（量化后的整数）  
-		oss.write(reinterpret_cast<const char*>(&positionQuantized[i * 3 + 0]), sizeof(int));
-		oss.write(reinterpret_cast<const char*>(&positionQuantized[i * 3 + 1]), sizeof(int));
-		oss.write(reinterpret_cast<const char*>(&positionQuantized[i * 3 + 2]), sizeof(int));
+	oss.write(reinterpret_cast<const char*>(scaleNonUniform.data()), length * 3 * sizeof(float));
+	// BATCH_ID must be aligned to a 4-byte boundary
+	// 计算当前写入的总字节数
+	currentSize = oss.tellp();
+	// 确保 BATCH_ID 的写入位置是 4 字节对齐的
+	padding = (4 - (currentSize % 4)) % 4;  // 计算需要的填充字节数
+	oss.write(std::string(padding, 0).c_str(), padding);  // 写入填充字节
+	oss.write(reinterpret_cast<const char*>(batchID.data()), length * sizeof(uint32_t));
 
-		// 写入上向量和右向量的OCT32P编码  
-		oss.write(reinterpret_cast<const char*>(&normalUpOct32P[i * 2 + 0]), sizeof(int));
-		oss.write(reinterpret_cast<const char*>(&normalUpOct32P[i * 2 + 1]), sizeof(int));
-		oss.write(reinterpret_cast<const char*>(&normalRightOct32P[i * 2 + 0]), sizeof(int));
-		oss.write(reinterpret_cast<const char*>(&normalRightOct32P[i * 2 + 1]), sizeof(int));
-
-		// 写入缩放信息（假设为float）  
-		oss.write(reinterpret_cast<const char*>(&scaleNonUniform[i * 3 + 0]), sizeof(float));
-		oss.write(reinterpret_cast<const char*>(&scaleNonUniform[i * 3 + 1]), sizeof(float));
-		oss.write(reinterpret_cast<const char*>(&scaleNonUniform[i * 3 + 2]), sizeof(float));
-
-		// 写入批次ID（假设为uint32_t）  
-		oss.write(reinterpret_cast<const char*>(&batchID[i]), sizeof(unsigned int));
+	std::string featureTableBinaryStr = oss.str();
+	// 调整 JSON 字符串长度到 8 字节对齐
+	while (featureTableBinaryStr.size() % 8 != 0) {
+		featureTableBinaryStr.push_back(' ');
 	}
 
-	// 将ostringstream转换为string  
-	return oss.str();
+	return featureTableBinaryStr;
 }
 
 std::string ReaderWriterGLTF::createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const
@@ -407,9 +426,38 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeB3DMFile(const std::stri
 	return WriteResult::FILE_SAVED;
 }
 
-osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeI3DMFile(const std::string& filename, const I3DMFile& b3dmFile) const
+osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile) const
 {
-	return WriteResult();
+	std::vector<unsigned char> i3dmBuffer;
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.header.magic, i3dmFile.header.magic + 4);
+	putVal(i3dmBuffer, i3dmFile.header.version);
+	putVal(i3dmBuffer, i3dmFile.header.byteLength);
+	putVal(i3dmBuffer, i3dmFile.header.featureTableJSONByteLength);
+	putVal(i3dmBuffer, i3dmFile.header.featureTableBinaryByteLength);
+	putVal(i3dmBuffer, i3dmFile.header.batchTableJSONByteLength);
+	putVal(i3dmBuffer, i3dmFile.header.batchTableBinaryByteLength);
+	putVal(i3dmBuffer, i3dmFile.gltfFormat);
+
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.featureTableJSON.begin(), i3dmFile.featureTableJSON.end());
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.featureTableBinary.begin(), i3dmFile.featureTableBinary.end());
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.batchTableJSON.begin(), i3dmFile.batchTableJSON.end());
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.batchTableBinary.begin(), i3dmFile.batchTableBinary.end());
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.glbData.begin(), i3dmFile.glbData.end());
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.glbPadding, 0);
+	i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.totalPadding, 0);
+
+	std::ofstream fout(filename, std::ios::binary);
+	if (!fout) {
+		return WriteResult::ERROR_IN_WRITING_FILE;
+	}
+
+	fout.write(reinterpret_cast<const char*>(i3dmBuffer.data()), i3dmBuffer.size());
+	if (fout.fail()) {
+		return WriteResult::ERROR_IN_WRITING_FILE;
+	}
+
+	fout.close();
+	return WriteResult::FILE_SAVED;
 }
 
 REGISTER_OSGPLUGIN(gltf, ReaderWriterGLTF)

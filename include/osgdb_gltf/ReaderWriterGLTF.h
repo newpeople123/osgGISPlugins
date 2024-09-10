@@ -18,6 +18,8 @@ public:
 
         supportsExtension("b3dm", "3D Tiles Batch 3D Model");
 
+        supportsExtension("i3dm", "3D Tiles Instanced 3D Model");
+
         supportsOption("eb",
             "eb (embedBuffers): Embeds buffers directly into the resulting file. "
             "This option allows you to include all buffer data within the GLTF/GLB file itself.");
@@ -92,20 +94,19 @@ public:
     ReadResult readNode(const std::string& filename, const Options*) const override;
     WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const override;
 
-    std::string createFeatureTableJSON(const osg::Vec3& center,  unsigned short batchLength) const;
+    std::string createFeatureB3DMTableJSON(const osg::Vec3& center,  unsigned short batchLength) const;
 
-    std::string createFeatureI3DMTableJSON(const unsigned int length) const;
+    std::string createFeatureI3DMTableJSON(const unsigned int length, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const;
 
-    std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const;
+    std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const;
 
     std::string createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const;
 
     WriteResult writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const;
 
-    WriteResult writeI3DMFile(const std::string& filename, const I3DMFile& b3dmFile) const;
+    WriteResult writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile) const;
 
 };
-#endif // !READERWRITERGLTF_H
 
 template<class T>
 inline void ReaderWriterGLTF::putVal(std::vector<unsigned char>& buffer, T val) const
@@ -113,3 +114,5 @@ inline void ReaderWriterGLTF::putVal(std::vector<unsigned char>& buffer, T val) 
     unsigned char const* p = reinterpret_cast<unsigned char const*>(&val);
     buffer.insert(buffer.end(), p, p + sizeof(T));
 }
+#endif // !READERWRITERGLTF_H
+

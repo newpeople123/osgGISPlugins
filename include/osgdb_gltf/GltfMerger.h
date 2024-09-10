@@ -4,7 +4,7 @@
 #include <osg/Matrixd>
 #include <unordered_map>
 namespace osgGISPlugins {
-    const double TOLERANCE = 0.001;
+    const double EPSILON = 0.001;
 
     struct MatrixHash {
         std::size_t operator()(const osg::Matrixd& matrix) const {
@@ -24,7 +24,7 @@ namespace osgGISPlugins {
             const double* ptr2 = rhs.ptr();
 
             for (size_t i = 0; i < 16; ++i) {
-                if (osg::absolute((*ptr1++) - (*ptr2++)) > TOLERANCE) return false;
+                if (osg::absolute((*ptr1++) - (*ptr2++)) > EPSILON) return false;
             }
             return true;
         }

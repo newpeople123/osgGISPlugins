@@ -30,16 +30,18 @@ namespace osgGISPlugins {
 
         virtual int headerSize() const = 0; // 子类实现，返回头部的大小
 
-        void calculateHeaderSizes() {
+        void calculateHeaderSizes()
+        {
             header.featureTableJSONByteLength = featureTableJSON.size();
             header.featureTableBinaryByteLength = featureTableBinary.size();
             header.batchTableJSONByteLength = batchTableJSON.size();
             header.batchTableBinaryByteLength = batchTableBinary.size();
             glbPadding = 4 - (glbData.size() % 4);
             if (glbPadding == 4) glbPadding = 0;
-            totalPadding = 8 - ((headerSize() + featureTableJSON.size() + batchTableJSON.size() + glbData.size() + glbPadding) % 8);
+            const int tileHeaderSize = headerSize();
+            totalPadding = 8 - ((tileHeaderSize + header.featureTableJSONByteLength + header.featureTableBinaryByteLength + header.batchTableJSONByteLength + header.batchTableBinaryByteLength + glbData.size() + glbPadding) % 8);
             if (totalPadding == 8) totalPadding = 0;
-            header.byteLength = headerSize() + featureTableJSON.size() + batchTableJSON.size() + glbData.size() + glbPadding + totalPadding;
+            header.byteLength = tileHeaderSize + header.featureTableJSONByteLength + header.featureTableBinaryByteLength + header.batchTableJSONByteLength + header.batchTableBinaryByteLength + glbData.size() + glbPadding + totalPadding;
         }
     };
 
@@ -60,20 +62,24 @@ namespace osgGISPlugins {
             return 32; 
         }
 
-        static std::pair<int, int> encodeNormalToOct32P(const osg::Vec3f& normal) {
+        static std::pair<uint16_t, uint16_t> encodeNormalToOct32P(const osg::Vec3f& normal) {
             float absSum = std::fabs(normal.x()) + std::fabs(normal.y()) + std::fabs(normal.z());
-            osg::Vec2f octNormal = normal.x() == 0 && normal.y() == 0 ? osg::Vec2f(0, 0) :
-                osg::Vec2f(normal.x(), normal.y()) * (1.0f / absSum);
+
+            osg::Vec2f octNormal = (absSum > 0.0f) ? osg::Vec2f(normal.x(), normal.y()) * (1.0f / absSum) : osg::Vec2f(0.0f, 0.0f);
+
             if (normal.z() < 0) {
                 octNormal.set(
                     (1 - std::fabs(octNormal.y())) * (octNormal.x() < 0 ? -1.0f : 1.0f),
                     (1 - std::fabs(octNormal.x())) * (octNormal.y() < 0 ? -1.0f : 1.0f)
                 );
             }
-            int x = static_cast<int>((octNormal.x() * 0.5f + 0.5f) * 65535);
-            int y = static_cast<int>((octNormal.y() * 0.5f + 0.5f) * 65535);
+
+            uint16_t x = static_cast<uint16_t>((octNormal.x() * 0.5f + 0.5f) * 65535);
+            uint16_t y = static_cast<uint16_t>((octNormal.y() * 0.5f + 0.5f) * 65535);
+
             return std::make_pair(x, y);
         }
+
     };
 
 }

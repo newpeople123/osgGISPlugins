@@ -23,7 +23,28 @@ namespace osgGISPlugins {
             }
         }
         GltfPbrMRMaterial() :GltfMaterial() {}
+
         META_Object(osg, GltfPbrMRMaterial);
+
+        bool operator==(const GltfPbrMRMaterial& other)
+        {
+            if (!GltfMaterial::operator==(other))
+                return false;
+            if (!compareTexture2D(metallicRoughnessTexture, other.metallicRoughnessTexture))
+                return false;
+            if (!compareTexture2D(baseColorTexture, other.baseColorTexture))
+                return false;
+            for (size_t i = 0; i < 4; ++i)
+            {
+                if (baseColorFactor[i] != other.baseColorFactor[i])
+                    return false;
+            }
+            if (metallicFactor != other.metallicFactor)
+                return false;
+            if (roughnessFactor != other.roughnessFactor)
+                return false;
+            return true;
+        }
     };
 }
 
