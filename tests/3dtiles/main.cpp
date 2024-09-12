@@ -211,9 +211,10 @@ int main() {
     osgDB::Registry* instance = osgDB::Registry::instance();
     instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
     instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
+    instance->addFileExtensionAlias("i3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-    buildTree(R"(龙翔桥站厅)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

@@ -228,12 +228,12 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 			if (this->refine == Refinement::REPLACE)
 			{
 				Simplifier simplifier(simplifyRatio, true);
-				node->accept(simplifier);
+				nodeCopy->accept(simplifier);
 			}
 			else
 			{
 				Simplifier simplifier(simplifyRatio);
-				node->accept(simplifier);
+				nodeCopy->accept(simplifier);
 			}
 		}
 
@@ -280,6 +280,7 @@ void Tileset::computeTransform(const double lng, const double lat, const double 
 	const osg::EllipsoidModel ellipsoidModel;
 	osg::Matrixd matrix;
 	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, matrix);
+
 
 	const double* ptr = matrix.ptr();
 	for (unsigned i = 0; i < 16; ++i)

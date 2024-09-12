@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <osgDB/ConvertUTF>
 #include <osg/MatrixTransform>
+#include <osg/CoordinateSystemNode>
 using namespace nlohmann;
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
 	const Options* options) const {
@@ -29,7 +30,20 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 		nc_node.accept(bthv);
 
 	Osg2Gltf osg2gltf;
-	nc_node.accept(osg2gltf);
+	if (ext == "i3dm")
+	{
+		osg::ref_ptr<osg::Group> geodes = nc_node.asGroup()->getChild(0)->asGroup();
+		osg::ref_ptr<osg::MatrixTransform> waitConvertGeodes = new osg::MatrixTransform;
+		// 将 Y 轴向上的 nc_node 旋转为 Z 轴向上
+		// waitConvertGeodes->setMatrix(osg::Matrixd::rotate(osg::inDegrees(45.0), osg::Vec3d(0.0, 0.0, 1.0)));
+		for (size_t i = 0; i < geodes->getNumChildren(); ++i)
+		{
+			waitConvertGeodes->addChild(geodes->getChild(i));
+		}
+		waitConvertGeodes->accept(osg2gltf);
+	}
+	else
+		nc_node.accept(osg2gltf);
 	tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
 	const bool embedImages = true;
@@ -163,7 +177,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 			return writeB3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), b3dmFile);
 		}
 		else
-		{ 
+		{
 			I3DMFile i3dmFile;
 			osg::Vec3f positionMin(FLT_MAX, FLT_MAX, FLT_MAX);
 			osg::Vec3f positionMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -212,48 +226,48 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int leng
 {
 	json featureTable;
 	featureTable["INSTANCES_LENGTH"] = length;
-
-	// 量化体积偏移和比例
-	featureTable["QUANTIZED_VOLUME_OFFSET"] = { volumeOffset.x(), volumeOffset.y(), volumeOffset.z() };
-	featureTable["QUANTIZED_VOLUME_SCALE"] = { volumeScale.x(), volumeScale.y(), volumeScale.z() };
+	//featureTable["EAST_NORTH_UP"] = true;
 
 	// 计算每个字段的 byteOffset 和 byteLength
 	size_t byteOffset = 0;
 
-	// POSITION_QUANTIZED
-	featureTable["POSITION_QUANTIZED"]["byteOffset"] = byteOffset;
-	featureTable["POSITION_QUANTIZED"]["byteLength"] = length * 3 * sizeof(uint16_t);
-	featureTable["POSITION_QUANTIZED"]["componentType"] = "UNSIGNED_SHORT"; // uint16_t
-
-	byteOffset += length * 3 * sizeof(uint16_t);  // 3 components for each position
+	// POSITION
+	featureTable["POSITION"]["byteOffset"] = byteOffset;
+	byteOffset += length * 3 * sizeof(float);  // 3 components for each position
 	byteOffset += (4 - (byteOffset % 4)) % 4;
 
-	// NORMAL_UP_OCT32P
-	featureTable["NORMAL_UP_OCT32P"]["byteOffset"] = byteOffset;
-	featureTable["NORMAL_UP_OCT32P"]["byteLength"] = length * 2 * sizeof(uint16_t);
-	featureTable["NORMAL_UP_OCT32P"]["componentType"] = "UNSIGNED_SHORT"; // uint16_t
+	// NORMAL_UP
+	featureTable["NORMAL_UP"]["byteOffset"] = byteOffset;
+	byteOffset += length * 3 * sizeof(float);  // 3 components for normal UP
+	byteOffset += (4 - (byteOffset % 4)) % 4;
 
-	byteOffset += length * 2 * sizeof(uint16_t);  // 2 components for normal UP
-
-	// NORMAL_RIGHT_OCT32P
-	featureTable["NORMAL_RIGHT_OCT32P"]["byteOffset"] = byteOffset;
-	featureTable["NORMAL_RIGHT_OCT32P"]["byteLength"] = length * 2 * sizeof(uint16_t);
-	featureTable["NORMAL_RIGHT_OCT32P"]["componentType"] = "UNSIGNED_SHORT"; // uint16_t
-
-	byteOffset += length * 2 * sizeof(uint16_t);  // 2 components for normal RIGHT
+	// NORMAL_RIGHT
+	featureTable["NORMAL_RIGHT"]["byteOffset"] = byteOffset;
+	byteOffset += length * 3 * sizeof(float);  // 3 components for normal RIGHT
+	byteOffset += (4 - (byteOffset % 4)) % 4;
 
 	// SCALE_NON_UNIFORM
 	featureTable["SCALE_NON_UNIFORM"]["byteOffset"] = byteOffset;
-	featureTable["SCALE_NON_UNIFORM"]["byteLength"] = length * 3 * sizeof(float);
-	featureTable["SCALE_NON_UNIFORM"]["componentType"] = "FLOAT"; // float
-
 	byteOffset += length * 3 * sizeof(float);  // 3 components for scale
 	byteOffset += (4 - (byteOffset % 4)) % 4;
 
 	// BATCH_ID
 	featureTable["BATCH_ID"]["byteOffset"] = byteOffset;
-	featureTable["BATCH_ID"]["byteLength"] = length * sizeof(uint32_t);
-	featureTable["BATCH_ID"]["componentType"] = "UNSIGNED_INT"; // uint32_t
+	if (length < 256)
+	{
+		featureTable["BATCH_ID"]["byteLength"] = length * sizeof(uint8_t);
+		featureTable["BATCH_ID"]["componentType"] = "UNSIGNED_BYTE";
+	}
+	else 	if (length < 65536)
+	{
+		featureTable["BATCH_ID"]["byteLength"] = length * sizeof(uint16_t);
+		featureTable["BATCH_ID"]["componentType"] = "UNSIGNED_SHORT";
+	}
+	else
+	{
+		featureTable["BATCH_ID"]["byteLength"] = length * sizeof(uint32_t);
+		featureTable["BATCH_ID"]["componentType"] = "UNSIGNED_INT";
+	}
 
 	// 调整 JSON 字符串长度到 8 字节对齐
 	std::string featureTableStr = featureTable.dump();
@@ -269,68 +283,89 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Gro
 	const unsigned int length = matrixTransforms->getNumChildren();
 
 	// 预先分配足够的内存空间，避免动态扩展
-	std::vector<uint16_t> positionQuantized(length * 3);
-	std::vector<uint16_t> normalUpOct32P(length * 2);
-	std::vector<uint16_t> normalRightOct32P(length * 2);
-	std::vector<float> scaleNonUniform(length * 3);
-	std::vector<uint32_t> batchID(length);
+	std::vector<float> positions(length * 3);
+	std::vector<float> normalUps(length * 3);
+	std::vector<float> normalRights(length * 3);
+	std::vector<float> scaleNonUniforms(length * 3);
+	std::vector<uint8_t> batchIDUint8s(length);
+	std::vector<uint16_t> batchIDUint16s(length);
+	std::vector<uint32_t> batchIDUint32s(length);
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
 		osg::ref_ptr<osg::MatrixTransform> matrixTransform = dynamic_cast<osg::MatrixTransform*>(matrixTransforms->getChild(i));
-
 		if (!matrixTransform.valid()) {
-			continue;  // 跳过无效节点，增加健壮性
+			continue;
 		}
 
-		// 获取位置信息并进行量化
-		const osg::Vec3f position = matrixTransform->getMatrix().getTrans();
-		positionQuantized[i * 3] = static_cast<uint16_t>(((position.x() - volumeOffset.x()) / volumeScale.x()) * 65535);
-		positionQuantized[i * 3 + 1] = static_cast<uint16_t>(((position.y() - volumeOffset.y()) / volumeScale.y()) * 65535);
-		positionQuantized[i * 3 + 2] = static_cast<uint16_t>(((position.z() - volumeOffset.z()) / volumeScale.z()) * 65535);
+		osg::Matrix matrix;
+		matrixTransform->computeLocalToWorldMatrix(matrix, nullptr);
+		
+		osg::Matrixd yToZRotation = osg::Matrixd::rotate(osg::inDegrees(-90.0), osg::Vec3d(1.0, 0.0, 0.0));  
+		const osg::Vec3f position = yToZRotation * matrix.getTrans();
+		positions[i * 3 + 0] = position.x();
+		positions[i * 3 + 1] = position.y();
+		positions[i * 3 + 2] = position.z();
 
-		// 进行OCT32P编码
-		const osg::Vec3f up = matrixTransform->getMatrix().getRotate() * osg::Vec3f(0.0f, 0.0f, 1.0f);  // 上方向
-		const osg::Vec3f right = matrixTransform->getMatrix().getRotate() * osg::Vec3f(1.0f, 0.0f, 0.0f);  // 右方向
 
-		auto encodedUp = osgGISPlugins::I3DMFile::encodeNormalToOct32P(up);
-		auto encodedRight = osgGISPlugins::I3DMFile::encodeNormalToOct32P(right);
+		const osg::Quat rotation = matrix.getRotate();
+		osg::Vec3f up = rotation * osg::Vec3f(0.0f, 1.0f, 0.0f);
+		up.normalize();
+		normalUps[i * 3 + 0] = up.x();
+		normalUps[i * 3 + 1] = up.y();
+		normalUps[i * 3 + 2] = up.z();
+		osg::Vec3f right = rotation * osg::Vec3f(1.0f, 0.0f, 0.0f);
+		right.normalize();
+		normalRights[i * 3 + 0] = right.x();
+		normalRights[i * 3 + 1] = right.y();
+		normalRights[i * 3 + 2] = right.z();
 
-		normalUpOct32P[i * 2] = encodedUp.first;
-		normalUpOct32P[i * 2 + 1] = encodedUp.second;
-		normalRightOct32P[i * 2] = encodedRight.first;
-		normalRightOct32P[i * 2 + 1] = encodedRight.second;
 
-		// 提取缩放信息
-		const osg::Vec3f scale = matrixTransform->getMatrix().getScale();
-		scaleNonUniform[i * 3] = scale.x();
-		scaleNonUniform[i * 3 + 1] = scale.y();
-		scaleNonUniform[i * 3 + 2] = scale.z();
+		const osg::Vec3f scale = matrix.getScale();
+		scaleNonUniforms[i * 3 + 0] = scale.x();
+		scaleNonUniforms[i * 3 + 1] = scale.y();
+		scaleNonUniforms[i * 3 + 2] = scale.z();
 
-		// 记录批次ID
-		batchID[i] = i;
+
+		batchIDUint8s[i] = i;
+		batchIDUint16s[i] = i;
+		batchIDUint32s[i] = i;
 	}
+
+
+
 
 	// 提前分配内存
 	std::ostringstream oss;
-	oss.write(reinterpret_cast<const char*>(positionQuantized.data()), length * 3 * sizeof(uint16_t));//6字节*length
+	oss.write(reinterpret_cast<const char*>(positions.data()), length * 3 * sizeof(float));
 	//4字节对齐
 	// 计算当前写入的总字节数
 	size_t currentSize = oss.tellp();
 	size_t padding = (4 - (currentSize % 4)) % 4;  // 计算需要的填充字节数
 	oss.write(std::string(padding, 0).c_str(), padding);  // 写入填充字节
 
-	oss.write(reinterpret_cast<const char*>(normalUpOct32P.data()), length * 2 * sizeof(uint16_t));
-	oss.write(reinterpret_cast<const char*>(normalRightOct32P.data()), length * 2 * sizeof(uint16_t));
-
-	oss.write(reinterpret_cast<const char*>(scaleNonUniform.data()), length * 3 * sizeof(float));
-	// BATCH_ID must be aligned to a 4-byte boundary
-	// 计算当前写入的总字节数
+	oss.write(reinterpret_cast<const char*>(normalUps.data()), length * 3 * sizeof(float));
 	currentSize = oss.tellp();
-	// 确保 BATCH_ID 的写入位置是 4 字节对齐的
 	padding = (4 - (currentSize % 4)) % 4;  // 计算需要的填充字节数
 	oss.write(std::string(padding, 0).c_str(), padding);  // 写入填充字节
-	oss.write(reinterpret_cast<const char*>(batchID.data()), length * sizeof(uint32_t));
+
+	oss.write(reinterpret_cast<const char*>(normalRights.data()), length * 3 * sizeof(float));
+	currentSize = oss.tellp();
+	padding = (4 - (currentSize % 4)) % 4;  // 计算需要的填充字节数
+	oss.write(std::string(padding, 0).c_str(), padding);  // 写入填充字节
+
+
+	oss.write(reinterpret_cast<const char*>(scaleNonUniforms.data()), length * 3 * sizeof(float));
+	currentSize = oss.tellp();
+	padding = (4 - (currentSize % 4)) % 4;  // 计算需要的填充字节数
+	oss.write(std::string(padding, 0).c_str(), padding);  // 写入填充字节
+
+	if (length < 256)
+		oss.write(reinterpret_cast<const char*>(batchIDUint8s.data()), length * sizeof(uint8_t));
+	else if (length < 65536)
+		oss.write(reinterpret_cast<const char*>(batchIDUint16s.data()), length * sizeof(uint16_t));
+	else
+		oss.write(reinterpret_cast<const char*>(batchIDUint32s.data()), length * sizeof(uint32_t));
 
 	std::string featureTableBinaryStr = oss.str();
 	// 调整 JSON 字符串长度到 8 字节对齐

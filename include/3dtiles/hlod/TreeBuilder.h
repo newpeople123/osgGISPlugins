@@ -104,7 +104,7 @@ namespace osgGISPlugins
 
         virtual osg::ref_ptr<Tile> build();
 
-        std::map<osg::Geode*, std::vector<osg::Matrixd>> test;
+        std::map<osg::Geode*, std::vector<osg::Group*>> test;
 
         static bool compareStateSet(osg::ref_ptr<osg::StateSet> stateSet1, osg::ref_ptr<osg::StateSet> stateSet2);
 
