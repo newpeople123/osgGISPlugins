@@ -14,11 +14,11 @@
 #include <3dtiles/hlod/QuadtreeBuilder.h>
 using namespace std;
 using namespace osgGISPlugins;
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
+const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
+const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<Tile> parent = nullptr);
 void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth);
@@ -140,7 +140,7 @@ int getMaxDepth(osg::Node* node) {
 void buildTree(const std::string& filename)
 {
     osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-    //options->setOptionString("TessellatePolygons");
+    options->setOptionString("TessellatePolygons");
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options.get());
 
     osg::BoundingBox bb;
@@ -167,10 +167,10 @@ void buildTree(const std::string& filename)
     GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
     gltfTextureOptions.maxTextureAtlasWidth = 2048;
     gltfTextureOptions.maxTextureAtlasHeight = 2048;
-    gltfTextureOptions.ext = ".jpg";
-    tileset->root->write(R"(D:\nginx-1.22.1\html\3dtiles\tet4)", 0.5, gltfTextureOptions);
+    gltfTextureOptions.ext = ".ktx2";
+    //tileset->root->write(R"(C:\Users\94764\Desktop\nginx-1.26.2\html\tet4)", 0.5, gltfTextureOptions);
     tileset->computeTransform(116, 30, 100);
-    tileset->toFile(R"(D:\nginx-1.22.1\html\3dtiles\tet4\tileset.json)");
+    tileset->toFile(R"(C:\Users\94764\Desktop\nginx-1.26.2\html\tet4\tileset.json)");
 
 }
 
@@ -201,7 +201,40 @@ osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node)
     tileset->root = rootTile;
     return tileset.release();
 }
+void testI3DM(const std::string& filename) {
+    osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+    //options->setOptionString("TessellatePolygons");
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options.get());
+    osg::ref_ptr<osg::Geode> geode = node->asGroup()->getChild(0)->asGroup()->getChild(0)->asGroup()->getChild(0)->asGeode();
 
+    //osgViewer::Viewer viewer;
+    //viewer.setSceneData(geode);
+    //viewer.run();
+
+    osg::ref_ptr<osg::Group> group = new osg::Group;
+    osg::ref_ptr<osg::MatrixTransform> transform1 = new osg::MatrixTransform;
+    osg::Matrixd matrix1 = transform1->getMatrix();
+    matrix1.setTrans(osg::Vec3(0, 0, 10000));
+    matrix1.setRotate(osg::Quat(osg::inDegrees(42.0), osg::Vec3(1, 1, 1.5)));
+    matrix1.scale(osg::Vec3(0.1, 0.1, 0.1));
+    transform1->setMatrix(matrix1);
+    //transform1->getMatrix().scale(100, 100, 100);
+    transform1->addChild(geode);
+    group->addChild(transform1);
+
+    osg::ref_ptr<osg::MatrixTransform> transform2 = new osg::MatrixTransform;
+    osg::Matrixd matrix2 = transform2->getMatrix();
+    matrix2.setTrans(osg::Vec3(500, 200, 500));
+    
+    transform2->setMatrix(matrix2);
+    transform2->addChild(geode);
+    //group->addChild(transform2);
+    osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test.i3dm)");
+    osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test.b3dm)");
+
+
+    OSG_NOTICE << std::endl;
+}
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -213,7 +246,7 @@ int main() {
     instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("i3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
-
+    //testI3DM(R"(dixiashifengmian)");
     buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;

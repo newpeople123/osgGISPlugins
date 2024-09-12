@@ -226,7 +226,6 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int leng
 {
 	json featureTable;
 	featureTable["INSTANCES_LENGTH"] = length;
-	//featureTable["EAST_NORTH_UP"] = true;
 
 	// 计算每个字段的 byteOffset 和 byteLength
 	size_t byteOffset = 0;
@@ -298,27 +297,24 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Gro
 			continue;
 		}
 
-		osg::Matrix matrix;
-		matrixTransform->computeLocalToWorldMatrix(matrix, nullptr);
-		
-		osg::Matrixd yToZRotation = osg::Matrixd::rotate(osg::inDegrees(-90.0), osg::Vec3d(1.0, 0.0, 0.0));  
-		const osg::Vec3f position = yToZRotation * matrix.getTrans();
-		positions[i * 3 + 0] = position.x();
-		positions[i * 3 + 1] = position.y();
-		positions[i * 3 + 2] = position.z();
+		const osg::Matrix matrix = matrixTransform->getMatrix();
 
+		const osg::Vec3f position = osg::Quat(osg::inDegrees(90.0), osg::Vec3(1.0, 0, 0)) * matrix.getTrans();
+		positions[i * 3 + 0] = position.x(); 
+		positions[i * 3 + 1] = position.y(); 
+		positions[i * 3 + 2] = position.z();  
 
-		const osg::Quat rotation = matrix.getRotate();
-		osg::Vec3f up = rotation * osg::Vec3f(0.0f, 1.0f, 0.0f);
-		up.normalize();
+		osg::Vec3f up = matrix.getRotate() * osg::Quat(osg::inDegrees(90.0), osg::Vec3(1.0, 0, 0)) * osg::Vec3f(0, 0, -1);
 		normalUps[i * 3 + 0] = up.x();
 		normalUps[i * 3 + 1] = up.y();
 		normalUps[i * 3 + 2] = up.z();
-		osg::Vec3f right = rotation * osg::Vec3f(1.0f, 0.0f, 0.0f);
-		right.normalize();
+
+		osg::Vec3f right = matrix.getRotate() * osg::Quat(osg::inDegrees(90.0), osg::Vec3(1.0, 0, 0)) * osg::Vec3f(1, 0, 0);
+
 		normalRights[i * 3 + 0] = right.x();
 		normalRights[i * 3 + 1] = right.y();
 		normalRights[i * 3 + 2] = right.z();
+
 
 
 		const osg::Vec3f scale = matrix.getScale();
