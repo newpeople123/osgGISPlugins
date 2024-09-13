@@ -77,9 +77,20 @@ void GltfMerger::mergeMeshes()
 				unsigned int count = 0;
 
 				for (const auto& prim : attributePrimitiveItem.second) {
-					if (prim.indices == -1) continue;
-					tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
-					totalIndicesAccessor = oldIndicesAccessor;
+					if (prim.indices != -1)
+					{
+						tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+						totalIndicesAccessor = oldIndicesAccessor;
+						if (oldIndicesAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+							totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+							break;
+						}
+						count += oldIndicesAccessor.count;
+						if (count > USHRT_MAX) {
+							totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
+							break;
+						}
+					}
 					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
 					totalVerticesAccessor = oldVerticesAccessor;
 					const auto& normalAttr = prim.attributes.find("NORMAL");
@@ -102,15 +113,6 @@ void GltfMerger::mergeMeshes()
 						tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
 						totalColorsAccessor = oldColorsAccessor;
 					}
-					if (oldIndicesAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-						totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
-						break;
-					}
-					count += oldIndicesAccessor.count;
-					if (count > USHRT_MAX) {
-						totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
-						break;
-					}
 				}
 
 				totalIndicesAccessor.count = 0;
@@ -122,14 +124,14 @@ void GltfMerger::mergeMeshes()
 
 				unsigned int sum = 0;
 				for (const auto& prim : attributePrimitiveItem.second) {
-					if (prim.indices == -1) continue;
 					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
 					reindexBufferAndAccessor(oldVerticesAccessor, totalVerticesBufferView, totalVerticesBuffer, totalVerticesAccessor);
-
-					tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
-					reindexBufferAndAccessor(oldIndicesAccessor, totalIndicesBufferView, totalIndicesBuffer, totalIndicesAccessor, sum, true);
 					sum += oldVerticesAccessor.count;
-
+					if (prim.indices != -1)
+					{
+						tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+						reindexBufferAndAccessor(oldIndicesAccessor, totalIndicesBufferView, totalIndicesBuffer, totalIndicesAccessor, sum, true);
+					}
 					const auto& normalAttr = prim.attributes.find("NORMAL");
 					if (normalAttr != prim.attributes.end()) {
 						tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
@@ -152,13 +154,15 @@ void GltfMerger::mergeMeshes()
 					}
 				}
 
-				totalIndicesBufferView.buffer = buffers.size();
-				totalIndicesAccessor.bufferView = bufferViews.size();
-				buffers.push_back(totalIndicesBuffer);
-				bufferViews.push_back(totalIndicesBufferView);
-				totalPrimitive.indices = accessors.size();
-				accessors.push_back(totalIndicesAccessor);
-
+				if (totalIndicesAccessor.type != -1)
+				{
+					totalIndicesBufferView.buffer = buffers.size();
+					totalIndicesAccessor.bufferView = bufferViews.size();
+					buffers.push_back(totalIndicesBuffer);
+					bufferViews.push_back(totalIndicesBufferView);
+					totalPrimitive.indices = accessors.size();
+					accessors.push_back(totalIndicesAccessor);
+				}
 				totalVerticesBufferView.buffer = buffers.size();
 				totalVerticesAccessor.bufferView = bufferViews.size();
 				buffers.push_back(totalVerticesBuffer);
