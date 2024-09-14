@@ -2,9 +2,6 @@ set(TOOL_NAME "b3dm2gltf")
 aux_source_directory(. DIR_SRCS)
 ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS})
 source_group("src" FILES ${DIR_SRCS})
-include(${CMAKE_TOOLCHAIN_FILE})
-#设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
 
 if (OPENSCENEGRAPH_FOUND)
         include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})

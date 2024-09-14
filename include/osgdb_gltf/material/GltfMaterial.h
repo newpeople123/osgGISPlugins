@@ -29,11 +29,11 @@ namespace osgGISPlugins {
             if (other.emissiveTexture.valid()) {
                 emissiveTexture = (osg::Texture2D*)other.emissiveTexture->clone(copyop);
             }
-            for (auto* item : other.materialExtensions) {
+            for (GltfExtension* item : other.materialExtensions) {
                 GltfExtension* extension = item->clone();
                 materialExtensions.push_back(extension);
             }
-            for (auto* item : other.materialExtensionsByCesiumSupport) {
+            for (GltfExtension* item : other.materialExtensionsByCesiumSupport) {
                 GltfExtension* extension = item->clone();
                 materialExtensionsByCesiumSupport.push_back(extension);
             }

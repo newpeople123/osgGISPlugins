@@ -14,11 +14,11 @@
 #include <3dtiles/hlod/QuadtreeBuilder.h>
 using namespace std;
 using namespace osgGISPlugins;
-const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
-const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";
+//const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
+//const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";
 
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<Tile> parent = nullptr);
 void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth);
@@ -131,7 +131,7 @@ int getMaxDepth(osg::Node* node) {
             maxDepth = childDepth;
         }
     }
-    for (auto item : geodes) {
+    for (osg::ref_ptr<osg::Geode> item : geodes) {
         group->addChild(item);
     }
     return maxDepth + 1; // 加1表示包括当前Group节点的深度
@@ -228,9 +228,9 @@ void testI3DM(const std::string& filename) {
     
     transform2->setMatrix(matrix2);
     transform2->addChild(geode);
-    //group->addChild(transform2);
-    osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test.i3dm)");
-    osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test.b3dm)");
+    group->addChild(transform2);
+    //osgDB::writeNodeFile(*group.get(), OUTPUT_BASE_PATH + "test.i3dm");
+    osgDB::writeNodeFile(*group.get(), OUTPUT_BASE_PATH + "test.gltf");
 
 
     OSG_NOTICE << std::endl;
@@ -246,8 +246,9 @@ int main() {
     instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("i3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
-    //testI3DM(R"(dixiashifengmian)");
-    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+
+    testI3DM(R"(dixiashifengmian)");
+    //buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

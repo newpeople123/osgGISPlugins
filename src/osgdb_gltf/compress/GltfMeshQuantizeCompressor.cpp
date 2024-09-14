@@ -5,7 +5,7 @@ using namespace osgGISPlugins;
 void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
 {
 	KHR_texture_transform texture_transform_extension;
-	auto& findResult = extensionMap.find(texture_transform_extension.name);
+	tinygltf::Value::Object::iterator& findResult = extensionMap.find(texture_transform_extension.name);
 	if (findResult != extensionMap.end()) {
 		texture_transform_extension.SetValue(findResult->second.Get<tinygltf::Value::Object>());
 		std::array<double, 2> offsets = texture_transform_extension.getOffset();
@@ -59,7 +59,7 @@ std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getTexcoo
 
 	double minTx = accessor.minValues[0], minTy = accessor.minValues[1];
 	double maxTx = accessor.maxValues[0], maxTy = accessor.maxValues[1];
-	for (const auto& item : texcoordAccessors) {
+	for (const tinygltf::Accessor& item : texcoordAccessors) {
 		minTx = std::min(item.minValues[0], minTx);
 		minTy = std::min(item.minValues[1], minTy);
 
@@ -76,14 +76,14 @@ std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getTexcoo
 std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getPositionBounds()
 {
 	double minVX = FLT_MAX, minVY = FLT_MAX, minVZ = FLT_MAX, scaleV = -FLT_MAX, maxVX = -FLT_MAX, maxVY = -FLT_MAX, maxVZ = -FLT_MAX;
-	for (auto& mesh : _model.meshes)
+	for (const tinygltf::Mesh& mesh : _model.meshes)
 	{
 		for (const tinygltf::Primitive& primitive : mesh.primitives)
 		{
 			for (const auto& pair : primitive.attributes)
 			{
 				if (pair.second == -1) continue;
-				tinygltf::Accessor& accessor = _model.accessors[pair.second];
+				const tinygltf::Accessor& accessor = _model.accessors[pair.second];
 				if (accessor.type == TINYGLTF_TYPE_VEC3 && pair.first == "POSITION")
 				{
 					minVX = std::min(double(accessor.minValues[0]), minVX);
@@ -112,11 +112,11 @@ void GltfMeshQuantizeCompressor::apply()
 	const double minVY = std::get<1>(result);
 	const double minVZ = std::get<2>(result);
 	const double scaleV = std::get<3>(result);
-	for (auto& mesh : _model.meshes) {
+	for (tinygltf::Mesh& mesh : _model.meshes) {
 		quantizeMesh(mesh, minVX, minVY, minVZ, scaleV);
 	}
 
-	for (auto& mesh : _model.meshes)
+	for (const tinygltf::Mesh& mesh : _model.meshes)
 	{
 		for (const tinygltf::Primitive& primitive : mesh.primitives)
 		{
@@ -128,7 +128,7 @@ void GltfMeshQuantizeCompressor::apply()
 		}
 	}
 	if (!_compressionOptions.PositionFloat) {
-		for (const auto index : _model.scenes[0].nodes) {
+		for (const size_t index : _model.scenes[0].nodes) {
 			_model.nodes[index].translation.resize(3);
 			_model.nodes[index].translation[0] = minVX;
 			_model.nodes[index].translation[1] = minVY;

@@ -27,7 +27,7 @@ osg::ref_ptr<Tile> QuadtreeBuilder::divide(osg::ref_ptr<osg::Group> group, const
         return tile;
     }
 
-    if (level >= _maxLevel || numChildren == 0)
+    if (level >= _maxLevel)
     {
         tile->node = group;
         return tile;

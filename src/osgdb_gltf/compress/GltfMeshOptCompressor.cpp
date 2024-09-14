@@ -3,11 +3,11 @@
 using namespace osgGISPlugins;
 void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 {
-	for (const auto& primitive : mesh.primitives)
+	for (const tinygltf::Primitive& primitive : mesh.primitives)
 	{
 		for (const auto& attribute : primitive.attributes) {
 			if (attribute.second == -1) return;
-			const auto& accessor = _model.accessors[attribute.second];
+			const tinygltf::Accessor& accessor = _model.accessors[attribute.second];
 			const tinygltf::Accessor attributeAccessor(accessor);
 			tinygltf::BufferView& bufferView = _model.bufferViews[attributeAccessor.bufferView];
 			tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
@@ -97,7 +97,7 @@ std::vector<unsigned char> GltfMeshOptCompressor::encodeVertexBuffer(const tinyg
 
 void GltfMeshOptCompressor::apply()
 {
-	for (auto& mesh : _model.meshes) {
+	for (tinygltf::Mesh& mesh : _model.meshes) {
 		compressMesh(mesh);
 	}
 }

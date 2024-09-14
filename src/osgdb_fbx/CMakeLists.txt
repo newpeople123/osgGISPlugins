@@ -16,7 +16,7 @@ include_directories(${PROJECT_ROOT_DIR}/3rdparty/include/windows)
 else()
 include_directories(${PROJECT_ROOT_DIR}/3rdparty/include/linux)
 endif()
-#find_package(Iconv)
+
 if (OPENSCENEGRAPH_FOUND)
     include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
     if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")

@@ -5,11 +5,14 @@ file(GLOB_RECURSE THREED_TILES_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/*.cp
 file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} ${THREED_TILES_HEADER_FILES} ${THREED_TILES_SOURCE_FILES})
+# 编译当前程序时会先编译这些项目
+add_dependencies(${TOOL_TEST_NAME} osgdb_gltf)
+add_dependencies(${TOOL_TEST_NAME} osgdb_fbx)
+add_dependencies(${TOOL_TEST_NAME} osgdb_ktx)
+add_dependencies(${TOOL_TEST_NAME} osgdb_webp)
 source_group("include" FILES ${UTILS_HEADER_FILES} ${THREED_TILES_HEADER_FILES})
 source_group("src" FILES ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} )
-include(${CMAKE_TOOLCHAIN_FILE})
-#设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
+
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)

@@ -29,7 +29,7 @@ osg::ref_ptr<Tile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, const o
 	}
 
 	// 如果当前树的深度超过最大深度或者当前节点为空节点
-	if (level >= _maxLevel || numChildren == 0)
+	if (level >= _maxLevel)
 	{
 		tile->node = group;
 		return tile;

@@ -73,7 +73,7 @@ namespace osgGISPlugins {
         virtual ~GltfExtension() = default;
         template <typename T>
         T Get(const std::string& key) const {
-            auto item = value.find(key);
+            tinygltf::Value::Object::const_iterator item = value.find(key);
             if (item != value.end()) {
                 return item->second.Get<T>();
             }
@@ -95,9 +95,9 @@ namespace osgGISPlugins {
         template <typename T, size_t N>
         std::array<T, N> GetArray(const std::string& key) const {
             std::array<T, N> result = { 0.0 };  // 初始化为 0
-            auto item = value.find(key);
+            tinygltf::Value::Object::const_iterator item = value.find(key);
             if (item != value.end()) {
-                auto tinygltfArray = item->second.Get<tinygltf::Value::Array>();
+                tinygltf::Value::Array tinygltfArray = item->second.Get<tinygltf::Value::Array>();
                 if (tinygltfArray.size() == N) {
                     for (size_t i = 0; i < N; ++i) {
                         result[i] = tinygltfArray[i].Get<T>();

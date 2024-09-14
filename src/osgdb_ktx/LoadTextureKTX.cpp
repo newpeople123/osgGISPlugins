@@ -364,8 +364,6 @@ namespace osg
 
         ktxTextureCreateInfo createInfo;
 
-        int componentCount = image->computeNumComponents(image->getPixelFormat());
-        int componentSize = glGetTypeSizeFromType(image->getDataType());
         int max_dim = image->s() > image->t() ?
             image->s() : image->t();
         max_dim = floor(log2(max_dim));
@@ -441,8 +439,6 @@ namespace osg
 
         ktxTextureCreateInfo createInfo;
 
-        int componentCount = image->computeNumComponents(image->getPixelFormat());
-        int componentSize = glGetTypeSizeFromType(image->getDataType());
         int max_dim = image->s() > image->t() ?
             image->s() : image->t();
         max_dim = floor(log2(max_dim));

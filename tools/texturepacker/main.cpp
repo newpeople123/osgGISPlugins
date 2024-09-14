@@ -50,7 +50,7 @@ int main(int argc, char** argv)
 #endif // !NDEBUG
         if (osgDB::fileType(input) == osgDB::DIRECTORY) {
             osgDB::DirectoryContents files = osgDB::getDirectoryContents(input);
-            for (const auto& file : files) {
+            for (const std::string& file : files) {
                 std::string fullPath = osgDB::concatPaths(input, file);
                 std::string extension = osgDB::convertToLowerCase(osgDB::getFileExtension(fullPath));
                 if (extension == "jpg" || extension == "jpeg" || extension == "png" || extension == "ktx" || extension == "ktx2" || extension == "webp") {
@@ -107,7 +107,7 @@ int main(int argc, char** argv)
     std::map<std::string, size_t> geometryIdMap;
     size_t numImages = 0;
 
-    for (const auto& str : inputFiles) {
+    for (const std::string& str : inputFiles) {
         osg::ref_ptr<osg::Image> img = osgDB::readImageFile(str);
         if (img->valid())
             images.push_back(img);

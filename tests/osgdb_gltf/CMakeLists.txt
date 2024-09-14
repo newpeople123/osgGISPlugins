@@ -1,7 +1,5 @@
 set(TOOL_TEST_NAME "test_osgdb_gltf")
 aux_source_directory(. DIR_SRCS)
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(B3DM_HADER_FILE ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
 set(B3DM_SOURCE_FILE ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
@@ -17,6 +15,12 @@ ${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES}
 ${TEST_HEADER_FILES} ${TEST_SOURCE_FILES} 
 )
 
+# 编译当前程序时会先编译这些项目
+add_dependencies(${TOOL_TEST_NAME} osgdb_gltf)
+add_dependencies(${TOOL_TEST_NAME} osgdb_fbx)
+add_dependencies(${TOOL_TEST_NAME} osgdb_ktx)
+add_dependencies(${TOOL_TEST_NAME} osgdb_webp)
+
 # 链接库
 target_link_libraries(${TOOL_TEST_NAME} 
     meshoptimizer::meshoptimizer 
@@ -26,10 +30,6 @@ source_group("include" FILES ${B3DM_HADER_FILE})
 source_group("include/utils" FILES ${UTILS_HEADER_FILES}) 
 source_group("src" FILES ${B3DM_SOURCE_FILE}) 
 source_group("src/utils" FILES ${UTILS_SOURCE_FILES})  
-
-include(${CMAKE_TOOLCHAIN_FILE})
-#设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include ${TEST_HEADER_FILES})
 
 if (OPENSCENEGRAPH_FOUND)
         include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})

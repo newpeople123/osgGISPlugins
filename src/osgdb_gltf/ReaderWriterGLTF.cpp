@@ -47,7 +47,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 	tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
 	const bool embedImages = true;
-	bool embedBuffers = false, prettyPrint = false, isBinary = ext != "gltf", quantize = false, mergeMaterial = true, mergeMesh = true;
+	bool embedBuffers = false, prettyPrint = false, isBinary = ext != "gltf", mergeMaterial = true, mergeMesh = true;
 	GltfDracoCompressor::DracoCompressionOptions dracoCompressOption;
 	GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions quantizeCompressOption;
 	GltfProcessorManager processorManager;
@@ -55,7 +55,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 	if (options) {
 		std::istringstream iss(options->getOptionString());
 		std::string opt;
-
+		bool quantize = false;
 		while (iss >> opt) {
 			if (opt == "quantize") {
 				quantize = true;

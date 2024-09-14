@@ -46,7 +46,7 @@ namespace osgGISPlugins {
         std::vector<float> vertices;
         vertices.reserve(positionCount * 3);  // 预先分配足够的空间
 
-        for (const auto& pos : *positions) {
+        for (const osg::Vec3& pos : *positions) {
             vertices.push_back(pos.x());
             vertices.push_back(pos.y());
             vertices.push_back(pos.z());

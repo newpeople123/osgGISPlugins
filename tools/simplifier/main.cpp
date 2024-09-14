@@ -36,7 +36,7 @@ public:
         osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
         const unsigned int psetCount = geom->getNumPrimitiveSets();
         const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
-        if (psetCount <= 0) return;
+
         for (size_t primIndex = 0; primIndex < psetCount; ++primIndex) {
             osg::ref_ptr<osg::PrimitiveSet> pset = geom->getPrimitiveSet(primIndex);
             if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort)) {

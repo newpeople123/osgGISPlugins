@@ -25,7 +25,6 @@ void BatchTableHierarchyVisitor::apply(osg::Geode& geode) {
 
                 const std::string key = userObject->getName();
                 keys.insert(key);
-                std::string val;
                 userDataVisitor.clear();
                 userObject->get(userDataVisitor);
 

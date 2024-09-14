@@ -24,11 +24,11 @@ namespace osgGISPlugins
                 {
                     osg::PrimitiveSet* primSet = geom->getPrimitiveSet(i);
 
-                    if (auto* drawArrays = dynamic_cast<osg::DrawArrays*>(primSet))
+                    if (osg::DrawArrays* drawArrays = dynamic_cast<osg::DrawArrays*>(primSet))
                     {
                         count += calculateTriangleCount(drawArrays->getMode(), drawArrays->getCount());
                     }
-                    else if (auto* drawElements = dynamic_cast<osg::DrawElements*>(primSet))
+                    else if (osg::DrawElements* drawElements = dynamic_cast<osg::DrawElements*>(primSet))
                     {
                         count += drawElements->getNumIndices() / 3;
                     }

@@ -90,7 +90,7 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 	std::unordered_set<int> bufferViewsToRemove;
 	setDracoEncoderOptions(encoder);
 
-	for (auto& j : mesh.primitives)
+	for (tinygltf::Primitive& primitive : mesh.primitives)
 	{
 		extension.setPosition(-1);
 		extension.setNormal(-1);
@@ -99,8 +99,6 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		extension.setWeights0(-1);
 		extension.setJoints0(-1);
 		extension.setBatchId(-1);
-
-		const auto& primitive = j;
 
 		if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
 			continue;
@@ -168,7 +166,7 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 
 		for (const auto& attribute : primitive.attributes) {
 			if (attribute.second != -1) {
-				auto& accessor = _model.accessors[attribute.second];
+				tinygltf::Accessor& accessor = _model.accessors[attribute.second];
 				int attId = -1;
 
 				switch (accessor.componentType) {
@@ -265,7 +263,7 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		dracoExtensionObj["bufferView"] = tinygltf::Value(static_cast<int>(_model.bufferViews.size()) - 1);
 		tinygltf::Primitive resultPrimitive(primitive);
 		resultPrimitive.extensions.insert(std::make_pair(extension.name, tinygltf::Value(dracoExtensionObj)));
-		j = resultPrimitive;
+		primitive = resultPrimitive;
 	}
 
 	adjustIndices(bufferViewsToRemove);
@@ -279,24 +277,24 @@ void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferVie
 	for (int bufferViewId : bufferViewsToRemoveVector) {
 		_model.bufferViews.erase(_model.bufferViews.begin() + bufferViewId);
 
-		for (auto& accessor : _model.accessors) {
+		for (tinygltf::Accessor& accessor : _model.accessors) {
 			if (accessor.bufferView > bufferViewId) {
 				accessor.bufferView -= 1;
 			}
 		}
 
-		for (auto& image : _model.images) {
+		for (tinygltf::Image& image : _model.images) {
 			if (image.bufferView > bufferViewId) {
 				image.bufferView -= 1;
 			}
 		}
 
-		for (auto& mesh : _model.meshes) {
-			for (auto& primitive : mesh.primitives) {
-				auto dracoExtensionIt = primitive.extensions.find(extension.name);
+		for (tinygltf::Mesh& mesh : _model.meshes) {
+			for (tinygltf::Primitive& primitive : mesh.primitives) {
+				tinygltf::Value::Object::iterator dracoExtensionIt = primitive.extensions.find(extension.name);
 				if (dracoExtensionIt != primitive.extensions.end()) {
-					auto& dracoExtension = dracoExtensionIt->second.Get<tinygltf::Value::Object>();
-					auto bufferViewIt = dracoExtension.find("bufferView");
+					tinygltf::Value::Object& dracoExtension = dracoExtensionIt->second.Get<tinygltf::Value::Object>();
+					tinygltf::Value::Object::iterator bufferViewIt = dracoExtension.find("bufferView");
 					if (bufferViewIt != dracoExtension.end()) {
 						int dracoBufferViewId = bufferViewIt->second.GetNumberAsInt();
 						if (dracoBufferViewId > bufferViewId) {
@@ -312,7 +310,7 @@ void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferVie
 
 void GltfDracoCompressor::apply()
 {
-	for (auto& mesh : _model.meshes) {
+	for (tinygltf::Mesh& mesh : _model.meshes) {
 		compressMesh(mesh);
 	}
 }

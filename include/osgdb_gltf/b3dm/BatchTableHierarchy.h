@@ -30,7 +30,7 @@ namespace osgGISPlugins {
 
         json toJson() const {
             json jClasses = json::array();
-            for (const auto& cls : classes) {
+            for (const Class& cls : classes) {
                 jClasses.push_back(cls.toJson());
             }
             if (parentCounts.size())

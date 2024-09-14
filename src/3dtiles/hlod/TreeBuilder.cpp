@@ -11,7 +11,7 @@ osg::ref_ptr<Tile> TreeBuilder::build()
 {
 	osg::ref_ptr<osg::Group> node = new osg::Group;
 	double min = FLT_MAX;
-	for (auto& item : _groupsToDivideList)
+	for (osg::Group* item : _groupsToDivideList)
 	{
 		osg::BoundingBox bb;
 		bb.expandBy(item->getBound());
@@ -21,7 +21,7 @@ osg::ref_ptr<Tile> TreeBuilder::build()
 		min = osg::minimum(osg::minimum(osg::minimum(min, xLength), yLength), zLength);
 		node->addChild(item);
 	}
-	for (auto& item : _geodesToDivideList)
+	for (osg::Geode* item : _geodesToDivideList)
 	{
 		osg::BoundingBox bb;
 		bb.expandBy(item->getBound());

@@ -11,14 +11,15 @@ ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 add_executable(${TOOL_NAME} ${DIR_SRCS} 
 ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 )
+
+# 编译当前程序时会先编译这些项目
+add_dependencies(${TOOL_NAME} osgdb_gltf)
+add_dependencies(${TOOL_NAME} osgdb_fbx)
+add_dependencies(${TOOL_NAME} osgdb_ktx)
+add_dependencies(${TOOL_NAME} osgdb_webp)
 source_group("include/optimizer/texture" FILES 
 ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
 ) 
-# 包含外部工具链文件
-include(${CMAKE_TOOLCHAIN_FILE})
-
-# 设置全局包含路径，必须放在添加子目录之前
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
 
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
@@ -35,8 +36,6 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${TOOL_NAME} pthread)
 endif()
 
-# 查找 OpenSceneGraph 包
-find_package(OpenSceneGraph REQUIRED)
 if (OPENSCENEGRAPH_FOUND)
     message(STATUS "Found OpenSceneGraph")
     message(STATUS "OPENSCENEGRAPH_INCLUDE_DIRS: ${OPENSCENEGRAPH_INCLUDE_DIRS}")

@@ -17,7 +17,7 @@ namespace osgGISPlugins {
         void addProcessor(GltfProcessor* processor)
         {
             // 检查是否已有相同类型的优化器
-            for (auto* existingProcessor : _processors)
+            for (GltfProcessor* existingProcessor : _processors)
             {
                 if (typeid(*existingProcessor) == typeid(*processor))
                 {
@@ -31,7 +31,7 @@ namespace osgGISPlugins {
             if (dracoCompressor)
             {
                 // 如果存在GltfMeshOptCompressor或GltfMeshQuantizeCompressor，拒绝添加GltfDracoCompressor
-                for (auto* existingProcessor : _processors)
+                for (GltfProcessor* existingProcessor : _processors)
                 {
                     if (dynamic_cast<GltfMeshOptCompressor*>(existingProcessor) || dynamic_cast<GltfMeshQuantizeCompressor*>(existingProcessor))
                     {
@@ -43,7 +43,7 @@ namespace osgGISPlugins {
             else
             {
                 // 如果要添加的是GltfMeshOptCompressor或GltfMeshQuantizeCompressor，且已经存在GltfDracoCompressor，拒绝添加
-                for (auto* existingProcessor : _processors)
+                for (GltfProcessor* existingProcessor : _processors)
                 {
                     if (dynamic_cast<GltfDracoCompressor*>(existingProcessor))
                     {
@@ -72,7 +72,7 @@ namespace osgGISPlugins {
 
         void process()
         {
-            for (auto* processor : _processors)
+            for (GltfProcessor* processor : _processors)
             {
                 processor->apply();
             }
@@ -86,7 +86,7 @@ namespace osgGISPlugins {
 
         ~GltfProcessorManager()
         {
-            for (auto* processor : _processors)
+            for (GltfProcessor* processor : _processors)
             {
                 delete processor;
             }

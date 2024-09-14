@@ -34,11 +34,11 @@ osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool sto
     //计算最大的尺寸，是_maxWidth和_maxHeight的两倍
     int maxSize = osg::maximum(_maxWidth, _maxHeight) * 2;
     //为存储节点分配内存
-    stbrp_node* nodes = (stbrp_node*)malloc(sizeof(stbrp_node) * maxSize);
+    stbrp_node* nodes = static_cast<stbrp_node*>(malloc(sizeof(stbrp_node) * maxSize));
     //初始化节点内存为零
     if (nodes) memset(nodes, 0, sizeof(stbrp_node) * maxSize);
 
-    stbrp_rect* rects = (stbrp_rect*)malloc(sizeof(stbrp_rect) * _input.size());
+    stbrp_rect* rects = static_cast<stbrp_rect*>(malloc(sizeof(stbrp_rect) * _input.size()));
     for (std::map<size_t, InputPair>::iterator itr = _input.begin(); itr != _input.end(); ++itr, ++ptr) {
         stbrp_rect& r = rects[ptr];
         InputPair& pair = itr->second;

@@ -296,7 +296,7 @@ namespace osgGISPlugins
         size_t newIndiceCount = 0;
         for (size_t i = 0; i < indiceCount; i += 3)
         {
-            const auto a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
+            const size_t a = optimizedIndices->at(i), b = optimizedIndices->at(i + 1), c = optimizedIndices->at(i + 2);
             if (a != b && a != c && b != c)
             {
                 optimizedIndices->at(newIndiceCount + 0) = a;
@@ -451,7 +451,7 @@ namespace osgGISPlugins
     template<typename DrawElementsType, typename IndexArrayType>
     inline void GltfOptimizer::VertexCacheVisitor::processDrawElements(osg::PrimitiveSet* pset, IndexArrayType& indices)
     {
-        auto* drawElements = dynamic_cast<DrawElementsType*>(pset);
+        DrawElementsType* drawElements = dynamic_cast<DrawElementsType*>(pset);
         if (drawElements)
         {
             indices.insert(indices.end(), drawElements->begin(), drawElements->end());

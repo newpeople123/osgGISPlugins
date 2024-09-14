@@ -21,6 +21,8 @@
 #include <osgGA/TerrainManipulator>
 #include <osgGA/SphericalManipulator>
 #include <osgViewer/ViewerEventHandlers>
+#include <numeric>
+
 using namespace osgGISPlugins;
 
 void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
@@ -319,22 +321,27 @@ void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 {
 	if (drawable.getDataVariance() == osg::Object::DataVariance::STATIC)
 		return;
-	const osg::MatrixList matrix_list = drawable.getWorldMatrices();
-	osg::Matrixd mat;
-	for (const osg::Matrixd& matrix : matrix_list)
+	const osg::MatrixList matrixList = drawable.getWorldMatrices();
+	osg::Matrixd mat = osg::Matrixd::identity();
+	mat = std::accumulate(matrixList.begin(), matrixList.end(), mat,
+		[](const osg::Matrixd& lhs, const osg::Matrixd& rhs) {
+			return lhs * rhs;
+		});
+
+	osg::Geometry* geometry = dynamic_cast<osg::Geometry*>(drawable.asGeometry());
+	if (geometry)
 	{
-		mat = mat * matrix;
-	}
-	osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(drawable.asGeometry()->getVertexArray());
-	if (mat != osg::Matrixd::identity())
-	{
-		for (auto& i : *positions)
+		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
+		if (positions && mat != osg::Matrixd::identity())
 		{
-			i = i * mat;
+			std::transform(positions->begin(), positions->end(), positions->begin(),
+				[&mat](const osg::Vec3& vertex) {
+					return vertex * mat;
+				});
+			geometry->setVertexArray(positions);
+			drawable.dirtyBound();
+			drawable.computeBound();
 		}
-		drawable.asGeometry()->setVertexArray(positions);
-		drawable.dirtyBound();
-		drawable.computeBound();
 	}
 }
 
@@ -367,7 +374,7 @@ void GltfOptimizer::ReindexMeshVisitor::apply(osg::Geometry& geometry)
 	if (geometry.getDataVariance() == osg::Object::DataVariance::STATIC)
 		return;
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
-	if (psetCount <= 0) return;
+
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
 	{
 		osg::ref_ptr<osg::PrimitiveSet> pset = geometry.getPrimitiveSet(primIndex);
@@ -393,7 +400,6 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
-	if (psetCount <= 0) return;
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
 	{
@@ -454,9 +460,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 		return;
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
-	const size_t vertexCount = positions->size();
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
-	if (psetCount <= 0) return;
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
 	{
@@ -509,7 +513,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
-	if (psetCount <= 0) return;
+
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
 	{
 		osg::ref_ptr<osg::PrimitiveSet> pset = geometry.getPrimitiveSet(primIndex);
@@ -613,7 +617,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 			if (_options.packTexture)
 			{
 				bool bBuildTexturePacker = true;
-				for (auto texCoord : *texCoords.get())
+				for (osg::Vec2 texCoord : *texCoords.get())
 				{
 					if (std::fabs(texCoord.x()) - 1.0 > 0.001 || std::fabs(texCoord.y()) - 1.0 > 0.001)
 					{
@@ -626,7 +630,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 					if (image->s() < _options.maxWidth || image->t() < _options.maxHeight)
 					{
 						bool bAdd = true;
-						for (auto img : _images)
+						for (osg::ref_ptr<osg::Image> img : _images)
 						{
 							if (img->getFileName() == image->getFileName())
 							{
@@ -749,7 +753,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 				if (bBuildTexturePacker)
 				{
 					bool bAdd = true;
-					for (auto* item : _gltfMaterials)
+					for (GltfMaterial* item : _gltfMaterials)
 					{
 						if (item == gltfMaterial.get())
 						{
@@ -768,11 +772,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 					exportOsgTexture(gltfMaterial->normalTexture);
 					exportOsgTexture(gltfMaterial->occlusionTexture);
 					exportOsgTexture(gltfMaterial->emissiveTexture);
-					osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
-					if (gltfMRMaterial.valid())
+					osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+					if (localGltfMRMaterial.valid())
 					{
-						exportOsgTexture(gltfMRMaterial->metallicRoughnessTexture);
-						exportOsgTexture(gltfMRMaterial->baseColorTexture);
+						exportOsgTexture(localGltfMRMaterial->metallicRoughnessTexture);
+						exportOsgTexture(localGltfMRMaterial->baseColorTexture);
 					}
 					for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 					{
@@ -791,11 +795,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 				exportOsgTexture(gltfMaterial->normalTexture);
 				exportOsgTexture(gltfMaterial->occlusionTexture);
 				exportOsgTexture(gltfMaterial->emissiveTexture);
-				osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
-				if (gltfMRMaterial.valid())
+				osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+				if (localGltfMRMaterial.valid())
 				{
-					exportOsgTexture(gltfMRMaterial->metallicRoughnessTexture);
-					exportOsgTexture(gltfMRMaterial->baseColorTexture);
+					exportOsgTexture(localGltfMRMaterial->metallicRoughnessTexture);
+					exportOsgTexture(localGltfMRMaterial->baseColorTexture);
 				}
 				for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 				{
@@ -824,7 +828,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const int width = packedImage->s(), height = packedImage->t();
-			bool bResizeImage = resizeImageToPowerOfTwo(packedImage);
+			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 			for (auto& entry : _geometryImgMap)
 			{
@@ -1012,7 +1016,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const int width = packedImage->s(), height = packedImage->t();
-			bool bResizeImage = resizeImageToPowerOfTwo(packedImage);
+			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 			for (auto& entry : _geometryMatMap)
 			{
@@ -1133,7 +1137,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const int width = packedImage->s(), height = packedImage->t();
-			bool bResizeImage = resizeImageToPowerOfTwo(packedImage);
+			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 
 			for (auto it = _geometryMatMap.begin(); it != _geometryMatMap.end(); ++it)
@@ -1197,7 +1201,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const int width = packedImage->s(), height = packedImage->t();
-			bool bResizeImage = resizeImageToPowerOfTwo(packedImage);
+			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 			for (auto& entry : _geometryMatMap)
 			{
@@ -1254,7 +1258,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgMaterials()
 {
 	if (_gltfMaterials.empty()) return;
 	std::vector<osg::ref_ptr<osg::Image>> normalImgs, occlusionImgs, emissiveImgs, mrImgs, baseColorImgs, diffuseImgs, sgImgs;
-	for (auto* material : _gltfMaterials)
+	for (GltfMaterial* material : _gltfMaterials)
 	{
 		addImageFromTexture(material->normalTexture, normalImgs);
 		addImageFromTexture(material->occlusionTexture, occlusionImgs);

@@ -26,9 +26,9 @@ namespace osgGISPlugins {
     template<typename T>
     inline std::vector<T> GltfProcessor::getBufferData(const tinygltf::Accessor& accessor)
     {
-        const auto numComponents = calculateNumComponents(accessor.type);
-        const auto& bufferView = _model.bufferViews[accessor.bufferView];
-        const auto& gltfBuffer = _model.buffers[bufferView.buffer];
+        const size_t numComponents = calculateNumComponents(accessor.type);
+        const tinygltf::BufferView& bufferView = _model.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& gltfBuffer = _model.buffers[bufferView.buffer];
         std::vector<T> values;
         const void* data_ptr = gltfBuffer.data.data() + bufferView.byteOffset;
         values.assign(static_cast<const T*>(data_ptr),

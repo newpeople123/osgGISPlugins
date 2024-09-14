@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.12)
 # 打开允许创建文件夹的开关
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# 设置C++ 标准版本,全局指定一次
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     add_compile_options("/utf-8")
     set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "Vcpkg target triplet")
@@ -16,6 +20,13 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     endif()
 endif()
 set(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# 包含外部工具链文件,全局指定一次
+include(${CMAKE_TOOLCHAIN_FILE})
+# 设置全局包含路径，必须放在添加子目录之前,全局指定一次
+include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
+file(GLOB_RECURSE THREEDPARTY ${PROJECT_ROOT_DIR}/3rdparty/include/*.h)
+source_group("3rdparty/include" FILES ${THREEDPARTY}) 
 
 message("CMAKE_HOST_SYSTEM_NAME: ${CMAKE_HOST_SYSTEM_NAME}")
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
@@ -49,9 +60,7 @@ set(CMAKE_RELEASE_POSTFIX "")
 set(CMAKE_RELWITHDEBINFO_POSTFIX "_rel")
 set(CMAKE_MINSIZEREL_POSTFIX "_min")
 
-
 set(BUILD_SHARED_LIBS ON)
-
 
 project(osgGISPlugins)
 

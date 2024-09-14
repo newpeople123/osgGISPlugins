@@ -20,7 +20,7 @@ size_t GltfProcessor::calculateNumComponents(const int type)
 void GltfProcessor::restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData)
 {
 	buffer.data.resize(newBufferData->getTotalDataSize());
-	const unsigned char* ptr = (unsigned char*)(newBufferData->getDataPointer());
+	const unsigned char* ptr = reinterpret_cast<const unsigned char*>(newBufferData->getDataPointer());
 	std::copy(ptr, ptr + newBufferData->getTotalDataSize(), buffer.data.begin());
 	bufferView.byteLength = buffer.data.size();
 }

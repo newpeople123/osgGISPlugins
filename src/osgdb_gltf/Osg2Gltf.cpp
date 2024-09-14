@@ -159,7 +159,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 		if (!texCoords.valid())
 		{
 			// See if we have 3d texture coordinates and convert them to vec2
-			const auto texCoords3 = dynamic_cast<osg::Vec3Array*>(geom->getTexCoordArray(0));
+			const osg::Vec3Array* texCoords3 = dynamic_cast<osg::Vec3Array*>(geom->getTexCoordArray(0));
 			if (texCoords3)
 			{
 				texCoords = new osg::Vec2Array;
@@ -237,7 +237,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 					{
 						osg::Vec2f texMin(FLT_MAX, FLT_MAX);
 						osg::Vec2f texMax(-FLT_MAX, -FLT_MAX);
-						for (const auto& t : *texCoords)
+						for (const osg::Vec2& t : *texCoords)
 						{
 							if (!t.isNaN())
 							{
@@ -277,7 +277,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 				{
 					osg::Vec3f posMin(FLT_MAX, FLT_MAX, FLT_MAX);
 					osg::Vec3f posMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-					for (const auto& v : *positions)
+					for (const osg::Vec3& v : *positions)
 					{
 						if (!v.isNaN())
 						{
@@ -345,7 +345,6 @@ Osg2Gltf::Osg2Gltf() : NodeVisitor(TRAVERSE_ALL_CHILDREN)
 	setNodeMaskOverride(~0);
 	_model.asset.version = "2.0";
 	_model.scenes.emplace_back();
-	tinygltf::Scene& scene = _model.scenes.back();
 	_model.defaultScene = 0;
 }
 
@@ -427,7 +426,7 @@ int Osg2Gltf::getOrCreateBuffer(const osg::BufferData* data)
 	buffer.data.resize(data->getTotalDataSize());
 
 	//TODO: account for endianess
-	const unsigned char* ptr = (unsigned char*)(data->getDataPointer());
+	const unsigned char* ptr = reinterpret_cast<const unsigned char*>(data->getDataPointer());
 	std::copy(ptr, ptr + data->getTotalDataSize(), buffer.data.begin());
 
 	return id;
@@ -508,7 +507,7 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 	const osg::PrimitiveSet::Type type = pset->getType();
 	if (type == osg::PrimitiveSet::DrawArraysPrimitiveType)
 	{
-		const auto da = dynamic_cast<const osg::DrawArrays*>(pset);
+		const osg::DrawArrays* da = dynamic_cast<const osg::DrawArrays*>(pset);
 		if (da)
 		{
 			const GLint first = da->getFirst();
@@ -522,7 +521,7 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 		type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType ||
 		type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType)
 	{
-		const auto de = dynamic_cast<osg::DrawElements*>(pset);
+		const osg::DrawElements* de = dynamic_cast<osg::DrawElements*>(pset);
 		if (de)
 		{
 			prim.indices = _model.accessors.size();

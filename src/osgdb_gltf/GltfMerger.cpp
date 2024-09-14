@@ -13,7 +13,7 @@ void GltfMerger::mergeMeshes()
 	std::vector<tinygltf::BufferView> bufferViews;
 	std::vector<tinygltf::Buffer> buffers;
 
-	for (auto& image : _model.images) {
+	for (tinygltf::Image& image : _model.images) {
 		tinygltf::BufferView& bufferView = _model.bufferViews[image.bufferView];
 		tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
 
@@ -26,7 +26,7 @@ void GltfMerger::mergeMeshes()
 	//std::vector<tinygltf::Mesh> meshes;
 	for (const auto& matrixPrimitiveItem : matrixPrimitiveMap) {
 		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
-		for (auto& primitive : matrixPrimitiveItem.second) {
+		for (const tinygltf::Primitive& primitive : matrixPrimitiveItem.second) {
 
 			materialPrimitiveMap[primitive.material].push_back(primitive);
 		}
@@ -34,7 +34,7 @@ void GltfMerger::mergeMeshes()
 		for (const auto& materialPrimitiveItem : materialPrimitiveMap) {
 
 			std::map<std::vector<std::string>, std::vector<tinygltf::Primitive>> attributePrimitiveMap;
-			for (auto& primitive : materialPrimitiveItem.second) {
+			for (const tinygltf::Primitive& primitive : materialPrimitiveItem.second) {
 				std::vector<std::string> keys;
 				for (const auto& pair : primitive.attributes) {
 					keys.push_back(pair.first);
@@ -76,10 +76,10 @@ void GltfMerger::mergeMeshes()
 
 				unsigned int count = 0;
 
-				for (const auto& prim : attributePrimitiveItem.second) {
+				for (const tinygltf::Primitive& prim : attributePrimitiveItem.second) {
 					if (prim.indices != -1)
 					{
-						tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
+						const tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
 						totalIndicesAccessor = oldIndicesAccessor;
 						if (oldIndicesAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
 							totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
@@ -91,26 +91,26 @@ void GltfMerger::mergeMeshes()
 							break;
 						}
 					}
-					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
+					const tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
 					totalVerticesAccessor = oldVerticesAccessor;
 					const auto& normalAttr = prim.attributes.find("NORMAL");
 					if (normalAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
+						const tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
 						totalNormalsAccessor = oldNormalsAccessor;
 					}
 					const auto& texAttr = prim.attributes.find("TEXCOORD_0");
 					if (texAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
+						const tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
 						totalTexcoordsAccessor = oldTexcoordsAccessor;
 					}
 					const auto& batchidAttr = prim.attributes.find("_BATCHID");
 					if (batchidAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
+						const tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
 						totalBatchIdsAccessor = oldBatchIdsAccessor;
 					}
 					const auto& colorAttr = prim.attributes.find("COLOR_0");
 					if (colorAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
+						const tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
 						totalColorsAccessor = oldColorsAccessor;
 					}
 				}
@@ -123,7 +123,7 @@ void GltfMerger::mergeMeshes()
 				totalColorsAccessor.count = 0;
 
 				unsigned int sum = 0;
-				for (const auto& prim : attributePrimitiveItem.second) {
+				for (const tinygltf::Primitive& prim : attributePrimitiveItem.second) {
 					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
 					reindexBufferAndAccessor(oldVerticesAccessor, totalVerticesBufferView, totalVerticesBuffer, totalVerticesAccessor);
 					sum += oldVerticesAccessor.count;
@@ -245,13 +245,13 @@ void GltfMerger::mergeMeshes()
 			root.children.push_back(_model.nodes.size());
 			_model.nodes.emplace_back();
 			tinygltf::Node& parentNode = _model.nodes.back();
-			for (const auto& item : it->second)
+			for (const tinygltf::Mesh& mesh : it->second)
 			{
 				parentNode.children.push_back(_model.nodes.size());
 				_model.nodes.emplace_back();
 				tinygltf::Node& node = _model.nodes.back();
 				node.mesh = _model.meshes.size();
-				_model.meshes.push_back(item);
+				_model.meshes.push_back(mesh);
 
 				const osg::Matrixd matrix = it->first;
 				if (matrix != osg::Matrix::identity()) {
@@ -268,11 +268,11 @@ void GltfMerger::mergeBuffers()
 	tinygltf::Buffer fallbackBuffer;
 	fallbackBuffer.name = "fallback";
 	int byteOffset = 0, fallbackByteOffset = 0;
-	for (auto& bufferView : _model.bufferViews) {
+	for (tinygltf::BufferView& bufferView : _model.bufferViews) {
 		const auto& meshoptExtension = bufferView.extensions.find("EXT_meshopt_compression");
 		if (meshoptExtension != bufferView.extensions.end()) {
-			auto& bufferIndex = meshoptExtension->second.Get("buffer");
-			auto& buffer = _model.buffers[bufferIndex.GetNumberAsInt()];
+			const tinygltf::Value& bufferIndex = meshoptExtension->second.Get("buffer");
+			tinygltf::Buffer& buffer = _model.buffers[bufferIndex.GetNumberAsInt()];
 			totalBuffer.data.insert(totalBuffer.data.end(), buffer.data.begin(), buffer.data.end());
 
 			tinygltf::Value::Object newMeshoptExtension;
@@ -298,7 +298,7 @@ void GltfMerger::mergeBuffers()
 			bufferView.byteOffset = fallbackByteOffset;
 			fallbackByteOffset += bufferView.byteLength;
 			//4-byte aligned 
-			const int fallbackNeedAdd = 4 - fallbackByteOffset % 4;
+			const int fallbackNeedAdd = (4 - (fallbackByteOffset % 4)) % 4;
 			if (fallbackNeedAdd != 0) {
 				for (int i = 0; i < fallbackNeedAdd; ++i) {
 					fallbackByteOffset++;
@@ -306,7 +306,7 @@ void GltfMerger::mergeBuffers()
 			}
 		}
 		else {
-			auto& buffer = _model.buffers[bufferView.buffer];
+			tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
 			totalBuffer.data.insert(totalBuffer.data.end(), buffer.data.begin(), buffer.data.end());
 			bufferView.buffer = 0;
 			bufferView.byteOffset = byteOffset;
@@ -340,12 +340,12 @@ void GltfMerger::mergeMaterials()
 
 	std::vector<tinygltf::Material> materials;
 	std::set<int> uniqueNoMergeMaterialIndex, uniqueMergeMaterialIndex;
-	for (const auto& mesh : _model.meshes)
+	for (const tinygltf::Mesh& mesh : _model.meshes)
 	{
-		for (const auto& primitive : mesh.primitives)
+		for (const tinygltf::Primitive& primitive : mesh.primitives)
 		{
 			if (primitive.material == -1) continue;
-			auto material = _model.materials[primitive.material];
+			tinygltf::Material material = _model.materials[primitive.material];
 			//如果含有emissive、normal、occlusion贴图则不合并
 			if (!(material.emissiveTexture.index == -1 &&
 				material.normalTexture.index == -1 &&
@@ -362,7 +362,7 @@ void GltfMerger::mergeMaterials()
 				continue;
 			}
 
-			auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
+			tinygltf::TextureInfo& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
 			//如果没有baseColor贴图则不合并
 			if (baseColorTexture.index == -1)
 			{
@@ -374,9 +374,9 @@ void GltfMerger::mergeMaterials()
 			if (findTexcoordIndex == primitive.attributes.end())
 			{
 				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				auto& material = _model.materials[primitive.material];
-				auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
-				baseColorTexture.extensions.erase(transformExtensionName);
+				tinygltf::Material & localMaterial = _model.materials[primitive.material];
+				tinygltf::TextureInfo& localBaseColorTexture = localMaterial.pbrMetallicRoughness.baseColorTexture;
+				localBaseColorTexture.extensions.erase(transformExtensionName);
 				continue;
 			}
 			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
@@ -412,14 +412,14 @@ void GltfMerger::mergeMaterials()
 
 	}
 	
-	for (const auto& mesh : _model.meshes)
+	for (const tinygltf::Mesh& mesh : _model.meshes)
 	{
-		for (const auto& primitive : mesh.primitives)
+		for (const tinygltf::Primitive& primitive : mesh.primitives)
 		{
 			if (primitive.material == -1) continue;
 			if (uniqueNoMergeMaterialIndex.find(primitive.material) == uniqueNoMergeMaterialIndex.end())
 			{
-				auto material = _model.materials[primitive.material];
+				tinygltf::Material material = _model.materials[primitive.material];
 				materials.push_back(material);
 				uniqueMergeMaterialIndex.insert(primitive.material);
 			}
@@ -428,21 +428,26 @@ void GltfMerger::mergeMaterials()
 
 	for (size_t i = 0; i < materials.size(); i++)
 	{
-		auto& oldMaterial = materials.at(i);
+		tinygltf::Material& oldMaterial = materials.at(i);
 		oldMaterial.pbrMetallicRoughness.baseColorTexture.extensions.clear();
-		int index = -1;
+
+		bool found = false;
 		for (size_t j = 0; j < newMaterials.size(); j++)
 		{
-			auto& newMateiral = newMaterials.at(j);
-			if (newMateiral == oldMaterial)
-				index = j;
+			const tinygltf::Material& newMaterial = newMaterials.at(j);
+			if (newMaterial == oldMaterial)
+			{
+				found = true;
+				break;
+			}
 		}
-		if (index == -1)
+
+		if (!found)
 		{
-			index = newMaterials.size();
 			newMaterials.push_back(oldMaterial);
 		}
 	}
+
 	
 	if (newMaterials.size() + uniqueNoMergeMaterialIndex.size() == _model.materials.size())
 		return;
@@ -451,23 +456,23 @@ void GltfMerger::mergeMaterials()
 	std::map<int, int> materialRemap;
 
 
-	for (const auto& mesh : _model.meshes)
+	for (const tinygltf::Mesh& mesh : _model.meshes)
 	{
-		for (const auto& primitive : mesh.primitives)
+		for (const tinygltf::Primitive& primitive : mesh.primitives)
 		{
 			if (primitive.material == -1) continue;
 			if (uniqueMergeMaterialIndex.find(primitive.material) == uniqueMergeMaterialIndex.end()) continue;
 
-			auto& material = _model.materials[primitive.material];
+			tinygltf::Material& material = _model.materials[primitive.material];
 
-			auto& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
+			tinygltf::TextureInfo& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
 			//如果没有纹理坐标则不合并
 			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
 			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
 			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
 			const tinygltf::Value extensionVal = extensionItem->second;
-			const auto offset = extensionVal.Get("offset").Get<tinygltf::Value::Array>();
-			const auto scale = extensionVal.Get("scale").Get<tinygltf::Value::Array>();
+			const tinygltf::Value::Array offset = extensionVal.Get("offset").Get<tinygltf::Value::Array>();
+			const tinygltf::Value::Array scale = extensionVal.Get("scale").Get<tinygltf::Value::Array>();
 			const double offsetX = offset[0].GetNumberAsDouble();
 			const double offsetY = offset[1].GetNumberAsDouble();
 			const double scaleX = scale[0].GetNumberAsDouble();
@@ -495,19 +500,19 @@ void GltfMerger::mergeMaterials()
 		}
 	}
 
-	for (const auto index : uniqueMergeMaterialIndex)
+	for (const int index : uniqueMergeMaterialIndex)
 	{
 		_model.materials[index].pbrMetallicRoughness.baseColorTexture.extensions.clear();
 	}
 
 	for (size_t i = 0; i < _model.materials.size(); i++)
 	{
-		auto& oldMaterial = _model.materials.at(i);
+		tinygltf::Material& oldMaterial = _model.materials.at(i);
 
 		int index = -1;
 		for (size_t j = 0; j < newMaterials.size(); j++)
 		{
-			auto& newMateiral = newMaterials.at(j);
+			const tinygltf::Material& newMateiral = newMaterials.at(j);
 			if (newMateiral == oldMaterial)
 				index = j;
 		}
@@ -520,9 +525,9 @@ void GltfMerger::mergeMaterials()
 	}
 
 	_model.materials = newMaterials;
-	for (auto& mesh : _model.meshes)
+	for (tinygltf::Mesh& mesh : _model.meshes)
 	{
-		for (auto& primitive : mesh.primitives)
+		for (tinygltf::Primitive& primitive : mesh.primitives)
 		{
 			if(primitive.material!=-1)
 				primitive.material = materialRemap[primitive.material];
@@ -609,18 +614,22 @@ void GltfMerger::reindexBufferAndAccessor(const tinygltf::Accessor& accessor, ti
 	tBv.target = bv.target;
 	if (accessor.componentType != newAccessor.componentType) {
 		if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT && accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-			unsigned short* oldIndicesChar = (unsigned short*)buffer.data.data();
+			unsigned short* oldIndicesChar = reinterpret_cast<unsigned short*>(buffer.data.data());
 			std::vector<unsigned int> indices;
+
 			for (size_t i = 0; i < accessor.count; ++i) {
 				unsigned short ushortVal = *oldIndicesChar++;
-				unsigned int uintVal = (unsigned int)(ushortVal + sum);
+				unsigned int uintVal = static_cast<unsigned int>(ushortVal + sum);
 				indices.push_back(uintVal);
 			}
-			unsigned char* indicesUChar = (unsigned char*)indices.data();
+
+			unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
 			const unsigned int size = bv.byteLength * 2;
+
 			for (unsigned int k = 0; k < size; ++k) {
 				tBuffer.data.push_back(*indicesUChar++);
 			}
+
 			tBv.byteLength += bv.byteLength * 2;
 		}
 
@@ -628,28 +637,28 @@ void GltfMerger::reindexBufferAndAccessor(const tinygltf::Accessor& accessor, ti
 	else {
 		if (isIndices) {
 			if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-				unsigned int* oldIndicesChar = (unsigned int*)buffer.data.data();
+				unsigned int* oldIndicesChar = reinterpret_cast<unsigned int*>(buffer.data.data());
 				std::vector<unsigned int> indices;
 				for (unsigned int i = 0; i < accessor.count; ++i) {
 					unsigned int oldUintVal = *oldIndicesChar++;
 					unsigned int uintVal = oldUintVal + sum;
 					indices.push_back(uintVal);
 				}
-				unsigned char* indicesUChar = (unsigned char*)indices.data();
+				unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
 				const unsigned int size = bv.byteLength;
 				for (unsigned int i = 0; i < size; ++i) {
 					tBuffer.data.push_back(*indicesUChar++);
 				}
 			}
 			else {
-				unsigned short* oldIndicesChar = (unsigned short*)buffer.data.data();
+				unsigned short* oldIndicesChar = reinterpret_cast<unsigned short*>(buffer.data.data());
 				std::vector<unsigned short> indices;
 				for (size_t i = 0; i < accessor.count; ++i) {
 					unsigned short oldUshortVal = *oldIndicesChar++;
 					unsigned short ushortVal = oldUshortVal + sum;
 					indices.push_back(ushortVal);
 				}
-				unsigned char* indicesUChar = (unsigned char*)indices.data();
+				unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
 				const unsigned int size = bv.byteLength;
 				for (size_t i = 0; i < size; ++i) {
 					tBuffer.data.push_back(*indicesUChar++);

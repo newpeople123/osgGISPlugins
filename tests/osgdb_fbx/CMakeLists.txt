@@ -1,10 +1,14 @@
 set(TOOL_TEST_NAME "test_osgdb_fbx")
 aux_source_directory(. DIR_SRCS)
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS})
+
+# 编译当前程序时会先编译这些项目
+add_dependencies(${TOOL_TEST_NAME} osgdb_gltf)
+add_dependencies(${TOOL_TEST_NAME} osgdb_fbx)
+add_dependencies(${TOOL_TEST_NAME} osgdb_ktx)
+add_dependencies(${TOOL_TEST_NAME} osgdb_webp)
+
 source_group("src" FILES ${DIR_SRCS})
-include(${CMAKE_TOOLCHAIN_FILE})
-#设置全局包含路径,必须放在添加子目录之前，不然子目录读取不到
-include_directories(${PROJECT_ROOT_DIR}/3rdparty/include ${PROJECT_ROOT_DIR}/include)
 
 if (OPENSCENEGRAPH_FOUND)
         include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})

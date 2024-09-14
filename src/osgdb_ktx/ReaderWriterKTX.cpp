@@ -48,29 +48,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
     std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
-    if (options)
-    {
-        std::istringstream iss(options->getOptionString());
-        std::string opt;
-        while (iss >> opt)
-        {
-            // split opt into pre= and post=
-            std::string key;
-
-            size_t found = opt.find('=');
-            if (found != std::string::npos)
-            {
-                std::string val;
-                key = opt.substr(0, found);
-                val = opt.substr(found + 1);
-            }
-            else
-            {
-                key = opt;
-            }
-        }
-    }
-
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
     imagePtr->flipVertical();
     if (ext == "ktx2") {
@@ -86,29 +63,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
 osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, std::ostream& fout,
     const Options* options) const
 {
-    if (options)
-    {
-        std::istringstream iss(options->getOptionString());
-        std::string opt;
-        while (iss >> opt)
-        {
-            // split opt into pre= and post=
-            std::string key;
-
-            const size_t found = opt.find('=');
-            if (found != std::string::npos)
-            {
-                std::string val;
-                key = opt.substr(0, found);
-                val = opt.substr(found + 1);
-            }
-            else
-            {
-                key = opt;
-            }
-        }
-    }
-
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
     const bool result = osg::saveKtx2(fout, imagePtr, true);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
