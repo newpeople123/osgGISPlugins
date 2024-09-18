@@ -125,11 +125,12 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 	if (geom.valid())
 	{
-		if (geom->getNumPrimitiveSets() == 0)
-		{
-			return;
-		}
 		apply(static_cast<osg::Node&>(drawable));
+		if (geom->getNumPrimitiveSets() == 0)
+			return;
+		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
+		if (positions->size() <= 0)
+			return;
 
 		const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 		bool pushedStateSet = false;
@@ -143,7 +144,6 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 		mesh.name = _model.nodes.back().name;
 		_model.nodes.back().mesh = _model.meshes.size() - 1;
 
-		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		if (positions.valid())
 		{
 			getOrCreateBufferView(positions, GL_ARRAY_BUFFER_ARB);

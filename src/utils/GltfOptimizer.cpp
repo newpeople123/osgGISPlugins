@@ -399,6 +399,7 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
+	if (vertexCount <= 0)return;
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
@@ -460,6 +461,8 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 		return;
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
+	const size_t vertexCount = positions->size();
+	if (vertexCount <= 0)return;
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
@@ -480,11 +483,10 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 			}
 			else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType)
 			{
+
 				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUShort, osg::UShortArray>(pset.get(), *indices);
 				if (indices->empty()) continue;
-				meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
-
 				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 
@@ -512,6 +514,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
+	if (vertexCount <= 0)return;
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)

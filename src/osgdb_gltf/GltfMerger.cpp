@@ -1,30 +1,37 @@
 #include "osgdb_gltf/GltfMerger.h"
 #include <osg/Math>
 #include <osg/MatrixTransform>
+#include <algorithm>
+
 using namespace osgGISPlugins;
 void GltfMerger::mergeMeshes()
 {
+	// 矩阵对应的primitive
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual> matrixPrimitiveMap;
 	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap, osg::Matrixd::identity());
 	if (matrixPrimitiveMap.size() <= 1)
 		return;
 
-	std::vector<tinygltf::Accessor> accessors;
-	std::vector<tinygltf::BufferView> bufferViews;
-	std::vector<tinygltf::Buffer> buffers;
+	// 新的accessor、bufferView和buffer
+	std::vector<tinygltf::Accessor> newAccessors;
+	std::vector<tinygltf::BufferView> newBufferViews;
+	std::vector<tinygltf::Buffer> newBuffers;
 
+	//复制图像相关的bufferView和buffer
 	for (tinygltf::Image& image : _model.images) {
 		tinygltf::BufferView& bufferView = _model.bufferViews[image.bufferView];
 		tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
 
-		bufferView.buffer = buffers.size();
-		image.bufferView = bufferViews.size();
-		bufferViews.push_back(bufferView);
-		buffers.push_back(buffer);
+		bufferView.buffer = newBuffers.size();
+		image.bufferView = newBufferViews.size();
+		newBufferViews.push_back(bufferView);
+		newBuffers.push_back(buffer);
 	}
+	//构建一个新的矩阵到mesh的映射
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Mesh>, MatrixHash, MatrixEqual> matrixMeshMap;
-	//std::vector<tinygltf::Mesh> meshes;
+
 	for (const auto& matrixPrimitiveItem : matrixPrimitiveMap) {
+		// 材质对应的primitve集合(此时这些primitive都有相同的变换矩阵)
 		std::map<int, std::vector<tinygltf::Primitive>> materialPrimitiveMap;
 		for (const tinygltf::Primitive& primitive : matrixPrimitiveItem.second) {
 
@@ -32,192 +39,16 @@ void GltfMerger::mergeMeshes()
 		}
 
 		for (const auto& materialPrimitiveItem : materialPrimitiveMap) {
-
-			std::map<std::vector<std::string>, std::vector<tinygltf::Primitive>> attributePrimitiveMap;
-			for (const tinygltf::Primitive& primitive : materialPrimitiveItem.second) {
-				std::vector<std::string> keys;
-				for (const auto& pair : primitive.attributes) {
-					keys.push_back(pair.first);
-				}
-				attributePrimitiveMap[keys].push_back(primitive);
-			}
-
-			std::vector<tinygltf::Primitive> primitives;
-			for (const auto& attributePrimitiveItem : attributePrimitiveMap) {
-				tinygltf::Accessor totalIndicesAccessor;
-				totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-				tinygltf::BufferView totalIndicesBufferView;
-				tinygltf::Buffer totalIndicesBuffer;
-
-				tinygltf::BufferView totalNormalsBufferView;
-				tinygltf::Buffer totalNormalsBuffer;
-				tinygltf::Accessor totalNormalsAccessor;
-
-				tinygltf::BufferView totalVerticesBufferView;
-				tinygltf::Buffer totalVerticesBuffer;
-				tinygltf::Accessor totalVerticesAccessor;
-
-				tinygltf::BufferView totalTexcoordsBufferView;
-				tinygltf::Buffer totalTexcoordsBuffer;
-				tinygltf::Accessor totalTexcoordsAccessor;
-
-				tinygltf::BufferView totalBatchIdsBufferView;
-				tinygltf::Buffer totalBatchIdsBuffer;
-				tinygltf::Accessor totalBatchIdsAccessor;
-
-				tinygltf::BufferView totalColorsBufferView;
-				tinygltf::Buffer totalColorsBuffer;
-				tinygltf::Accessor totalColorsAccessor;
-
-
-				tinygltf::Primitive totalPrimitive;
-				totalPrimitive.mode = 4;//triangles
-				totalPrimitive.material = materialPrimitiveItem.first;
-
-				unsigned int count = 0;
-
-				for (const tinygltf::Primitive& prim : attributePrimitiveItem.second) {
-					if (prim.indices != -1)
-					{
-						const tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
-						totalIndicesAccessor = oldIndicesAccessor;
-						if (oldIndicesAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-							totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
-							break;
-						}
-						count += oldIndicesAccessor.count;
-						if (count > USHRT_MAX) {
-							totalIndicesAccessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT;
-							break;
-						}
-					}
-					const tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
-					totalVerticesAccessor = oldVerticesAccessor;
-					const auto& normalAttr = prim.attributes.find("NORMAL");
-					if (normalAttr != prim.attributes.end()) {
-						const tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
-						totalNormalsAccessor = oldNormalsAccessor;
-					}
-					const auto& texAttr = prim.attributes.find("TEXCOORD_0");
-					if (texAttr != prim.attributes.end()) {
-						const tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
-						totalTexcoordsAccessor = oldTexcoordsAccessor;
-					}
-					const auto& batchidAttr = prim.attributes.find("_BATCHID");
-					if (batchidAttr != prim.attributes.end()) {
-						const tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
-						totalBatchIdsAccessor = oldBatchIdsAccessor;
-					}
-					const auto& colorAttr = prim.attributes.find("COLOR_0");
-					if (colorAttr != prim.attributes.end()) {
-						const tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
-						totalColorsAccessor = oldColorsAccessor;
-					}
-				}
-
-				totalIndicesAccessor.count = 0;
-				totalVerticesAccessor.count = 0;
-				totalNormalsAccessor.count = 0;
-				totalTexcoordsAccessor.count = 0;
-				totalBatchIdsAccessor.count = 0;
-				totalColorsAccessor.count = 0;
-
-				unsigned int sum = 0;
-				for (const tinygltf::Primitive& prim : attributePrimitiveItem.second) {
-					tinygltf::Accessor& oldVerticesAccessor = _model.accessors[prim.attributes.find("POSITION")->second];
-					reindexBufferAndAccessor(oldVerticesAccessor, totalVerticesBufferView, totalVerticesBuffer, totalVerticesAccessor);
-					sum += oldVerticesAccessor.count;
-					if (prim.indices != -1)
-					{
-						tinygltf::Accessor& oldIndicesAccessor = _model.accessors[prim.indices];
-						reindexBufferAndAccessor(oldIndicesAccessor, totalIndicesBufferView, totalIndicesBuffer, totalIndicesAccessor, sum, true);
-					}
-					const auto& normalAttr = prim.attributes.find("NORMAL");
-					if (normalAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldNormalsAccessor = _model.accessors[normalAttr->second];
-						reindexBufferAndAccessor(oldNormalsAccessor, totalNormalsBufferView, totalNormalsBuffer, totalNormalsAccessor);
-					}
-					const auto& texAttr = prim.attributes.find("TEXCOORD_0");
-					if (texAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldTexcoordsAccessor = _model.accessors[texAttr->second];
-						reindexBufferAndAccessor(oldTexcoordsAccessor, totalTexcoordsBufferView, totalTexcoordsBuffer, totalTexcoordsAccessor);
-					}
-					const auto& batchidAttr = prim.attributes.find("_BATCHID");
-					if (batchidAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldBatchIdsAccessor = _model.accessors[batchidAttr->second];
-						reindexBufferAndAccessor(oldBatchIdsAccessor, totalBatchIdsBufferView, totalBatchIdsBuffer, totalBatchIdsAccessor);
-					}
-					const auto& colorAttr = prim.attributes.find("COLOR_0");
-					if (colorAttr != prim.attributes.end()) {
-						tinygltf::Accessor& oldColorsAccessor = _model.accessors[colorAttr->second];
-						reindexBufferAndAccessor(oldColorsAccessor, totalColorsBufferView, totalColorsBuffer, totalColorsAccessor);
-					}
-				}
-
-				if (totalIndicesAccessor.type != -1)
-				{
-					totalIndicesBufferView.buffer = buffers.size();
-					totalIndicesAccessor.bufferView = bufferViews.size();
-					buffers.push_back(totalIndicesBuffer);
-					bufferViews.push_back(totalIndicesBufferView);
-					totalPrimitive.indices = accessors.size();
-					accessors.push_back(totalIndicesAccessor);
-				}
-				totalVerticesBufferView.buffer = buffers.size();
-				totalVerticesAccessor.bufferView = bufferViews.size();
-				buffers.push_back(totalVerticesBuffer);
-				bufferViews.push_back(totalVerticesBufferView);
-				totalPrimitive.attributes.insert(std::make_pair("POSITION", accessors.size()));
-				accessors.push_back(totalVerticesAccessor);
-
-				if (totalNormalsAccessor.count) {
-					totalNormalsBufferView.buffer = buffers.size();
-					totalNormalsAccessor.bufferView = bufferViews.size();
-					buffers.push_back(totalNormalsBuffer);
-					bufferViews.push_back(totalNormalsBufferView);
-					totalPrimitive.attributes.insert(std::make_pair("NORMAL", accessors.size()));
-					accessors.push_back(totalNormalsAccessor);
-				}
-
-				if (totalTexcoordsAccessor.count) {
-					totalTexcoordsBufferView.buffer = buffers.size();
-					totalTexcoordsAccessor.bufferView = bufferViews.size();
-					buffers.push_back(totalTexcoordsBuffer);
-					bufferViews.push_back(totalTexcoordsBufferView);
-					totalPrimitive.attributes.insert(std::make_pair("TEXCOORD_0", accessors.size()));
-					accessors.push_back(totalTexcoordsAccessor);
-				}
-
-				if (totalBatchIdsAccessor.count) {
-					totalBatchIdsBufferView.buffer = buffers.size();
-					totalBatchIdsAccessor.bufferView = bufferViews.size();
-					buffers.push_back(totalBatchIdsBuffer);
-					bufferViews.push_back(totalBatchIdsBufferView);
-					totalPrimitive.attributes.insert(std::make_pair("_BATCHID", accessors.size()));
-					accessors.push_back(totalBatchIdsAccessor);
-				}
-
-				if (totalColorsAccessor.count) {
-					totalColorsBufferView.buffer = buffers.size();
-					totalColorsAccessor.bufferView = bufferViews.size();
-					buffers.push_back(totalColorsBuffer);
-					bufferViews.push_back(totalColorsBufferView);
-					totalPrimitive.attributes.insert(std::make_pair("COLOR_0", accessors.size()));
-					accessors.push_back(totalColorsAccessor);
-				}
-
-				primitives.push_back(totalPrimitive);
-			}
-			tinygltf::Mesh totalMesh;
-			totalMesh.primitives = primitives;
-			matrixMeshMap[matrixPrimitiveItem.first].push_back(totalMesh);
+			std::vector<tinygltf::Mesh> combinedMeshes = mergePrimitives(materialPrimitiveItem, newAccessors, newBufferViews, newBuffers);
+			for(const tinygltf::Mesh& combinedMesh:combinedMeshes)
+				matrixMeshMap[matrixPrimitiveItem.first].push_back(combinedMesh);
 
 		}
 	}
 
-	_model.buffers = buffers;
-	_model.bufferViews = bufferViews;
-	_model.accessors = accessors;
+	_model.buffers = newBuffers;
+	_model.bufferViews = newBufferViews;
+	_model.accessors = newAccessors;
 	_model.meshes.clear();
 	_model.nodes.clear();
 	_model.scenes[0].nodes.clear();
@@ -533,6 +364,251 @@ void GltfMerger::mergeMaterials()
 				primitive.material = materialRemap[primitive.material];
 		}
 	}
+}
+
+std::vector<tinygltf::Mesh> GltfMerger::mergePrimitives(const std::pair<int, std::vector<tinygltf::Primitive>>& materialWithPrimitves, std::vector<tinygltf::Accessor>& newAccessors, std::vector<tinygltf::BufferView>& newBufferViews, std::vector<tinygltf::Buffer>& newBuffers)
+{
+	std::vector<tinygltf::Mesh> combinedMeshes;
+
+	std::vector<tinygltf::Primitive> trianglesModePrimitives;
+	std::vector<tinygltf::Primitive> otherModePrimitives;
+
+	for (const tinygltf::Primitive& primitive : materialWithPrimitves.second) {
+		if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
+		{
+			otherModePrimitives.push_back(primitive);
+		}
+		else
+		{
+			trianglesModePrimitives.push_back(primitive);
+		}
+	}
+
+	// mode模式不是triangles的，不合并
+	for (tinygltf::Primitive& primitive : otherModePrimitives)
+	{
+		for (const auto& item : primitive.attributes)
+		{
+			const std::string& name = item.first;
+			tinygltf::Accessor& oldAccessor = _model.accessors[primitive.attributes.at(name)];
+			tinygltf::BufferView& oldBufferView = _model.bufferViews[oldAccessor.bufferView];
+			tinygltf::Buffer& oldBuffer = _model.buffers[oldBufferView.buffer];
+
+			oldBufferView.buffer = newBuffers.size();
+			newBuffers.push_back(oldBuffer);
+
+			oldAccessor.bufferView = newBufferViews.size();
+			newBufferViews.push_back(oldBufferView);
+
+			primitive.attributes.at(name) = newAccessors.size();
+			newAccessors.push_back(oldAccessor);
+
+		}
+
+		tinygltf::Mesh newMesh;
+		newMesh.primitives = { primitive };
+		combinedMeshes.push_back(newMesh);
+	}
+	OSG_NOTICE << "mergePrimitives" << std::endl;
+
+	// map，用于按属性名收集相同的 primitive
+	std::map<std::vector<std::string>, std::vector<tinygltf::Primitive>> groupedPrimitives;
+	for (const tinygltf::Primitive& primitive : trianglesModePrimitives)
+	{
+		// 收集当前 primitive 的所有属性名
+		std::vector<std::string> attributeNames;
+		for (const auto& attribute : primitive.attributes) {
+			if (primitive.attributes.at(attribute.first) > -1)
+				attributeNames.push_back(attribute.first);
+		}
+
+		// 对属性名排序，以确保相同的属性名顺序一致
+		std::sort(attributeNames.begin(), attributeNames.end());
+
+		// 将具有相同属性的 Primitive 分组
+		groupedPrimitives[attributeNames].push_back(primitive);
+
+	}
+
+	for (const auto& group : groupedPrimitives) {
+		const std::vector<std::string>& attributeNames = group.first; // 属性名列表
+		const std::vector<tinygltf::Primitive>& primitives = group.second; // 相同属性的 primitive
+
+		tinygltf::Primitive combinedPrimitive;
+
+		for (const std::string& name : attributeNames)
+		{
+			tinygltf::Accessor combinedAttributeAccessor;
+			tinygltf::BufferView combinedAttributeBV;
+			tinygltf::Buffer combinedAttributeBuffer;
+			for (const tinygltf::Primitive& primitive : primitives) {
+				const tinygltf::Accessor& oldAccessor = _model.accessors[primitive.attributes.at(name)];
+				mergeAttribute(combinedAttributeAccessor, combinedAttributeBV, combinedAttributeBuffer, oldAccessor);
+			}
+			combinedAttributeBV.buffer = newBuffers.size();
+			newBuffers.push_back(combinedAttributeBuffer);
+
+			combinedAttributeAccessor.bufferView = newBufferViews.size();
+			newBufferViews.push_back(combinedAttributeBV);
+
+			combinedPrimitive.attributes.at(name) = newAccessors.size();
+			newAccessors.push_back(combinedAttributeAccessor);
+		}
+
+		tinygltf::Accessor combinedIndiceAccessor;
+		tinygltf::BufferView combinedIndiceBV;
+		tinygltf::Buffer combinedIndiceBuffer;
+
+		unsigned int positionCount = 0;
+		for (const tinygltf::Primitive& primitive : primitives) {
+			const tinygltf::Accessor& oldAccessor = _model.accessors[primitive.indices];
+			const tinygltf::Accessor& positionAccessor = _model.accessors[primitive.attributes.at("POSITION")];
+			mergeIndice(combinedIndiceAccessor, combinedIndiceBV, combinedIndiceBuffer, oldAccessor, 0);
+			positionCount += positionAccessor.count;
+		}
+		combinedIndiceBV.buffer = newBuffers.size();
+		newBuffers.push_back(combinedIndiceBuffer);
+
+		combinedIndiceAccessor.bufferView = newBufferViews.size();
+		newBufferViews.push_back(combinedIndiceBV);
+
+		combinedPrimitive.indices = newAccessors.size();
+		newAccessors.push_back(combinedIndiceAccessor);
+	}
+	return combinedMeshes;
+}
+
+void GltfMerger::mergeIndice(tinygltf::Accessor& newIndiceAccessor, tinygltf::BufferView& newIndiceBV, tinygltf::Buffer& newIndiceBuffer, const tinygltf::Accessor& oldIndiceAccessor, const unsigned int positionCount)
+{
+	OSG_NOTICE << "mergeIndice" << std::endl;
+
+	newIndiceAccessor.type = oldIndiceAccessor.type;
+	if (newIndiceAccessor.count == 0)
+	{
+		newIndiceAccessor.componentType = oldIndiceAccessor.componentType;
+		const tinygltf::BufferView& oldIndiceBV = _model.bufferViews[oldIndiceAccessor.bufferView];
+		newIndiceBV.byteStride = oldIndiceBV.byteStride;
+		newIndiceBV.target = oldIndiceBV.target;
+		newIndiceBV.byteLength += oldIndiceBV.byteLength;
+
+		const tinygltf::Buffer& oldIndiceBuffer = _model.buffers[oldIndiceBV.buffer];
+		newIndiceBuffer.data.insert(newIndiceBuffer.data.end(), oldIndiceBuffer.data.begin(), oldIndiceBuffer.data.end());
+	}
+	else
+	{
+		newIndiceAccessor.count += oldIndiceAccessor.count;
+		if (newIndiceAccessor.componentType != oldIndiceAccessor.componentType)
+		{
+			if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE
+				&& oldIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT
+				&& newIndiceAccessor.count <= 65535
+				)
+			{
+				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
+				mergeIndices<uint8_t, uint16_t, osg::UShortArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT
+				&& oldIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE
+				&& newIndiceAccessor.count <= 65535
+				)
+			{
+				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
+				mergeIndices<uint16_t, uint8_t, osg::UShortArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT
+				&& oldIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT
+				)
+			{
+				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
+				mergeIndices<uint32_t, uint16_t, osg::UIntArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT
+				&& oldIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT
+				)
+			{
+				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
+				mergeIndices<uint16_t, uint32_t, osg::UIntArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT
+				&& oldIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE
+				)
+			{
+				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
+				mergeIndices<uint32_t, uint8_t, osg::UIntArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE
+				&& oldIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT
+				)
+			{
+				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
+				mergeIndices<uint8_t, uint32_t, osg::UIntArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+		}
+		else
+		{
+			if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE && newIndiceAccessor.count <= 255
+				|| newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT && newIndiceAccessor.count <= 65535
+				|| newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT
+				)
+			{
+				const tinygltf::BufferView& oldIndiceBV = _model.bufferViews[oldIndiceAccessor.bufferView];
+				newIndiceBV.byteStride = oldIndiceBV.byteStride;
+				newIndiceBV.target = oldIndiceBV.target;
+				newIndiceBV.byteLength += oldIndiceBV.byteLength;
+
+				const tinygltf::Buffer& oldIndiceBuffer = _model.buffers[oldIndiceBV.buffer];
+				newIndiceBuffer.data.insert(newIndiceBuffer.data.end(), oldIndiceBuffer.data.begin(), oldIndiceBuffer.data.end());
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
+			{
+				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
+				mergeIndices<uint16_t, uint16_t, osg::UShortArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+			else if (newIndiceAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+			{
+				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
+				mergeIndices<uint32_t, uint32_t, osg::UIntArray>(newIndiceAccessor, oldIndiceAccessor, indices, positionCount);
+				restoreBuffer(newIndiceBuffer, newIndiceBV, indices);
+			}
+		}
+	}
+}
+
+void GltfMerger::mergeAttribute(tinygltf::Accessor& newAttributeAccessor, tinygltf::BufferView& newAttributeBV, tinygltf::Buffer& newAttributeBuffer, const tinygltf::Accessor& oldAttributeAccessor)
+{
+	OSG_NOTICE << "mergeAttribute" << std::endl;
+	newAttributeAccessor.count += oldAttributeAccessor.count;
+	newAttributeAccessor.componentType = oldAttributeAccessor.componentType;
+	newAttributeAccessor.type = oldAttributeAccessor.type;
+
+	/* minValues、maxValues*/
+	if (!oldAttributeAccessor.minValues.empty()) {
+		if (newAttributeAccessor.minValues.size() == oldAttributeAccessor.minValues.size()) {
+			for (int k = 0; k < newAttributeAccessor.minValues.size(); ++k) {
+				newAttributeAccessor.minValues[k] = osg::minimum(newAttributeAccessor.minValues[k], oldAttributeAccessor.minValues[k]);
+				newAttributeAccessor.maxValues[k] = osg::maximum(newAttributeAccessor.maxValues[k], oldAttributeAccessor.maxValues[k]);
+			}
+		}
+		else {
+			newAttributeAccessor.minValues = oldAttributeAccessor.minValues;
+			newAttributeAccessor.maxValues = oldAttributeAccessor.maxValues;
+		}
+	}
+
+	const tinygltf::BufferView& oldAttributeBV = _model.bufferViews[oldAttributeAccessor.bufferView];
+	newAttributeBV.byteStride = oldAttributeBV.byteStride;
+	newAttributeBV.target = oldAttributeBV.target;
+	newAttributeBV.byteLength += oldAttributeBV.byteLength;
+
+	const tinygltf::Buffer& oldAttributeBuffer = _model.buffers[oldAttributeBV.buffer];
+	newAttributeBuffer.data.insert(newAttributeBuffer.data.end(), oldAttributeBuffer.data.begin(), oldAttributeBuffer.data.end());
 }
 
 osg::Matrixd GltfMerger::convertGltfNodeToOsgMatrix(const tinygltf::Node& node)

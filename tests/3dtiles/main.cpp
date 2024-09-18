@@ -17,7 +17,7 @@ using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
 //const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\)";
 const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
 osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<Tile> parent = nullptr);
@@ -167,10 +167,10 @@ void buildTree(const std::string& filename)
     GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
     gltfTextureOptions.maxTextureAtlasWidth = 2048;
     gltfTextureOptions.maxTextureAtlasHeight = 2048;
-    gltfTextureOptions.ext = ".ktx2";
-    //tileset->root->write(R"(C:\Users\94764\Desktop\nginx-1.26.2\html\tet4)", 0.5, gltfTextureOptions);
+    gltfTextureOptions.ext = ".jpg";
+    tileset->root->write(OUTPUT_BASE_PATH + R"(3dtiles\tet4)", 0.5, gltfTextureOptions);
     tileset->computeTransform(116, 30, 100);
-    tileset->toFile(R"(C:\Users\94764\Desktop\nginx-1.26.2\html\tet4\tileset.json)");
+    tileset->toFile(OUTPUT_BASE_PATH + R"(3dtiles\tet4\tileset.json)");
 
 }
 
@@ -247,8 +247,8 @@ int main() {
     instance->addFileExtensionAlias("i3dm", "gltf");//插件注册别名
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-    testI3DM(R"(dixiashifengmian)");
-    //buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+    //testI3DM(R"(dixiashifengmian)");
+    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

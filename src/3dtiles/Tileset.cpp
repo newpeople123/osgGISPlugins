@@ -227,7 +227,7 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 		if (simplifyRatio < 1.0) {
 			if (this->refine == Refinement::REPLACE)
 			{
-				Simplifier simplifier(simplifyRatio, true);
+				Simplifier simplifier(std::pow(simplifyRatio, getMaxLevel() - level + 1), true);
 				nodeCopy->accept(simplifier);
 			}
 			else
@@ -236,7 +236,6 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 				nodeCopy->accept(simplifier);
 			}
 		}
-
 		GltfOptimizer gltfOptimzier;
 		gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
 		if (gltfTextureOptions.cachePath.empty())
@@ -247,11 +246,15 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 		const string path = str + "\\" + to_string(level);
 		osgDB::makeDirectory(path);
 		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm");
+		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".gltf");
+
 	}
+	/* single thread */
 	//for (size_t i = 0; i < this->children.size(); ++i)
 	//{
 	//	this->children[i]->write(str, simplifyRatio, gltfTextureOptions);
 	//}
+	
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
 		[&](const tbb::blocked_range<size_t>& r) {
 			for (size_t i = r.begin(); i < r.end(); ++i)

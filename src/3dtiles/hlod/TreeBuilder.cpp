@@ -54,8 +54,8 @@ osg::ref_ptr<Tile> TreeBuilder::build()
 				group->addChild(item->second.at(i));
 			}
 			
-			osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test)" + std::to_string(index) + ".i3dm");
-			osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test)" + std::to_string(index) + ".b3dm");
+			//osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test)" + std::to_string(index) + ".i3dm");
+			//osgDB::writeNodeFile(*group.get(), R"(C:\Users\94764\Desktop\nginx-1.26.2\html\test)" + std::to_string(index) + ".b3dm");
 			++index;
 		}
 	}

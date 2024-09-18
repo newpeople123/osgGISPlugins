@@ -78,7 +78,7 @@ namespace osgGISPlugins {
             }
             if (_processors.size() > 0)
             {
-                GltfMerger* mergeProcessor = dynamic_cast<GltfMerger*>(_processors[_processors.size() - 1]);
+                GltfMerger* mergeProcessor = dynamic_cast<GltfMerger*>(_processors[0]);
                 if (mergeProcessor)
                     mergeProcessor->mergeBuffers();
             }
