@@ -2,7 +2,6 @@
 #include <osg/Group>
 #include <osg/Geode>
 #include <osg/MatrixTransform>
-#include <osgViewer/Viewer>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <osgDB/WriteFile>

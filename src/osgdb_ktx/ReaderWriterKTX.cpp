@@ -1,6 +1,5 @@
 #include <osgdb_ktx/ReaderWriterKTX.h>
 #include <osgdb_ktx/LoadTextureKTX.h>
-#include <osgViewer/Viewer>
 #include <osgDB/ConvertUTF>
 ReaderWriterKTX::ReaderWriterKTX()
 {

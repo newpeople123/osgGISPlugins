@@ -10,17 +10,6 @@
 #include <iomanip>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
-
-#include <osgViewer/Viewer>
-#include <osgGA/TrackballManipulator>
-#include <osgGA/FlightManipulator>
-#include <osgGA/DriveManipulator>
-#include <osgGA/KeySwitchMatrixManipulator>
-#include <osgGA/StateSetManipulator>
-#include <osgGA/AnimationPathManipulator>
-#include <osgGA/TerrainManipulator>
-#include <osgGA/SphericalManipulator>
-#include <osgViewer/ViewerEventHandlers>
 #include <numeric>
 
 using namespace osgGISPlugins;

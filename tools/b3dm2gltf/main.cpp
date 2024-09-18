@@ -7,7 +7,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tinygltf/tiny_gltf.h>
 #include <cstdio>
-#include "osgdb_gltf/b3dm/B3DM.h"
+#include "osgdb_gltf/b3dm/ThreeDModelHeader.h"
 #include <osgDB/ConvertUTF>
 using namespace osgGISPlugins;
 int main(int argc, char** argv)

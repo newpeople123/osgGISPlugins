@@ -56,13 +56,13 @@ namespace osgGISPlugins {
             );
 
         template<typename TNew, typename TOld, typename TIndexArray>
-        void mergeIndices(tinygltf::Accessor& newIndiceAccessor, const tinygltf::Accessor& oldIndiceAccessor, osg::ref_ptr<TIndexArray>& indices, unsigned int positionCount);
+        void mergeIndices(tinygltf::Accessor& newAccessor, tinygltf::Buffer& newBuffer, const tinygltf::Accessor& oldIndiceAccessor, osg::ref_ptr<TIndexArray>& indices, unsigned int positionCount);
 
         void mergeIndice(
             tinygltf::Accessor& newIndiceAccessor,
             tinygltf::BufferView& newIndiceBV,
             tinygltf::Buffer& newIndiceBuffer,
-            const tinygltf::Accessor& oldIndiceAccessor,
+            const tinygltf::Accessor oldIndiceAccessor,
             const unsigned int positionCount
         );
 
@@ -78,10 +78,10 @@ namespace osgGISPlugins {
     };
 
     template<typename TNew, typename TOld, typename TIndexArray>
-    inline void GltfMerger::mergeIndices(tinygltf::Accessor& newIndiceAccessor, const tinygltf::Accessor& oldIndiceAccessor, osg::ref_ptr<TIndexArray>& indices, unsigned int positionCount)
+    inline void GltfMerger::mergeIndices(tinygltf::Accessor& newAccessor, tinygltf::Buffer& newBuffer, const tinygltf::Accessor& oldIndiceAccessor, osg::ref_ptr<TIndexArray>& indices, unsigned int positionCount)
     {
         // 获取新旧索引
-        auto newIndices = getBufferData<TNew>(newIndiceAccessor);
+        auto newIndices = getBufferData<TNew>(newBuffer, 0, newAccessor.count, calculateNumComponents(newAccessor.type));
         auto oldIndices = getBufferData<TOld>(oldIndiceAccessor);
 
         // 预分配内存，提升性能

@@ -13,6 +13,9 @@ namespace osgGISPlugins {
         tinygltf::Model& _model;
 
         template<typename T>
+        std::vector<T> getBufferData(const tinygltf::Buffer& buffer, const size_t byteOffset, const size_t numComponents, const size_t count);
+
+        template<typename T>
         std::vector<T> getBufferData(const tinygltf::Accessor& accessor);
 
         size_t calculateNumComponents(const int type);
@@ -24,16 +27,22 @@ namespace osgGISPlugins {
     };
 
     template<typename T>
+    inline std::vector<T> GltfProcessor::getBufferData(const tinygltf::Buffer& buffer, const size_t byteOffset,const size_t numComponents, const size_t count)
+    {
+        std::vector<T> values;
+        const void* data_ptr = buffer.data.data() + byteOffset;
+        values.assign(static_cast<const T*>(data_ptr),
+            static_cast<const T*>(data_ptr) + count * numComponents);
+        return values;
+    }
+
+    template<typename T>
     inline std::vector<T> GltfProcessor::getBufferData(const tinygltf::Accessor& accessor)
     {
         const size_t numComponents = calculateNumComponents(accessor.type);
         const tinygltf::BufferView& bufferView = _model.bufferViews[accessor.bufferView];
         const tinygltf::Buffer& gltfBuffer = _model.buffers[bufferView.buffer];
-        std::vector<T> values;
-        const void* data_ptr = gltfBuffer.data.data() + bufferView.byteOffset;
-        values.assign(static_cast<const T*>(data_ptr),
-            static_cast<const T*>(data_ptr) + accessor.count * numComponents);
-        return values;
+        return getBufferData<T>(gltfBuffer, bufferView.byteOffset, accessor.count, numComponents);
     }
 }
 #endif // !OSG_GIS_PLUGINS_GLTF_PROCESSOR_H

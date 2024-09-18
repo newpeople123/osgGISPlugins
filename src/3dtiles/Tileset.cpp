@@ -237,14 +237,19 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 			}
 		}
 		GltfOptimizer gltfOptimzier;
-		gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
 		if (gltfTextureOptions.cachePath.empty())
 			gltfTextureOptions.cachePath = str + "\\textures";
+		gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
 		osgDB::makeDirectory(gltfTextureOptions.cachePath);
 		gltfOptimzier.optimize(nodeCopy.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 
 		const string path = str + "\\" + to_string(level);
 		osgDB::makeDirectory(path);
+		osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+		//options->setOptionString("ct=draco");
+		//options->setOptionString("ct=meshopt");
+		//options->setOptionString("quantize");
+		options->setOptionString("quantize ct=meshopt");
 		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm");
 		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".gltf");
 
@@ -262,6 +267,7 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 				this->children[i]->write(str, simplifyRatio, gltfTextureOptions);
 			}
 		});
+		
 }
 
 double Tile::computeRadius(const osg::BoundingBox& bbox, int axis)
