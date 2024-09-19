@@ -58,6 +58,8 @@ namespace osgGISPlugins {
 		}
 
 		void apply() override;
+
+		static bool valid(tinygltf::Model& model);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_GLTF_MESH_QUANTIZE_COMPRESSOR_H

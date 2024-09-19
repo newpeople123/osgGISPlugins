@@ -6,6 +6,7 @@
 #include <utils/Simplifier.h>
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
+#include <osgdb_gltf/b3dm/BatchIdVisitor.h>
 using namespace osgGISPlugins;
 
 void Tile::buildBaseHlodAndComputeGeometricError()
@@ -134,7 +135,7 @@ void Tile::rebuildHlodByRefinement()
 		}
 	}
 
-	for (size_t i=0; i < this->children.size(); ++i)
+	for (size_t i = 0; i < this->children.size(); ++i)
 	{
 
 		if (this->children[i]->node->asGroup()->getNumChildren() == 0)
@@ -218,7 +219,7 @@ bool Tile::geometricErrorValid()
 		return this->geometricError == 0.0;
 }
 
-void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions)
+void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options)
 {
 	if (this->node.valid() && this->node->asGroup()->getNumChildren())
 	{
@@ -243,31 +244,29 @@ void Tile::write(const string& str, const float simplifyRatio, GltfOptimizer::Gl
 		osgDB::makeDirectory(gltfTextureOptions.cachePath);
 		gltfOptimzier.optimize(nodeCopy.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 
+		BatchIdVisitor biv;
+		nodeCopy->accept(biv);
+
 		const string path = str + "\\" + to_string(level);
 		osgDB::makeDirectory(path);
-		osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-		//options->setOptionString("ct=draco");
-		//options->setOptionString("ct=meshopt");
-		//options->setOptionString("quantize");
-		options->setOptionString("quantize ct=meshopt");
-		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm");
-		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".gltf");
+		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm", options);
+		//osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".gltf", options);
 
 	}
 	/* single thread */
 	//for (size_t i = 0; i < this->children.size(); ++i)
 	//{
-	//	this->children[i]->write(str, simplifyRatio, gltfTextureOptions);
+	//	this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
 	//}
-	
+
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
 		[&](const tbb::blocked_range<size_t>& r) {
 			for (size_t i = r.begin(); i < r.end(); ++i)
 			{
-				this->children[i]->write(str, simplifyRatio, gltfTextureOptions);
+				this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
 			}
 		});
-		
+
 }
 
 double Tile::computeRadius(const osg::BoundingBox& bbox, int axis)

@@ -139,9 +139,9 @@ int getMaxDepth(osg::Node* node) {
 
 void buildTree(const std::string& filename)
 {
-    osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-    options->setOptionString("TessellatePolygons");
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options.get());
+    osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
+    readOptions->setOptionString("TessellatePolygons");
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions.get());
 
     osg::BoundingBox bb;
     bb.expandBy(node->getBound());
@@ -167,10 +167,16 @@ void buildTree(const std::string& filename)
     GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
     gltfTextureOptions.maxTextureAtlasWidth = 2048;
     gltfTextureOptions.maxTextureAtlasHeight = 2048;
-    gltfTextureOptions.ext = ".jpg";
-    tileset->root->write(OUTPUT_BASE_PATH + R"(3dtiles\tet4)", 0.5, gltfTextureOptions);
+    gltfTextureOptions.ext = ".ktx2";
+
+    osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+    //options->setOptionString("ct=draco");
+    //options->setOptionString("ct=meshopt");
+    options->setOptionString("quantize");
+    //options->setOptionString("quantize ct=meshopt");
+    tileset->root->write(OUTPUT_BASE_PATH + R"(3dtiles\tet5)", 0.5, gltfTextureOptions, options);
     tileset->computeTransform(116, 30, 100);
-    tileset->toFile(OUTPUT_BASE_PATH + R"(3dtiles\tet4\tileset.json)");
+    tileset->toFile(OUTPUT_BASE_PATH + R"(3dtiles\tet5\tileset.json)");
 
 }
 

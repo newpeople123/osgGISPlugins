@@ -2,6 +2,7 @@
 #include <osg/Math>
 #include <osg/MatrixTransform>
 #include <algorithm>
+#include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 
 using namespace osgGISPlugins;
 void GltfMerger::mergeMeshes()
@@ -311,8 +312,14 @@ void GltfMerger::mergeMaterials()
 
 			const int texcoordIndex = findTexcoordIndex->second;
 			tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
-			texcoordAccessor.maxValues.clear();
-			texcoordAccessor.minValues.clear();
+			if (texcoordAccessor.maxValues.size())
+			{
+				texcoordAccessor.maxValues[0] = texcoordAccessor.maxValues[0] * scaleX + offsetX;
+				texcoordAccessor.maxValues[1] = texcoordAccessor.maxValues[1] * scaleY + offsetY;
+
+				texcoordAccessor.minValues[0] = texcoordAccessor.minValues[0] * scaleX + offsetX;
+				texcoordAccessor.minValues[1] = texcoordAccessor.minValues[1] * scaleY + offsetY;
+			}
 
 			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
 

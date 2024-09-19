@@ -3,10 +3,11 @@
 #include <osg/Geode>
 using namespace osgGISPlugins;
 void BatchIdVisitor::apply(osg::Drawable& drawable) {
+    _bAdd = false;
     osg::Geometry* geometry = drawable.asGeometry();
     if (geometry) {
         const osg::Vec3Array* positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
-        if (positions) {
+        if (positions&&positions->size()) {
             osg::ref_ptr<osg::FloatArray> batchIds = new osg::FloatArray;
             batchIds->assign(positions->size(), _currentBatchId);
 
@@ -15,6 +16,7 @@ void BatchIdVisitor::apply(osg::Drawable& drawable) {
                 OSG_WARN << "Warning: geometry's VertexAttribArray(0 channel) is not null, it will be overwritten!" << std::endl;
             }
             geometry->setVertexAttribArray(0, batchIds, osg::Array::BIND_PER_VERTEX);
+            _bAdd = true;
         }
     }
 }
@@ -23,6 +25,7 @@ void BatchIdVisitor::apply(osg::Geode& geode)
 {
     if (geode.getNumDrawables()) {
         traverse(geode);
-        _currentBatchId++;
+        if(_bAdd)
+            _currentBatchId++;
     }
 }

@@ -14,6 +14,7 @@ namespace osgGISPlugins {
 
     private:
         unsigned int _currentBatchId;
+        bool _bAdd = false;
     };
 }
 #endif // !OSG_GIS_PLUGINS_B3DM_BATCHID_H

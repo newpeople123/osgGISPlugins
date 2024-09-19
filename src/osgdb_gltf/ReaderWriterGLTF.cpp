@@ -137,7 +137,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 			}
 		}
 	}
-
 	GltfMerger* gltfMerger = new GltfMerger(gltfModel, mergeMaterial, mergeMesh);
 	processorManager.addProcessor(gltfMerger);
 	processorManager.process();

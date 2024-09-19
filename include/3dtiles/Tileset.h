@@ -11,6 +11,7 @@
 #include "utils/ObbVisitor.h"
 #include <iostream>
 #include <utils/GltfOptimizer.h>
+#include <osgDB/Options>
 using json = nlohmann::json;
 using namespace std;
 namespace osgGISPlugins
@@ -273,7 +274,7 @@ namespace osgGISPlugins
 
 		bool geometricErrorValid();
 
-		void write(const string& path, const float simplifyRatio, GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions);
+		void write(const string& path, const float simplifyRatio, GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options);
 
 		static double computeRadius(const osg::BoundingBox& bbox, int axis);
 	};

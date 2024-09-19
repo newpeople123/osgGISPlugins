@@ -143,6 +143,34 @@ void GltfMeshQuantizeCompressor::apply()
 	}
 }
 
+bool GltfMeshQuantizeCompressor::valid(tinygltf::Model& model)
+{
+	for (const tinygltf::Mesh& mesh : model.meshes)
+	{
+		for (const tinygltf::Primitive& primitive : mesh.primitives)
+		{
+			for (const auto& pair : primitive.attributes)
+			{
+				if (pair.second == -1) continue;
+				const tinygltf::Accessor& accessor = model.accessors[pair.second];
+				if (accessor.type == TINYGLTF_TYPE_VEC3 && pair.first == "POSITION")
+				{
+					if (accessor.minValues.size() != 3 || accessor.maxValues.size() != 3)
+						return false;
+				}
+				if (accessor.type == TINYGLTF_TYPE_VEC2 && pair.first == "TEXCOORD_0")
+				{
+					if (accessor.minValues.size() != 2 || accessor.maxValues.size() != 2)
+						return false;
+				}
+			}
+
+		}
+
+	}
+	return true;
+}
+
 void GltfMeshQuantizeCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits)
 {
 	const float scaler = sqrtf(2.f);
@@ -379,30 +407,27 @@ void GltfMeshQuantizeCompressor::quantizeMesh(tinygltf::Mesh& mesh, const double
 					}
 
 				}
-				else if (accessor.type == TINYGLTF_TYPE_VEC2)
+				else if (accessor.type == TINYGLTF_TYPE_VEC2 && pair.first == "TEXCOORD_0")
 				{
-					if (pair.first == "TEXCOORD_0")
+					std::tuple<double, double, double, double> result = getTexcoordBounds(primitive, accessor);
+					const double minTx = std::get<0>(result);
+					const double minTy = std::get<1>(result);
+					const double scaleTx = std::get<2>(result);
+					const double scaleTy = std::get<3>(result);
+
+					osg::ref_ptr<osg::Vec2usArray> newBufferData = new osg::Vec2usArray(accessor.count);
+					for (size_t i = 0; i < accessor.count; ++i)
 					{
-						std::tuple<double, double, double, double> result = getTexcoordBounds(primitive, accessor);
-						const double minTx = std::get<0>(result);
-						const double minTy = std::get<1>(result);
-						const double scaleTx = std::get<2>(result);
-						const double scaleTy = std::get<3>(result);
-
-						osg::ref_ptr<osg::Vec2usArray> newBufferData = new osg::Vec2usArray(accessor.count);
-						for (size_t i = 0; i < accessor.count; ++i)
-						{
-							const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 2 + 0] - minTx) / scaleTx, _compressionOptions.TexCoordQuantizationBits);
-							const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 2 + 1] - minTy) / scaleTy, _compressionOptions.TexCoordQuantizationBits);
-							newBufferData->at(i) = osg::Vec2us(x, y);
-						}
-						accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
-						accessor.normalized = true;
-						restoreBuffer(buffer, bufferView, newBufferData);
-						bufferView.byteStride = 2 * 2;
-
-						processMaterial(primitive, accessor, minTx, minTy, scaleTx, scaleTy);
+						const unsigned short x = meshopt_quantizeUnorm((bufferData[i * 2 + 0] - minTx) / scaleTx, _compressionOptions.TexCoordQuantizationBits);
+						const unsigned short y = meshopt_quantizeUnorm((bufferData[i * 2 + 1] - minTy) / scaleTy, _compressionOptions.TexCoordQuantizationBits);
+						newBufferData->at(i) = osg::Vec2us(x, y);
 					}
+					accessor.componentType = TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT;
+					accessor.normalized = true;
+					restoreBuffer(buffer, bufferView, newBufferData);
+					bufferView.byteStride = 2 * 2;
+
+					processMaterial(primitive, accessor, minTx, minTy, scaleTx, scaleTy);
 				}
 				else {
 					if (pair.first == "TANGENT")
