@@ -12,6 +12,7 @@
 #include <osg/LineWidth>
 #include <3dtiles/Tileset.h>
 #include <3dtiles/hlod/QuadtreeBuilder.h>
+#include <osg/MatrixTransform>
 using namespace std;
 using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
@@ -157,26 +158,27 @@ void buildTree(const std::string& filename)
 
     GltfOptimizer gltfOptimizer;
     gltfOptimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
+
     QuadtreeBuilder builder;
     node->accept(builder);
-    osg::ref_ptr<Tile> root = builder.build();
-    root->buildHlod();
-    osg::ref_ptr<Tileset> tileset = new Tileset;
-    tileset->root = root;
-    tileset->computeGeometricError(node);
-    GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
-    gltfTextureOptions.maxTextureAtlasWidth = 2048;
-    gltfTextureOptions.maxTextureAtlasHeight = 2048;
-    gltfTextureOptions.ext = ".ktx2";
+    osg::ref_ptr<Tile> rootTile = builder.build();
 
-    osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-    //options->setOptionString("ct=draco");
-    //options->setOptionString("ct=meshopt");
-    options->setOptionString("quantize");
-    //options->setOptionString("quantize ct=meshopt");
-    tileset->root->write(OUTPUT_BASE_PATH + R"(3dtiles\tet5)", 0.5, gltfTextureOptions, options);
-    tileset->computeTransform(116, 30, 100);
-    tileset->toFile(OUTPUT_BASE_PATH + R"(3dtiles\tet5\tileset.json)");
+    osg::ref_ptr<Tileset> tileset = new Tileset(rootTile);
+    tileset->root->buildHlod();
+
+    Tileset::Config config;
+    config.path = OUTPUT_BASE_PATH + R"(3dtiles\test1)";
+    config.gltfTextureOptions.maxTextureAtlasWidth = 2048;
+    config.gltfTextureOptions.maxTextureAtlasHeight = 2048;
+    config.gltfTextureOptions.ext = ".jpg";
+    //config.options->setOptionString("ct=draco");
+    //config.options->setOptionString("ct=meshopt");
+    //config.options->setOptionString("quantize");
+    //config.options->setOptionString("quantize ct=meshopt");
+    if (!tileset->toFile(config, node))
+    {
+        OSG_FATAL << "3dtiles 文件导出失败...." << endl;
+    }
 
 }
 
@@ -254,7 +256,7 @@ int main() {
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
     //testI3DM(R"(dixiashifengmian)");
-    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+    buildTree(R"(龙翔桥站厅)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

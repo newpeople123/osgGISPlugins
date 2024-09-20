@@ -1,6 +1,26 @@
 #include "utils/ObbVisitor.h"
 using namespace osgGISPlugins;
 
+void OBBVisitor::apply(osg::Group& group)
+{
+	// 备份当前矩阵
+	osg::Matrix previousMatrix = _currentMatrix;
+
+	// 如果是Transform节点，累积变换矩阵
+	if (osg::Transform* transform = group.asTransform())
+	{
+		osg::Matrix localMatrix;
+		transform->computeLocalToWorldMatrix(localMatrix, this);
+		_currentMatrix.preMult(localMatrix);
+	}
+
+	// 继续遍历子节点
+	traverse(group);
+
+	// 恢复到之前的矩阵状态
+	_currentMatrix = previousMatrix;
+}
+
 void OBBVisitor::apply(osg::Geode& geode)
 {
 	for (unsigned int i = 0; i < geode.getNumDrawables(); ++i)
@@ -11,7 +31,10 @@ void OBBVisitor::apply(osg::Geode& geode)
 			osg::Vec3Array* vertices = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 			if (vertices)
 			{
-				_vertices->insert(_vertices->end(), vertices->begin(), vertices->end());
+				for (size_t i = 0; i < vertices->size(); ++i)
+				{
+					_vertices->push_back(vertices->at(i) * _currentMatrix);
+				}
 			}
 		}
 	}

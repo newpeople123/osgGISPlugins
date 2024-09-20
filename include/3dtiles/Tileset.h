@@ -1,5 +1,6 @@
 #ifndef OSG_GIS_PLUGINS_TILESET_H
 #define OSG_GIS_PLUGINS_TILESET_H
+#include "utils/GltfOptimizer.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <vector>
@@ -7,11 +8,8 @@
 #include <stdexcept>
 #include <osg/Node>
 #include <memory>
-#include <osg/ComputeBoundsVisitor>
-#include "utils/ObbVisitor.h"
-#include <iostream>
-#include <utils/GltfOptimizer.h>
 #include <osgDB/Options>
+#include <osgDB/FileUtils>
 using json = nlohmann::json;
 using namespace std;
 namespace osgGISPlugins
@@ -50,19 +48,9 @@ namespace osgGISPlugins
 			box(other.box),
 			sphere(other.sphere) {}
 
-		void fromJson(const json& j) {
-			if (j.contains("region")) j.at("region").get_to(region);
-			if (j.contains("box")) j.at("box").get_to(box);
-			if (j.contains("sphere")) j.at("sphere").get_to(sphere);
-		}
+		void fromJson(const json& j);
 
-		json toJson() const {
-			json j;
-			if (!region.empty()) j["region"] = region;
-			if (!box.empty()) j["box"] = box;
-			if (!sphere.empty()) j["sphere"] = sphere;
-			return j;
-		}
+		json toJson() const;
 
 		virtual osg::Object* cloneType() const { return new BoundingVolume(); }
 
@@ -72,88 +60,26 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "BoundingVolume"; }
 
-		void computeBox(osg::ref_ptr<osg::Node> node)
-		{
-			osg::ComputeBoundsVisitor cbv;
-			node->accept(cbv);
-			const osg::BoundingBox boundingBox = cbv.getBoundingBox();
-			const osg::Matrixd mat = osg::Matrixd::rotate(osg::inDegrees(90.0f), 1.0f, 0.0f, 0.0f);
-			const osg::Vec3f size = boundingBox._max * mat - boundingBox._min * mat;
-			const osg::Vec3f cesiumBoxCenter = boundingBox.center() * mat;
+		void computeBox(osg::ref_ptr<osg::Node> node);
 
-			this->box.push_back(cesiumBoxCenter.x());
-			this->box.push_back(cesiumBoxCenter.y());
-			this->box.push_back(cesiumBoxCenter.z());
+		void computeSphere(osg::ref_ptr<osg::Node> node);
 
-			this->box.push_back(size.x() / 2);
-			this->box.push_back(0);
-			this->box.push_back(0);
-
-			this->box.push_back(0);
-			this->box.push_back(size.y() / 2);
-			this->box.push_back(0);
-
-			this->box.push_back(0);
-			this->box.push_back(0);
-			this->box.push_back(size.z() / 2);
-		}
-
-		void computeSphere(osg::ref_ptr<osg::Node> node)
-		{
-			osg::ComputeBoundsVisitor cbv;
-			node->accept(cbv);
-			const osg::BoundingBox boundingBox = cbv.getBoundingBox();
-
-			const osg::Matrixd mat = osg::Matrixd::rotate(osg::inDegrees(90.0f), 1.0f, 0.0f, 0.0f);
-			const osg::Vec3f center = boundingBox.center() * mat;
-			const float radius = boundingBox.radius();
-
-			this->sphere = { center.x(), center.y(), center.z(), radius };
-		}
-
-		void computeRegion(osg::ref_ptr<osg::Node> node)
-		{
-			OBBVisitor ov;
-			node->accept(ov);
-			osg::ref_ptr<osg::Vec3Array> corners = ov.getOBBCorners();
-
-			if (corners->size() != 8)
-				return; // 确保 OBB 有 8 个角点
-
-			// 初始化 min 和 max 值为第一个角点的坐标
-			double minLon = corners->at(0).x();
-			double maxLon = corners->at(0).x();
-			double minLat = corners->at(0).y();
-			double maxLat = corners->at(0).y();
-			double minHeight = corners->at(0).z();
-			double maxHeight = corners->at(0).z();
-
-			// 遍历其他角点，更新 min 和 max 值
-			for (size_t i = 1; i < corners->size(); ++i)
-			{
-				const osg::Vec3& corner = corners->at(i);
-				minLon = osg::minimum(minLon, (double)corner.x());
-				maxLon = osg::maximum(maxLon, (double)corner.x());
-				minLat = osg::minimum(minLat, (double)corner.y());
-				maxLat = osg::maximum(maxLat, (double)corner.y());
-				minHeight = osg::minimum(minHeight, (double)corner.z());
-				maxHeight = osg::maximum(maxHeight, (double)corner.z());
-			}
-
-			// 将计算得到的 region 信息存储到 this->region 向量中
-			this->region = { minLon, maxLon, minLat, maxLat, minHeight, maxHeight };
-		}
+		void computeRegion(osg::ref_ptr<osg::Node> node);
 	};
 
 	class Tile :public osg::Object {
 	private:
 		void buildBaseHlodAndComputeGeometricError();
 
-		void rebuildHlodByRefinement();
+		void rebuildHlodAndComputeGeometricErrorByRefinement();
 
-		bool descendantNodeIsEmpty();
+		bool descendantNodeIsEmpty() const;
 
-		osg::ref_ptr<osg::Group> getAllDescendantNodes();
+		void setContentUri();
+
+		void computeBoundingVolumeBox();
+
+		osg::ref_ptr<osg::Group> getAllDescendantNodes() const;
 	public:
 		int axis = -1;
 		osg::ref_ptr<Tile> parent;
@@ -180,64 +106,9 @@ namespace osgGISPlugins
 		Tile(osg::ref_ptr<Tile> parent)
 			: parent(parent) {}
 
-		void fromJson(const json& j) {
-			if (j.contains("boundingVolume")) boundingVolume.fromJson(j.at("boundingVolume"));
-			if (j.contains("geometricError")) j.at("geometricError").get_to(geometricError);
-			if (j.contains("refine")) {
-				string refineStr;
-				j.at("refine").get_to(refineStr);
-				if (refineStr == "REPLACE") {
-					refine = Refinement::REPLACE;
-				}
-				else if (refineStr == "ADD") {
-					refine = Refinement::ADD;
-				}
-			}
-			if (j.contains("content") && j.at("content").contains("uri")) {
-				j.at("content").at("uri").get_to(contentUri);
-			}
+		void fromJson(const json& j);
 
-			if (j.contains("transform")) {
-				j.at("transform").get_to(transform);
-			}
-
-			if (j.contains("children")) {
-				for (const auto& child : j.at("children")) {
-					osg::ref_ptr<Tile> childTile = new Tile;
-					childTile->fromJson(child);
-					children.push_back(childTile);
-				}
-			}
-		}
-
-		json toJson() {
-			json j;
-			osg::ref_ptr<osg::Group> group = getAllDescendantNodes();
-			boundingVolume.computeBox(group);
-			if (this->node.valid() && this->node->asGroup()->getNumChildren())
-			{
-				contentUri = to_string(level) + "/" + "Tile_" + to_string(level) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + ".b3dm";
-			}
-			j["boundingVolume"] = boundingVolume.toJson();
-			j["geometricError"] = geometricError;
-			j["refine"] = (refine == Refinement::REPLACE) ? "REPLACE" : "ADD";
-
-			if (!contentUri.empty()) {
-				j["content"]["uri"] = contentUri;
-			}
-
-			if (!transform.empty()) {
-				j["transform"] = transform;
-			}
-
-			if (!children.empty()) {
-				j["children"] = json::array();
-				for (const auto& child : children) {
-					j["children"].push_back(child->toJson());
-				}
-			}
-			return j;
-		}
+		json toJson() const;
 
 		Tile(const Tile& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: osg::Object(other, copyop),
@@ -250,15 +121,7 @@ namespace osgGISPlugins
 			children(other.children),
 			transform(other.transform) {}
 
-		int getMaxLevel() const
-		{
-			int currentLevel = this->level;
-			for (auto& child : this->children)
-			{
-				currentLevel = osg::maximum(child->getMaxLevel(), currentLevel);
-			}
-			return currentLevel;
-		}
+		int getMaxLevel() const;
 
 		virtual osg::Object* cloneType() const { return new Tile(); }
 
@@ -270,70 +133,62 @@ namespace osgGISPlugins
 
 		void buildHlod();
 
-		void computeGeometricError();
+		bool valid() const;
 
-		bool geometricErrorValid();
-
-		void write(const string& path, const float simplifyRatio, GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options);
+		void write(const string& path, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options);
 
 		static double computeRadius(const osg::BoundingBox& bbox, int axis);
 	};
 
 	class Tileset :public osg::Object {
+	private:
+		void computeTransform(const double lng, const double lat, const double height);
+
+		void computeGeometricError(osg::ref_ptr<osg::Node> originNode);
 	public:
+		struct Config {
+			//存储3dtiles的文件夹
+			string path = "";
+			//纬度，角度制
+			double latitude = 30.0;
+			//经度，角度制
+			double longitude = 116.0;
+			//高度，单位米
+			double height = 100.0;
+			//简化比例，[0-1]
+			float simplifyRatio = 0.5f;
+			//纹理优化设置
+			GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
+			//b3dm、i3dm瓦片导出设置
+			osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+
+			void validate() {
+				if (this->gltfTextureOptions.cachePath.empty())
+					this->gltfTextureOptions.cachePath = this->path + "\\textures";
+				osgDB::makeDirectory(this->gltfTextureOptions.cachePath);
+
+				osg::clampTo(this->simplifyRatio, 0.f, 1.f);
+
+				osg::clampTo(this->latitude, -90.0, 90.0);
+				osg::clampTo(this->longitude, -180.0, 180.0);
+			}
+		};
 		string assetVersion = "1.0";
 		string tilesetVersion;
 		double geometricError;
 		osg::ref_ptr<Tile> root;
 
-		void fromJson(const json& j) {
-			if (j.contains("asset")) {
-				if (j.at("asset").contains("version"))
-					j.at("asset").at("version").get_to(assetVersion);
-				if (j.at("asset").contains("tilesetVersion"))
-					j.at("asset").at("tilesetVersion").get_to(tilesetVersion);
-			}
-			if (j.contains("geometricError")) j.at("geometricError").get_to(geometricError);
-			if (j.contains("root")) root->fromJson(j.at("root"));
-		}
+		void fromJson(const json& j);
 
-		static Tileset fromFile(const string& file_path) {
-			ifstream file(file_path);
-			if (!file.is_open()) {
-				throw runtime_error("Unable to open file: " + file_path);
-			}
+		static Tileset fromFile(const string& filePath);
 
-			json j;
-			file >> j;
-			file.close();
+		json toJson() const;
 
-			Tileset tileset;
-			tileset.fromJson(j);
-			return tileset;
-		}
-
-		json toJson() const {
-			json j;
-			j["asset"]["version"] = assetVersion;
-			j["asset"]["tilesetVersion"] = tilesetVersion;
-			j["geometricError"] = geometricError;
-			j["root"] = root->toJson();
-			return j;
-		}
-
-		void toFile(const string& file_path) const {
-			ofstream file(file_path);
-			if (!file.is_open()) {
-				throw runtime_error("Unable to open file: " + file_path);
-			}
-
-			json j = toJson();
-			const string str = j.dump(4);
-			file << str;  // 格式化输出，缩进4个空格
-			file.close();
-		}
+		bool toFile(Config config, osg::ref_ptr<osg::Node> originNode);
 
 		Tileset() : root(new Tile), geometricError(0.0) {}
+
+		Tileset(osg::ref_ptr<Tile> rootTile) : root(rootTile), geometricError(0.0) {}
 
 		Tileset(const Tileset& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: osg::Object(other, copyop),
@@ -350,11 +205,7 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "Tileset"; }
 
-		void computeGeometricError(osg::ref_ptr<osg::Node> node);
-
-		bool valid();
-
-		void computeTransform(const double lng,const double lat, const double height);
+		bool valid() const;
 	};
 }
 #endif // !OSG_GIS_PLUGINS_TILESET_H

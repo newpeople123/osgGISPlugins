@@ -18,6 +18,8 @@ namespace osgGISPlugins
         // 覆盖 apply 方法，处理 Geode 节点
         virtual void apply(osg::Geode& geode) override;
 
+        virtual void apply(osg::Group& group) override;
+
         // 获取收集到的顶点数据
         osg::ref_ptr<osg::Vec3Array> getVertices() const { return _vertices; }
 
@@ -37,10 +39,11 @@ namespace osgGISPlugins
         }
 
 
-        osg::ref_ptr<osg::Vec3Array> corners;
+        osg::ref_ptr<osg::Vec3Array> corners = new osg::Vec3Array;
     private:
         osg::ref_ptr<osg::Vec3Array> _vertices = new osg::Vec3Array;
 
+        osg::Matrixd _currentMatrix;
         osg::Vec3 _center;   // obb center
         osg::Vec3 _xAxis;    // x axis of obb, unit vector
         osg::Vec3 _yAxis;    // y axis of obb, unit vecotr
