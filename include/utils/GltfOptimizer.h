@@ -3,7 +3,9 @@
 #include <osgUtil/Optimizer>
 #include <meshoptimizer.h>
 #include <osgdb_gltf/material/GltfMaterial.h>
+#include <unordered_map>
 #include "TexturePacker.h"
+#include "Utils.h"
 namespace osgGISPlugins
 {
     class GltfOptimizer :public osgUtil::Optimizer
@@ -22,10 +24,10 @@ namespace osgGISPlugins
 
         struct GltfTextureOptimizationOptions
         {
-            int maxWidth = 512;
-            int maxHeight = 512;
-            int maxTextureAtlasWidth = 2048;
-            int maxTextureAtlasHeight = 2048;
+            unsigned int maxWidth = 512;
+            unsigned int maxHeight = 512;
+            unsigned int maxTextureAtlasWidth = 2048;
+            unsigned int maxTextureAtlasHeight = 2048;
 
             std::string ext = ".png";
             std::string cachePath = "";
@@ -75,9 +77,11 @@ namespace osgGISPlugins
             VERTEX_FETCH_BY_MESHOPTIMIZER = (1 << 25),
             TEXTURE_ATLAS_BUILDER_BY_STB = (1 << 26),
             FLATTEN_TRANSFORMS = (1 << 27),
+            MERGE_TRANSFORMS = (1 << 28),
 
 
             REDUCE_DRAWCALL_OPTIMIZATIONS = 
+            MERGE_TRANSFORMS |
             TEXTURE_ATLAS_BUILDER_BY_STB |
             VERTEX_CACHE_BY_MESHOPTIMIZER |
             OVER_DRAW_BY_MESHOPTIMIZER |
@@ -232,7 +236,7 @@ namespace osgGISPlugins
 
             void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& images, const GltfTextureType type);
 
-            bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img);
+            bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const unsigned int maxWidth, const unsigned int maxHeight);
 
             int findNearestPowerOfTwo(int value);
 
@@ -274,6 +278,21 @@ namespace osgGISPlugins
             }
         };
 
+        class MergeTransformVisitor :public osgUtil::BaseOptimizerVisitor
+        {
+        private:
+            std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Node>>, MatrixHash, MatrixEqual> _matrixNodesMap;
+            osg::Matrixd _currentMatrix;
+        public:
+            MergeTransformVisitor(osgUtil::Optimizer* optimizer = 0) :
+                BaseOptimizerVisitor(optimizer, MERGE_TRANSFORMS) {}
+
+            void apply(osg::MatrixTransform& xtransform) override;
+
+            void apply(osg::Geode& geode) override;
+
+            osg::Node* getNode();
+        };
 
     private:
         GltfTextureOptimizationOptions _gltfTextureOptions;

@@ -21,7 +21,7 @@ using namespace osgGISPlugins;
 const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\)";
 const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
 
-osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<Tile> parent = nullptr);
+osg::ref_ptr<B3DMTile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<B3DMTile> parent = nullptr);
 void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth);
 osg::Geometry* createBoundingBoxGeometry(const osg::BoundingBox& bbox);
 int getMaxDepth(osg::Node* node);
@@ -140,9 +140,18 @@ int getMaxDepth(osg::Node* node) {
 
 void buildTree(const std::string& filename)
 {
-    osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
-    readOptions->setOptionString("TessellatePolygons");
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions.get());
+    osg::ref_ptr<osgDB::Options> readOptions1 = new osgDB::Options;
+    //readOptions1->setOptionString("TessellatePolygons ZUp");
+    readOptions1->setOptionString("TessellatePolygons");
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions1.get());
+    //osg::ref_ptr<osg::MatrixTransform> node = new osg::MatrixTransform;
+    //const osg::Matrixd zUpToYUpRotationMatrix = osg::Matrixd::rotate(-osg::PI / 2, osg::Vec3(1.0, 0.0, 0.0));
+    //node->setMatrix(zUpToYUpRotationMatrix);
+    //node->addChild(node1);
+
+    osg::ref_ptr<osgDB::Options> readOptions2 = new osgDB::Options;
+    readOptions2->setOptionString("TessellatePolygons");
+    osg::ref_ptr<osg::Node> node2 = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions2.get());
 
     osg::BoundingBox bb;
     bb.expandBy(node->getBound());
@@ -156,35 +165,30 @@ void buildTree(const std::string& filename)
     std::cout << std::endl;
     std::cout << "-----------------------------------" << std::endl;
 
-    GltfOptimizer gltfOptimizer;
-    gltfOptimizer.optimize(node, osgUtil::Optimizer::INDEX_MESH);
-
     QuadtreeBuilder builder;
-    node->accept(builder);
-    osg::ref_ptr<Tile> rootTile = builder.build();
-
-    osg::ref_ptr<Tileset> tileset = new Tileset(rootTile);
-    tileset->root->buildHlod();
+    osg::ref_ptr<Tileset> tileset = new Tileset(node, builder);
 
     Tileset::Config config;
     config.path = OUTPUT_BASE_PATH + R"(3dtiles\test1)";
+    config.gltfTextureOptions.maxWidth = 512;
+    config.gltfTextureOptions.maxHeight = 512;
     config.gltfTextureOptions.maxTextureAtlasWidth = 2048;
     config.gltfTextureOptions.maxTextureAtlasHeight = 2048;
-    config.gltfTextureOptions.ext = ".jpg";
+    config.gltfTextureOptions.ext = ".ktx2";
     //config.options->setOptionString("ct=draco");
     //config.options->setOptionString("ct=meshopt");
     //config.options->setOptionString("quantize");
     //config.options->setOptionString("quantize ct=meshopt");
-    if (!tileset->toFile(config, node))
+    if (!tileset->toFile(config))
     {
         OSG_FATAL << "3dtiles 文件导出失败...." << endl;
     }
 
 }
 
-osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_ptr<Tile> parent)
+osg::ref_ptr<B3DMTile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_ptr<B3DMTile> parent)
 {
-    osg::ref_ptr<Tile> tile = new Tile(group,parent);
+    osg::ref_ptr<B3DMTile> tile = new B3DMTile(group,parent);
 
     if (group.valid())
     {
@@ -192,7 +196,7 @@ osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_
         {
             for (size_t i = 0; i < group->getNumChildren(); ++i)
             {
-                osg::ref_ptr<Tile> childTile = convertOsgGroup2Tile(group->getChild(i)->asGroup(), tile);
+                osg::ref_ptr<B3DMTile> childTile = convertOsgGroup2Tile(group->getChild(i)->asGroup(), tile);
                 tile->children.push_back(childTile);
             }
         }
@@ -205,7 +209,7 @@ osg::ref_ptr<Tile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_
 osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node)
 {
     osg::ref_ptr<Tileset> tileset = new Tileset;
-    osg::ref_ptr<Tile> rootTile = convertOsgGroup2Tile(node->asGroup());
+    osg::ref_ptr<B3DMTile> rootTile = convertOsgGroup2Tile(node->asGroup());
     tileset->root = rootTile;
     return tileset.release();
 }
@@ -256,7 +260,7 @@ int main() {
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
     //testI3DM(R"(dixiashifengmian)");
-    buildTree(R"(龙翔桥站厅)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
     return 1;
 }

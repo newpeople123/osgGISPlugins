@@ -26,6 +26,18 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 		stats.print(osg::notify(osg::NOTICE));
 	}
 
+	if (options & MERGE_TRANSFORMS)
+	{
+		OSG_INFO << "Optimizer::optimize() doing MERGE_TRANSFORMS" << std::endl;
+		osg::Group* group = node->asGroup();
+		if (group && group->getNumChildren() > 1)
+		{
+			MergeTransformVisitor mtv;
+			node->accept(mtv);
+			node = mtv.getNode();
+		}
+	}
+
 	if (options & TEXTURE_ATLAS_BUILDER_BY_STB)
 	{
 		OSG_INFO << "Optimizer::optimize() doing TEXTURE_ATLAS_BUILDER by stb library" << std::endl;
@@ -605,7 +617,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 		osg::ref_ptr<osg::Image> image = texture->getImage(0);
 		if (image.valid())
 		{
-			resizeImageToPowerOfTwo(image);
+			resizeImageToPowerOfTwo(image, _options.maxWidth, _options.maxHeight);;
 			if (_options.packTexture)
 			{
 				bool bBuildTexturePacker = true;
@@ -678,7 +690,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_
 			osg::ref_ptr<osg::Image> image = texture->getImage(0);
 			if (image.valid())
 			{
-				resizeImageToPowerOfTwo(image);
+				resizeImageToPowerOfTwo(image, _options.maxWidth, _options.maxHeight);;
 			}
 		}
 	}
@@ -819,8 +831,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 			for (auto& entry : _geometryImgMap)
 			{
@@ -858,7 +870,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 
 osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
 {
-	int area = _options.maxWidth * _options.maxHeight;
+	int area = _options.maxTextureAtlasWidth * _options.maxTextureAtlasHeight;
 	std::sort(imgs.begin(), imgs.end(), GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight);
 	std::vector<size_t> indexPacks;
 	osg::ref_ptr<osg::Image> packedImage;
@@ -1007,8 +1019,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 			for (auto& entry : _geometryMatMap)
 			{
@@ -1128,8 +1140,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 
 			for (auto it = _geometryMatMap.begin(); it != _geometryMatMap.end(); ++it)
@@ -1192,8 +1204,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage);
 			exportImage(packedImage);
 			for (auto& entry : _geometryMatMap)
 			{
@@ -1348,15 +1360,15 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 	img->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
 }
 
-bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img)
+bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const unsigned int maxWidth, const unsigned int maxHeight)
 {
 	int originalWidth = img->s();
 	int originalHeight = img->t();
 	int newWidth = findNearestPowerOfTwo(originalWidth);
 	int newHeight = findNearestPowerOfTwo(originalHeight);
 
-	newWidth = newWidth > _options.maxWidth ? _options.maxWidth : newWidth;
-	newHeight = newHeight > _options.maxHeight ? _options.maxHeight : newHeight;
+	newWidth = newWidth > maxWidth ? maxWidth : newWidth;
+	newHeight = newHeight > maxHeight ? maxHeight : newHeight;
 	img->scaleImage(newWidth, newHeight, img->r());
 	return true;
 }
@@ -1405,4 +1417,39 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<
 		return img1->s() > img2->s();
 	}
 	return img1->t() > img2->t();
+}
+
+/** TextureAtlasBuilderVisitor */
+void GltfOptimizer::MergeTransformVisitor::apply(osg::MatrixTransform& xtransform)
+{
+	osg::Matrixd previousMatrix = _currentMatrix;
+	osg::Matrixd localMatrix;
+	xtransform.computeLocalToWorldMatrix(localMatrix, this);
+	_currentMatrix.preMult(localMatrix);
+	traverse(xtransform);
+	_currentMatrix = previousMatrix;
+}
+
+void GltfOptimizer::MergeTransformVisitor::apply(osg::Geode& geode)
+{
+	_matrixNodesMap[_currentMatrix].push_back(&geode);
+}
+
+osg::Node* GltfOptimizer::MergeTransformVisitor::getNode()
+{
+	osg::ref_ptr<osg::Group> group = new osg::Group;
+
+	for (auto& item : _matrixNodesMap)
+	{
+		osg::Matrixd matrix = item.first;
+		osg::ref_ptr<osg::MatrixTransform> transformNode = new osg::MatrixTransform;
+		transformNode->setMatrix(matrix);
+		for (osg::ref_ptr<osg::Node> node : item.second)
+		{
+			transformNode->addChild(node);
+		}
+		group->addChild(transformNode);
+	}
+
+	return group.release();
 }

@@ -33,9 +33,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 	if (ext == "i3dm")
 	{
 		osg::ref_ptr<osg::Group> geodes = nc_node.asGroup()->getChild(0)->asGroup();
-		osg::ref_ptr<osg::MatrixTransform> waitConvertGeodes = new osg::MatrixTransform;
-		// 将 Y 轴向上的 nc_node 旋转为 Z 轴向上
-		// waitConvertGeodes->setMatrix(osg::Matrixd::rotate(osg::inDegrees(45.0), osg::Vec3d(0.0, 0.0, 1.0)));
+		osg::ref_ptr<osg::Group> waitConvertGeodes = new osg::Group;
 		for (size_t i = 0; i < geodes->getNumChildren(); ++i)
 		{
 			waitConvertGeodes->addChild(geodes->getChild(i));
@@ -178,26 +176,11 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 		else
 		{
 			I3DMFile i3dmFile;
-			osg::Vec3f positionMin(FLT_MAX, FLT_MAX, FLT_MAX);
-			osg::Vec3f positionMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 			osg::ref_ptr<osg::Group> matrixTransforms = nc_node.asGroup();
 			const size_t length = matrixTransforms->getNumChildren();
-			for (size_t i = 0; i < length; ++i)
-			{
-				osg::ref_ptr<osg::MatrixTransform> matrixTransform = dynamic_cast<osg::MatrixTransform*>(matrixTransforms->getChild(i));
 
-				if (matrixTransform.valid())
-				{
-					const osg::Vec3f position = matrixTransform->getMatrix().getTrans();
-					positionMin.set(osg::minimum(positionMin.x(), position.x()), osg::minimum(positionMin.y(), position.y()), osg::minimum(positionMin.z(), position.z()));
-					positionMax.set(osg::maximum(positionMax.x(), position.x()), osg::maximum(positionMax.y(), position.y()), osg::maximum(positionMax.z(), position.z()));
-				}
-			}
-			const osg::Vec3f volumeOffset = positionMin;
-			const osg::Vec3f volumeScale = positionMax - positionMin;
-
-			i3dmFile.featureTableJSON = createFeatureI3DMTableJSON(length, volumeOffset, volumeScale);
-			i3dmFile.featureTableBinary = createFeatureI3DMTableBinary(matrixTransforms, volumeOffset, volumeScale);
+			i3dmFile.featureTableJSON = createFeatureI3DMTableJSON(length);
+			i3dmFile.featureTableBinary = createFeatureI3DMTableBinary(matrixTransforms);
 			i3dmFile.batchTableJSON = createBatchTableJSON(bthv);
 			i3dmFile.glbData = gltfBuf.str();
 			i3dmFile.calculateHeaderSizes();
@@ -221,7 +204,7 @@ std::string ReaderWriterGLTF::createFeatureB3DMTableJSON(const osg::Vec3& center
 	return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int length, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const
+std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int length) const
 {
 	json featureTable;
 	featureTable["INSTANCES_LENGTH"] = length;
@@ -276,7 +259,7 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int leng
 	return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const
+std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const
 {
 	const unsigned int length = matrixTransforms->getNumChildren();
 
@@ -295,40 +278,47 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Gro
 		if (!matrixTransform.valid()) {
 			continue;
 		}
+		const osg::Matrixd yUpToZUpRotationMatrix = osg::Matrixd::rotate(osg::PI / 2, osg::Vec3(1.0, 0.0, 0.0));
+		const osg::Matrixd zUpToYUpRotationMatrix = osg::Matrixd::rotate(-osg::PI / 2, osg::Vec3(1.0, 0.0, 0.0));
+		// Cesium默认是Z轴朝上的，由于设置了gltfUpAxis的值为Y，
+		// 需要保证节点(matrixTransform)本身是Y轴朝上的，同时需要将Cesium默认的Z轴朝上转换为Y轴朝上。
+		// 注：当Cesium加载3dtiles并识别到gltfUpAxis的值为Y时，会自动左乘一个Axis.Y_UP_TO_Z_UP矩阵
+		//     （即与 yUpToZUpRotationMatrix 值相同）。这样，两个相反的变换矩阵（yUpToZUp 和 zUpToYUp）就抵消了，
+		//     模型的姿态才会正确。如果不进行 zUpToYUpRotationMatrix 的预乘，模型的姿态和位置在渲染时会不正确。
+		const osg::Matrixd transformedMatrix = zUpToYUpRotationMatrix * matrixTransform->getMatrix();
 
-		const osg::Matrix matrix = matrixTransform->getMatrix();
+		osg::Vec3d position;
+		osg::Quat rotation;
+		osg::Vec3d scale;
+		osg::Quat scaleOrientation; // 对应缩放的旋转
 
-		const osg::Vec3f position = osg::Quat(osg::inDegrees(90.0), osg::Vec3(1.0, 0, 0)) * matrix.getTrans();
-		positions[i * 3 + 0] = position.x(); 
-		positions[i * 3 + 1] = position.y(); 
-		positions[i * 3 + 2] = position.z();  
+		transformedMatrix.decompose(position, rotation, scale, scaleOrientation);
+		// 从transformedMatrix中提取出的position仍然是Y轴朝上的，
+		// 但是Cesium要求Z轴朝上，所以需要将position转换到Z轴朝上坐标系。
+		position = yUpToZUpRotationMatrix.preMult(position);
+		positions[i * 3 + 0] = position.x();
+		positions[i * 3 + 1] = position.y();
+		positions[i * 3 + 2] = position.z();
 
-		osg::Vec3f up = matrix.getRotate() * osg::Quat(osg::inDegrees(90.0), osg::Vec3(1.0, 0, 0)) * osg::Vec3f(0, 0, -1);
-		normalUps[i * 3 + 0] = up.x();
-		normalUps[i * 3 + 1] = up.y();
-		normalUps[i * 3 + 2] = up.z();
-
-		osg::Vec3f right = matrix.getRotate() * osg::Quat(osg::inDegrees(90.0), osg::Vec3(1.0, 0, 0)) * osg::Vec3f(1, 0, 0);
-
-		normalRights[i * 3 + 0] = right.x();
-		normalRights[i * 3 + 1] = right.y();
-		normalRights[i * 3 + 2] = right.z();
-
+		// 类似地，rotation（旋转）也需要转换
+		const osg::Vec3f upVector = yUpToZUpRotationMatrix.preMult(rotation * osg::Vec3f(0, 1, 0));
+		normalUps[i * 3 + 0] = upVector.x();
+		normalUps[i * 3 + 1] = upVector.y();
+		normalUps[i * 3 + 2] = upVector.z();
+		const osg::Vec3f rightVector = yUpToZUpRotationMatrix.preMult(rotation * osg::Vec3f(1, 0, 0));
+		normalRights[i * 3 + 0] = rightVector.x();
+		normalRights[i * 3 + 1] = rightVector.y();
+		normalRights[i * 3 + 2] = rightVector.z();
 
 
-		const osg::Vec3f scale = matrix.getScale();
 		scaleNonUniforms[i * 3 + 0] = scale.x();
 		scaleNonUniforms[i * 3 + 1] = scale.y();
 		scaleNonUniforms[i * 3 + 2] = scale.z();
-
 
 		batchIDUint8s[i] = i;
 		batchIDUint16s[i] = i;
 		batchIDUint32s[i] = i;
 	}
-
-
-
 
 	// 提前分配内存
 	std::ostringstream oss;

@@ -96,9 +96,9 @@ public:
 
     std::string createFeatureB3DMTableJSON(const osg::Vec3& center,  unsigned short batchLength) const;
 
-    std::string createFeatureI3DMTableJSON(const unsigned int length, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const;
+    std::string createFeatureI3DMTableJSON(const unsigned int length) const;
 
-    std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms, const osg::Vec3 volumeOffset, const osg::Vec3 volumeScale) const;
+    std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const;
 
     std::string createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const;
 

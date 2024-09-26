@@ -1,7 +1,7 @@
 #include "3dtiles/hlod/QuadtreeBuilder.h"
-osg::ref_ptr<Tile> QuadtreeBuilder::divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent, const unsigned int x, const unsigned int y, const unsigned int z, const unsigned int level)
+osg::ref_ptr<B3DMTile> QuadtreeBuilder::divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent, const unsigned int x, const unsigned int y, const unsigned int z, const unsigned int level)
 {
-    osg::ref_ptr<Tile> tile = new Tile(parent);
+    osg::ref_ptr<B3DMTile> tile = new B3DMTile(dynamic_cast<B3DMTile*>(parent.get()));
     tile->level = level;
     tile->x = x;
     tile->y = y;

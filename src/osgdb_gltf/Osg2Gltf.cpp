@@ -187,6 +187,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 					std::fill(colorsPerVertex->begin(), colorsPerVertex->end(), colors->at(0));
 					colors = colorsPerVertex;
 				}
+				getOrCreateBufferView(colors, GL_ARRAY_BUFFER_ARB);
 			}
 		}
 
@@ -221,50 +222,37 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 			mesh.primitives.emplace_back();
 			tinygltf::Primitive& primitive = mesh.primitives.back();
 
+			const int currentMaterial = getCurrentMaterial();// 没有纹理坐标未必没有材质，可以是纯色的材质
+			if (currentMaterial >= 0)
+			{
+				// Cesium may crash if using texture without texCoords
+				// gltf_validator will report it as errors
+				// ThreeJS seems to be fine though
+				primitive.material = currentMaterial;
+			}
 			if (texCoords.valid() && texCoords->size() == positions->size())
 			{
-				const int currentMaterial = getCurrentMaterial();
-				if (currentMaterial >= 0)
+				getOrCreateBufferView(texCoords.get(), GL_ARRAY_BUFFER_ARB);
+
+				const int texAccessorIndex = getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
+				if (texAccessorIndex > -1)
 				{
-					// Cesium may crash if using texture without texCoords
-					// gltf_validator will report it as errors
-					// ThreeJS seems to be fine though
-					primitive.material = currentMaterial;
-					getOrCreateBufferView(texCoords.get(), GL_ARRAY_BUFFER_ARB);
-
-					const int texAccessorIndex = getOrCreateAccessor(texCoords.get(), pset, primitive, "TEXCOORD_0");
-					if (texAccessorIndex > -1)
+					osg::Vec2f texMin(FLT_MAX, FLT_MAX);
+					osg::Vec2f texMax(-FLT_MAX, -FLT_MAX);
+					for (const osg::Vec2& t : *texCoords)
 					{
-						osg::Vec2f texMin(FLT_MAX, FLT_MAX);
-						osg::Vec2f texMax(-FLT_MAX, -FLT_MAX);
-						for (const osg::Vec2& t : *texCoords)
+						if (!t.isNaN())
 						{
-							if (!t.isNaN())
-							{
-								texMin.x() = osg::minimum(texMin.x(), t.x());
-								texMin.y() = osg::minimum(texMin.y(), t.y());
+							texMin.x() = osg::minimum(texMin.x(), t.x());
+							texMin.y() = osg::minimum(texMin.y(), t.y());
 
-								texMax.x() = osg::maximum(texMax.x(), t.x());
-								texMax.y() = osg::maximum(texMax.y(), t.y());
-							}
+							texMax.x() = osg::maximum(texMax.x(), t.x());
+							texMax.y() = osg::maximum(texMax.y(), t.y());
 						}
-						//if (fabs(0.0 - fabs(texMin.x())) < 0.00001) {
-						//    texMin.x() = 0.0;
-						//}
-						//if (fabs(0.0 - fabs(texMin.y())) < 0.00001) {
-						//    texMin.y() = 0.0;
-						//}
-						//if (fabs(1.0 - fabs(texMax.x())) < 0.00001) {
-						//    texMax.x() = 1.0;
-						//}
-						//if (fabs(1.0 - fabs(texMax.x())) < 0.00001) {
-						//    texMax.y() = 1.0;
-						//}
-						// record min/max for position array (required):
-						tinygltf::Accessor& texacc = _model.accessors[texAccessorIndex];
-						texacc.minValues = { texMin.x(), texMin.y() };
-						texacc.maxValues = { texMax.x(), texMax.y() };
 					}
+					tinygltf::Accessor& texacc = _model.accessors[texAccessorIndex];
+					texacc.minValues = { texMin.x(), texMin.y() };
+					texacc.maxValues = { texMax.x(), texMax.y() };
 				}
 			}
 

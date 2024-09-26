@@ -25,18 +25,21 @@ ${COMPRESS_HEADER_FILES} ${COMPRESS_SOURCE_FILES}
 ${MATERIAL_HEADER_FILES} ${MATERIAL_SOURCE_FILES} 
 ${B3DM_HEADER_FILES} ${B3DM_SOURCE_FILES}
 ${OPTIMIZE_HEADER_FILES} ${OPTIMIZE_SOURCE_FILES}
+${PROJECT_ROOT_DIR}/include/utils/Utils.h ${PROJECT_ROOT_DIR}/src/utils/Utils.cpp
 )
 source_group("include" FILES ${HEADER_FILES})
 source_group("include/optimizer" FILES ${OPTIMIZE_HEADER_FILES}) 
 source_group("include/optimizer/compress" FILES ${COMPRESS_HEADER_FILES})
 source_group("include/optimizer/material" FILES ${MATERIAL_HEADER_FILES})
 source_group("include/b3dm" FILES ${B3DM_HEADER_FILES}) 
+source_group("include/uitls" FILES ${PROJECT_ROOT_DIR}/include/utils/Utils.h) 
 
 source_group("src" FILES ${SOURCE_FILES})
 source_group("src/optimizer/" FILES ${OPTIMIZE_SOURCE_FILES}) 
 source_group("src/optimizer/compress" FILES ${COMPRESS_SOURCE_FILES})
 source_group("src/optimizer/material" FILES ${MATERIAL_SOURCE_FILES})
 source_group("src/b3dm" FILES ${B3DM_SOURCE_FILES}) 
+source_group("src/uitls" FILES ${PROJECT_ROOT_DIR}/src/utils/Utils.cpp) 
 
 if (OPENSCENEGRAPH_FOUND)
     include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
