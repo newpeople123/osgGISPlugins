@@ -1,6 +1,5 @@
 {
-  "name": "versions-test",
-  "version": "1.0.0",
+  "builtin-baseline": "c43dbaeca0f96d90da29a151eb2ee14cad5f0aeb",
   "dependencies": [
     {
       "name": "osg",
@@ -33,6 +32,7 @@
       "name": "tbb"
     }
   ],
+  "name": "osg-gis-plugins",
   "overrides": [
     {
       "name": "libpq",
@@ -67,5 +67,5 @@
       "version": "2023-04-11#1"
     }
   ],
-  "builtin-baseline": "c43dbaeca0f96d90da29a151eb2ee14cad5f0aeb"
+  "version": "1.0.0"
 }
