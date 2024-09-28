@@ -1360,7 +1360,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 	img->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
 }
 
-bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const unsigned int maxWidth, const unsigned int maxHeight)
+bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight)
 {
 	int originalWidth = img->s();
 	int originalHeight = img->t();

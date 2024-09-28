@@ -24,10 +24,10 @@ namespace osgGISPlugins
 
         struct GltfTextureOptimizationOptions
         {
-            unsigned int maxWidth = 512;
-            unsigned int maxHeight = 512;
-            unsigned int maxTextureAtlasWidth = 2048;
-            unsigned int maxTextureAtlasHeight = 2048;
+            int maxWidth = 512;
+            int maxHeight = 512;
+            int maxTextureAtlasWidth = 2048;
+            int maxTextureAtlasHeight = 2048;
 
             std::string ext = ".png";
             std::string cachePath = "";
@@ -236,7 +236,7 @@ namespace osgGISPlugins
 
             void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& images, const GltfTextureType type);
 
-            bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const unsigned int maxWidth, const unsigned int maxHeight);
+            bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
 
             int findNearestPowerOfTwo(int value);
 
