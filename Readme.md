@@ -8,25 +8,13 @@
   <img src="https://img.shields.io/badge/platform-linux-green.svg" />
 </div>
 <div align="left">
-  <img src="https://img.shields.io/badge/plugin-osgdb_fbx-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/plugin-osgdb_gltf-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/plugin-osgdb_webp-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/plugin-ktx-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/tool-b3dm2gltf-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/tool-model23dtiles-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/tool-simplifier-brightgreen.svg" />
-  <img src="https://img.shields.io/badge/tool-texturepacker-brightgreen.svg" />
-</div>
-<div align="left">
   <img src="https://img.shields.io/badge/feature-三维模型轻量化-yellow.svg" />
   <img src="https://img.shields.io/badge/feature-更高效的3dtiles-yellow.svg" />
   <img src="https://img.shields.io/badge/feature-纹理图集-yellow.svg" />
+  <img src="https://img.shields.io/badge/feature-gltf/glb/b3dm/i3dm-yellow.svg" />
+  <img src="https://img.shields.io/badge/feature-read fbx with pbr material-yellow.svg" />
   <img src="https://img.shields.io/badge/feature-ktx2-yellow.svg" />
-</div>
-<div align="left">
-  <img src="https://img.shields.io/badge/build-visual studio-blue.svg" />
-  <img src="https://img.shields.io/badge/build-cmake-blue.svg" />
-  <img src="https://img.shields.io/badge/build-vcpkg-blue.svg" />
+  <img src="https://img.shields.io/badge/feature-webp-yellow.svg" />
 </div>
 <div align="left">
   <img src="https://img.shields.io/badge/dependencies-osg-orange.svg" />
@@ -40,6 +28,18 @@
 </div>
 
 # 简介
+<div align="left">
+  <img src="https://img.shields.io/badge/plugin-osgdb_fbx-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/plugin-osgdb_gltf-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/plugin-osgdb_webp-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/plugin-ktx-brightgreen.svg" />
+</div>
+<div align="left">
+  <img src="https://img.shields.io/badge/tool-b3dm2gltf-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/tool-model23dtiles-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/tool-simplifier-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/tool-texturepacker-brightgreen.svg" />
+</div>
 
 osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件、导出gltf/glb/b3dm/i3dm文件、读取/导出ktx2格式图片、读取/导出webp格式图片。同时提供了如下子工具：
 
@@ -48,11 +48,35 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 - `3D模型简化`
 - `多张纹理打包成一个纹理图集`
 
-## osgdb_fbx
+## osgdb_fbx 
+<div align="left">
+  <img src="https://img.shields.io/badge/read-fbx-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/write-fbx-brightgreen.svg" />
+</div>
 
 在osg的fbx的插件的基础上，参考了[FBX2glTF](https://github.com/facebookincubator/FBX2glTF)项目，使得能够读取3dmax导出的带有PBR材质的FBX文件，并能在osg中加载。
 
 ## osgdb_gltf
+<div align="left">
+  <img src="https://img.shields.io/badge/read-gltf/glb/b3dm/i3dm-red.svg" />
+  <img src="https://img.shields.io/badge/write-gltf/glb/b3dm/i3dm-brightgreen.svg" />
+</div>
+<div align="left">
+  <img src="https://img.shields.io/badge/extension-KHR_materials_unlit-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-KHR_materials_pbrSpecularGlossiness-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-KHR_draco_mesh_compression-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-KHR_mesh_quantization-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-EXT_meshopt_compression-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-KHR_texture_basisu-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-KHR_texture_transform-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/extension-EXT_texture_webp-brightgreen.svg" />
+</div>
+<div align="left">
+  <img src="https://img.shields.io/badge/optimize-primitive-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/optimize-mesh-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/optimize-texture-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/optimize-material-brightgreen.svg" />
+</div>
 
 支持导出gltf/glb/b3dm/i3dm，暂不支持读取。
 
@@ -77,10 +101,18 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 通过合并材质、合并几何图元等方式优化gltf性能，减少drawcall的调用次数。
 
 ## osgdb_webp
+<div align="left">
+  <img src="https://img.shields.io/badge/read-webp-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/write-webp-brightgreen.svg" />
+</div>
 
 和osgEarth的webp插件一样。
 
 ## osgdb_ktx
+<div align="left">
+  <img src="https://img.shields.io/badge/read-ktx/ktx2-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/write-ktx/ktx2-brightgreen.svg" />
+</div>
 
 在王锐大神的[osgVerse](https://github.com/xarray/osgverse)的ktx插件基础上进行了小改动，支持导出ktx2格式的纹理图片，支持Mipmaps。
 
@@ -140,9 +172,9 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `comporessLevel` draco压缩级别/顶点量化级别，可选的值为：low、medium、high，默认值为：medium，仅当vf的值为quantize、quantize_meshopt和draco时生效。
 `-t` 3dtiles的组织结构，可以为四叉树或八叉树，可选的值有：quad、oc，默认值为：quad。
 `-ratio` 3dtiles中间节点的简化比例，默认值为：0.5。
-`-lat` 纬度,默认30
-`-lng` 经度，默认116
-`-height` 高度，默认300
+`-lat` 纬度,默认30。
+`-lng` 经度，默认116。
+`-height` 高度，默认300。
 `-translationX` 重设模型原点位置的x坐标，默认值为0。
 `-translationY` 重设模型原点位置的y坐标，默认值为0。
 `-translationZ` 重设模型原点位置的z坐标，默认值为0。
@@ -201,6 +233,12 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-height` 纹理图集最大高度。
 
 # 如何编译
+<div align="left">
+  <img src="https://img.shields.io/badge/build-visual studio-blue.svg" />
+  <img src="https://img.shields.io/badge/build-cmake-blue.svg" />
+  <img src="https://img.shields.io/badge/build-vcpkg-blue.svg" />
+  <img src="https://img.shields.io/badge/build-docker-blue.svg" />
+</div>
 
 1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah
 提取码：fgah )，下载解压后放在和src同级目录下即可；
