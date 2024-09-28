@@ -32,7 +32,7 @@
 </div>
 <div align="left">
   <img src="https://img.shields.io/badge/dependencies-osg-orange.svg" />
-  <img src="https://img.shields.io/badge/dependencies-libewbp-orange.svg" />
+  <img src="https://img.shields.io/badge/dependencies-libwebp-orange.svg" />
   <img src="https://img.shields.io/badge/dependencies-ktx-orange.svg" />
   <img src="https://img.shields.io/badge/dependencies-draco-orange.svg" />
   <img src="https://img.shields.io/badge/dependencies-meshoptimizer-orange.svg" />
