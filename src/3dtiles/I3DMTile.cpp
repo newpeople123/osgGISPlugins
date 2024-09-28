@@ -7,9 +7,9 @@
 using namespace osgGISPlugins;
 void I3DMTile::computeGeometricError()
 {
+	this->refine = Refinement::ADD;
 	if (!this->children.size())
 	{
-		this->refine = Refinement::ADD;
 		if (this->node.valid())
 		{
 			osg::ref_ptr<osg::Group> group = this->node->asGroup();
@@ -34,6 +34,10 @@ void I3DMTile::computeGeometricError()
 		const double childNodeGeometricError = this->children[i]->geometricError;
 		this->geometricError += pow(childNodeGeometricError, 2);
 		total += childNodeGeometricError;
+		if (this->children[i]->children.size() == 0)
+		{
+			this->children[i]->geometricError = 0.0;
+		}
 	}
 	if (total > 0.0)
 		this->geometricError /= total;
@@ -59,9 +63,9 @@ void I3DMTile::write(const string& str, const float simplifyRatio, const GltfOpt
 		BatchIdVisitor biv;
 		nodeCopy->accept(biv);
 
-		const string path = str + "\\InstanceTiles\\" + to_string(level);
+		const string path = str + "\\InstanceTiles\\";
 		osgDB::makeDirectory(path);
-		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + "." + type, options);
+		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(z) + "." + type, options);
 
 	}
 
@@ -72,4 +76,12 @@ void I3DMTile::write(const string& str, const float simplifyRatio, const GltfOpt
 				this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
 			}
 		});
+}
+
+void I3DMTile::setContentUri()
+{
+	if (this->node.valid() && this->node->asGroup()->getNumChildren())
+	{
+		contentUri = "InstanceTiles/Tile_" + to_string(z) + "." + type;
+	}
 }

@@ -4,10 +4,6 @@
 #include <osg/MatrixTransform>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
-
-
-
-
 using namespace osgGISPlugins;
 osg::ref_ptr<B3DMTile> TreeBuilder::build()
 {
@@ -115,7 +111,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 
 osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 {
-	/*
+	
 	std::unordered_map<std::vector<osg::Matrixd>, std::vector<osg::ref_ptr<osg::Geode>>, MatrixsHash, MatrixsEqual> groupedGeodes;
 
 	for (const auto& pair : _geodeMatrixMap) {
@@ -141,7 +137,11 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 	{
 		osg::ref_ptr<I3DMTile> childI3dmTile = new I3DMTile(i3dmTile);
 		childI3dmTile->node = new osg::Group;
-		osg::ref_ptr<osg::Group> group = childI3dmTile->node->asGroup();
+
+		osg::ref_ptr<I3DMTile> grandChildI3dmTile = new I3DMTile(i3dmTile);
+		grandChildI3dmTile->node = new osg::Group;
+		childI3dmTile->children.push_back(grandChildI3dmTile);
+		osg::ref_ptr<osg::Group> group = grandChildI3dmTile->node->asGroup();
 		for (const auto matrix : pair.first)
 		{
 			osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
@@ -152,30 +152,12 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 			}
 			group->addChild(transform);
 		}
-		childI3dmTile->z = index;
+		grandChildI3dmTile->z = index;
 		i3dmTile->children.push_back(childI3dmTile);
 		index++;
 	}
-	*/
+	
 
-	osg::ref_ptr<I3DMTile> i3dmTile = new I3DMTile;
-	i3dmTile->node = new osg::Group;
-	size_t index = 0;
-	for (const auto& pair : _geodeMatrixMap)
-	{
-		osg::ref_ptr<I3DMTile> childI3dmTile = new I3DMTile(i3dmTile);
-		childI3dmTile->node = new osg::Group;
-		osg::ref_ptr<osg::Group> group = childI3dmTile->node->asGroup();
-		for (const auto matrix : pair.second)
-		{
-			osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
-			transform->setMatrix(matrix);
-			transform->addChild(pair.first);
-			group->addChild(transform);
-		}
-		childI3dmTile->z = index;
-		i3dmTile->children.push_back(childI3dmTile);
-		index++;
-	}
+
 	return i3dmTile;
 }

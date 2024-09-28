@@ -48,6 +48,7 @@ namespace osgGISPlugins
 		unsigned int x = 0;
 		unsigned int y = 0;
 		unsigned int z = 0;
+		int axis = -1;
 
 		Tile() = default;
 
@@ -79,7 +80,7 @@ namespace osgGISPlugins
 
 		int getMaxLevel() const;
 
-		void setContentUri();
+		virtual void setContentUri();
 
 		void computeBoundingVolumeBox();
 

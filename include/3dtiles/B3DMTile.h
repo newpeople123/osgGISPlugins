@@ -11,7 +11,6 @@ namespace osgGISPlugins
 
 		void rebuildHlodAndComputeGeometricErrorByRefinement();
 	public:
-		int axis = -1;
 
 		B3DMTile() {
 			type = "b3dm";

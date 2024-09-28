@@ -32,6 +32,8 @@ namespace osgGISPlugins
 
 		void write(const string& path, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options) override;
 
+		void setContentUri() override;
+
 	};
 }
 #endif // !OSG_GIS_PLUGINS_I3DM_TILE_H

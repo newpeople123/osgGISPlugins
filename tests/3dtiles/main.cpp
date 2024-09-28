@@ -18,8 +18,11 @@ using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
 //const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+
+const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
+const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
 
 osg::ref_ptr<B3DMTile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<B3DMTile> parent = nullptr);
 void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth);
@@ -149,9 +152,9 @@ void buildTree(const std::string& filename)
     //node->setMatrix(zUpToYUpRotationMatrix);
     //node->addChild(node1);
 
-    osg::ref_ptr<osgDB::Options> readOptions2 = new osgDB::Options;
-    readOptions2->setOptionString("TessellatePolygons");
-    osg::ref_ptr<osg::Node> node2 = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions2.get());
+    //osg::ref_ptr<osgDB::Options> readOptions2 = new osgDB::Options;
+    //readOptions2->setOptionString("TessellatePolygons");
+    //osg::ref_ptr<osg::Node> node2 = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions2.get());
 
     osg::BoundingBox bb;
     bb.expandBy(node->getBound());
@@ -172,8 +175,8 @@ void buildTree(const std::string& filename)
     config.path = OUTPUT_BASE_PATH + R"(3dtiles\test1)";
     config.gltfTextureOptions.maxWidth = 512;
     config.gltfTextureOptions.maxHeight = 512;
-    config.gltfTextureOptions.maxTextureAtlasWidth = 2048;
-    config.gltfTextureOptions.maxTextureAtlasHeight = 2048;
+    config.gltfTextureOptions.maxTextureAtlasWidth = 4096;
+    config.gltfTextureOptions.maxTextureAtlasHeight = 4096;
     config.gltfTextureOptions.ext = ".ktx2";
     //config.options->setOptionString("ct=draco");
     //config.options->setOptionString("ct=meshopt");
@@ -213,6 +216,7 @@ osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node)
     tileset->root = rootTile;
     return tileset.release();
 }
+
 void testI3DM(const std::string& filename) {
     osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
     //options->setOptionString("TessellatePolygons");
@@ -247,6 +251,7 @@ void testI3DM(const std::string& filename) {
 
     OSG_NOTICE << std::endl;
 }
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
