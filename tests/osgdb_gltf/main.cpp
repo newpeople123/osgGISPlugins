@@ -26,8 +26,11 @@ using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 //const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
 
-const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
-const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
+
+const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
+const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
 //const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
 //const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
 /// <summary>
@@ -147,8 +150,8 @@ int main() {
 	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
 	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-	options->setOptionString("eb pp ct=meshopt");
-	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
+	//options->setOptionString("eb pp ct=meshopt");
+	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "glb", options, "jpg", 1, false);
 	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 	_CrtDumpMemoryLeaks();
 	//testSimplifier(R"(芜湖水厂总装单位M)");

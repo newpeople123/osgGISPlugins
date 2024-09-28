@@ -38,6 +38,7 @@
   <img src="https://img.shields.io/badge/dependencies-meshoptimizer-orange.svg" />
   <img src="https://img.shields.io/badge/dependencies-stb-orange.svg" />
   <img src="https://img.shields.io/badge/dependencies-tbb-orange.svg" />
+  <img src="https://img.shields.io/badge/dependencies-tinygltf-orange.svg" />
 </div>
 
 # 简介
@@ -207,9 +208,11 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 提取码：fgah )，下载解压后放在和src同级目录下即可；
 2、编译时需要修改根目录下的CMakeLists文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径；
 
-3、windows环境下修改build.bat脚本的DCMAKE_TOOLCHAIN_FILE值为本地vcpkg工具路径，运行脚本即可编译；
+其他方式：
 
-4、linux环境下通过Dockerfile文件构建docker镜像即可在docker容器中运行；
+1、windows环境下修改build.bat脚本的DCMAKE_TOOLCHAIN_FILE值为本地vcpkg工具路径，运行脚本即可编译；
+
+2、linux环境下通过Dockerfile文件构建docker镜像即可在docker容器中运行；
 
 # 缺陷
 
