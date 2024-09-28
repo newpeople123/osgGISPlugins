@@ -8,11 +8,13 @@ using namespace osgGISPlugins;
 osg::ref_ptr<B3DMTile> TreeBuilder::build()
 {
 	std::map<osg::Geode*, std::vector<osg::Matrixd>> geodeMatrixMap;
+	std::map<osg::Geode*, std::vector<osg::ref_ptr<osg::UserDataContainer>>> geodeUseDataMap;
 	for (const auto pair : _geodeMatrixMap)
 	{
 		if (pair.second.size() > 1)
 		{
 			geodeMatrixMap.insert(pair);
+			geodeUseDataMap[pair.first] = _geodeUseDataMap[pair.first];
 		}
 		else
 		{
@@ -22,6 +24,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 		}
 	}
 	_geodeMatrixMap = geodeMatrixMap;
+	_geodeUseDataMap = geodeUseDataMap;
 
 	osg::ref_ptr<B3DMTile> b3dmTile = generateB3DMTile();
 	osg::ref_ptr<I3DMTile> i3dmTile = generateI3DMTile();
@@ -38,15 +41,7 @@ void TreeBuilder::apply(osg::Group& group)
 	_currentMatrix = osg::Matrix::identity();
 	// 如果是Transform节点，累积变换矩阵
 	if (osg::Transform* transform = group.asTransform())
-	{
-		//Plan A
-		//osg::Matrix localMatrix;
-		//transform->computeLocalToWorldMatrix(localMatrix, this);
-		//_currentMatrix.preMult(localMatrix);
-
-		//Plan B
-		//_currentMatrix = transform->asMatrixTransform()->getMatrix() * _currentMatrix;
-		
+	{	
 		//Plan C
 		const osg::MatrixList matrix_list = transform->getWorldMatrices();
 		for (const osg::Matrixd& matrix : matrix_list) {
@@ -64,17 +59,19 @@ void TreeBuilder::apply(osg::Group& group)
 void TreeBuilder::apply(osg::Geode& geode)
 {
 	osg::ref_ptr<osg::Node> node = geode.asNode();
-
+	osg::ref_ptr<osg::UserDataContainer> userData = node->getUserDataContainer();
 	for (auto item = _geodeMatrixMap.begin(); item != _geodeMatrixMap.end(); ++item)
 	{
 		osg::ref_ptr<osg::Geode> geodeItem = item->first;
 		if (Utils::compareGeode(*geodeItem, geode))
 		{
 			item->second.push_back(_currentMatrix);
+			_geodeUseDataMap[item->first].push_back(userData);
 			return;
 		}
 	}
 	_geodeMatrixMap[node->asGeode()].push_back(_currentMatrix);
+	_geodeUseDataMap[node->asGeode()].push_back(userData);
 
 }
 
@@ -112,10 +109,10 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 {
 	
-	std::unordered_map<std::vector<osg::Matrixd>, std::vector<osg::ref_ptr<osg::Geode>>, MatrixsHash, MatrixsEqual> groupedGeodes;
+	std::unordered_map<std::vector<osg::Matrixd>, std::vector<osg::Geode*>, MatrixsHash, MatrixsEqual> groupedGeodes;
 
 	for (const auto& pair : _geodeMatrixMap) {
-		const auto& geode = pair.first;
+		osg::Geode* geode = pair.first;
 		const auto& matrices = pair.second;
 
 		// 查找是否已经有一个具有相同矩阵列表的组  
@@ -142,15 +139,20 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 		grandChildI3dmTile->node = new osg::Group;
 		childI3dmTile->children.push_back(grandChildI3dmTile);
 		osg::ref_ptr<osg::Group> group = grandChildI3dmTile->node->asGroup();
+		unsigned int userDataIndex = 0;
 		for (const auto matrix : pair.first)
 		{
 			osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
 			transform->setMatrix(matrix);
-			for (const osg::ref_ptr<osg::Geode> geode : pair.second)
+			for (osg::Geode* geode : pair.second)
 			{
-				transform->addChild(geode);
+				osg::ref_ptr<osg::UserDataContainer> userData = _geodeUseDataMap[geode].at(userDataIndex);
+				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(geode, osg::CopyOp::DEEP_COPY_ALL);
+				geodeCopy->setUserDataContainer(userData);
+				transform->addChild(geodeCopy);
 			}
 			group->addChild(transform);
+			userDataIndex++;
 		}
 		grandChildI3dmTile->z = index;
 		i3dmTile->children.push_back(childI3dmTile);

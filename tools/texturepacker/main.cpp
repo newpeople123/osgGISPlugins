@@ -24,16 +24,18 @@ int main(int argc, char** argv)
 #endif // _WIN32
 
     osg::ArgumentParser arguments(&argc, argv);
-    arguments.getApplicationUsage()->setDescription(arguments.getApplicationName() + " this tool is used to convert and simplify 3D model.");
-    arguments.getApplicationUsage()->addCommandLineOption("-i <files/folder>", "Input image files or folder path containing images.");
-    arguments.getApplicationUsage()->addCommandLineOption("-o <file>", "Output image file full path.");
-    arguments.getApplicationUsage()->addCommandLineOption("-width <number>", "Texture atlas width, must be a power of 2.");
-    arguments.getApplicationUsage()->addCommandLineOption("-height <number>", "Texture atlas height, must be a power of 2.");
-    arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters.");
+    osg::ApplicationUsage* usage = arguments.getApplicationUsage();
+    usage->setDescription(arguments.getApplicationName() + ",that is used to convert and simplify 3D model.");
+    usage->setCommandLineUsage("texturepacker.exe -i C:\\input -o C:\\output\\atlas.png -width 2048 -height 2048");
+    usage->addCommandLineOption("-i <files/folder>", "Input image files or folder path containing images.");
+    usage->addCommandLineOption("-o <file>", "Output image file full path.");
+    usage->addCommandLineOption("-width <number>", "Texture atlas width, must be a power of 2.");
+    usage->addCommandLineOption("-height <number>", "Texture atlas height, must be a power of 2.");
+    usage->addCommandLineOption("-h or --help", "Display command line parameters.");
 
     if (arguments.read("-h") || arguments.read("--help"))
     {
-        arguments.getApplicationUsage()->write(std::cout);
+        usage->write(std::cout);
         return 1;
     }
 
@@ -77,14 +79,14 @@ int main(int argc, char** argv)
     // 检查输入文件是否为空
     if (inputFiles.empty()) {
         std::cerr << "Input files cannot be empty!" << '\n';
-        arguments.getApplicationUsage()->write(std::cout);
+        usage->write(std::cout);
         return 0;
     }
 
     // 检查输出路径是否为空
     if (output.empty()) {
         std::cerr << "Output file cannot be empty!" << '\n';
-        arguments.getApplicationUsage()->write(std::cout);
+        usage->write(std::cout);
         return 0;
     }
 

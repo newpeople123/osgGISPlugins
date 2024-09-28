@@ -19,6 +19,8 @@ namespace osgGISPlugins
         virtual osg::ref_ptr<B3DMTile> build();
 
         std::map<osg::Geode*, osg::MatrixList> _geodeMatrixMap;
+        std::map<osg::Geode*, std::vector<osg::ref_ptr<osg::UserDataContainer>>> _geodeUseDataMap;
+
 
     protected:
         osg::ref_ptr<osg::Group> _groupsToDivideList = new osg::Group;

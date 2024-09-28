@@ -15,8 +15,13 @@ add_dependencies(${TOOL_TEST_NAME} osgdb_gltf)
 add_dependencies(${TOOL_TEST_NAME} osgdb_fbx)
 add_dependencies(${TOOL_TEST_NAME} osgdb_ktx)
 add_dependencies(${TOOL_TEST_NAME} osgdb_webp)
-source_group("include" FILES ${UTILS_HEADER_FILES} ${THREED_TILES_HEADER_FILES} ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
-source_group("src" FILES ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
+
+source_group("include/3dtiles" FILES ${THREED_TILES_HEADER_FILES}  ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
+source_group("include/util" FILES ${UTILS_HEADER_FILES})
+
+source_group("src" FILES ${DIR_SRCS})
+source_group("src/3dtiles" FILES ${THREED_TILES_SOURCE_FILES})
+source_group("src/util" FILES ${UTILS_SOURCE_FILES} ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
 
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)

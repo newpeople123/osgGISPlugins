@@ -19,15 +19,17 @@ int main(int argc, char** argv)
 #endif // _WIN32
     // use an ArgumentParser object to manage the program arguments.
     osg::ArgumentParser arguments(&argc, argv);
-    arguments.getApplicationUsage()->setDescription(arguments.getApplicationName() + "this tool is used to convert b3dm to gltf.");
-    arguments.getApplicationUsage()->addCommandLineOption("-i <input>","input b3dm file full path");
-    arguments.getApplicationUsage()->addCommandLineOption("-o <output>","output gltf/glb file full path,The output file format depends on the format of the gltf file embedded in the b3dm file");
-    arguments.getApplicationUsage()->addCommandLineOption("-h or --help", "Display command line parameters");
+    osg::ApplicationUsage* usage = arguments.getApplicationUsage();
+    usage->setDescription(arguments.getApplicationName() + ",that is used to convert b3dm to gltf.");
+    usage->setCommandLineUsage("b3dm2gltf.exe -i C:\\input\\test.b3dm -o C:\\output\\test.gltf");
+    usage->addCommandLineOption("-i <input>","input b3dm file full path");
+    usage->addCommandLineOption("-o <output>","output gltf/glb file full path,The output file format depends on the format of the gltf file embedded in the b3dm file");
+    usage->addCommandLineOption("-h or --help", "Display command line parameters");
 
     // if user request help write it out to cout.
     if (arguments.read("-h") || arguments.read("--help"))
     {
-        arguments.getApplicationUsage()->write(std::cout);
+        usage->write(std::cout);
         return 1;
     }
 
@@ -43,13 +45,13 @@ int main(int argc, char** argv)
 
     if (input.empty()) {
         std::cerr << "input file can not be null!" << '\n';
-        arguments.getApplicationUsage()->write(std::cout);
+        usage->write(std::cout);
         return 0;
     }
 
     if (output.empty()) {
         std::cerr << "output file can not be null!" << '\n';
-        arguments.getApplicationUsage()->write(std::cout);
+        usage->write(std::cout);
         return 0;
     }
 
@@ -60,7 +62,7 @@ int main(int argc, char** argv)
     }
 
     B3DMFile b3dm;
-    b3dmFile.read(reinterpret_cast<char*>(&b3dm.header), sizeof(B3DMHeader));
+    b3dmFile.read(reinterpret_cast<char*>(&b3dm.header), sizeof(Base3DModelHeader));
     if (std::strncmp(b3dm.header.magic, "b3dm", 4) != 0) {
         std::cerr << "invalid b3dm file,b3dm header's magic is not \"b3dm\":" << input << '\n';
         return 0;

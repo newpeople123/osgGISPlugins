@@ -35,7 +35,7 @@ namespace osgGISPlugins
 
 		void computeSphere(osg::ref_ptr<osg::Node> node);
 
-		void computeRegion(osg::ref_ptr<osg::Node> node);
+		void computeRegion(osg::ref_ptr<osg::Node> node, const double latitude, const double longitude, const double height);
 	};
 }
 #endif // !OSG_GIS_PLUINS_BOUNDING_VOLUME_H

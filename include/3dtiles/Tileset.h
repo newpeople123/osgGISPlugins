@@ -11,6 +11,8 @@
 #include <osgDB/Options>
 #include <osgDB/FileUtils>
 #include <osg/NodeVisitor>
+
+#include <algorithm>
 using json = nlohmann::json;
 using namespace std;
 using namespace osgGISPlugins;
@@ -50,6 +52,19 @@ namespace osgGISPlugins
 
 				osg::clampTo(this->latitude, -90.0, 90.0);
 				osg::clampTo(this->longitude, -180.0, 180.0);
+
+				osg::clampTo(this->gltfTextureOptions.maxWidth, 2, 8192);
+				osg::clampTo(this->gltfTextureOptions.maxHeight, 2, 8192);
+				osg::clampTo(this->gltfTextureOptions.maxTextureAtlasWidth, 2, 8192);
+				osg::clampTo(this->gltfTextureOptions.maxTextureAtlasHeight, 2, 8192);
+
+				std::string ext = std::string(this->gltfTextureOptions.ext.begin(), this->gltfTextureOptions.ext.end());
+				std::transform(ext.begin(), ext.end(), ext.begin(),
+					[](unsigned char c) { return std::tolower(c); });
+				if (ext != ".jpg" && ext != ".png" && ext != ".webp" && ext != ".ktx2")
+				{
+					this->gltfTextureOptions.ext = ".jpg";
+				}
 			}
 		};
 		string assetVersion = "1.0";

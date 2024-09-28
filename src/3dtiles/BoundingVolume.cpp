@@ -69,11 +69,11 @@ void BoundingVolume::computeSphere(osg::ref_ptr<osg::Node> node)
 	this->sphere = { center.x(), center.y(), center.z(), radius };
 }
 
-void BoundingVolume::computeRegion(osg::ref_ptr<osg::Node> node)
+void BoundingVolume::computeRegion(osg::ref_ptr<osg::Node> node, const double latitude, const double longitude, const double height)
 {
 	const osg::EllipsoidModel ellipsoidModel;
 	osg::Matrixd localToWorldMatrix;
-	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(30.0), osg::DegreesToRadians(116.0), 100, localToWorldMatrix);
+	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), height, localToWorldMatrix);
 
 	OBBVisitor ov;
 	node->accept(ov);

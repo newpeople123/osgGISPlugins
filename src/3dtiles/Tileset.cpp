@@ -69,13 +69,16 @@ bool Tileset::toFile(Config config) {
 	this->computeTransform(config.longitude, config.latitude, config.height);
 
 	const string filePath = config.path + "\\tileset.json";
-	const char* originalLocale = std::setlocale(LC_ALL, nullptr);
+
 	std::setlocale(LC_ALL, "zh_CN.UTF-8");
 	ofstream file(filePath);
 	if (!file.is_open()) {
 		return false;
 	}
-	std::setlocale(LC_ALL, originalLocale);
+#ifdef _WIN32
+#else
+	setlocale(LC_ALL, "en_US.UTF-8");
+#endif // _WIN32
 
 	json j = toJson();
 #ifndef NDEBUG
