@@ -1,5 +1,3 @@
-**简体中文 | [English](#Introduction)**
-
 <center><h1><b>osgGISPlugins</b></h1></center>
 
 <div align="center">
@@ -202,7 +200,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 `-height` 纹理图集最大高度。
 
-# 编译说明
+# 如何编译
 
 1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah
 提取码：fgah )，下载解压后放在和src同级目录下即可；
@@ -220,105 +218,6 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 2、model23dtiles不支持构建kd树；
 ...
 
-...
-**[简体中文](#简介) | English**
-
-# Introduction
-
-OSG's GIS plugin can read and display fbx files with Pbr material exported by 3dmax, export gltf/glb files, export b3dm files, read/export ktx2 format images, and read/export webp format images.At the same time, the following sub tools are provided:
-
-- `convert b3dm to gltf/glb`
-- `convert 3D model to 3dtiles`
-- `...`
-
-## osgdb_fbx
-
-Based on the FBX2glTF plugin of OSG's FBX, reference was made to [FBX2glTF](https://github.com/facebookincubator/FBX2glTF) project to enable reading of FBX files with Pbr material exported from 3dmax and loading in OSG.
-
-## osgdb_gltf
-
-Supports exporting gltf/glb, but currently does not support reading. On the basis of osgEarth's gltf plugin, added texture compression and vertex compression functions, supporting webp and ktx2 format textures; Use Draco/Meshopt to compress vertices, normals, and texture coordinates; Simultaneously supports binding batchId to vertices.
-
-## osgdb_webp
-
-Same as the webp plugin of osgEarth.
-
-## osgdb_ktx
-
-In xarray's [osgVerse](https://github.com/xarray/osgverse) the project has made minor changes to the ktx plugin, which supports exporting texture images in ktx2 format.
-
-# Tools Introduction
-
-## b3dm2gltf
-
-Convert b3dm files to gltf/glb.
-
-### Usage
-
-#### Command Line
-
-`b3dm2gltf.exe -i <path> -o <path>`
-
-#### Examples
-
-`b3dm2gltf.exe -i D:\test.b3dm -o D:\output.glb`
-
-## model23dtiles
-
-1. Convert 3D models into 3tiles;
-2. 3D tiles that support quadtree and octree structures;
-3. Support webp/ktx2 texture compression;
-4. Support draco and meshopoptimizer compression;
-5. Support texture merging (reduce drawcalls);
-6. The exported 3dtiles will have the user attributes of the model;
-7. The exported 3dtiles are merged through grids;
-8. Support textureAtlas;
-   ...
-   The 3D model here refers to 3D models that can be read by OSG such as FBX, OBJ, and 3ds, but does not include oblique photography models. Currently, it is recommended to use oblique photography models [https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles).
-
-### Usage
-
-#### Command Line
-
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/none> -t <quad/oc> -max <Number> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -compress_level <low/medium/high> -multi_threading <true/false>`
-
-#### Examples
-
-```sh
-# output 3dtiles by texture format ktx2 and vertex format draco
-model23dtiles.exe -i D:\test.fbx -tf ktx2 -vf draco -o D:\output -lat 30 -lng 116 -height 100
-# The maximum number of triangular faces for each b3dm node of the output 3dtiles is 10w
-model23dtiles.exe -i D:\test.fbx -max 100000 -o D:\output -lat 30 -lng 116 -height 100
-# Set the simplification ratio of the intermediate nodes of the output 3dtiles to 0.6
-model23dtiles.exe -i D:\test.fbx -ratio 0.6 -o D:\output -lat 30 -lng 116 -height 100
-# Set the tree structure of 3dtiles to a quadtree
-model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 100
-```
-
-#### Parameters
-
-`-tf` texture format,option values are png、jpg、webp、ktx2，default value is jpg.
-`-vf` vertex format,option values are draco、meshopt、none,default is none.
-`-t` tree format,option values are quad、oc,default is quad.
-`compress_level` draco comporession level,option values are low、medium、high,default is medium.
-`-max` the maximum number of triangles contained in the b3dm node.default value is 40000.
-`-ratio` Simplified ratio of intermediate nodes.default is 0.5.
-`-lat` latitude,default is 30
-`-lng` longitude,default is 116
-`-height` height,default is 300
-`-multi_threading` Is multithreading enabled,default is false
-
-# Compilation Instructions
-
-1. Compilation requires libraries such as fbxsdk and modified tinygltf, but the file is too large to upload, so it was placed on Baidu's online drive (link: [https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah](https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah),Extract code: fgah). After downloading and decompressing, it can be placed in the same level directory as src
-2. When compiling, it is necessary to modify the CMAKE in the CMakeLists file in the root directory the value of CMAKE_TOOLCHAIN_FILE the variable is the local vcpkg tool path.
-
-# Defect
-
-1. Currently, importing b3dm and gltf/glb files is not supported;
-2. The ktx plugin cannot read some images from the ktx 2.0 version;
-   ...
-
-# About author
+# 关于作者
 
 这是作者的第一个开源项目，非常感谢[osg](https://github.com/openscenegraph/OpenSceneGraph)、[osgEarth](https://github.com/gwaldron/osgearth)、[osgVerse](https://github.com/xarray/osgverse)、[Fbx2glTF](https://github.com/facebookincubator/FBX2glTF)、[3dtiles](https://github.com/fanvanzh/3dtiles)等开源项目对我的启发和帮助。
