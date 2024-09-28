@@ -5,6 +5,7 @@
 #include <iostream>
 #include <osgDB/FileUtils>
 #include <osg/MatrixTransform>
+#include <osgUtil/SmoothingVisitor>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -43,11 +44,15 @@ int main(int argc, char** argv)
     usage->addCommandLineOption("-translationY <number>", "The y-coordinate of the model datum point,default is 0, must be a power of 2.");
     usage->addCommandLineOption("-translationZ <number>", "The z-coordinate of the model datum point,default is 0, must be a power of 2.");
     usage->addCommandLineOption("-upAxis <X/Y/Z>", "Indicate which axis of the model is facing upwards,default is Y");
-    usage->addCommandLineOption("-maxWidth <number>", "single texture's max width,default is 256.");
-    usage->addCommandLineOption("-maxHeight <number>", "single texture's max height,default is 256.");
+    usage->addCommandLineOption("-maxTextureWidth <number>", "single texture's max width,default is 256.");
+    usage->addCommandLineOption("-maxTextureHeight <number>", "single texture's max height,default is 256.");
     usage->addCommandLineOption("-maxTextureAtlasWidth <number>", "textrueAtlas's max width,default is 2048.");
     usage->addCommandLineOption("-maxTextureAtlasHeight <number>", "textrueAtlas's max height,default is 2048.");
     usage->addCommandLineOption("-comporessLevel <low/medium/high>", "draco/quantize/quantize_meshopt compression level,default is medium.");
+    usage->addCommandLineOption("-recomputeNormal", "Recalculate normals.");
+    usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit, the model is not affected by lighting.");
+
+
     usage->addCommandLineOption("-h or --help", "Display command line parameters.");
 
     // if user request help write it out to cout.
@@ -97,8 +102,8 @@ int main(int argc, char** argv)
         while (arguments.read("-lat", latitude));
         while (arguments.read("-lng", longitude));
         while (arguments.read("-height", height));
-        while (arguments.read("-maxWidth", maxWidth));
-        while (arguments.read("-maxHeight", maxHeight));
+        while (arguments.read("-maxTextureWidth", maxWidth));
+        while (arguments.read("-maxTextureHeight", maxHeight));
         while (arguments.read("-maxTextureAtlasWidth", maxTextureAtlasWidth));
         while (arguments.read("-maxTextureAtlasHeight", maxTextureAtlasHeight));
         while (arguments.read("-comporessLevel", comporessLevel));
@@ -120,6 +125,12 @@ int main(int argc, char** argv)
             int height = std::stoi(maxHeight);
             int textureAtlasWidth = std::stoi(maxTextureAtlasWidth);
             int textureAtlasHeight = std::stoi(maxTextureAtlasHeight);
+
+            if (arguments.find("-recomputeNormal") > 0)
+            {
+                osgUtil::SmoothingVisitor smoothingVisitor;
+                node->accept(smoothingVisitor);
+            }
 
             const osg::Vec3d datumPoint = osg::Vec3d(-x, -y, -z);
             osg::ref_ptr<osg::MatrixTransform> xtransform = new osg::MatrixTransform;
@@ -199,6 +210,11 @@ int main(int argc, char** argv)
                 {
                     optionsStr += "quantize vp=10 vt=8 vn=4 vc=4 ";
                 }
+            }
+
+            if (arguments.find("-unlit") > 0)
+            {
+                optionsStr += " unlit";
             }
             config.options->setOptionString(optionsStr);
 
