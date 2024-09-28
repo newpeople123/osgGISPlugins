@@ -189,6 +189,37 @@ void buildTree(const std::string& filename)
 
 }
 
+void buildTree(const std::string& filename,const std::string& tilesetName)
+{
+    osg::ref_ptr<osgDB::Options> readOptions1 = new osgDB::Options;
+    readOptions1->setOptionString("TessellatePolygons");
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions1.get());
+
+    QuadtreeBuilder builder;
+    osg::ref_ptr<Tileset> tileset = new Tileset(node, builder);
+
+    Tileset::Config config;
+    config.path = OUTPUT_BASE_PATH + R"(3dtiles\)" + tilesetName;
+    config.gltfTextureOptions.maxWidth = 512;
+    config.gltfTextureOptions.maxHeight = 512;
+    config.gltfTextureOptions.maxTextureAtlasWidth = 4096;
+    config.gltfTextureOptions.maxTextureAtlasHeight = 4096;
+    config.gltfTextureOptions.ext = ".ktx2";
+    //config.options->setOptionString("ct=draco");
+    //config.options->setOptionString("ct=meshopt");
+    //config.options->setOptionString("quantize");
+    //config.options->setOptionString("quantize ct=meshopt");
+    if (!tileset->toFile(config))
+    {
+        OSG_FATAL << "3dtiles 文件导出失败...." << endl;
+    }
+    else
+    {
+        OSG_NOTICE << filename + ".fbx文件处理完毕!" << std::endl;
+    }
+
+}
+
 osg::ref_ptr<B3DMTile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_ptr<B3DMTile> parent)
 {
     osg::ref_ptr<B3DMTile> tile = new B3DMTile(group,parent);
@@ -265,7 +296,18 @@ int main() {
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
     //testI3DM(R"(dixiashifengmian)");
-    buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+    //buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
+
+    //buildTree(R"(斋堂水库模型整合20240819-2)","test2");
+    //buildTree(R"(龙翔桥站厅)", "test3");
+    //buildTree(R"(龙翔桥站)", "test4");
+    //buildTree(R"(卡拉电站)", "test5");
+    //buildTree(R"(建筑+贴图)", "test6");
+    buildTree(R"(芜湖水厂总装单位M)", R"(芜湖水厂总装单位M)");
+    //buildTree(R"(ZJG1-3+DX)", "test8");
+    //buildTree(R"(02-输水洞)", "test9");
+    //buildTree(R"(上虞未来社区_一期)", "test10");
+
     return 1;
 }

@@ -1,6 +1,7 @@
 #include "3dtiles/Tileset.h"
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
+#include <osgDB/ConvertUTF>
 using namespace osgGISPlugins;
 
 void Tileset::computeTransform(const double lng, const double lat, const double h)
@@ -68,14 +69,21 @@ bool Tileset::toFile(Config config) {
 	this->computeTransform(config.longitude, config.latitude, config.height);
 
 	const string filePath = config.path + "\\tileset.json";
+	const char* originalLocale = std::setlocale(LC_ALL, nullptr);
+	std::setlocale(LC_ALL, "zh_CN.UTF-8");
 	ofstream file(filePath);
 	if (!file.is_open()) {
 		return false;
 	}
+	std::setlocale(LC_ALL, originalLocale);
 
 	json j = toJson();
-	const string str = j.dump(4);
-	file << str;  // 格式化输出，缩进4个空格
+#ifndef NDEBUG
+	const string str = j.dump();
+#else
+	const string str = j.dump(4);//格式化输出
+#endif
+	file << str;
 	file.close();
 	return true;
 }
