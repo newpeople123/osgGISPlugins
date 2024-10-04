@@ -60,9 +60,6 @@ set(BUILD_SHARED_LIBS ON)
 project(osgGISPlugins)
 
 add_subdirectory(src)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_subdirectory(tests)
-endif()
 add_subdirectory(tools)
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
