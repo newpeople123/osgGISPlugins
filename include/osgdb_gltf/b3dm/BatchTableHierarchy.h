@@ -6,13 +6,16 @@
 #include <string>
 
 using namespace nlohmann;
-namespace osgGISPlugins {
-    struct Class {
+namespace osgGISPlugins
+{
+    struct Class
+    {
         std::string name;
         uint32_t length;
         json instances;
 
-        json toJson() const {
+        json toJson() const
+        {
             return json{
                 {"name", this->name},
                 {"length", this->length},
@@ -21,26 +24,31 @@ namespace osgGISPlugins {
         }
     };
 
-    struct BatchTableHierarchy {
+    struct BatchTableHierarchy
+    {
         osg::MixinVector<Class> classes;
         uint32_t instancesLength;
         osg::MixinVector<int32_t> classIds;
         osg::MixinVector<int32_t> parentCounts;
         osg::MixinVector<int32_t> parentIds;
 
-        json toJson() const {
+        json toJson() const
+        {
             json jClasses = json::array();
-            for (const Class& cls : classes) {
+            for (const Class& cls : classes)
+            {
                 jClasses.push_back(cls.toJson());
             }
             if (parentCounts.size())
+            {
                 return json{
                     {"classes", jClasses},
                     {"instancesLength", this->instancesLength},
                     {"classIds", this->classIds},
                     {"parentCounts", this->parentCounts},
                     {"parentIds", this->parentIds}
-            };
+                };
+            }
             return json{
                     {"classes", jClasses},
                     {"instancesLength", this->instancesLength},
@@ -55,7 +63,7 @@ namespace osgGISPlugins {
     public:
         META_NodeVisitor(osgGISPlugins, BatchTableHierarchyVisitor)
 
-        BatchTableHierarchyVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentBatchId(0), _currentParentBatchId(0) {}
+            BatchTableHierarchyVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentBatchId(0), _currentParentBatchId(0) {}
 
         void apply(osg::Geode& geode) override;
         void apply(osg::Group& group) override;
@@ -63,15 +71,18 @@ namespace osgGISPlugins {
 
         const unsigned int getBatchLength() const { return _currentBatchId + 1; }
 
-        const std::map<std::vector<std::string>, std::vector<unsigned int>> getAttributeNameBatchIdsMap() const {
+        const std::map<std::vector<std::string>, std::vector<unsigned int>> getAttributeNameBatchIdsMap() const
+        {
             return _attributeNameBatchIdsMap;
         }
 
-        const std::map<unsigned int, std::map<std::string, std::string>> getBatchIdAttributesMap() const {
+        const std::map<unsigned int, std::map<std::string, std::string>> getBatchIdAttributesMap() const
+        {
             return _batchIdAttributesMap;
         }
 
-        const std::map<unsigned int, unsigned int> getBatchParentIdMap() const {
+        const std::map<unsigned int, unsigned int> getBatchParentIdMap() const
+        {
             return _batchParentIdMap;
         }
 

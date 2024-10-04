@@ -2,6 +2,7 @@
 #define OSG_GIS_PLUGINS_SIMPLIFIER_H
 #include <osgUtil/Simplifier>
 #include <unordered_set>
+#include <meshoptimizer.h>
 namespace osgGISPlugins {
     class Simplifier :public osgUtil::Simplifier
     {

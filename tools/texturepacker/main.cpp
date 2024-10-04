@@ -1,3 +1,11 @@
+#ifndef OSG_GIS_PLUGINS_PATH_SPLIT_STRING
+
+#ifdef _WIN32
+#define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "\\"
+#else
+#define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "/"
+#endif
+#endif // !OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 #include "utils/TexturePacker.h"
 
 #include <osg/ArgumentParser>
@@ -14,7 +22,6 @@
 #include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 using namespace nlohmann;
-
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -151,9 +158,9 @@ int main(int argc, char** argv)
             info["images"] = children;
             const std::string atlasInfo = info.dump(4);
 #ifndef NDEBUG
-            const std::string infoOutputPath = osgDB::getFilePath(output) + "\\" + osgDB::getStrippedName(output) + "-info.json";
+            const std::string infoOutputPath = osgDB::getFilePath(output) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + osgDB::getStrippedName(output) + "-info.json";
 #else
-            const std::string infoOutputPath = osgDB::convertStringFromUTF8toCurrentCodePage(osgDB::getFilePath(output)) + "\\" + osgDB::getStrippedName(output) + "-info.json";
+            const std::string infoOutputPath = osgDB::convertStringFromUTF8toCurrentCodePage(osgDB::getFilePath(output)) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + osgDB::getStrippedName(output) + "-info.json";
 #endif // !NDEBUG
             // 尝试创建目录（如果不存在）
             if (!osgDB::fileExists(osgDB::getFilePath(output))) {

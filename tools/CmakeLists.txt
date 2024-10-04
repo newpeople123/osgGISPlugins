@@ -1,6 +1,6 @@
 SET(TARGET_DEFAULT_LABEL_PREFIX "Tools")
 #查找OpenSceneGraph库的核心组件
-find_package(OpenSceneGraph 3.6.5 REQUIRED osg osgDB osgUtil osgGA osgViewer osgText osgAnimation)
+find_package(OpenSceneGraph 3.6.5 REQUIRED osg osgDB osgUtil osgGA osgText osgAnimation)
 add_subdirectory(b3dm2gltf)
 add_subdirectory(model23dtiles)
 add_subdirectory(gltfpack)

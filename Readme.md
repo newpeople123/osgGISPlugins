@@ -4,8 +4,7 @@
   <img src="https://img.shields.io/badge/Version-2.0.0-blue.svg" />
   <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg" />
-  <img src="https://img.shields.io/badge/platform-windows-green.svg" />
-  <img src="https://img.shields.io/badge/platform-linux-green.svg" />
+  <img src="https://img.shields.io/badge/platform-windows/linux-green.svg" />
 </div>
 <div align="left">
   <img src="https://img.shields.io/badge/feature-三维模型轻量化-yellow.svg" />
@@ -28,6 +27,7 @@
 </div>
 
 # 简介
+
 <div align="left">
   <img src="https://img.shields.io/badge/plugin-osgdb_fbx-brightgreen.svg" />
   <img src="https://img.shields.io/badge/plugin-osgdb_gltf-brightgreen.svg" />
@@ -48,15 +48,17 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 - `3D模型简化`
 - `多张纹理打包成一个纹理图集`
 
-## osgdb_fbx 
+## osgdb_fbx
+
 <div align="left">
   <img src="https://img.shields.io/badge/read-fbx-brightgreen.svg" />
   <img src="https://img.shields.io/badge/write-fbx-brightgreen.svg" />
 </div>
 
-在osg的fbx的插件的基础上，参考了[FBX2glTF](https://github.com/facebookincubator/FBX2glTF)项目，使得能够读取3dmax导出的带有PBR材质的FBX文件，并能在osg中加载。
+在osg的fbx的插件的基础上，参考了[FBX2glTF](https://github.com/facebookincubator/FBX2glTF)项目，使得能够读取3dmax导出的带有PBR材质的FBX文件(原本的插件读取带有PBR材质的FBX文件时，材质会丢失，读到引擎里显示为白模)，并能在osg引擎中正常渲染。
 
 ## osgdb_gltf
+
 <div align="left">
   <img src="https://img.shields.io/badge/read-gltf/glb/b3dm/i3dm-red.svg" />
   <img src="https://img.shields.io/badge/write-gltf/glb/b3dm/i3dm-brightgreen.svg" />
@@ -101,6 +103,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 通过合并材质、合并几何图元等方式优化gltf性能，减少drawcall的调用次数。
 
 ## osgdb_webp
+
 <div align="left">
   <img src="https://img.shields.io/badge/read-webp-brightgreen.svg" />
   <img src="https://img.shields.io/badge/write-webp-brightgreen.svg" />
@@ -109,6 +112,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 和osgEarth的webp插件一样。
 
 ## osgdb_ktx
+
 <div align="left">
   <img src="https://img.shields.io/badge/read-ktx/ktx2-brightgreen.svg" />
   <img src="https://img.shields.io/badge/write-ktx/ktx2-brightgreen.svg" />
@@ -143,13 +147,13 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 7、导出的3dtiles是经过网格合并的；
 8、支持纹理图集；
 ...
-这里的3D模型指的是fbx、obj、3ds等osg能够读取的三维模型，但是不包括倾斜摄影模型，倾斜摄影模型目前建议使用[https://github.com/fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles)。
+这里的3D模型指的是fbx、obj、3ds等osg能够读取的三维模型，但是不包括倾斜摄影模型，倾斜摄影模型目前建议使用[fanvanzh/3dtiles](https://github.com/fanvanzh/3dtiles)。
 
 ### 用法说明
 
 #### 命令行格式
 
-``model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX 0.0 -translationY 0.0 =translationZ 0.0 -upAxis Z -maxTextureWidth 256 -maxTextureHeight 256 -maxTextureAtlasWidth 2048 -maxTextureAtlasHeight 2048``
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number>`
 
 #### 示例命令
 
@@ -169,7 +173,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 `-tf` 纹理压缩格式，可选值有：png、jpg、webp、ktx2，默认值为：jpg。
 `-vf` 顶点压缩格式，可选的值有：draco、meshopt、quantize、quantize_meshopt，无默认值，即不对顶点进行压缩。
-`comporessLevel` draco压缩级别/顶点量化级别，可选的值为：low、medium、high，默认值为：medium，仅当vf的值为quantize、quantize_meshopt和draco时生效。
+`-comporessLevel` draco压缩级别/顶点量化级别，可选的值为：low、medium、high，默认值为：medium，仅当vf的值为quantize、quantize_meshopt和draco时生效。
 `-t` 3dtiles的组织结构，可以为四叉树或八叉树，可选的值有：quad、oc，默认值为：quad。
 `-ratio` 3dtiles中间节点的简化比例，默认值为：0.5。
 `-lat` 纬度,默认30。
@@ -182,7 +186,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-maxTextureWidth` 单个纹理的最大宽度，默认值为256，需为2的幂次。
 `-maxTextureHeight` 单个纹理的最大高度，默认值为256，需为2的幂次。
 `-maxTextureAtlasWidth` 纹理图集的最大宽度，默认值为2048，需为2的幂次，且值要大于maxTextureWidth的值，否则将不会构建纹理图集。
-`-maxTextureAtlasHeight` 纹理图集的最大高度，默认值为2048，需为2的幂次，且值要大于maxTextureWidth的值，否则将不会构建纹理图集。
+`-maxTextureAtlasHeight` 纹理图集的最大高度，默认值为2048，需为2的幂次，且值要大于maxTextureHeight的值，否则将不会构建纹理图集。
 
 ## simplifier
 
@@ -192,11 +196,11 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 #### 命令行格式
 
-`simplifier.exe -i <path> -o <path> -ratio 0.1 -aggressive`
+`simplifier.exe -i <path> -o <path> -ratio <Number> -aggressive`
 
 #### 示例命令
 
-`simplifier.exe -i C:\\input\\test.fbx -o C:\\output\\test_05.fbx -ratio 0.1`
+`simplifier.exe -i C:\input\test.fbx -o C:\output\test_05.fbx -ratio 0.1`
 
 #### 参数说明
 
@@ -206,7 +210,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 `-ratio` 简化比例。
 
-`aggressive` 更激进的简化方式，不保留拓扑。
+`-aggressive` 更激进的简化方式，不保留拓扑。
 
 ## texturepacker
 
@@ -216,11 +220,11 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 #### 命令行格式
 
-`texturepacker.exe -i <path> -o <path> -width <number> -height <number>`
+`texturepacker.exe -i <path> -o <path> -width <Number> -height <Number>`
 
 #### 示例命令
 
-`texturepacker.exe -i C:\\input -o C:\\output\\atlas.png -width 2048 -height 2048`
+`texturepacker.exe -i C:\input -o C:\output\atlas.png -width 2048 -height 2048`
 
 #### 参数说明
 
@@ -233,6 +237,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-height` 纹理图集最大高度。
 
 # 如何编译
+
 <div align="left">
   <img src="https://img.shields.io/badge/build-visual studio-blue.svg" />
   <img src="https://img.shields.io/badge/build-cmake-blue.svg" />
@@ -240,15 +245,17 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
   <img src="https://img.shields.io/badge/build-docker-blue.svg" />
 </div>
 
-1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah
+1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：[https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah](https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah)
 提取码：fgah )，下载解压后放在和src同级目录下即可；
-2、编译时需要修改根目录下的CMakeLists文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径；
+2、编译时需要修改根目录下的CMakeLists.txt文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径。
 
 其他方式：
 
 1、windows环境下修改build.bat脚本的DCMAKE_TOOLCHAIN_FILE值为本地vcpkg工具路径，运行脚本即可编译；
 
-2、linux环境下通过Dockerfile文件构建docker镜像即可在docker容器中运行；
+2、linux环境下通过Dockerfile文件构建docker镜像即可。
+
+备注：windows环境下运行vcpkg安装依赖包时，可能会遇到编译jasper库失败的问题，解决方案：[https://blog.csdn.net/weixin_41364246/article/details/140124085](https://blog.csdn.net/weixin_41364246/article/details/140124085)
 
 # 缺陷
 

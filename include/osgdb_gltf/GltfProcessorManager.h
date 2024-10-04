@@ -57,14 +57,30 @@ namespace osgGISPlugins {
 
             // 按照指定顺序排序
             std::sort(_processors.begin(), _processors.end(), [](GltfProcessor* a, GltfProcessor* b) {
-                if (dynamic_cast<GltfMerger*>(a)) return true;
-                if (dynamic_cast<GltfMerger*>(b)) return false;
-
-                if (dynamic_cast<GltfDracoCompressor*>(a)) return true;
-                if (dynamic_cast<GltfDracoCompressor*>(b)) return false;
-
-                if (dynamic_cast<GltfMeshQuantizeCompressor*>(a)) return true;
-                if (dynamic_cast<GltfMeshQuantizeCompressor*>(b)) return false;
+                if (dynamic_cast<GltfMerger*>(a))
+                {
+                    return true;
+                }
+                if (dynamic_cast<GltfMerger*>(b))
+                {
+                    return false;
+                }
+                if (dynamic_cast<GltfDracoCompressor*>(a))
+                {
+                    return true;
+                }
+                if (dynamic_cast<GltfDracoCompressor*>(b))
+                {
+                    return false;
+                }
+                if (dynamic_cast<GltfMeshQuantizeCompressor*>(a))
+                {
+                    return true;
+                }
+                if (dynamic_cast<GltfMeshQuantizeCompressor*>(b)) 
+                {
+                    return false;
+                }
 
                 return dynamic_cast<GltfMeshOptCompressor*>(a) != nullptr;
                 });
@@ -80,7 +96,9 @@ namespace osgGISPlugins {
             {
                 GltfMerger* mergeProcessor = dynamic_cast<GltfMerger*>(_processors[0]);
                 if (mergeProcessor)
+                {
                     mergeProcessor->mergeBuffers();
+                }
             }
         }
 

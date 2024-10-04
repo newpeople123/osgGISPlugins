@@ -23,7 +23,7 @@ namespace osgGISPlugins
         // 获取收集到的顶点数据
         osg::ref_ptr<osg::Vec3Array> getVertices() const { return _vertices; }
 
-        osg::ref_ptr<osg::Vec3Array> OBBVisitor::getOBBCorners()
+        osg::ref_ptr<osg::Vec3Array> getOBBCorners()
         {
             calculateOBB();
             corners->push_back(_center + _extentX + _extentY + _extentZ);

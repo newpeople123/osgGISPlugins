@@ -50,7 +50,9 @@ namespace osgGISPlugins {
 		KHR_mesh_quantization meshQuanExtension;
 		GltfMeshQuantizeCompressor(tinygltf::Model& model, const MeshQuantizeCompressionOptions compressionOptions) :GltfCompressor(model, "KHR_mesh_quantization"), _compressionOptions(compressionOptions) {
 			if (_compressionOptions.PositionQuantizationBits > 16)
+			{
 				_compressionOptions.PositionFloat = true;
+			}
 			_compressionOptions.PositionQuantizationBits = osg::clampTo(_compressionOptions.PositionQuantizationBits, 1, 16);
 			_compressionOptions.NormalQuantizationBits = osg::clampTo(_compressionOptions.NormalQuantizationBits, 1, 16);
 			_compressionOptions.TexCoordQuantizationBits = osg::clampTo(_compressionOptions.TexCoordQuantizationBits, 1, 16);

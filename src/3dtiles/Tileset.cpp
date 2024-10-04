@@ -67,9 +67,7 @@ bool Tileset::toFile(Config config) {
 	config.validate();
 	this->root->write(config.path, config.simplifyRatio, config.gltfTextureOptions, config.options);
 	this->computeTransform(config.longitude, config.latitude, config.height);
-
-	const string filePath = config.path + "\\tileset.json";
-
+	const string filePath = config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
 	std::setlocale(LC_ALL, "zh_CN.UTF-8");
 	ofstream file(filePath);
 	if (!file.is_open()) {
@@ -82,9 +80,9 @@ bool Tileset::toFile(Config config) {
 
 	json j = toJson();
 #ifndef NDEBUG
-	const string str = j.dump();
-#else
 	const string str = j.dump(4);//格式化输出
+#else
+	const string str = j.dump();
 #endif
 	file << str;
 	file.close();

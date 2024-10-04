@@ -4,10 +4,28 @@ set(TOOL_NAME "simplifier")
 aux_source_directory(. DIR_SRCS)
 file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
-source_group("src" FILES ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} )
+source_group("include" FILES ${DIR_SRCS} 
+${UTILS_HEADER_FILES} 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
+)
+
+source_group("src" FILES ${DIR_SRCS} 
+${UTILS_SOURCE_FILES} 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
+)
 
 # 定义可执行文件
-add_executable(${TOOL_NAME} ${DIR_SRCS} ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES})
+add_executable(${TOOL_NAME} ${DIR_SRCS} 
+${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
+)
 # 编译当前程序时会先编译这些项目
 add_dependencies(${TOOL_NAME} osgdb_gltf)
 add_dependencies(${TOOL_NAME} osgdb_fbx)

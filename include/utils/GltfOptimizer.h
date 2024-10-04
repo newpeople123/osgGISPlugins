@@ -38,6 +38,8 @@ namespace osgGISPlugins
                 { // 避免自赋值
                     maxWidth = other.maxWidth;
                     maxHeight = other.maxHeight;
+                    maxTextureAtlasWidth = other.maxTextureAtlasWidth;
+                    maxTextureAtlasHeight = other.maxTextureAtlasHeight;
                     ext = other.ext;
                     cachePath = other.cachePath;
                     packTexture = other.packTexture;
@@ -124,7 +126,9 @@ namespace osgGISPlugins
 
         GltfTextureOptimizationOptions getGltfTextureOptimizationOptions() const { return _gltfTextureOptions; }
 
-        void setGltfTextureOptimizationOptions(const GltfTextureOptimizationOptions& val) { _gltfTextureOptions = val; }
+        void setGltfTextureOptimizationOptions(const GltfTextureOptimizationOptions& val) { 
+            _gltfTextureOptions = val; 
+        }
 
         class FlattenTransformsVisitor :public osgUtil::BaseOptimizerVisitor
         {
@@ -309,7 +313,10 @@ namespace osgGISPlugins
         }
         osg::MixinVector<unsigned int> remap(positions->size());
         osg::ref_ptr<IndexArrayType> optimizedIndices = reindexMesh<DrawElementsType, IndexArrayType>(geometry, drawElements, psetIndex, remap);
-        if (!optimizedIndices) return;
+        if (!optimizedIndices) 
+        { 
+            return; 
+        }
 #pragma region filterTriangles
         const unsigned int indiceCount = drawElements->getNumIndices();
         size_t newIndiceCount = 0;
@@ -338,7 +345,9 @@ namespace osgGISPlugins
         osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geometry.getNormalArray());
         osg::ref_ptr<osg::Vec2Array> texCoords = nullptr;
         if (geometry.getNumTexCoordArrays())
+        {
             texCoords = dynamic_cast<osg::Vec2Array*>(geometry.getTexCoordArray(0));
+        }
 
         if (!positions.valid())
         {
@@ -422,7 +431,6 @@ namespace osgGISPlugins
         osg::ref_ptr<IndexArrayType> optimizedIndices = new IndexArrayType(indices->size());
 
         meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap.asVector()[0]);
-        //osg::MixinVector<unsigned int>& remap
         meshopt_remapVertexBuffer(&vertexData.asVector()[0], &vertexData.asVector()[0], count, sizeof(Attr), &remap.asVector()[0]);
         vertexData.resize(uniqueVertexCount);
 

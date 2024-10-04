@@ -9,7 +9,7 @@ void GltfMerger::mergeMeshes()
 {
 	// 矩阵对应的primitive
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual> matrixPrimitiveMap;
-	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap, osg::Matrixd::identity());
+	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap);
 	if (matrixPrimitiveMap.size() <= 1)
 		return;
 
@@ -312,24 +312,28 @@ void GltfMerger::mergeMaterials()
 
 			const int texcoordIndex = findTexcoordIndex->second;
 			tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
-			if (texcoordAccessor.maxValues.size())
-			{
-				texcoordAccessor.maxValues[0] = texcoordAccessor.maxValues[0] * scaleX + offsetX;
-				texcoordAccessor.maxValues[1] = texcoordAccessor.maxValues[1] * scaleY + offsetY;
-
-				texcoordAccessor.minValues[0] = texcoordAccessor.minValues[0] * scaleX + offsetX;
-				texcoordAccessor.minValues[1] = texcoordAccessor.minValues[1] * scaleY + offsetY;
-			}
+			texcoordAccessor.maxValues[0] = -FLT_MAX;
+			texcoordAccessor.maxValues[1] = -FLT_MAX;
+			texcoordAccessor.minValues[0] = FLT_MAX;
+			texcoordAccessor.minValues[1] = FLT_MAX;
 
 			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
 
 			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
 			for (size_t j = 0; j < texcoordAccessor.count; ++j)
 			{
-				const float x = oldTexcoords[2 * j + 0];
-				const float y = oldTexcoords[2 * j + 1];
+				const float x = oldTexcoords[2 * j + 0] * scaleX + offsetX;
+				const float y = oldTexcoords[2 * j + 1] * scaleY + offsetY;
+				if (texcoordAccessor.maxValues.size())
+				{
+					texcoordAccessor.maxValues[0] = osg::maximum(texcoordAccessor.maxValues[0], (double)x);
+					texcoordAccessor.maxValues[1] = osg::maximum(texcoordAccessor.maxValues[1], (double)y);
+
+					texcoordAccessor.minValues[0] = osg::minimum(texcoordAccessor.minValues[0], (double)x);
+					texcoordAccessor.minValues[1] = osg::minimum(texcoordAccessor.minValues[1], (double)y);
+				}
 				// 提取结果
-				const osg::Vec2 resultUv(x * scaleX + offsetX, y * scaleY + offsetY);
+				const osg::Vec2 resultUv(x, y);
 				texcoords->at(j) = (resultUv);
 			}
 			tinygltf::BufferView& texcoordBufferView = _model.bufferViews[texcoordAccessor.bufferView];
@@ -680,14 +684,14 @@ void GltfMerger::apply()
 		mergeMeshes();
 }
 
-void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix)
+void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd matrix)
 {
 	const tinygltf::Node& node = _model.nodes[index];
 	matrix.preMult(convertGltfNodeToOsgMatrix(node));
 
 	if (node.mesh == -1) {
 		for (size_t childIndex : node.children) {
-			collectMeshNodes(childIndex, matrixPrimitiveMap, osg::Matrixd(matrix));
+			collectMeshNodes(childIndex, matrixPrimitiveMap, matrix);
 		}
 	}
 	else {

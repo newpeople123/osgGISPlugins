@@ -1,9 +1,5 @@
 set(TOOL_NAME "model23dtiles")
 
-# 设置编译标志
-# set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
-# set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-
 # 查找源文件
 aux_source_directory(. DIR_SRCS)
 source_group("src" FILES ${DIR_SRCS})
@@ -18,17 +14,30 @@ ${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES}
 ${THREED_TILES_HEADER_FILES} ${THREED_TILES_SOURCE_FILES}
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
 )
 # 编译当前程序时会先编译这些项目
 add_dependencies(${TOOL_NAME} osgdb_gltf)
 add_dependencies(${TOOL_NAME} osgdb_fbx)
 add_dependencies(${TOOL_NAME} osgdb_ktx)
 add_dependencies(${TOOL_NAME} osgdb_webp)
-source_group("include/3dtiles" FILES ${THREED_TILES_HEADER_FILES}  ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
+source_group("include/3dtiles" FILES 
+${THREED_TILES_HEADER_FILES}  
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h)
 source_group("include/util" FILES ${UTILS_HEADER_FILES})
 
 source_group("src" FILES ${DIR_SRCS})
-source_group("src/3dtiles" FILES ${THREED_TILES_SOURCE_FILES})
+source_group("src/3dtiles" FILES 
+${THREED_TILES_SOURCE_FILES} 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp)
 source_group("src/util" FILES ${UTILS_SOURCE_FILES} ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
 
 

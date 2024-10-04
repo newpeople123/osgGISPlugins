@@ -5,7 +5,7 @@ using namespace osgGISPlugins;
 void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
 {
 	KHR_texture_transform texture_transform_extension;
-	tinygltf::Value::Object::iterator& findResult = extensionMap.find(texture_transform_extension.name);
+	const tinygltf::Value::Object::iterator& findResult = extensionMap.find(texture_transform_extension.name);
 	if (findResult != extensionMap.end()) {
 		texture_transform_extension.SetValue(findResult->second.Get<tinygltf::Value::Object>());
 		std::array<double, 2> offsets = texture_transform_extension.getOffset();

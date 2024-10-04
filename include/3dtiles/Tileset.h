@@ -1,6 +1,16 @@
 #ifndef OSG_GIS_PLUGINS_TILESET_H
 #define OSG_GIS_PLUGINS_TILESET_H
+#ifndef OSG_GIS_PLUGINS_PATH_SPLIT_STRING
+
+#ifdef _WIN32
+#define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "\\"
+#else
+#define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "/"
+#endif
+#endif // !OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 #include "3dtiles/hlod/TreeBuilder.h"
+#include "3dtiles/Tile.h"
+
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <vector>
@@ -45,7 +55,9 @@ namespace osgGISPlugins
 
 			void validate() {
 				if (this->gltfTextureOptions.cachePath.empty())
-					this->gltfTextureOptions.cachePath = this->path + "\\textures";
+				{
+					this->gltfTextureOptions.cachePath = this->path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "textures";
+				}
 				osgDB::makeDirectory(this->gltfTextureOptions.cachePath);
 
 				osg::clampTo(this->simplifyRatio, 0.f, 1.f);
@@ -90,8 +102,10 @@ namespace osgGISPlugins
 			_node->accept(builder);
 			root = builder.build();
 			osg::ref_ptr<B3DMTile> b3dmNode = dynamic_cast<B3DMTile*>(root.get());
-			if(b3dmNode.valid())
+			if (b3dmNode.valid())
+			{
 				b3dmNode->buildHlod();
+			}
 		}
 
 		Tileset(const Tileset& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)

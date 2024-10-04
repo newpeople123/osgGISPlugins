@@ -63,32 +63,36 @@ int main(int argc, char** argv)
     }
 
     std::string input = "", output = "";
-
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
-
-    if (input.empty()) {
-        OSG_FATAL << "input file can not be null!" << '\n';
-        usage->write(std::cout);
-        return 0;
-    }
-
-    if (output.empty()) {
-        OSG_FATAL << "output file can not be null!" << '\n';
-        usage->write(std::cout);
-        return 0;
-    }
 #ifndef NDEBUG
 #else
     input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
     output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
 #endif // !NDEBUG
+
+    if (input.empty())
+    {
+        OSG_FATAL << "input file can not be null!" << '\n';
+        usage->write(std::cout);
+        return 0;
+    }
+
+    if (output.empty())
+    {
+        OSG_FATAL << "output file can not be null!" << '\n';
+        usage->write(std::cout);
+        return 0;
+    }
+
+
     OSG_NOTICE << "Reading model file..." << std::endl;
     osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
     readOptions->setOptionString("TessellatePolygons");
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
-    if (node.valid()) {
+    if (node.valid())
+    {
         OSG_NOTICE << "Resolving parameters..." << std::endl;
         std::string textureFormat = "jpg", vertexFormat = "none", treeFormat = "quad", simplifiedRatio = "0.5", latitude = "30", longitude = "116", height = "300", comporessLevel = "medium";
         std::string maxHeight = "256", maxWidth = "256", maxTextureAtlasWidth = "2048", maxTextureAtlasHeight = "2048";
@@ -111,7 +115,8 @@ int main(int argc, char** argv)
         while (arguments.read("-translationY", translationY));
         while (arguments.read("-translationZ", translationZ));
         while (arguments.read("-upAxis", upAxis));
-        try {
+        try
+        {
             double ratio = std::stod(simplifiedRatio);
             double lat = std::stod(latitude);
             double lng = std::stod(longitude);
@@ -125,6 +130,9 @@ int main(int argc, char** argv)
             int height = std::stoi(maxHeight);
             int textureAtlasWidth = std::stoi(maxTextureAtlasWidth);
             int textureAtlasHeight = std::stoi(maxTextureAtlasHeight);
+
+            osgUtil::Optimizer optimizer;
+            optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
 
             if (arguments.find("-recomputeNormal") > 0)
             {
@@ -219,24 +227,31 @@ int main(int argc, char** argv)
             config.options->setOptionString(optionsStr);
 
             OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
-            if (!tileset->toFile(config))
-                OSG_FATAL << "Failed converted " + input + " to 3dtiles..." << std::endl;
-            else
+            const bool result = tileset->toFile(config);
+            if (result)
+            {
                 OSG_NOTICE << "Successfully converted " + input + " to 3dtiles!" << std::endl;
+            }
+            else
+            {
+                OSG_FATAL << "Failed converted " + input + " to 3dtiles..." << std::endl;
+            }
             delete treeBuilder;
-            
+
         }
-        catch (const std::invalid_argument& e) {
+        catch (const std::invalid_argument& e)
+        {
             OSG_FATAL << "invalid input: " << e.what() << '\n';
         }
-        catch (const std::out_of_range& e) {
+        catch (const std::out_of_range& e)
+        {
             OSG_FATAL << "value out of range: " << e.what() << '\n';
         }
 
     }
-    else {
+    else
+    {
         OSG_FATAL << "Error:can not read 3d model file!" << '\n';
     }
-
     return 1;
-}
+    }

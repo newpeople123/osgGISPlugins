@@ -58,17 +58,24 @@ void I3DMTile::write(const string& str, const float simplifyRatio, const GltfOpt
 		osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(), osg::CopyOp::DEEP_COPY_ALL);
 		GltfOptimizer gltfOptimzier;
 		gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
-		gltfOptimzier.optimize(nodeCopy.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
+		osg::ref_ptr<osg::Group> group = nodeCopy->asGroup();
+		gltfOptimzier.optimize(group->getChild(0), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 
 		BatchIdVisitor biv;
 		nodeCopy->accept(biv);
-
-		const string path = str + "\\InstanceTiles\\";
+		const string path = str + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "InstanceTiles";
 		osgDB::makeDirectory(path);
-		osgDB::writeNodeFile(*nodeCopy.get(), path + "\\" + "Tile_" + to_string(z) + "." + type, options);
+		osgDB::writeNodeFile(*nodeCopy.get(), path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "Tile_" + to_string(z) + "." + type, options);
 
 	}
+#ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+	/* single thread */
+	for (size_t i = 0; i < this->children.size(); ++i)
+	{
 
+		this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
+	}
+#else
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
 		[&](const tbb::blocked_range<size_t>& r) {
 			for (size_t i = r.begin(); i < r.end(); ++i)
@@ -76,6 +83,7 @@ void I3DMTile::write(const string& str, const float simplifyRatio, const GltfOpt
 				this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
 			}
 		});
+#endif // !OSG_GIS_PLUGINS_WRITE_TILE_BY_SINGLE_THREAD
 }
 
 void I3DMTile::setContentUri()

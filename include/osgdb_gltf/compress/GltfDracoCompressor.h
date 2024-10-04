@@ -54,9 +54,9 @@ namespace osgGISPlugins {
 
 		const size_t numComponents = calculateNumComponents(accessor.type);
 		const size_t stride = sizeof(T) * numComponents;
-		const std::unique_ptr<draco::DataBuffer> dracoBbuffer = std::make_unique<draco::DataBuffer>();
+		const std::unique_ptr<draco::DataBuffer> dracoBuffer(new draco::DataBuffer());
 		draco::GeometryAttribute atrribute;
-		atrribute.Init(getTypeFromAttributeName(attributeName), &*dracoBbuffer, numComponents, getDataType(accessor.componentType),
+		atrribute.Init(getTypeFromAttributeName(attributeName), &*dracoBuffer, numComponents, getDataType(accessor.componentType),
 			accessor.normalized, stride, 0);
 		dracoMesh.set_num_points(static_cast<unsigned int>(accessor.count));
 		const int attId = dracoMesh.AddAttribute(atrribute, true, dracoMesh.num_points());

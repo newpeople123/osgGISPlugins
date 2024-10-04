@@ -1,5 +1,4 @@
 #include "utils/Simplifier.h"
-#include <meshoptimizer.h>
 using namespace osgGISPlugins;
 void Simplifier::simplifyMesh(osg::Geometry& geometry)
 {

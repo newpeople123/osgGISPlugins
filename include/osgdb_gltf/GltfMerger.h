@@ -16,7 +16,7 @@ namespace osgGISPlugins {
         void mergeBuffers();
     private:
         bool _bMergeMaterials = true, _bMergeMeshes = true;
-        void collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd& matrix);
+        void collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd matrix = osg::Matrix::identity());
         void reindexBufferAndAccessor(const tinygltf::Accessor& accessor, tinygltf::BufferView& bufferView, tinygltf::Buffer& buffer, tinygltf::Accessor& newAccessor, unsigned int sum = 0, bool isIndices = false);
         //合并mesh和primitive但是会破坏node树的结构
         void mergeMeshes();

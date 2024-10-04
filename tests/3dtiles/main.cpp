@@ -147,6 +147,9 @@ void buildTree(const std::string& filename)
     //readOptions1->setOptionString("TessellatePolygons ZUp");
     readOptions1->setOptionString("TessellatePolygons");
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions1.get());
+    osgViewer::Viewer viewer;
+    viewer.setSceneData(node);
+    viewer.run();
     //osg::ref_ptr<osg::MatrixTransform> node = new osg::MatrixTransform;
     //const osg::Matrixd zUpToYUpRotationMatrix = osg::Matrixd::rotate(-osg::PI / 2, osg::Vec3(1.0, 0.0, 0.0));
     //node->setMatrix(zUpToYUpRotationMatrix);
@@ -172,12 +175,13 @@ void buildTree(const std::string& filename)
     osg::ref_ptr<Tileset> tileset = new Tileset(node, builder);
 
     Tileset::Config config;
-    config.path = OUTPUT_BASE_PATH + R"(3dtiles\test1)";
-    config.gltfTextureOptions.maxWidth = 512;
-    config.gltfTextureOptions.maxHeight = 512;
-    config.gltfTextureOptions.maxTextureAtlasWidth = 4096;
-    config.gltfTextureOptions.maxTextureAtlasHeight = 4096;
-    config.gltfTextureOptions.ext = ".ktx2";
+    config.path = OUTPUT_BASE_PATH + R"(3dtiles\芜湖水厂总装单位M)";
+    config.gltfTextureOptions.maxWidth = 256;
+    config.gltfTextureOptions.maxHeight = 256;
+    config.gltfTextureOptions.maxTextureAtlasWidth = 2048;
+    config.gltfTextureOptions.maxTextureAtlasHeight = 2048;
+    config.gltfTextureOptions.ext = ".jpg";
+    config.simplifyRatio = 1.0;
     //config.options->setOptionString("ct=draco");
     //config.options->setOptionString("ct=meshopt");
     //config.options->setOptionString("quantize");
@@ -296,7 +300,7 @@ int main() {
     instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
     //testI3DM(R"(dixiashifengmian)");
-    //buildTree(R"(20240529卢沟桥分洪枢纽)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
+    buildTree(R"(芜湖水厂总装)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
     //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
 
     //buildTree(R"(斋堂水库模型整合20240819-2)","test2");
@@ -304,7 +308,7 @@ int main() {
     //buildTree(R"(龙翔桥站)", "test4");
     //buildTree(R"(卡拉电站)", "test5");
     //buildTree(R"(建筑+贴图)", "test6");
-    buildTree(R"(20240529卢沟桥分洪枢纽)", R"(20240529卢沟桥分洪枢纽)");
+    //buildTree(R"(20240529卢沟桥分洪枢纽)", R"(20240529卢沟桥分洪枢纽)");
     //buildTree(R"(ZJG1-3+DX)", "test8");
     //buildTree(R"(02-输水洞)", "test9");
     //buildTree(R"(上虞未来社区_一期)", "test10");

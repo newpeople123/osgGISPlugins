@@ -16,7 +16,7 @@
 #include <future>
 #include "utils/Simplifier.h"
 #include <utils/GltfOptimizer.h>
-
+#include <osgUtil/SmoothingVisitor>
 #define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
 #include <crtdbg.h>
@@ -62,20 +62,25 @@ void exportGltfWithOptions(const std::string& filename,const std::string ext,con
 	//osg::setNotifyLevel(osg::INFO);
 	gltfOptimizer.optimize(node, GltfOptimizer::INDEX_MESH);
 	//3
-	Simplifier simplifier(ratio);
-	node->accept(simplifier);
+	//Simplifier simplifier(ratio);
+	//node->accept(simplifier);
 	if (!textureExt.empty())
 	{
 		const std::string textureCachePath = OUTPUT_BASE_PATH + filename + "\\" + textureExt;
 		osgDB::makeDirectory(textureCachePath);
 		GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
 		gltfTextureOptions.cachePath = textureCachePath;
-		gltfTextureOptions.maxWidth = 4096;
-		gltfTextureOptions.maxHeight = 4096;
 		gltfTextureOptions.ext = ".jpg";
+		//gltfTextureOptions.maxTextureAtlasHeight = 512;
+		//gltfTextureOptions.maxTextureAtlasWidth = 512;
 		gltfOptimizer.setGltfTextureOptimizationOptions(gltfTextureOptions);
 		//4
-		gltfOptimizer.optimize(node, GltfOptimizer::TEXTURE_ATLAS_BUILDER_BY_STB);
+		osgUtil::SmoothingVisitor smoothingVisitor;
+		node->accept(smoothingVisitor);
+		gltfOptimizer.optimize(node, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
+		//osgViewer::Viewer viewer;
+		//viewer.setSceneData(node);
+		//viewer.run();
 	}
 	//5
 	if (lowerExtStr == "b3dm")
@@ -150,8 +155,8 @@ int main() {
 	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
 	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-	//options->setOptionString("eb pp ct=meshopt");
-	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "glb", options, "jpg", 1, false);
+	options->setOptionString("noMergeMaterial noMergeMesh");
+	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 1, false);
 	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
 	_CrtDumpMemoryLeaks();
 	//testSimplifier(R"(芜湖水厂总装单位M)");

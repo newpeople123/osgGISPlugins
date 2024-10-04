@@ -38,10 +38,16 @@ namespace osgGISPlugins {
         osg::Image* pack(size_t& numImages, bool generateResult, bool stopIfFailed = true);
         bool getPackingData(size_t id, double& x, double& y, int& w, int& h);
         size_t getId(osg::Image* image) const;
+        void setScales(const double scaleWidth, const double scaleHeight)
+        {
+            _scaleWidth = scaleWidth;
+            _scaleHeight = scaleHeight;
+        }
     protected:
         typedef std::pair<osg::observer_ptr<osg::Image>, osg::Vec4> InputPair;
         std::map<size_t, InputPair> _input, _result;
         int _maxWidth, _maxHeight, _dictIndex;
+        double _scaleWidth = 1.0, _scaleHeight = 1.0;
     };
 }
 #endif // OSG_GIS_PLUGINS_TEXTUREPACKER_H

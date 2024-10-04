@@ -584,10 +584,9 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 		if (osgMaterial.valid())
 		{
-			const std::type_info& materialId = typeid(*osgMaterial.get());
-			if (materialId == typeid(GltfMaterial) || materialId == typeid(GltfPbrMRMaterial) || materialId == typeid(GltfPbrSGMaterial))
+			osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
+			if (gltfMaterial.valid())
 			{
-				osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
 				optimizeOsgMaterial(gltfMaterial, geom);
 			}
 			else
@@ -631,7 +630,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 				}
 				if (bBuildTexturePacker)
 				{
-					if (image->s() < _options.maxWidth || image->t() < _options.maxHeight)
+					if (image->s() <= _options.maxWidth || image->t() <= _options.maxHeight)
 					{
 						bool bAdd = true;
 						for (osg::ref_ptr<osg::Image> img : _images)
@@ -825,14 +824,17 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 	if (_images.empty()) return;
 	while (_images.size())
 	{
-		TexturePacker packer(_options.maxWidth, _options.maxHeight);
+		TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 		std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
 		osg::ref_ptr<osg::Image> packedImage = packImges(packer, _images, deleteImgs);
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			const double oldWidth= packedImage->s(), oldHeight = packedImage->t();
 			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
+			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
+			packer.setScales(scaleWidth, sclaeHeight);
 			exportImage(packedImage);
 			for (auto& entry : _geometryImgMap)
 			{
@@ -1019,8 +1021,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
 			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
+			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
+			packer.setScales(scaleWidth, sclaeHeight);
 			exportImage(packedImage);
 			for (auto& entry : _geometryMatMap)
 			{
@@ -1140,8 +1145,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
 			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
+			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
+			packer.setScales(scaleWidth, sclaeHeight);
 			exportImage(packedImage);
 
 			for (auto it = _geometryMatMap.begin(); it != _geometryMatMap.end(); ++it)
@@ -1204,8 +1212,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
+			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
 			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
+			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
+			packer.setScales(scaleWidth, sclaeHeight);
 			exportImage(packedImage);
 			for (auto& entry : _geometryMatMap)
 			{
@@ -1419,7 +1430,7 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<
 	return img1->t() > img2->t();
 }
 
-/** TextureAtlasBuilderVisitor */
+/** MergeTransformVisitor */
 void GltfOptimizer::MergeTransformVisitor::apply(osg::MatrixTransform& xtransform)
 {
 	osg::Matrixd previousMatrix = _currentMatrix;

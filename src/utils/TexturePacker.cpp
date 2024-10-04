@@ -123,10 +123,10 @@ bool TexturePacker::getPackingData(size_t id, double& x, double& y, int& w, int&
 {
     if (_result.find(id) != _result.end()) {
         const osg::Vec4& rect = _result[id].second;
-        x = rect[0];
-        y = rect[1];
-        w = rect[2];
-        h = rect[3];
+        x = rect[0] * _scaleWidth;
+        y = rect[1] * _scaleHeight;
+        w = rect[2] * _scaleWidth;
+        h = rect[3] * _scaleHeight;
         return true;
     }
     return false;

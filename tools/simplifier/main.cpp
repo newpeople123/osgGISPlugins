@@ -37,13 +37,15 @@ int main(int argc, char** argv)
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
 
-    if (input.empty()) {
+    if (input.empty())
+    {
         OSG_FATAL << "input file can not be null!" << '\n';
         usage->write(std::cout);
         return 0;
     }
 
-    if (output.empty()) {
+    if (output.empty())
+    {
         OSG_FATAL << "output file can not be null!" << '\n';
         usage->write(std::cout);
         return 0;
@@ -56,27 +58,36 @@ int main(int argc, char** argv)
     osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
     readOptions->setOptionString("TessellatePolygons");
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
-    if (node.valid()) {
+    if (node.valid())
+    {
         std::string simplifiedRatio = "0.5";
         while (arguments.read("-ratio", simplifiedRatio));
-        const double ratio = std::stod(simplifiedRatio);
+        const double ratio = osg::clampTo(std::stod(simplifiedRatio), 0.0, 1.0);
 
-        GltfOptimizer optimizer;
-        optimizer.optimize(node, GltfOptimizer::INDEX_MESH);
-        if (arguments.find("-aggressive") > 0)
+        if (ratio < 1.0 && ratio>0)
         {
-            Simplifier simplifier(ratio, true);
-            node->accept(simplifier);
+            GltfOptimizer optimizer;
+            optimizer.optimize(node, GltfOptimizer::INDEX_MESH);
+            if (arguments.find("-aggressive") > 0)
+            {
+                Simplifier simplifier(ratio, true);
+                node->accept(simplifier);
+            }
+            else
+            {
+                Simplifier simplifier(ratio);
+                node->accept(simplifier);
+            }
         }
         else
         {
-            Simplifier simplifier(ratio);
-            node->accept(simplifier);
+            OSG_NOTICE << "Faild simplify model,simplified ratio must be between 0.0 and 1.0!" << std::endl;
         }
-
         //write node to file
-        osgDB::writeNodeFile(*node.get(), output);
-        OSG_NOTICE << "Successfully simplify model!" << std::endl;
+        if (osgDB::writeNodeFile(*node.get(), output))
+        {
+            OSG_NOTICE << "Successfully simplify model!" << std::endl;
+        }
     }
     return 1;
 }

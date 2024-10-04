@@ -37,10 +37,16 @@ namespace osgGISPlugins {
             header.batchTableJSONByteLength = batchTableJSON.size();
             header.batchTableBinaryByteLength = batchTableBinary.size();
             glbPadding = 4 - (glbData.size() % 4);
-            if (glbPadding == 4) glbPadding = 0;
+            if (glbPadding == 4)
+            {
+                glbPadding = 0;
+            }
             const int tileHeaderSize = headerSize();
             totalPadding = 8 - ((tileHeaderSize + header.featureTableJSONByteLength + header.featureTableBinaryByteLength + header.batchTableJSONByteLength + header.batchTableBinaryByteLength + glbData.size() + glbPadding) % 8);
-            if (totalPadding == 8) totalPadding = 0;
+            if (totalPadding == 8)
+            {
+                totalPadding = 0;
+            }
             header.byteLength = tileHeaderSize + header.featureTableJSONByteLength + header.featureTableBinaryByteLength + header.batchTableJSONByteLength + header.batchTableBinaryByteLength + glbData.size() + glbPadding + totalPadding;
         }
     };
@@ -67,7 +73,8 @@ namespace osgGISPlugins {
 
             osg::Vec2f octNormal = (absSum > 0.0f) ? osg::Vec2f(normal.x(), normal.y()) * (1.0f / absSum) : osg::Vec2f(0.0f, 0.0f);
 
-            if (normal.z() < 0) {
+            if (normal.z() < 0) 
+            {
                 octNormal.set(
                     (1 - std::fabs(octNormal.y())) * (octNormal.x() < 0 ? -1.0f : 1.0f),
                     (1 - std::fabs(octNormal.x())) * (octNormal.y() < 0 ? -1.0f : 1.0f)
