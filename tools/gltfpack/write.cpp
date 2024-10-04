@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <iostream>
 static const char* componentType(cgltf_component_type type)
 {
 	switch (type)
@@ -184,6 +184,7 @@ static void writeTextureInfo(std::string& json, const cgltf_data* data, const cg
 		transform.offset[1] += qt->offset[1];
 		transform.scale[0] *= qt->scale[0] / float((1 << qt->bits) - 1) * (qt->normalized ? 65535.f : 1.f);
 		transform.scale[1] *= qt->scale[1] / float((1 << qt->bits) - 1) * (qt->normalized ? 65535.f : 1.f);
+		std::cout << qt->offset[0] << "," << qt->offset[1] << std::endl;
 		has_transform = true;
 	}
 

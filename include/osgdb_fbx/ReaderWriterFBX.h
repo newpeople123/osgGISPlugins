@@ -2,7 +2,11 @@
 #define READERWRITERFBX_H
 
 #include <osgDB/ReaderWriter>
-#include <fbxsdk/fbxsdk_def.h>
+#ifdef _WIN32
+#include <windows/fbxsdk/fbxsdk_def.h>
+#else
+#include <linux/fbxsdk/fbxsdk_def.h>
+#endif
 
 
 ///////////////////////////////////////////////////////////////////////////

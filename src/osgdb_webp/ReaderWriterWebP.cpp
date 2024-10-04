@@ -137,7 +137,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeObject(const osg::Object
 
 osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& img, const std::string& fileName, const osgDB::ReaderWriter::Options* options) const
 {
-	const std::string ext = osgDB::getFileExtension(fileName);
+    const std::string ext = osgDB::getFileExtension(fileName);
     if (!acceptsExtension(ext))
         return WriteResult::FILE_NOT_HANDLED;
 
@@ -163,7 +163,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
     int internalFormat = osg::Image::computeNumComponents(img.getPixelFormat());
 
     osg::ref_ptr< osg::Image > flippedImage = new osg::Image(img);
-    //flippedImage->flipVertical();
+    flippedImage->flipVertical();
 
     WebPConfig config;
     config.quality = 75;

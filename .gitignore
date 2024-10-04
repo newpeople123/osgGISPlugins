@@ -1,10 +1,29 @@
-vcpkg_installed
+# vcpkg 安装目录
+vcpkg_installed/
+
+# 构建输出文件夹
 build/**
-out/**
-.vs
-.vscode
+
+# Visual Studio 相关文件夹和配置
+.vs/
+.vscode/
+
+# 忽略编译生成的列表和日志文件
 list.txt
+vcpkg-manifest-install.log
+
+# 可执行文件和库文件
 bin/**
 lib/**
-CMakeLists
+
+# CMake 构建相关文件
+CMakeCache.txt
+CMakeFiles/
+**/CMakeFiles/
+
+# 外部依赖项
 3rdparty/**
+
+# Visual Studio 编译生成的文件
+Release/**
+Debug/**

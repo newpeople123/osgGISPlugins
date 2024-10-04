@@ -362,7 +362,10 @@ static void encodeExpParallel(std::string& bin, const Attr* data, size_t count, 
 		v[0] = (mx & mmask) | (unsigned(expx) << 24);
 		v[1] = (my & mmask) | (unsigned(expy) << 24);
 		v[2] = (mz & mmask) | (unsigned(expz) << 24);
-
+		//const char* t = reinterpret_cast<const char*>(v);
+		//for (size_t k = 0; k < 12; ++k) {
+		//	printf("%02x ", static_cast<unsigned char>(*t++));
+		//}
 		bin.append(reinterpret_cast<const char*>(v), sizeof(v));
 	}
 }

@@ -1,7 +1,11 @@
 #ifndef FBXRANIMATION_H
 #define FBXRANIMATION_H
 
-#include <fbxsdk.h>
+#ifdef _WIN32
+#include <windows/fbxsdk.h>
+#else
+#include <linux/fbxsdk.h>
+#endif
 #include <osgDB/ReaderWriter>
 #include <osgAnimation/BasicAnimationManager>
 #include "fbxMaterialToOsgStateSet.h"

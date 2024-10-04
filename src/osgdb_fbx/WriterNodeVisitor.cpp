@@ -201,25 +201,25 @@ private:
 };
 
 PrimitiveIndexWriter::PrimitiveIndexWriter(const osg::Geometry* geo, ListTriangle& listTriangles,
-	const unsigned drawable_n, const unsigned material):
-	_drawable_n(drawable_n),
-	_listTriangles(listTriangles),
-	_modeCache(0),
-	_hasNormalCoords(geo->getNormalArray() != nullptr),
-	_hasTexCoords(geo->getTexCoordArray(0) != nullptr),
-	_geo(geo),
-	_lastFaceIndex(0),
-	_material(material),
-	_curNormalIndex(0),
-	_normalBinding(osg::Geometry::BIND_OFF),
-	_mesh(nullptr)
+    const unsigned drawable_n, const unsigned material):
+    _drawable_n(drawable_n),
+    _listTriangles(listTriangles),
+    _modeCache(0),
+    _hasNormalCoords(geo->getNormalArray() != nullptr),
+    _hasTexCoords(geo->getTexCoordArray(0) != nullptr),
+    _geo(geo),
+    _lastFaceIndex(0),
+    _material(material),
+    _curNormalIndex(0),
+    _normalBinding(osg::Geometry::BIND_OFF),
+    _mesh(nullptr)
 {
-	_normalBinding = geo->getNormalBinding();
-	if (!geo->getNormalArray() || geo->getNormalArray()->getNumElements()==0)
-	{
-		_normalBinding = osg::Geometry::BIND_OFF;        // Turn off binding if there is no normal data
-	}
-	reset();
+    _normalBinding = geo->getNormalBinding();
+    if (!geo->getNormalArray() || geo->getNormalArray()->getNumElements()==0)
+    {
+        _normalBinding = osg::Geometry::BIND_OFF;        // Turn off binding if there is no normal data
+    }
+    reset();
 }
 
 void PrimitiveIndexWriter::drawArrays(const GLenum mode, const GLint first, const GLsizei count)
@@ -293,9 +293,9 @@ WriterNodeVisitor::Material::Material(WriterNodeVisitor& writerNodeVisitor,
 
     if (mat)
     {
-	    float transparency(0);
-	    float shininess(0);
-	    assert(stateset);
+        float transparency(0);
+        float shininess(0);
+        assert(stateset);
         diffuse = mat->getDiffuse(osg::Material::FRONT);
         ambient = mat->getAmbient(osg::Material::FRONT);
         specular = mat->getSpecular(osg::Material::FRONT);
@@ -387,7 +387,7 @@ int WriterNodeVisitor::processStateSet(const osg::StateSet* ss)
 
     if (mat || tex)
     {
-	    const int matNum = _lastMaterialIndex;
+        const int matNum = _lastMaterialIndex;
         _materialMap.insert(MaterialMap::value_type(MaterialMap::key_type(ss),
             Material(*this, _externalWriter, ss, mat, tex, _pSdkManager, _options, matNum)));
         ++_lastMaterialIndex;
@@ -606,7 +606,7 @@ void WriterNodeVisitor::buildFaces(const std::string& name,
     _texcoords = false;
     _drawableNum = 0;
     for (auto& it : _materialMap)
-	    it.second.setIndex(-1);
+        it.second.setIndex(-1);
     _lastMaterialIndex = 0;
 }
 

@@ -12,7 +12,12 @@
 #pragma warning( disable : 4505 )
 #pragma warning( default : 4996 )
 #endif
-#include <fbxsdk.h>
+#ifdef _WIN32
+#include <windows/fbxsdk.h>
+#else
+#include <linux/fbxsdk.h>
+#endif
+
 
 //The only things we need to create a new StateSet are texture and materials. So we store that in a pair.
 //We Don't store directly in stateSet because getOrCreateStateSet function set some parameters.

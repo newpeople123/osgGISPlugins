@@ -1168,7 +1168,11 @@ unsigned int textureMask(const char* arg)
 
 	return result;
 }
+//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
+//const std::string INPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 
+const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
+const std::string INPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\gltf\)";
 int main(int argc, char** argv)
 {
 #ifndef __wasi__
@@ -1176,12 +1180,10 @@ int main(int argc, char** argv)
 #endif
 	const char* cmds[] = {
 		"-i",
-		"D:\\nginx-1.22.1\\html\\3dtiles\\singleThread\\0\\1.glTF",
+		R"(D:\nginx-1.22.1\html\gltf\t1.gltf)",
 		"-o",
-		"D:\\nginx-1.22.1\\html\\3dtiles\\singleThread\\0\\1-1.gltf",
-		"-c",
-		"-si",
-		"0.01"
+		R"(D:\nginx-1.22.1\html\gltf\t2.gltf)",
+		"-cc"
 	};
 
 
@@ -1206,6 +1208,7 @@ int main(int argc, char** argv)
 	meshopt_encodeIndexVersion(1);
 
 	Settings settings = defaults();
+	settings.compressmore = false;
 
 	const char* input = 0;
 	const char* output = 0;
