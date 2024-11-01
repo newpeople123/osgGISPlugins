@@ -161,8 +161,6 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 model23dtiles.exe -i D:\test.fbx -o D:\output -lat 30 -lng 116 -height 100
 # 输出使用ktx2进行纹理压缩和使用draco进行顶点压缩的3dtiles
 model23dtiles.exe -i D:\test.fbx -tf ktx2 -vf draco -o D:\output -lat 30 -lng 116 -height 100
-# 设置3dtiles的每个节点所包含的三角面的最大数量为10万
-model23dtiles.exe -i D:\test.fbx -max 100000 -o D:\output -lat 30 -lng 116 -height 100
 # 设置3dtiles的中间节点的简化比例为0.6
 model23dtiles.exe -i D:\test.fbx -ratio 0.6 -o D:\output -lat 30 -lng 116 -height 100
 # 设置3dtiles的树结构为四叉树
@@ -245,8 +243,8 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
   <img src="https://img.shields.io/badge/build-docker-blue.svg" />
 </div>
 
-1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：[https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah](https://pan.baidu.com/s/1tAy3tAEuAut5GDLODfCKtA?pwd=fgah)
-提取码：fgah )，下载解压后放在和src同级目录下即可；
+1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：[https://pan.baidu.com/s/16YB3yUm8jEC6Ep4q4O_PoQ?pwd=2o84](https://pan.baidu.com/s/16YB3yUm8jEC6Ep4q4O_PoQ?pwd=2o84)
+提取码：2o84 )，下载解压后放在和src同级目录下即可；
 2、编译时需要修改根目录下的CMakeLists.txt文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径。
 
 其他方式：
@@ -257,10 +255,21 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 备注：windows环境下运行vcpkg安装依赖包时，可能会遇到编译jasper库失败的问题，解决方案：[https://blog.csdn.net/weixin_41364246/article/details/140124085](https://blog.csdn.net/weixin_41364246/article/details/140124085)
 
+详细教程：[开源跨平台三维模型轻量化软件osgGISPlugins-2、如何编译](https://blog.csdn.net/weixin_41364246/article/details/142723370)
+
 # 缺陷
 
 1、当前不支持i3dm、b3dm、gltf/glb文件的导入；
 2、model23dtiles不支持构建kd树；
+3、model23dtiles不支持导出无光照的瓦片(其实已经实现了，但是2.0.0版本忘记放到model23dtiles里了...)；
+4、model23dtiles不支持重新计算法线功能(其实已经实现了，但是2.0.0版本忘记放到model23dtiles里了...)；
+...
+
+# 后续计划
+
+1、更新相关依赖库到最新版本(尤其是meshoptimizer)
+2、model23dtiles支持导出无光照的瓦片；
+3、model23dtiles支持重新计算法线功能；
 ...
 
 # 关于作者
