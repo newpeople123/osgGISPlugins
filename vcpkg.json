@@ -30,6 +30,9 @@
     },
     {
       "name": "tbb"
+    },
+    {
+      "name": "proj"
     }
   ],
   "name": "osg-gis-plugins",

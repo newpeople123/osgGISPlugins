@@ -7,10 +7,10 @@ using namespace osgGISPlugins;
 void Tileset::computeTransform(const double lng, const double lat, const double h)
 {
 	const osg::EllipsoidModel ellipsoidModel;
-	osg::Matrixd matrix;
-	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, matrix);
+	osg::Matrixd localToWorld;
+	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, localToWorld);
 
-	const double* ptr = matrix.ptr();
+	const double* ptr = localToWorld.ptr();
 	for (unsigned i = 0; i < 16; ++i)
 		this->root->transform.push_back(*ptr++);
 }

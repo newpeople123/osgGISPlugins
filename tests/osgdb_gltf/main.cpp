@@ -154,11 +154,11 @@ int main() {
 	//options->setOptionString("eb quantize ct=meshopt");
 	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
 	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
-	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-	options->setOptionString("noMergeMaterial noMergeMesh");
-	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 1, false);
-	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
-	_CrtDumpMemoryLeaks();
+	//_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+	//options->setOptionString("noMergeMaterial noMergeMesh");
+	//exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 1, false);
+	//OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
+	//_CrtDumpMemoryLeaks();
 	//testSimplifier(R"(芜湖水厂总装单位M)");
 
 	//testGltfOptimizer(R"(02-输水洞)");
@@ -170,5 +170,9 @@ int main() {
 	//_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 	//_CrtSetBreakAlloc(1172754);
 	//_CrtDumpMemoryLeaks();
+
+
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(R"(C:\Users\ecidi-cve\Downloads\HZ_models\杭州_0.fbx)");
+	osg::Vec3 center = node->getBound().center();
 	return 1;
 }

@@ -339,7 +339,6 @@ void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 				[&mat](const osg::Vec3& vertex) {
 					return vertex * mat;
 				});
-			geometry->setVertexArray(positions);
 			drawable.dirtyBound();
 			drawable.computeBound();
 		}
