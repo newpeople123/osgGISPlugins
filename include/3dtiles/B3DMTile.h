@@ -7,10 +7,13 @@ namespace osgGISPlugins
 {
 	class B3DMTile :public Tile {
 	private:
-		void buildBaseHlodAndComputeGeometricError();
+		void buildBaseHlod();
 
-		void rebuildHlodAndComputeGeometricErrorByRefinement();
+		void rebuildHlod();
 	public:
+		osg::BoundingBox bb, maxClusterBb;
+		double diagonalLength = 0.0, maxClusterDiagonalLength = 0.0;
+		double volume = 0.0, maxClusterVolume = 0.0;
 
 		B3DMTile() {
 			type = "b3dm";
@@ -40,6 +43,8 @@ namespace osgGISPlugins
 		static double computeRadius(const osg::BoundingBox& bbox, int axis);
 
 		void computeGeometricError() override;
+
+		void computeBoundingBox();
 	};
 }
 #endif // !OSG_GIS_PLUGINS_B3DM_TILE_H

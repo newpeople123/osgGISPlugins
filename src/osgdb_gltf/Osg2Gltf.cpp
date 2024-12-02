@@ -17,6 +17,7 @@
 using namespace osgGISPlugins;
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
+
 	for (int i = 0; i < _model.materials.size(); ++i)
 	{
 		if (gltfMaterial == _model.materials.at(i))
@@ -294,6 +295,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 				const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 				if (batchIds.valid())
 				{
+
 					if (batchIds->size() == positions->size())
 					{
 						getOrCreateBufferView(batchIds, GL_ARRAY_BUFFER_ARB);
@@ -342,6 +344,8 @@ tinygltf::Model Osg2Gltf::getGltfModel()
 	_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
 	std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
 	_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
+
+
 	return _model;
 }
 
@@ -559,6 +563,7 @@ int Osg2Gltf::getCurrentMaterial()
 			//gltfMaterial.alphaMode = "MASK";
 			//gltfMaterial.alphaCutoff = 0.5;
 		}
+
 		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 		if (osgMaterial.valid())
 		{

@@ -174,7 +174,13 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 	if (!epsg.empty())
 	{
 			node->computeBound();
-			const osg::Vec3d center = node->getBound().center();
+			const osg::BoundingSphere bs = node->getBound();
+			if (!bs.valid())
+			{
+				OSG_FATAL << "Error:Invalid model bounding box!" << std::endl;
+				exit(0);
+			}
+			const osg::Vec3d center = bs.center();
 			const string dstEpsg = "EPSG:4326";
 			const string srcEpsg = "EPSG:" + epsg;
 			PJ_CONTEXT* ctx = proj_context_create();
@@ -199,6 +205,7 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 			latitude = outputCoord.xyz.y;
 			longitude = outputCoord.xyz.x;
 			height = outputCoord.xyz.z;
+
 			const osg::EllipsoidModel ellipsoidModel;
 			osg::Matrixd localToWorld;
 			ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), height, localToWorld);
@@ -279,8 +286,8 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string());
-	std::string output = parseArgument(arguments, "-o", std::string());
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\马来美里模型4.fbx)"));
+	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\马来美里模型4)"));
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
@@ -296,7 +303,10 @@ int main(int argc, char** argv)
 	OSG_NOTICE << "Reading model file..." << std::endl;
 	osg::ref_ptr<osg::Node> node = readModelFile(input);
 	if (!node.valid())
+	{
 		OSG_FATAL << "Error:can not read 3d model file!" << '\n';
+		return 0;
+	}
 	try
 	{
 		applyOptimizer(node);

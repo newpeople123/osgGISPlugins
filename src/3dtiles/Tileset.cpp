@@ -100,18 +100,51 @@ void Tileset::computeGeometricError()
 
 	if (this->root->node.valid())
 	{
-		double groupGeometricErros = 0.0;
+		double totalVolume = 0.0; // 用于计算加权平均
+		double weightedErrorSum = 0.0; // 加权误差总和
 		osg::ref_ptr<osg::Group> group = this->root->node->asGroup();
+
 		for (size_t i = 0; i < group->getNumChildren(); ++i)
 		{
 			cbv.reset();
 			osg::ref_ptr<osg::Node> node = group->getChild(i);
 			node->accept(cbv);
 			bb = cbv.getBoundingBox();
-			radius = bb.radius();
-			groupGeometricErros += std::pow(radius * CesiumGeometricErrorOperator, 2);
+			const double diagonalLength = (bb._max - bb._min).length();
+
+			// 计算体积
+			const double volume = (bb._max.x() - bb._min.x()) *
+				(bb._max.y() - bb._min.y()) *
+				(bb._max.z() - bb._min.z());
+
+			MaxGeometryVisitor mgv;
+			node->accept(mgv);
+			const osg::BoundingBox clusterMaxBound = mgv.maxBB;
+
+			// 计算聚类体积
+			const double clusterVolume = (clusterMaxBound._max.x() - clusterMaxBound._min.x()) *
+				(clusterMaxBound._max.y() - clusterMaxBound._min.y()) *
+				(clusterMaxBound._max.z() - clusterMaxBound._min.z());
+
+			// 计算聚类体积的对角线长度
+			const double clusterMaxDiagonalLength = (clusterMaxBound._min - clusterMaxBound._max).length();
+
+			// 选择合适的误差范围
+			const double range = diagonalLength > 2 * clusterMaxDiagonalLength ? clusterMaxDiagonalLength : radius;
+
+			// 计算该子节点的几何误差
+			const double childNodeGeometricError = range * 0.7 * 0.5 * CesiumGeometricErrorOperator;
+
+			// 加权误差计算
+			weightedErrorSum += childNodeGeometricError * (diagonalLength > 2 * clusterMaxDiagonalLength ? clusterVolume : volume);
+			totalVolume += (diagonalLength > 2 * clusterMaxDiagonalLength ? clusterVolume : volume);
 		}
-		this->geometricError = groupGeometricErros / this->geometricError;
+
+		// 如果总的体积大于0，计算加权平均几何误差
+		if (totalVolume > 0.0)
+		{
+			this->geometricError = weightedErrorSum / totalVolume;
+		}
 	}
 	if (this->geometricError <= this->root->geometricError)
 		this->geometricError = this->root->geometricError * 1.5;

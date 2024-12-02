@@ -104,6 +104,7 @@ namespace osgGISPlugins
 			osg::ref_ptr<B3DMTile> b3dmNode = dynamic_cast<B3DMTile*>(root.get());
 			if (b3dmNode.valid())
 			{
+				b3dmNode->computeBoundingBox();
 				b3dmNode->buildHlod();
 			}
 		}

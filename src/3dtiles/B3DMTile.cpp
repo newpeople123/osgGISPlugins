@@ -4,8 +4,12 @@
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
+#include <tbb/spin_mutex.h>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileUtils>
+#include <unordered_map>
+#include <limits>
+
 void B3DMTile::computeGeometricError()
 {
     if (!this->children.size()) return;
@@ -14,21 +18,29 @@ void B3DMTile::computeGeometricError()
         this->children[i]->computeGeometricError();
     }
 
-    double total = 0.0;
+    double totalVolume = 0.0;  // 用于累计体积总和
+    double weightedErrorSum = 0.0;  // 加权几何误差总和
     for (size_t i = 0; i < this->children.size(); ++i)
     {
         if (this->children[i]->node.valid() && this->children[i]->node->asGroup()->getNumChildren())
         {
-            osg::ComputeBoundsVisitor cbv;
-            this->children[i]->node->accept(cbv);
-            const osg::BoundingBox boundingBox = cbv.getBoundingBox();
-            const double childNodeGeometricError = (boundingBox._max - boundingBox._min).length() * 0.7 * 0.5 * CesiumGeometricErrorOperator;
-            this->geometricError += pow(childNodeGeometricError, 2);
-            total += childNodeGeometricError;
+            osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
+            const double range = b3dmTile->diagonalLength > 2 * b3dmTile->maxClusterDiagonalLength ? b3dmTile->maxClusterDiagonalLength : b3dmTile->diagonalLength;
+           
+            // 计算几何误差
+            const double childNodeGeometricError = range * 0.7 * 0.5 * CesiumGeometricErrorOperator;
+
+            // 体积加权计算几何误差
+            weightedErrorSum += childNodeGeometricError * (b3dmTile->diagonalLength > 2 * b3dmTile->maxClusterDiagonalLength ? b3dmTile->maxClusterVolume : b3dmTile->volume);
+            totalVolume += (b3dmTile->diagonalLength > 2 * b3dmTile->maxClusterDiagonalLength ? b3dmTile->maxClusterVolume : b3dmTile->volume);
         }
     }
-    if (total > 0.0)
-        this->geometricError /= total;
+    // 如果总的体积大于0，计算加权平均几何误差
+    if (totalVolume > 0.0)
+    {
+        this->geometricError = (weightedErrorSum / totalVolume) * 1.5;
+    }
+
     for (size_t i = 0; i < this->children.size(); ++i)
     {
         if (this->children[i]->geometricError >= this->geometricError)
@@ -36,7 +48,55 @@ void B3DMTile::computeGeometricError()
     }
 }
 
-void B3DMTile::buildBaseHlodAndComputeGeometricError()
+void B3DMTile::computeBoundingBox()
+{
+    if (this->node.valid())
+    {
+        osg::ComputeBoundsVisitor cbv;
+        this->node->accept(cbv);
+        this->bb = cbv.getBoundingBox();
+        this->diagonalLength = (this->bb._max - this->bb._min).length();
+
+        // 计算体积
+        this->volume = (this->bb._max.x() - this->bb._min.x()) *
+            (this->bb._max.y() - this->bb._min.y()) *
+            (this->bb._max.z() - this->bb._min.z());
+
+        MaxGeometryVisitor mgv;
+        this->node->accept(mgv);
+        this->maxClusterBb = mgv.maxBB;
+
+        // 使用聚类后的体积
+        this->maxClusterVolume = (this->maxClusterBb._max.x() - this->maxClusterBb._min.x()) *
+            (this->maxClusterBb._max.y() - this->maxClusterBb._min.y()) *
+            (this->maxClusterBb._max.z() - this->maxClusterBb._min.z());
+
+        this->maxClusterDiagonalLength = (this->maxClusterBb._min - this->maxClusterBb._max).length();
+    }
+
+#ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+    /* single thread */
+    for (size_t i = 0; i < this->children.size(); ++i)
+    {
+        osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
+        if (b3dmTile.valid())
+            b3dmTile->computeBoundingBox();
+    }
+#else
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
+        [&](const tbb::blocked_range<size_t>& r)
+        {
+            for (size_t i = r.begin(); i < r.end(); ++i)
+            {
+                osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
+                if (b3dmTile.valid())
+                    b3dmTile->computeBoundingBox();
+            }
+        });
+#endif // !OSG_GIS_PLUGINS_WRITE_TILE_BY_SINGLE_THREAD
+}
+
+void B3DMTile::buildBaseHlod()
 {
     if (this->node.valid())
     {
@@ -48,9 +108,7 @@ void B3DMTile::buildBaseHlodAndComputeGeometricError()
         osg::ref_ptr<osg::Group> parentGroup = this->parent->node->asGroup();
 
         osg::ref_ptr<osg::Group> group = this->node->asGroup();
-        osg::ComputeBoundsVisitor cbv;
-        this->node->accept(cbv);
-        const osg::BoundingBox boundingBox = cbv.getBoundingBox();
+        const osg::BoundingBox boundingBox = this->bb;
         const double currentRadius = computeRadius(boundingBox, this->axis) * 0.7;
 
         for (size_t i = 0; i < group->getNumChildren(); ++i)
@@ -76,11 +134,11 @@ void B3DMTile::buildBaseHlodAndComputeGeometricError()
                 b3dmTile->buildHlod();
         }
 
-        buildBaseHlodAndComputeGeometricError();
+        buildBaseHlod();
     }
 }
 
-void B3DMTile::rebuildHlodAndComputeGeometricErrorByRefinement()
+void B3DMTile::rebuildHlod()
 {
     if (this->node.valid())
     {
@@ -156,14 +214,14 @@ void B3DMTile::rebuildHlodAndComputeGeometricErrorByRefinement()
         }
         osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
         if (b3dmTile.valid())
-            b3dmTile->rebuildHlodAndComputeGeometricErrorByRefinement();
+            b3dmTile->rebuildHlod();
     }
 }
 
 void B3DMTile::buildHlod()
 {
-    buildBaseHlodAndComputeGeometricError();
-    rebuildHlodAndComputeGeometricErrorByRefinement();
+    buildBaseHlod();
+    rebuildHlod();
     computeGeometricError();
 }
 
@@ -229,6 +287,6 @@ double B3DMTile::computeRadius(const osg::BoundingBox& bbox, int axis)
     case 2: // Z-X轴分割
         return (osg::Vec2(bbox._max.z(), bbox._max.x()) - osg::Vec2(bbox._min.z(), bbox._min.x())).length() / 2;
     default:
-        return 0.0;
+        return (bbox._max - bbox._min).length();
     }
 }

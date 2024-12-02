@@ -14,7 +14,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 		if (pair.second.size() > 1)
 		{
 			geodeMatrixMap.insert(pair);
-			geodeUseDataMap[pair.first] = _geodeUseDataMap[pair.first];
+			geodeUseDataMap[pair.first] = _geodeUserDataMap[pair.first];
 		}
 		else
 		{
@@ -24,7 +24,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 		}
 	}
 	_geodeMatrixMap = geodeMatrixMap;
-	_geodeUseDataMap = geodeUseDataMap;
+	_geodeUserDataMap = geodeUseDataMap;
 
 	osg::ref_ptr<B3DMTile> b3dmTile = generateB3DMTile();
 	osg::ref_ptr<I3DMTile> i3dmTile = generateI3DMTile();
@@ -59,6 +59,9 @@ void TreeBuilder::apply(osg::Group& group)
 void TreeBuilder::apply(osg::Geode& geode)
 {
 	osg::ref_ptr<osg::Node> node = geode.asNode();
+	const osg::BoundingSphere bs = node->getBound();
+	if (!bs.valid())
+		return;
 	osg::ref_ptr<osg::UserDataContainer> userData = node->getUserDataContainer();
 	for (auto item = _geodeMatrixMap.begin(); item != _geodeMatrixMap.end(); ++item)
 	{
@@ -66,12 +69,12 @@ void TreeBuilder::apply(osg::Geode& geode)
 		if (Utils::compareGeode(*geodeItem, geode))
 		{
 			item->second.push_back(_currentMatrix);
-			_geodeUseDataMap[item->first].push_back(userData);
+			_geodeUserDataMap[item->first].push_back(userData);
 			return;
 		}
 	}
 	_geodeMatrixMap[node->asGeode()].push_back(_currentMatrix);
-	_geodeUseDataMap[node->asGeode()].push_back(userData);
+	_geodeUserDataMap[node->asGeode()].push_back(userData);
 
 }
 
@@ -85,7 +88,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	double min = FLT_MAX;
 	for (size_t i = 0; i < _groupsToDivideList->getNumChildren(); ++i)
 	{
-		osg::ref_ptr<osg::Group> item = _groupsToDivideList->getChild(i)->asGroup();
+		osg::ref_ptr<osg::Group> item = _groupsToDivideList->getChild(i)->asGroup();		
 		osg::BoundingBox bb;
 		bb.expandBy(item->getBound());
 		const double xLength = bb.xMax() - bb.xMin();
@@ -146,7 +149,7 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 			transform->setMatrix(matrix);
 			for (osg::Geode* geode : pair.second)
 			{
-				osg::ref_ptr<osg::UserDataContainer> userData = _geodeUseDataMap[geode].at(userDataIndex);
+				osg::ref_ptr<osg::UserDataContainer> userData = _geodeUserDataMap[geode].at(userDataIndex);
 				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(geode, osg::CopyOp::DEEP_COPY_ALL);
 				geodeCopy->setUserDataContainer(userData);
 				transform->addChild(geodeCopy);

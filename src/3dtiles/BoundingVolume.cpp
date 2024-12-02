@@ -43,17 +43,17 @@ void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
 	this->box.push_back(cesiumBoxCenter.y());
 	this->box.push_back(cesiumBoxCenter.z());
 
-	this->box.push_back(size.x() / 2);
+	this->box.push_back(size.x() / 2 * 1.5);
 	this->box.push_back(0);
 	this->box.push_back(0);
 
 	this->box.push_back(0);
-	this->box.push_back(size.y() / 2);
+	this->box.push_back(size.y() / 2 * 1.5);
 	this->box.push_back(0);
 
 	this->box.push_back(0);
 	this->box.push_back(0);
-	this->box.push_back(size.z() / 2);
+	this->box.push_back(size.z() / 2 * 1.5);
 }
 
 void BoundingVolume::computeSphere(osg::ref_ptr<osg::Node> node)
@@ -66,7 +66,7 @@ void BoundingVolume::computeSphere(osg::ref_ptr<osg::Node> node)
 	const osg::Vec3f center = boundingBox.center() * mat;
 	const float radius = boundingBox.radius();
 
-	this->sphere = { center.x(), center.y(), center.z(), radius };
+	this->sphere = { center.x(), center.y(), center.z(), radius * 1.5 };
 }
 
 void BoundingVolume::computeRegion(osg::ref_ptr<osg::Node> node, const double latitude, const double longitude, const double height)

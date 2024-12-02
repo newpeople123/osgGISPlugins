@@ -1,5 +1,7 @@
 #include "utils/Utils.h"
+
 using namespace osgGISPlugins;
+
 bool Utils::compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs)
 {
 	const double* ptr1 = lhs.ptr();

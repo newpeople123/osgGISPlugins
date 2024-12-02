@@ -14,8 +14,7 @@
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
-	constexpr double InitialPixelSize = 5.0;
-	constexpr double DetailPixelSize = InitialPixelSize * 5;
+	constexpr double PixelSize = 5.0;
 	constexpr double CesiumCanvasClientWidth = 1920;
 	constexpr double CesiumCanvasClientHeight = 1080;
 	constexpr double CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
@@ -27,8 +26,8 @@ namespace osgGISPlugins
 	constexpr double CesiumCanvasViewportHeight = CesiumCanvasClientHeight;
 	const double CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
 	constexpr double CesiumMaxScreenSpaceError = 16.0;
-	const double CesiumDistanceOperator = tan(osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight * InitialPixelSize / 2);
-	const double CesiumGeometricErrorOperator = CesiumSSEDenominator * CesiumMaxScreenSpaceError / (CesiumCanvasClientHeight * tan(osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight * InitialPixelSize / 2));
+	const double CesiumDistanceOperator = tan(osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight * PixelSize / 2);
+	const double CesiumGeometricErrorOperator = CesiumSSEDenominator * CesiumMaxScreenSpaceError / (CesiumCanvasClientHeight * tan(osg::maximum(CesiumFrustumFov, 1.0e-17) / CesiumCanvasViewportHeight * PixelSize / 2));
 
 
 	enum class Refinement {
