@@ -44,9 +44,11 @@ source_group("src/util" FILES ${UTILS_SOURCE_FILES} ${PROJECT_ROOT_DIR}/src/osgd
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)
+find_package(PROJ CONFIG REQUIRED)
 target_link_libraries(${TOOL_NAME} 
     meshoptimizer::meshoptimizer
     TBB::tbb TBB::tbbmalloc TBB::tbbmalloc_proxy
+    PROJ::proj
 )
 
 # 如果是 Linux 系统，链接 pthread 库
@@ -64,6 +66,14 @@ if (OPENSCENEGRAPH_FOUND)
 else()
     message(FATAL_ERROR "${TOOL_NAME}: OpenSceneGraph not found!")
 endif()
-
+if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        file(GLOB THIRD_PARTY_LIBS_DIR "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows/share/proj/*")
+        file(COPY ${THIRD_PARTY_LIBS_DIR} DESTINATION ${PROJECT_ROOT_DIR}/Debug/share/proj)
+    else()
+        file(GLOB THIRD_PARTY_LIBS_DIR "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows/share/proj/*")
+        file(COPY ${THIRD_PARTY_LIBS_DIR} DESTINATION ${PROJECT_ROOT_DIR}/Release/share/proj)
+    endif()
+endif()
 # 安装目标
 install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})

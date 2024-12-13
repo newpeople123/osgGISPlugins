@@ -154,6 +154,8 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 #### 命令行格式
 
 `model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit`
+或
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -epsg <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit`
 
 #### 示例命令
 
@@ -163,8 +165,8 @@ model23dtiles.exe -i D:\test.fbx -o D:\output -lat 30 -lng 116 -height 100
 model23dtiles.exe -i D:\test.fbx -tf ktx2 -vf draco -o D:\output -lat 30 -lng 116 -height 100
 # 设置3dtiles的中间节点的简化比例为0.6
 model23dtiles.exe -i D:\test.fbx -ratio 0.6 -o D:\output -lat 30 -lng 116 -height 100
-# 设置3dtiles的树结构为四叉树
-model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 100
+# 设置3dtiles的树结构为四叉树，顶点坐标为4549投影坐标系
+model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
 ```
 
 #### 参数说明
@@ -187,6 +189,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-maxTextureAtlasHeight` 纹理图集的最大高度，默认值为2048，需为2的幂次，且值要大于maxTextureHeight的值，否则将不会构建纹理图集。
 `-recomputeNormal` 重新计算法线
 `-unlit`启用`KHR_materials_unlit`扩展，适用于烘焙过的模型
+`-epsg`若模型顶点坐标为投影坐标系，指定epsg编码，与lat、lng和height参数互斥
 
 ## simplifier
 
