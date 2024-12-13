@@ -36,7 +36,13 @@ int main(int argc, char** argv)
     std::string input, output;
     while (arguments.read("-i", input));
     while (arguments.read("-o", output));
-
+    if (input.empty() && output.empty()) {
+        if (arguments.argc() > 1)
+        {
+            input = arguments.argv()[1];
+            output = osgDB::getNameLessExtension(input) + ".glb";
+        }
+    }
 #ifndef NDEBUG
 #else
     input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());

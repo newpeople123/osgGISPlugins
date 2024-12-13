@@ -24,20 +24,20 @@ namespace osgGISPlugins
 
         struct GltfTextureOptimizationOptions
         {
-            int maxWidth = 512;
-            int maxHeight = 512;
+            int maxTextureWidth = 512;
+            int maxTextureHeight = 512;
             int maxTextureAtlasWidth = 2048;
             int maxTextureAtlasHeight = 2048;
 
             std::string ext = ".png";
-            std::string cachePath = "";
+            std::string cachePath = "./";
             bool packTexture = true;
             GltfTextureOptimizationOptions& operator=(const GltfTextureOptimizationOptions& other)
             {
                 if (this != &other)
                 { // 避免自赋值
-                    maxWidth = other.maxWidth;
-                    maxHeight = other.maxHeight;
+                    maxTextureWidth = other.maxTextureWidth;
+                    maxTextureHeight = other.maxTextureHeight;
                     maxTextureAtlasWidth = other.maxTextureAtlasWidth;
                     maxTextureAtlasHeight = other.maxTextureAtlasHeight;
                     ext = other.ext;
@@ -83,7 +83,6 @@ namespace osgGISPlugins
 
 
             REDUCE_DRAWCALL_OPTIMIZATIONS = 
-            MERGE_TRANSFORMS |
             TEXTURE_ATLAS_BUILDER_BY_STB |
             VERTEX_CACHE_BY_MESHOPTIMIZER |
             OVER_DRAW_BY_MESHOPTIMIZER |
@@ -242,10 +241,6 @@ namespace osgGISPlugins
 
             bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
 
-            int findNearestPowerOfTwo(int value);
-
-            std::string computeImageHash(const osg::ref_ptr<osg::Image>& img);
-
             static bool compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2);
 
             void addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs);
@@ -267,7 +262,7 @@ namespace osgGISPlugins
             TextureAtlasBuilderVisitor(const GltfTextureOptimizationOptions options, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, VERTEX_FETCH_BY_MESHOPTIMIZER), _options(options)
             {
             }
-
+            static std::string computeImageHash(const osg::ref_ptr<osg::Image>& img);
             void apply(osg::Drawable& drawable) override;
 
             void packTextures();

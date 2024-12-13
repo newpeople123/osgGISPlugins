@@ -10,8 +10,8 @@ void GltfMerger::mergeMeshes()
 	// 矩阵对应的primitive
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual> matrixPrimitiveMap;
 	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap);
-	if (matrixPrimitiveMap.size() <= 1)
-		return;
+	//if (matrixPrimitiveMap.size() <= 1)
+	//	return;
 
 	// 新的accessor、bufferView和buffer
 	std::vector<tinygltf::Accessor> newAccessors;

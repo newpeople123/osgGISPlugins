@@ -171,8 +171,17 @@ int main() {
 	//_CrtSetBreakAlloc(1172754);
 	//_CrtDumpMemoryLeaks();
 
-
-	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(R"(C:\Users\ecidi-cve\Downloads\HZ_models\杭州_0.fbx)");
-	osg::Vec3 center = node->getBound().center();
+	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
+	readOptions->setOptionString("TessellatePolygons");
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(R"(E:\Code\2023\Other\data\20240529卢沟桥分洪枢纽.fbx)", readOptions.get());
+	GltfOptimizer gltfOptimzier;
+	GltfOptimizer::GltfTextureOptimizationOptions gltfOptions;
+	gltfOptions.maxTextureAtlasHeight = 4096;
+	gltfOptions.maxTextureAtlasWidth = 4096;
+	gltfOptions.maxWidth = 256;
+	gltfOptions.maxHeight = 256;
+	gltfOptimzier.setGltfTextureOptimizationOptions(gltfOptions);
+	gltfOptimzier.optimize(node.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
+	osgDB::writeNodeFile(*node, R"(E:\Code\2023\Other\data\20240529卢沟桥分洪枢纽.glb)");
 	return 1;
 }

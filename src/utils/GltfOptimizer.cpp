@@ -30,11 +30,28 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 	{
 		OSG_INFO << "Optimizer::optimize() doing MERGE_TRANSFORMS" << std::endl;
 		osg::Group* group = node->asGroup();
-		if (group && group->getNumChildren() > 1)
+		//if (group && group->getNumChildren() > 1)
+		if(group)
 		{
 			MergeTransformVisitor mtv;
 			node->accept(mtv);
-			node = mtv.getNode();
+			osg::Group* group = node->asGroup();
+			
+			if (group)
+			{
+				osg::Group* newGroup = mtv.getNode()->asGroup();
+				if (newGroup)
+				{
+					// 清除group中的所有子节点
+					group->removeChildren(0, group->getNumChildren());
+					// 将newGroup中的所有子节点添加到group中
+					for (unsigned int i = 0; i < newGroup->getNumChildren(); ++i)
+					{
+						group->addChild(newGroup->getChild(i));
+					}
+				}
+			}
+			
 		}
 	}
 
@@ -320,27 +337,26 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 /** FlattenTransformsVisitor */
 void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 {
-	if (drawable.getDataVariance() == osg::Object::DataVariance::STATIC)
-		return;
-	const osg::MatrixList matrixList = drawable.getWorldMatrices();
-	osg::Matrixd mat = osg::Matrixd::identity();
-	mat = std::accumulate(matrixList.begin(), matrixList.end(), mat,
-		[](const osg::Matrixd& lhs, const osg::Matrixd& rhs) {
-			return lhs * rhs;
-		});
+	//if (drawable.getDataVariance() == osg::Object::DataVariance::STATIC)
+	//	return;
 
-	osg::Geometry* geometry = dynamic_cast<osg::Geometry*>(drawable.asGeometry());
-	if (geometry)
-	{
-		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
-		if (positions && mat != osg::Matrixd::identity())
+	const osg::MatrixList matrixList = drawable.getWorldMatrices();
+	if (matrixList.size() == 0) return;
+	const osg::Matrixd matrix = matrixList[0];
+	if (matrix != osg::Matrixd::identity()) {
+		osg::Geometry* geometry = dynamic_cast<osg::Geometry*>(drawable.asGeometry());
+		if (geometry)
 		{
-			std::transform(positions->begin(), positions->end(), positions->begin(),
-				[&mat](const osg::Vec3& vertex) {
-					return vertex * mat;
-				});
-			drawable.dirtyBound();
-			drawable.computeBound();
+			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
+			if (positions)
+			{
+				std::transform(positions->begin(), positions->end(), positions->begin(),
+					[&matrix](const osg::Vec3& vertex) {
+						return vertex * matrix;
+					});
+				drawable.dirtyBound();
+				drawable.computeBound();
+			}
 		}
 	}
 }
@@ -348,24 +364,25 @@ void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Transform& transform)
 {
 	traverse(transform);
+
 	if (transform.getDataVariance() == osg::Object::DataVariance::STATIC)
 		return;
-	osg::ref_ptr<osg::MatrixTransform> matrixTransform = transform.asMatrixTransform();
-	if (matrixTransform.valid())
+
+	if (osg::MatrixTransform* matrixTransform = transform.asMatrixTransform())
 	{
 		matrixTransform->setMatrix(osg::Matrixd::identity());
 	}
-	else
+	else if (osg::PositionAttitudeTransform* positionAttitudeTransform = transform.asPositionAttitudeTransform())
 	{
-		osg::ref_ptr<osg::PositionAttitudeTransform> positionAttitudeTransform = transform.asPositionAttitudeTransform();
-		if (positionAttitudeTransform.valid())
-		{
-			positionAttitudeTransform->setPosition(osg::Vec3());
-			positionAttitudeTransform->setAttitude(osg::Quat());
-		}
+		positionAttitudeTransform->setPosition(osg::Vec3());
+		positionAttitudeTransform->setAttitude(osg::Quat());
 	}
-	transform.dirtyBound();
-	transform.computeBound();
+
+	if (transform.getNumChildren() > 0)
+	{
+		transform.dirtyBound();
+		transform.computeBound();
+	}
 }
 
 /** ReindexMeshVisitor */
@@ -615,7 +632,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 		osg::ref_ptr<osg::Image> image = texture->getImage(0);
 		if (image.valid())
 		{
-			resizeImageToPowerOfTwo(image, _options.maxWidth, _options.maxHeight);;
+			resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);;
 			if (_options.packTexture)
 			{
 				bool bBuildTexturePacker = true;
@@ -629,7 +646,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 				}
 				if (bBuildTexturePacker)
 				{
-					if (image->s() <= _options.maxWidth || image->t() <= _options.maxHeight)
+					if (image->s() <= _options.maxTextureWidth || image->t() <= _options.maxTextureHeight)
 					{
 						bool bAdd = true;
 						for (osg::ref_ptr<osg::Image> img : _images)
@@ -688,7 +705,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_
 			osg::ref_ptr<osg::Image> image = texture->getImage(0);
 			if (image.valid())
 			{
-				resizeImageToPowerOfTwo(image, _options.maxWidth, _options.maxHeight);;
+				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);;
 			}
 		}
 	}
@@ -829,7 +846,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 
 		if (packedImage.valid() && deleteImgs.size())
 		{
-			const double oldWidth= packedImage->s(), oldHeight = packedImage->t();
+			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
 			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
@@ -1347,8 +1364,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 
 
 	std::string fullPath = _options.cachePath + "/" + filename + ext;
-	bool isFileExists = osgDB::fileExists(fullPath);
-	if (!isFileExists)
+	std::ifstream fileExistedJpg(fullPath);
+	if ((!fileExistedJpg.good()) || (fileExistedJpg.peek() == std::ifstream::traits_type::eof()))
 	{
 		osg::ref_ptr< osg::Image > flipped = new osg::Image(*img);
 		if (!(osgDB::writeImageFile(*flipped.get(), fullPath)))
@@ -1361,11 +1378,15 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<o
 				if (!(osgDB::writeImageFile(*flipped.get(), fullPath)))
 				{
 					osg::notify(osg::FATAL) << '\n';
+					fullPath = "";
 				}
 			}
-			fileExistedPng.close();
+			if (fileExistedPng.good())
+				fileExistedPng.close();
 		}
 		flipped = nullptr;
+		if (fileExistedJpg.good())
+			fileExistedJpg.close();
 	}
 	img->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
 }
@@ -1374,23 +1395,13 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 {
 	int originalWidth = img->s();
 	int originalHeight = img->t();
-	int newWidth = findNearestPowerOfTwo(originalWidth);
-	int newHeight = findNearestPowerOfTwo(originalHeight);
+	int newWidth = osg::Image::computeNearestPowerOfTwo(originalWidth);
+	int newHeight = osg::Image::computeNearestPowerOfTwo(originalHeight);
 
 	newWidth = newWidth > maxWidth ? maxWidth : newWidth;
 	newHeight = newHeight > maxHeight ? maxHeight : newHeight;
 	img->scaleImage(newWidth, newHeight, img->r());
 	return true;
-}
-
-int GltfOptimizer::TextureAtlasBuilderVisitor::findNearestPowerOfTwo(int value)
-{
-	int powerOfTwo = 1;
-	while (powerOfTwo * 2 <= value)
-	{
-		powerOfTwo *= 2;
-	}
-	return powerOfTwo;
 }
 
 std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const osg::ref_ptr<osg::Image>& image)
@@ -1433,9 +1444,10 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<
 void GltfOptimizer::MergeTransformVisitor::apply(osg::MatrixTransform& xtransform)
 {
 	osg::Matrixd previousMatrix = _currentMatrix;
-	osg::Matrixd localMatrix;
-	xtransform.computeLocalToWorldMatrix(localMatrix, this);
-	_currentMatrix.preMult(localMatrix);
+	//osg::Matrixd localMatrix;
+	//xtransform.computeLocalToWorldMatrix(localMatrix, this);
+	//_currentMatrix.preMult(localMatrix);
+	_currentMatrix = _currentMatrix * xtransform.getMatrix();
 	traverse(xtransform);
 	_currentMatrix = previousMatrix;
 }

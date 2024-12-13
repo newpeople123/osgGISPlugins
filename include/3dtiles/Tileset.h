@@ -54,19 +54,14 @@ namespace osgGISPlugins
 			osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 
 			void validate() {
-				if (this->gltfTextureOptions.cachePath.empty())
-				{
-					this->gltfTextureOptions.cachePath = this->path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "textures";
-				}
-				osgDB::makeDirectory(this->gltfTextureOptions.cachePath);
 
 				osg::clampTo(this->simplifyRatio, 0.f, 1.f);
 
 				osg::clampTo(this->latitude, -90.0, 90.0);
 				osg::clampTo(this->longitude, -180.0, 180.0);
 
-				osg::clampTo(this->gltfTextureOptions.maxWidth, 2, 8192);
-				osg::clampTo(this->gltfTextureOptions.maxHeight, 2, 8192);
+				osg::clampTo(this->gltfTextureOptions.maxTextureWidth, 2, 8192);
+				osg::clampTo(this->gltfTextureOptions.maxTextureHeight, 2, 8192);
 				osg::clampTo(this->gltfTextureOptions.maxTextureAtlasWidth, 2, 8192);
 				osg::clampTo(this->gltfTextureOptions.maxTextureAtlasHeight, 2, 8192);
 
@@ -104,7 +99,6 @@ namespace osgGISPlugins
 			osg::ref_ptr<B3DMTile> b3dmNode = dynamic_cast<B3DMTile*>(root.get());
 			if (b3dmNode.valid())
 			{
-				b3dmNode->computeBoundingBox();
 				b3dmNode->buildHlod();
 			}
 		}

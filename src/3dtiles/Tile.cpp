@@ -71,6 +71,9 @@ void Tile::setContentUri()
 		if (type == "i3dm")
 			contentUri = "InstanceTiles/" + contentUri;
 	}
+	else {
+		return;
+	}
 }
 
 void Tile::computeBoundingVolumeBox()
@@ -94,10 +97,12 @@ bool Tile::descendantNodeIsEmpty() const
 osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 {
 	osg::ref_ptr<osg::Group> group = new osg::Group;
-	osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
-	for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
-	{
-		group->addChild(currentNodeAsGroup->getChild(i));
+	if (this->node.valid()) {
+		osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
+		for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
+		{
+			group->addChild(currentNodeAsGroup->getChild(i));
+		}
 	}
 	for (size_t i = 0; i < this->children.size(); ++i)
 	{

@@ -90,7 +90,7 @@ void registerFileAliases() {
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
-	readOptions->setOptionString("TessellatePolygons");
+	//readOptions->setOptionString("TessellatePolygons");
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
 	if (!node) {
@@ -286,8 +286,8 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\马来美里模型4.fbx)"));
-	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\马来美里模型4)"));
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\20240529卢沟桥分洪枢纽1.fbx)"));
+	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\20240529卢沟桥分洪枢纽2)"));
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
@@ -377,11 +377,17 @@ int main(int argc, char** argv)
 		config.height = height;
 		config.simplifyRatio = ratio;
 		config.path = output;
-		config.gltfTextureOptions.maxWidth = maxTextureWidth;
-		config.gltfTextureOptions.maxHeight = maxTextureHeight;
+		config.gltfTextureOptions.maxTextureWidth = maxTextureWidth;
+		config.gltfTextureOptions.maxTextureHeight = maxTextureHeight;
 		config.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
 		config.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
 		config.gltfTextureOptions.ext = "." + textureFormat;
+#ifdef _WIN32
+		config.gltfTextureOptions.cachePath = config.path + "\\textures";
+#else
+		config.gltfTextureOptions.cachePath = config.path + "/textures";
+#endif
+		osgDB::makeDirectory(config.gltfTextureOptions.cachePath);
 		config.options->setOptionString(optionsStr);
 
 		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;

@@ -610,14 +610,14 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	}
 	std::string filename;
 	osgImage->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
-
 	if (filename.empty())
 	{
 		filename = osgImage->getFileName();
 	}
-
+	
 	if (!osgDB::fileExists(filename))
 	{
+		OSG_WARN << "image file " << filename << " not found!" << std::endl;
 		return -1;
 	}
 	std::ifstream file(osgDB::convertStringFromUTF8toCurrentCodePage(filename), std::ios::binary);
@@ -626,7 +626,6 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 		OSG_FATAL << "Texture file \"" << filename << "\" exists,but failed to read.";
 		return -1;
 	}
-
 	for (unsigned int i = 0; i < _textures.size(); i++)
 	{
 		const osg::ref_ptr<osg::Texture> existTexture = _textures[i].get();

@@ -83,7 +83,7 @@ namespace osgGISPlugins {
             }
             
             osg::ref_ptr<osg::Image> img1 = texture1->getImage();
-            osg::ref_ptr<osg::Image> img2 = texture1->getImage();
+            osg::ref_ptr<osg::Image> img2 = texture2->getImage();
             if (img1->getFileName() != img2->getFileName())
             {
                 return false;

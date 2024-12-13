@@ -103,8 +103,6 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
 			continue;
 		draco::Mesh dracoMesh;
-		if (primitive.indices == 201)
-			OSG_NOTICE << std::endl;
 		if (primitive.indices != -1) {
 			tinygltf::Accessor& indicesAccessor = _model.accessors[primitive.indices];
 			const tinygltf::BufferView& indicesBv = _model.bufferViews[indicesAccessor.bufferView];

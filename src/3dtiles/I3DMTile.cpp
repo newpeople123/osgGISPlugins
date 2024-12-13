@@ -8,44 +8,36 @@ using namespace osgGISPlugins;
 void I3DMTile::computeGeometricError()
 {
 	this->refine = Refinement::ADD;
-	if (!this->children.size())
-	{
-		if (this->node.valid())
-		{
-			osg::ref_ptr<osg::Group> group = this->node->asGroup();
-			if (group->getNumChildren())
-			{
-				osg::ComputeBoundsVisitor cbv;
-				group->getChild(0)->accept(cbv);
-				const osg::BoundingBox boundingBox = cbv.getBoundingBox();
-				this->geometricError = (boundingBox._max - boundingBox._min).length() * 0.7 * CesiumGeometricErrorOperator;
-			}
-		}
-		return;
-	}
 	for (size_t i = 0; i < this->children.size(); ++i)
 	{
 		this->children[i]->computeGeometricError();
 	}
 
-	double total = 0.0;
-	for (size_t i = 0; i < this->children.size(); ++i)
+	if (!this->children.size())
 	{
-		const double childNodeGeometricError = this->children[i]->geometricError;
-		this->geometricError += pow(childNodeGeometricError, 2);
-		total += childNodeGeometricError;
-		if (this->children[i]->children.size() == 0)
+		this->geometricError = 0.0;
+	}
+	else
+	{
+		for (size_t i = 0; i < this->children.size(); ++i)
 		{
-			this->children[i]->geometricError = 0.0;
+			osg::ref_ptr<osg::Node> child = this->children[i]->node;
+			if (child.valid())
+			{
+				osg::ref_ptr<osg::Group> group = child->asGroup();
+				if (group->getNumChildren())
+				{
+					osg::ComputeBoundsVisitor cbv;
+					group->getChild(0)->accept(cbv);
+					const osg::BoundingBox boundingBox = cbv.getBoundingBox();
+					this->geometricError = osg::maximum((boundingBox._max - boundingBox._min).length() * 0.7 * CesiumGeometricErrorOperator, this->geometricError);
+				}
+			}
+			if (this->geometricError < this->children[i]->geometricError)
+				this->geometricError = this->children[i]->geometricError + 0.1;
 		}
 	}
-	if (total > 0.0)
-		this->geometricError /= total;
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		if (this->children[i]->geometricError >= this->geometricError)
-			this->geometricError = this->children[i]->geometricError + 0.1;
-	}
+
 }
 
 void I3DMTile::write(const string& str, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options)
@@ -65,6 +57,9 @@ void I3DMTile::write(const string& str, const float simplifyRatio, const GltfOpt
 		nodeCopy->accept(biv);
 		const string path = str + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "InstanceTiles";
 		osgDB::makeDirectory(path);
+#ifndef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+		tbb::spin_mutex::scoped_lock lock(writeMutex);
+#endif // !OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 		osgDB::writeNodeFile(*nodeCopy.get(), path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "Tile_" + to_string(z) + "." + type, options);
 
 	}

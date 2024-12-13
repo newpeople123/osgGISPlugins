@@ -32,6 +32,7 @@ json BoundingVolume::toJson() const {
 
 void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
 {
+	if (!node.valid()) return;
 	osg::ComputeBoundsVisitor cbv;
 	node->accept(cbv);
 	const osg::BoundingBox boundingBox = cbv.getBoundingBox();
@@ -43,17 +44,17 @@ void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
 	this->box.push_back(cesiumBoxCenter.y());
 	this->box.push_back(cesiumBoxCenter.z());
 
-	this->box.push_back(size.x() / 2 * 1.5);
+	this->box.push_back(size.x() / 2);
 	this->box.push_back(0);
 	this->box.push_back(0);
 
 	this->box.push_back(0);
-	this->box.push_back(size.y() / 2 * 1.5);
+	this->box.push_back(size.y() / 2);
 	this->box.push_back(0);
 
 	this->box.push_back(0);
 	this->box.push_back(0);
-	this->box.push_back(size.z() / 2 * 1.5);
+	this->box.push_back(size.z() / 2);
 }
 
 void BoundingVolume::computeSphere(osg::ref_ptr<osg::Node> node)
@@ -66,7 +67,7 @@ void BoundingVolume::computeSphere(osg::ref_ptr<osg::Node> node)
 	const osg::Vec3f center = boundingBox.center() * mat;
 	const float radius = boundingBox.radius();
 
-	this->sphere = { center.x(), center.y(), center.z(), radius * 1.5 };
+	this->sphere = { center.x(), center.y(), center.z(), radius };
 }
 
 void BoundingVolume::computeRegion(osg::ref_ptr<osg::Node> node, const double latitude, const double longitude, const double height)

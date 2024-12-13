@@ -9,12 +9,13 @@
 #include "3dtiles/BoundingVolume.h"
 #include "utils/GltfOptimizer.h"
 #include <osgDB/WriteFile>
+#include <tbb/spin_mutex.h>
 // 控制导出3dtiles时是否为单线程(启用该宏则为单线程)
 //#define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
-	constexpr double PixelSize = 5.0;
+	constexpr double PixelSize = 25.0;
 	constexpr double CesiumCanvasClientWidth = 1920;
 	constexpr double CesiumCanvasClientHeight = 1080;
 	constexpr double CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
@@ -32,7 +33,8 @@ namespace osgGISPlugins
 
 	enum class Refinement {
 		REPLACE,
-		ADD
+		ADD,
+		UNDEFINED
 	};
 
 	class Tile :public osg::Object
@@ -44,7 +46,7 @@ namespace osgGISPlugins
 
 		BoundingVolume boundingVolume;
 		double geometricError = 0.0;
-		Refinement refine = Refinement::REPLACE;
+		Refinement refine = Refinement::UNDEFINED;
 		string contentUri;
 
 		vector<osg::ref_ptr<Tile>> children;
@@ -99,6 +101,11 @@ namespace osgGISPlugins
 		bool valid() const;
 
 		virtual void write(const string& path, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options) = 0;
+	protected:
+#ifndef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+		tbb::spin_mutex writeMutex;
+#endif // !OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+
 	};
 }
 #endif // !OSG_GIS_PLUGINS_TILE_H

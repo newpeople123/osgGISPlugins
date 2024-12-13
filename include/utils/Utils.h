@@ -51,7 +51,7 @@ namespace osgGISPlugins
 				// 获取当前几何体的包围盒
 				const osg::BoundingBox drawableBB = cbv.getBoundingBox();
 				if (!maxBB.valid() || calculateBoundingBoxVolume(drawableBB) > calculateBoundingBoxVolume(maxBB))
-					maxBB == drawableBB;
+					maxBB = drawableBB;
 			}
 		}
 	};

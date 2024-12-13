@@ -1,317 +1,517 @@
-#include <iostream>
+#include <osg/ArgumentParser>
+#include <osgDB/Options>
+#include <osgDB/ConvertUTF>
 #include <osgDB/ReadFile>
-#include <osgDB/WriteFile>
-#include <osg/NodeVisitor>
-#include <osg/ShapeDrawable>
-#include <osgViewer/Viewer>
+#include <iostream>
+#include <osgDB/FileUtils>
+#include <osg/MatrixTransform>
+#include <osgUtil/SmoothingVisitor>
+#include <osg/PositionAttitudeTransform>
+#include <proj.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
-#include <utils/GltfOptimizer.h>
+#include "3dtiles/Tileset.h"
+#include "3dtiles/hlod/QuadtreeBuilder.h"
+#include "3dtiles/hlod/OctreeBuilder.h"
+#include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
-#include <osg/LineWidth>
-#include <3dtiles/Tileset.h>
-#include <3dtiles/hlod/QuadtreeBuilder.h>
-#include <osg/MatrixTransform>
-using namespace std;
-using namespace osgGISPlugins;
-//const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
-//const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";
-
-//const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.22.1\html\)";
-//const std::string INPUT_BASE_PATH = R"(E:\Code\2023\Other\data\)";
-
-const std::string OUTPUT_BASE_PATH = R"(C:\wty\nginx-1.26.1\html\)";
-const std::string INPUT_BASE_PATH = R"(C:\wty\work\test\)";
-
-osg::ref_ptr<B3DMTile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group, osg::ref_ptr<B3DMTile> parent = nullptr);
-void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth);
-osg::Geometry* createBoundingBoxGeometry(const osg::BoundingBox& bbox);
-int getMaxDepth(osg::Node* node);
-void buildTree(const std::string& filename);
-osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node);
-
-class GroupCountVisitor :public osg::NodeVisitor
+#include <osgDB/FileNameUtils>
+#include <osgViewer/Viewer>
+class CoordinateTransformVisitor :public osg::NodeVisitor
 {
+private:
+	PJ* _pj;
+	osg::Matrixd _worldToLocal;
+	osg::Matrixd _currentMatrix; // 当前矩阵，用于继承和变换
+
+	osg::Vec3d transformVertex(const osg::Vec3d& vertex) {
+		osg::Vec3d worldPosition = vertex * _currentMatrix;
+		PJ_COORD inputCoord = proj_coord(worldPosition.x(), -worldPosition.z(), worldPosition.y(), 0);
+		PJ_COORD outputCoord = proj_trans(_pj, PJ_FWD, inputCoord);
+		osg::Vec3d projected(outputCoord.xyz.x, outputCoord.xyz.y, outputCoord.xyz.z);
+		osg::Vec3d localPosition = projected * _worldToLocal;
+
+		osg::Quat quat(-osg::PI_2, osg::Vec3(1.0, 0.0, 0.0));
+		return quat * localPosition;
+	}
 public:
-    GroupCountVisitor() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
-    void apply(osg::Group& group) override
-    {
-        int count = 0;
-        for (size_t i = 0; i < group.getNumChildren(); ++i)
-        {
-            if (typeid(*group.getChild(i)) == typeid(osg::Geode)|| typeid(*group.getChild(i)) == typeid(osg::Drawable))
-            {
-                count++;
-            }
-        }
-        //if(count)
-        //    std::cout << count << ", ";
-        if(count>1)
-            std::cout << count << ", ";
-        traverse(group);
-    }
+	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+
+
+	}
+
+	void apply(osg::Transform& transform) override {
+		osg::Matrixd localMatrix;
+		transform.computeLocalToWorldMatrix(localMatrix, this);
+		osg::Matrixd savedMatrix = _currentMatrix;
+		_currentMatrix *= localMatrix; // 更新当前矩阵
+		traverse(transform);
+		_currentMatrix = savedMatrix; // 恢复父节点矩阵
+	}
+
+	void apply(osg::Drawable& drawable) override {
+		if (drawable.getDataVariance() == osg::Object::DataVariance::STATIC)
+			return;
+
+		osg::Geometry* geometry = drawable.asGeometry();
+		if (geometry) {
+			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
+			if (positions) {
+				std::transform(positions->begin(), positions->end(), positions->begin(),
+					[this](const osg::Vec3d& vertex) {
+						return transformVertex(vertex);
+					});
+				geometry->dirtyBound();
+				geometry->computeBound();
+			}
+		}
+	}
 };
 
-void computedTreeDepth(osg::ref_ptr<osg::Node> node, int& depth)
+class StateSetCounterVisitor :public osg::NodeVisitor
 {
-    if (node.valid())
-    {
-        depth++;
-        osg::ref_ptr<osg::Group> group = node->asGroup();
-        if (group.valid())
-        {
-            for (size_t i = 0; i < group->getNumChildren(); ++i)
-            {
-                int temp = depth;
-                computedTreeDepth(group->getChild(i), temp);
-                depth = osg::maximum(temp, depth);
-            }
-        }
-    }
-}
+private:
+	std::vector<osg::ref_ptr<osg::StateSet>> stateSets;
+public:
+	StateSetCounterVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+	}
 
-osg::Geometry* createBoundingBoxGeometry(const osg::BoundingBox& bbox) {
-    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array(8);
-    (*vertices)[0] = osg::Vec3(bbox.xMin(), bbox.yMin(), bbox.zMin());
-    (*vertices)[1] = osg::Vec3(bbox.xMax(), bbox.yMin(), bbox.zMin());
-    (*vertices)[2] = osg::Vec3(bbox.xMax(), bbox.yMax(), bbox.zMin());
-    (*vertices)[3] = osg::Vec3(bbox.xMin(), bbox.yMax(), bbox.zMin());
-    (*vertices)[4] = osg::Vec3(bbox.xMin(), bbox.yMin(), bbox.zMax());
-    (*vertices)[5] = osg::Vec3(bbox.xMax(), bbox.yMin(), bbox.zMax());
-    (*vertices)[6] = osg::Vec3(bbox.xMax(), bbox.yMax(), bbox.zMax());
-    (*vertices)[7] = osg::Vec3(bbox.xMin(), bbox.yMax(), bbox.zMax());
+	void apply(osg::Geode& geode) override
+	{
+		if (geode.getNumDrawables() > 1)
+		{
+			std::cout << std::endl;
+		}
+		traverse(geode);
+	}
 
-    osg::ref_ptr<osg::DrawElementsUInt> indices = new osg::DrawElementsUInt(GL_LINES);
-    indices->push_back(0); indices->push_back(1);
-    indices->push_back(1); indices->push_back(2);
-    indices->push_back(2); indices->push_back(3);
-    indices->push_back(3); indices->push_back(0);
-    indices->push_back(4); indices->push_back(5);
-    indices->push_back(5); indices->push_back(6);
-    indices->push_back(6); indices->push_back(7);
-    indices->push_back(7); indices->push_back(4);
-    indices->push_back(0); indices->push_back(4);
-    indices->push_back(1); indices->push_back(5);
-    indices->push_back(2); indices->push_back(6);
-    indices->push_back(3); indices->push_back(7);
+	void apply(osg::Drawable& drawable) override
+	{
+		osg::Geometry* geometry = drawable.asGeometry();
+		if (geometry) {
+			osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+			if (stateSet.valid()) {
+				bool bFind = false;
+				for (size_t i = 0; i < stateSets.size(); ++i)
+				{
+					osg::ref_ptr<osg::StateSet> existStateSet = stateSets.at(i);
+					if (Utils::compareStateSet(stateSet, existStateSet))
+					{
+						bFind = true;
+						break;
+					}
+				}
+				if (!bFind)
+					stateSets.push_back(stateSet);
+			}
+		}
+	}
 
-    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
-    geom->setVertexArray(vertices);
-    geom->addPrimitiveSet(indices);
+	unsigned int getCount()const
+	{
+		return stateSets.size();
+	}
+};
 
-    osg::ref_ptr<osg::Vec4Array> colors = new osg::Vec4Array;
-    colors->push_back(osg::Vec4(1.0f, 0.0f, 0.0f, 1.0f));  // 红色
-    geom->setColorArray(colors, osg::Array::BIND_OVERALL);
-
-    geom->getOrCreateStateSet()->setAttribute(new osg::LineWidth(2.0f), osg::StateAttribute::ON);
-
-    return geom.release();
-}
-
-int getMaxDepth(osg::Node* node) {
-    if (!node) return 0; // 如果节点为空，返回0
-    if (typeid(*node) == typeid(osg::Geode))
-        return 1;
-    osg::Group* group = node->asGroup();
-    if (!group) return 1; // 如果节点不是Group，返回1（当前节点深度）
-
-    vector<osg::ref_ptr<osg::Geode>> geodes;
-    int maxDepth = 0;
-    for (unsigned int i = 0; i < group->getNumChildren(); ++i) {
-        // 获取每个子节点的深度
-        int childDepth = getMaxDepth(group->getChild(i));
-
-        osg::ComputeBoundsVisitor cbVisitor;
-        node->accept(cbVisitor);
-        osg::BoundingBox bbox = cbVisitor.getBoundingBox();
-        osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-
-        geode->addDrawable(createBoundingBoxGeometry(bbox));
-        geodes.push_back(geode);
-
-        // 更新最大深度
-        if (childDepth > maxDepth) {
-            maxDepth = childDepth;
-        }
-    }
-    for (osg::ref_ptr<osg::Geode> item : geodes) {
-        group->addChild(item);
-    }
-    return maxDepth + 1; // 加1表示包括当前Group节点的深度
-}
-
-void buildTree(const std::string& filename)
+// 设置控台编码
+void initConsole()
 {
-    osg::ref_ptr<osgDB::Options> readOptions1 = new osgDB::Options;
-    //readOptions1->setOptionString("TessellatePolygons ZUp");
-    readOptions1->setOptionString("TessellatePolygons");
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions1.get());
-    osgViewer::Viewer viewer;
-    viewer.setSceneData(node);
-    viewer.run();
-    //osg::ref_ptr<osg::MatrixTransform> node = new osg::MatrixTransform;
-    //const osg::Matrixd zUpToYUpRotationMatrix = osg::Matrixd::rotate(-osg::PI / 2, osg::Vec3(1.0, 0.0, 0.0));
-    //node->setMatrix(zUpToYUpRotationMatrix);
-    //node->addChild(node1);
-
-    //osg::ref_ptr<osgDB::Options> readOptions2 = new osgDB::Options;
-    //readOptions2->setOptionString("TessellatePolygons");
-    //osg::ref_ptr<osg::Node> node2 = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions2.get());
-
-    osg::BoundingBox bb;
-    bb.expandBy(node->getBound());
-    const double xLength = bb.xMax() - bb.xMin();
-    const double yLength = bb.yMax() - bb.yMin();
-    const double zLength = bb.zMax() - bb.zMin();
-    const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
-
-    GroupCountVisitor gcv;
-    node->accept(gcv);
-    std::cout << std::endl;
-    std::cout << "-----------------------------------" << std::endl;
-
-    QuadtreeBuilder builder;
-    osg::ref_ptr<Tileset> tileset = new Tileset(node, builder);
-
-    Tileset::Config config;
-    config.path = OUTPUT_BASE_PATH + R"(3dtiles\芜湖水厂总装单位M)";
-    config.gltfTextureOptions.maxWidth = 256;
-    config.gltfTextureOptions.maxHeight = 256;
-    config.gltfTextureOptions.maxTextureAtlasWidth = 2048;
-    config.gltfTextureOptions.maxTextureAtlasHeight = 2048;
-    config.gltfTextureOptions.ext = ".jpg";
-    config.simplifyRatio = 1.0;
-    //config.options->setOptionString("ct=draco");
-    //config.options->setOptionString("ct=meshopt");
-    //config.options->setOptionString("quantize");
-    //config.options->setOptionString("quantize ct=meshopt");
-    if (!tileset->toFile(config))
-    {
-        OSG_FATAL << "3dtiles 文件导出失败...." << endl;
-    }
-
-}
-
-void buildTree(const std::string& filename,const std::string& tilesetName)
-{
-    osg::ref_ptr<osgDB::Options> readOptions1 = new osgDB::Options;
-    readOptions1->setOptionString("TessellatePolygons");
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", readOptions1.get());
-
-    QuadtreeBuilder builder;
-    osg::ref_ptr<Tileset> tileset = new Tileset(node, builder);
-
-    Tileset::Config config;
-    config.path = OUTPUT_BASE_PATH + R"(3dtiles\)" + tilesetName;
-    config.gltfTextureOptions.maxWidth = 512;
-    config.gltfTextureOptions.maxHeight = 512;
-    config.gltfTextureOptions.maxTextureAtlasWidth = 4096;
-    config.gltfTextureOptions.maxTextureAtlasHeight = 4096;
-    config.gltfTextureOptions.ext = ".ktx2";
-    //config.options->setOptionString("ct=draco");
-    //config.options->setOptionString("ct=meshopt");
-    //config.options->setOptionString("quantize");
-    //config.options->setOptionString("quantize ct=meshopt");
-    if (!tileset->toFile(config))
-    {
-        OSG_FATAL << "3dtiles 文件导出失败...." << endl;
-    }
-    else
-    {
-        OSG_NOTICE << filename + ".fbx文件处理完毕!" << std::endl;
-    }
-
-}
-
-osg::ref_ptr<B3DMTile> convertOsgGroup2Tile(osg::ref_ptr<osg::Group> group,osg::ref_ptr<B3DMTile> parent)
-{
-    osg::ref_ptr<B3DMTile> tile = new B3DMTile(group,parent);
-
-    if (group.valid())
-    {
-        if (typeid(*group) != typeid(osg::Geode))
-        {
-            for (size_t i = 0; i < group->getNumChildren(); ++i)
-            {
-                osg::ref_ptr<B3DMTile> childTile = convertOsgGroup2Tile(group->getChild(i)->asGroup(), tile);
-                tile->children.push_back(childTile);
-            }
-        }
-    }
-    
-
-    return tile.release();
-}
-
-osg::ref_ptr<Tileset> convertOsgNode2Tileset(osg::ref_ptr<osg::Node> node)
-{
-    osg::ref_ptr<Tileset> tileset = new Tileset;
-    osg::ref_ptr<B3DMTile> rootTile = convertOsgGroup2Tile(node->asGroup());
-    tileset->root = rootTile;
-    return tileset.release();
-}
-
-void testI3DM(const std::string& filename) {
-    osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-    //options->setOptionString("TessellatePolygons");
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(INPUT_BASE_PATH + filename + R"(.fbx)", options.get());
-    osg::ref_ptr<osg::Geode> geode = node->asGroup()->getChild(0)->asGroup()->getChild(0)->asGroup()->getChild(0)->asGeode();
-
-    //osgViewer::Viewer viewer;
-    //viewer.setSceneData(geode);
-    //viewer.run();
-
-    osg::ref_ptr<osg::Group> group = new osg::Group;
-    osg::ref_ptr<osg::MatrixTransform> transform1 = new osg::MatrixTransform;
-    osg::Matrixd matrix1 = transform1->getMatrix();
-    matrix1.setTrans(osg::Vec3(0, 0, 10000));
-    matrix1.setRotate(osg::Quat(osg::inDegrees(42.0), osg::Vec3(1, 1, 1.5)));
-    matrix1.scale(osg::Vec3(0.1, 0.1, 0.1));
-    transform1->setMatrix(matrix1);
-    //transform1->getMatrix().scale(100, 100, 100);
-    transform1->addChild(geode);
-    group->addChild(transform1);
-
-    osg::ref_ptr<osg::MatrixTransform> transform2 = new osg::MatrixTransform;
-    osg::Matrixd matrix2 = transform2->getMatrix();
-    matrix2.setTrans(osg::Vec3(500, 200, 500));
-    
-    transform2->setMatrix(matrix2);
-    transform2->addChild(geode);
-    group->addChild(transform2);
-    //osgDB::writeNodeFile(*group.get(), OUTPUT_BASE_PATH + "test.i3dm");
-    osgDB::writeNodeFile(*group.get(), OUTPUT_BASE_PATH + "test.gltf");
-
-
-    OSG_NOTICE << std::endl;
-}
-
-int main() {
 #ifdef _WIN32
-    SetConsoleOutputCP(CP_UTF8);
+	SetConsoleOutputCP(CP_UTF8);
 #else
-    setlocale(LC_ALL, "en_US.UTF-8");
+	setlocale(LC_ALL, "en_US.UTF-8");
 #endif // _WIN32
-    osgDB::Registry* instance = osgDB::Registry::instance();
-    instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
-    instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
-    instance->addFileExtensionAlias("i3dm", "gltf");//插件注册别名
-    instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
+}
 
-    //testI3DM(R"(dixiashifengmian)");
-    buildTree(R"(芜湖水厂总装)");//芜湖水厂总装单位M  20240529卢沟桥分洪枢纽
-    //OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
+// 注册文件扩展名别名
+void registerFileAliases() {
+	osgDB::Registry* instance = osgDB::Registry::instance();
+	instance->addFileExtensionAlias("glb", "gltf");
+	instance->addFileExtensionAlias("b3dm", "gltf");
+	instance->addFileExtensionAlias("i3dm", "gltf");
+	instance->addFileExtensionAlias("ktx2", "ktx");
+}
 
-    //buildTree(R"(斋堂水库模型整合20240819-2)","test2");
-    //buildTree(R"(龙翔桥站厅)", "test3");
-    //buildTree(R"(龙翔桥站)", "test4");
-    //buildTree(R"(卡拉电站)", "test5");
-    //buildTree(R"(建筑+贴图)", "test6");
-    //buildTree(R"(20240529卢沟桥分洪枢纽)", R"(20240529卢沟桥分洪枢纽)");
-    //buildTree(R"(ZJG1-3+DX)", "test8");
-    //buildTree(R"(02-输水洞)", "test9");
-    //buildTree(R"(上虞未来社区_一期)", "test10");
+// 读取模型文件
+osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
+	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
+	//readOptions->setOptionString("TessellatePolygons");
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
-    return 1;
+	if (!node) {
+		OSG_FATAL << "Error: Cannot read 3D model file!" << '\n';
+	}
+
+	return node;
+}
+
+// 应用优化器
+void applyOptimizer(osg::ref_ptr<osg::Node>& node) {
+	osgUtil::Optimizer optimizer;
+	optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
+}
+
+// 重计算法线
+void recomputeNormals(osg::ref_ptr<osg::Node>& node) {
+	osgUtil::SmoothingVisitor smoothingVisitor;
+	node->accept(smoothingVisitor);
+}
+
+// 解析单个命令行参数
+template <typename T>
+T parseArgument(osg::ArgumentParser& arguments, const std::string& option, const T& defaultValue) {
+	T value = defaultValue;
+	arguments.read(option, value);
+	return value;
+}
+
+// 创建投影转换
+PJ* createProjection(PJ_CONTEXT* ctx, const std::string& srcEpsg, const std::string& dstEpsg) {
+	PJ* proj = proj_create_crs_to_crs(ctx, srcEpsg.c_str(), dstEpsg.c_str(), nullptr);
+	if (!proj) {
+		OSG_FATAL << "Error creating projections from EPSG codes!" << std::endl;
+		return nullptr;
+	}
+	PJ* projTransform = proj_normalize_for_visualization(ctx, proj);
+	if (!projTransform) {
+		OSG_FATAL << "Failed to normalize PROJ transformation!" << std::endl;
+		proj_destroy(proj);
+		return nullptr;
+	}
+	return projTransform;
+}
+
+// 应用偏移量、朝向
+osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(osg::ref_ptr<osg::Node>& node, const double translationX, const double translationY, const double translationZ, const std::string upAxis, const std::string ext)
+{
+
+	osg::Vec3d datumPoint = osg::Vec3d(-translationX, -translationY, -translationY);
+	osg::ref_ptr<osg::MatrixTransform> xtransform = new osg::MatrixTransform;
+	// FBX无论什么轴向上，读取后都会变成Y轴向上，这里就不用再特殊处理了
+	if (ext != "fbx")
+	{
+		osg::Matrixd matrix;
+		if (upAxis == "X")
+		{
+			const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
+			matrix.makeRotate(quat);
+			matrix.setTrans(quat * datumPoint);
+		}
+		else if (upAxis == "Z")
+		{
+			const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3(1.0, 0.0, 0.0));
+			matrix.makeRotate(quat);
+			matrix.setTrans(quat * datumPoint);
+		}
+		else if (upAxis == "Y")
+		{
+			matrix.setTrans(datumPoint);
+		}
+		xtransform->setMatrix(matrix);
+	}
+	xtransform->addChild(node);
+	return xtransform;
+}
+
+// 将投影坐标的模型进行坐标转换
+void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& height)
+{
+	if (!epsg.empty())
+	{
+		node->computeBound();
+		const osg::BoundingSphere bs = node->getBound();
+		if (!bs.valid())
+		{
+			OSG_FATAL << "Error:Invalid model bounding box!" << std::endl;
+			exit(0);
+		}
+		const osg::Vec3d center = bs.center();
+		const string dstEpsg = "EPSG:4326";
+		const string srcEpsg = "EPSG:" + epsg;
+		PJ_CONTEXT* ctx = proj_context_create();
+		if (!ctx)
+		{
+			OSG_FATAL << "Error creating projection context!" << std::endl;
+			exit(0);
+		}
+		const char* searchPath[] = { "./share/proj" };
+		proj_context_set_search_paths(ctx, 1, searchPath);
+		const char* dbPath = proj_context_get_database_path(ctx);
+		if (!dbPath) {
+			OSG_FATAL << "Proj database not found. Please check your search path." << std::endl;
+			proj_context_destroy(ctx);
+			exit(0);
+		}
+
+		PJ* projTo4326 = createProjection(ctx, srcEpsg, dstEpsg);
+
+		PJ_COORD inputCoord = proj_coord(center.x(), -center.z(), center.y(), 0);
+		PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
+		latitude = outputCoord.xyz.y;
+		longitude = outputCoord.xyz.x;
+		height = outputCoord.xyz.z;
+
+		const osg::EllipsoidModel ellipsoidModel;
+		osg::Matrixd localToWorld;
+		ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), height, localToWorld);
+		PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
+		CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
+		node->accept(ctv);
+		proj_destroy(projTo4326);
+		proj_destroy(projTo4978);
+		proj_context_destroy(ctx);
+	}
+}
+
+void getNodes(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<osg::Group> group)
+{
+	if (!b3dmTile.valid()) return;
+	if (b3dmTile->node.valid())
+	{
+		osg::ref_ptr<osg::Group> gnode = b3dmTile->node->asGroup();
+		for (size_t i = 0; i < gnode->getNumChildren(); ++i)
+		{
+			group->addChild(gnode->getChild(i));
+		}
+	}
+
+	for (size_t i = 0; i < b3dmTile->children.size(); ++i)
+	{
+		getNodes(dynamic_cast<B3DMTile*>(b3dmTile->children[i].get()), group);
+	}
+}
+
+void NewFunction(osg::ref_ptr<osg::MatrixTransform>& xtransform, TreeBuilder* treeBuilder)
+{
+	xtransform->accept(*treeBuilder);
+	osg::ref_ptr<B3DMTile> root = treeBuilder->build();
+	osg::ref_ptr<osg::Group> gnode = new osg::Group;
+	getNodes(root, gnode);
+	//osgDB::writeNodeFile(*gnode, R"(E:\Code\2023\Other\data\20240529-1.b3dm)");
+
+	StateSetCounterVisitor ssv1;
+	gnode->accept(ssv1);
+	OSG_NOTICE << "COUNT1:" << ssv1.getCount() << std::endl;
+	GltfOptimizer gltfOptimzier;
+	GltfOptimizer::GltfTextureOptimizationOptions gltfOptions;
+	gltfOptions.maxTextureAtlasHeight = 4096;
+	gltfOptions.maxTextureAtlasWidth = 4096;
+	gltfOptions.packTexture = false;
+	gltfOptions.maxTextureWidth = 256;
+	gltfOptions.maxTextureHeight = 256;
+	gltfOptions.cachePath = R"(E:\Code\2023\Other\data\20240529-1)";
+	osgDB::makeDirectory(gltfOptions.cachePath);
+	gltfOptimzier.setGltfTextureOptimizationOptions(gltfOptions);
+	//gltfOptimzier.optimize(gnode.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
+	//osgDB::writeNodeFile(*gnode, R"(E:\Code\2023\Other\data\20240529-1.b3dm)");
+
+	gltfOptions.packTexture = true;
+	gltfOptions.cachePath = R"(E:\Code\2023\Other\data\20240529-2)";
+	osgDB::makeDirectory(gltfOptions.cachePath);
+	gltfOptimzier.setGltfTextureOptimizationOptions(gltfOptions);
+	//osgViewer::Viewer viewer1;
+	//viewer1.setSceneData(gnode);
+	//viewer1.run();
+	gltfOptimzier.optimize(gnode.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
+	//osgViewer::Viewer viewer2;
+	//viewer2.setSceneData(gnode);
+	//viewer2.run();
+	osgDB::writeNodeFile(*gnode, R"(E:\Code\2023\Other\data\20240529-2.glb)");
+	exit(0);
+}
+
+int main(int argc, char** argv)
+{
+	initConsole();
+
+	registerFileAliases();
+
+	// use an ArgumentParser object to manage the program arguments.
+	osg::ArgumentParser arguments(&argc, argv);
+	osg::ApplicationUsage* usage = arguments.getApplicationUsage();
+	usage->setDescription(arguments.getApplicationName() + ",that is used to convert 3D model to 3dtiles.");
+	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 116.0 -lng 39.0 -height 300.0 -tf ktx2");
+	usage->addCommandLineOption("-i <file>", "input 3D model file full path,must be a file.");
+	usage->addCommandLineOption("-o <folder>", "output 3dtiles path,must be a directory.");
+	usage->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "texture format,option values are png、jpg、webp、ktx2，default value is jpg.");
+	usage->addCommandLineOption("-vf <draco/meshopt/quantize/quantize_meshopt>", "vertex format,option values are draco、meshopt、quantize、quantize_meshopt,default is none.");
+	usage->addCommandLineOption("-t <quad/oc>", " tree format,option values are quad、oc,default is oc.");
+	usage->addCommandLineOption("-ratio <number>", "Simplified ratio of intermediate nodes.default is 0.5.");
+	usage->addCommandLineOption("-lat <number>", "datum point's latitude.");
+	usage->addCommandLineOption("-lng <number>", "datum point's longitude.");
+	usage->addCommandLineOption("-height <number>", "datum point's height.");
+	usage->addCommandLineOption("-translationX <number>", "The x-coordinate of the model datum point,default is 0, must be a power of 2.");
+	usage->addCommandLineOption("-translationY <number>", "The y-coordinate of the model datum point,default is 0, must be a power of 2.");
+	usage->addCommandLineOption("-translationZ <number>", "The z-coordinate of the model datum point,default is 0, must be a power of 2.");
+	usage->addCommandLineOption("-upAxis <X/Y/Z>", "Indicate which axis of the model is facing upwards,default is Y");
+	usage->addCommandLineOption("-maxTextureWidth <number>", "single texture's max width,default is 256.");
+	usage->addCommandLineOption("-maxTextureHeight <number>", "single texture's max height,default is 256.");
+	usage->addCommandLineOption("-maxTextureAtlasWidth <number>", "textrueAtlas's max width,default is 2048.");
+	usage->addCommandLineOption("-maxTextureAtlasHeight <number>", "textrueAtlas's max height,default is 2048.");
+	usage->addCommandLineOption("-comporessLevel <low/medium/high>", "draco/quantize/quantize_meshopt compression level,default is medium.");
+	usage->addCommandLineOption("-recomputeNormal", "Recalculate normals.");
+	usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit, the model is not affected by lighting.");
+	usage->addCommandLineOption("-epsg", "Specify the projection coordinate system, which is mutually exclusive with -lat、-lng、height.");
+
+
+	usage->addCommandLineOption("-h or --help", "Display command line parameters.");
+
+	// if user request help write it out to cout.
+	if (arguments.read("-h") || arguments.read("--help"))
+	{
+		usage->write(std::cout);
+		return 1;
+	}
+
+
+
+	OSG_NOTICE << "Resolving parameters..." << std::endl;
+
+	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("jpg"));
+	const std::string vertexFormat = parseArgument(arguments, "-vf", std::string("none"));
+	const std::string treeFormat = parseArgument(arguments, "-t", std::string("quad"));
+	const std::string comporessLevel = parseArgument(arguments, "-comporessLevel", std::string("medium"));
+	const std::string epsg = parseArgument(arguments, "-epsg", std::string());
+	const std::string upAxis = parseArgument(arguments, "-upAxis", std::string("Y"));
+
+	const double translationX = parseArgument(arguments, "-translationX", 0.0);
+	const double translationY = parseArgument(arguments, "-translationY", 0.0);
+	const double translationZ = parseArgument(arguments, "-translationZ", 0.0);
+	const double ratio = parseArgument(arguments, "-ratio", 0.5);
+
+	double latitude = parseArgument(arguments, "-lat", 30.0);
+	double longitude = parseArgument(arguments, "-lng", 116.0);
+	double height = parseArgument(arguments, "-height", 300.0);
+
+	const int maxTextureHeight = parseArgument(arguments, "-maxTextureHeight", 256);
+	const int maxTextureWidth = parseArgument(arguments, "-maxTextureWidth", 256);
+	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
+	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
+
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\20240529卢沟桥分洪枢纽.fbx)"));
+	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\zzx)"));
+#ifndef NDEBUG
+#else
+	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
+	output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
+#endif // !NDEBUG
+
+	if (input.empty() || output.empty()) {
+		OSG_FATAL << "Input or output path is missing!" << '\n';
+		return 0;
+	}
+
+
+	OSG_NOTICE << "Reading model file..." << std::endl;
+	osg::ref_ptr<osg::Node> node = readModelFile(input);
+	if (!node.valid())
+	{
+		OSG_FATAL << "Error:can not read 3d model file!" << '\n';
+		return 0;
+	}
+	try
+	{
+		applyOptimizer(node);
+
+		if (arguments.find("-recomputeNormal") > 0)
+		{
+			recomputeNormals(node);
+		}
+
+		const std::string ext = osgDB::getLowerCaseFileExtension(input);
+		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, upAxis, ext);
+		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
+		applyProjection(tNode, epsg, latitude, longitude, height);
+
+		TreeBuilder* treeBuilder = new QuadtreeBuilder;
+		if (treeFormat == "oc")
+			treeBuilder = new OctreeBuilder;
+		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
+		NewFunction(xtransform, treeBuilder);
+
+		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder);
+
+		std::string optionsStr = "";
+		if (vertexFormat == "draco")
+		{
+			if (comporessLevel == "low")
+			{
+				optionsStr = "ct=draco vp=16 vt=14 vc=10 vn=12 vg=18 ";
+			}
+			else if (comporessLevel == "high")
+			{
+				optionsStr = "ct=draco vp=12 vt=12 vc=8 vn=8 vg=14 ";
+			}
+		}
+		else if (vertexFormat == "meshopt")
+		{
+			optionsStr = "ct=meshopt ";
+		}
+		else if (vertexFormat == "quantize")
+		{
+			if (comporessLevel == "low")
+			{
+				optionsStr = "quantize vp=16 vt=14 vn=12 vc=12 ";
+			}
+			else if (comporessLevel == "high")
+			{
+				optionsStr = "quantize vp=10 vt=8 vn=4 vc=4 ";
+			}
+		}
+		else if (vertexFormat == "quantize_meshopt")
+		{
+			optionsStr = "ct=meshopt ";
+			if (comporessLevel == "low")
+			{
+				optionsStr += "quantize vp=16 vt=14 vn=12 vc=12 ";
+			}
+			else if (comporessLevel == "high")
+			{
+				optionsStr += "quantize vp=10 vt=8 vn=4 vc=4 ";
+			}
+		}
+		if (arguments.find("-unlit") > 0)
+		{
+			optionsStr += " unlit";
+		}
+
+		Tileset::Config config;
+		config.latitude = latitude;
+		config.longitude = longitude;
+		config.height = height;
+		config.simplifyRatio = ratio;
+		config.path = output;
+		config.gltfTextureOptions.maxTextureWidth = maxTextureWidth;
+		config.gltfTextureOptions.maxTextureHeight = maxTextureHeight;
+		config.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
+		config.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
+		config.gltfTextureOptions.ext = "." + textureFormat;
+		config.options->setOptionString(optionsStr);
+
+		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
+		const bool result = tileset->toFile(config);
+
+		if (result)
+		{
+			OSG_NOTICE << "Successfully converted " + input + " to 3dtiles!" << std::endl;
+		}
+		else
+		{
+			OSG_FATAL << "Failed converted " + input + " to 3dtiles..." << std::endl;
+		}
+		delete treeBuilder;
+
+	}
+	catch (const std::invalid_argument& e)
+	{
+		OSG_FATAL << "invalid input: " << e.what() << '\n';
+	}
+	catch (const std::out_of_range& e)
+	{
+		OSG_FATAL << "value out of range: " << e.what() << '\n';
+	}
+
+
+	return 1;
 }

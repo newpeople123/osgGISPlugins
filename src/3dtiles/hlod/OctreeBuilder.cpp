@@ -59,13 +59,18 @@ osg::ref_ptr<B3DMTile> OctreeBuilder::divide(osg::ref_ptr<osg::Group> group, con
 				);
 
 				osg::ref_ptr<osg::Group> childGroup = new osg::Group;
+				std::vector<osg::ref_ptr<osg::Node>> needToRemove;
 				for (unsigned int i = 0; i < numChildren; ++i)
 				{
 					osg::ref_ptr<osg::Node> child = group->getChild(i);
 					if (childBounds.contains(child->getBound().center()))
 					{
-						childGroup->addChild(child);
+						needToRemove.push_back(child);
 					}
+				}
+				for (auto& child : needToRemove)
+				{
+					group->removeChild(child);
 				}
 				if (childGroup->getNumChildren() > 0)
 				{
