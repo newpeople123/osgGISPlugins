@@ -143,19 +143,23 @@ int main(int argc, char** argv)
             const osg::Vec3d datumPoint = osg::Vec3d(-x, -y, -z);
             osg::ref_ptr<osg::MatrixTransform> xtransform = new osg::MatrixTransform;
             osg::Matrixd matrix;
-            if (upAxis == "X")
+            const std::string ext = osgDB::getLowerCaseFileExtension(input);
+            if(ext!="fbx")
             {
-                const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
-                matrix.makeRotate(quat);
-                matrix.setTrans(quat * datumPoint);
+                if (upAxis == "X")
+                {
+                    const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
+                    matrix.makeRotate(quat);
+                    matrix.setTrans(quat * datumPoint);
+                }
+                else if (upAxis == "Z")
+                {
+                    const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3(1.0, 0.0, 0.0));
+                    matrix.makeRotate(quat);
+                    matrix.setTrans(quat * datumPoint);
+                }
             }
-            else if (upAxis == "Z")
-            {
-                const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3(1.0, 0.0, 0.0));
-                matrix.makeRotate(quat);
-                matrix.setTrans(quat * datumPoint);
-            }
-            else if (upAxis == "Y")
+            else
             {
                 matrix.setTrans(datumPoint);
             }

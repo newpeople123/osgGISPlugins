@@ -153,7 +153,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 
 #### 命令行格式
 
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number>`
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit`
 
 #### 示例命令
 
@@ -180,11 +180,13 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 `-translationX` 重设模型原点位置的x坐标，默认值为0。
 `-translationY` 重设模型原点位置的y坐标，默认值为0。
 `-translationZ` 重设模型原点位置的z坐标，默认值为0。
-`-upAxis` 模型向上方向，可选的只有：X、Y、Z，需大写，默认值为：Y。
+`-upAxis` 模型向上方向，可选的只有：X、Y、Z，需大写，默认值为：Y(fbx模型不需设定该参数，默认会将fbx模型转换为Y轴向上)。
 `-maxTextureWidth` 单个纹理的最大宽度，默认值为256，需为2的幂次。
 `-maxTextureHeight` 单个纹理的最大高度，默认值为256，需为2的幂次。
 `-maxTextureAtlasWidth` 纹理图集的最大宽度，默认值为2048，需为2的幂次，且值要大于maxTextureWidth的值，否则将不会构建纹理图集。
 `-maxTextureAtlasHeight` 纹理图集的最大高度，默认值为2048，需为2的幂次，且值要大于maxTextureHeight的值，否则将不会构建纹理图集。
+`-recomputeNormal` 重新计算法线
+`-unlit`启用`KHR_materials_unlit`扩展，适用于烘焙过的模型
 
 ## simplifier
 
@@ -261,8 +263,6 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -lat 30 -lng 116 -height 1
 
 1、当前不支持i3dm、b3dm、gltf/glb文件的导入；
 2、model23dtiles不支持构建kd树；
-3、model23dtiles不支持导出无光照的瓦片(其实已经实现了，但是2.0.0版本忘记放到model23dtiles里了...)；
-4、model23dtiles不支持重新计算法线功能(其实已经实现了，但是2.0.0版本忘记放到model23dtiles里了...)；
 ...
 
 # 后续计划
