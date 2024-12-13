@@ -531,10 +531,6 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
                 }
             }
         }
-        else {
-            mat->metallicFactor = 0.2;
-            mat->roughnessFactor = 0.8;
-        }
     }
     else
     {
