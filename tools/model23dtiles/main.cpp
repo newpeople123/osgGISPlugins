@@ -9,6 +9,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <osgDB/FileNameUtils>
 #include "3dtiles/Tileset.h"
 #include "3dtiles/hlod/QuadtreeBuilder.h"
 #include "3dtiles/hlod/OctreeBuilder.h"
