@@ -90,7 +90,7 @@ void registerFileAliases() {
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
-	//readOptions->setOptionString("TessellatePolygons");
+	readOptions->setOptionString("TessellatePolygons");
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
 	if (!node) {

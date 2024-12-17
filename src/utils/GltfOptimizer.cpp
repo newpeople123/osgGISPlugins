@@ -8,6 +8,7 @@
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
 #include <iomanip>
+#include <unordered_set>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <numeric>
@@ -1084,25 +1085,52 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 	}
 }
 
-void osgGISPlugins::GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs)
+void GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs)
 {
-	std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
-	for (osg::ref_ptr<osg::Image> img : imgs)
+	// 用于存储唯一图像的集合
+	std::unordered_set<std::string> fileNameSet; // 存储文件名的集合
+	std::unordered_set<std::string> hashSet;     // 存储哈希值的集合
+	std::vector<osg::ref_ptr<osg::Image>> uniqueImages; // 去重后的图像列表
+
+	bool allFileNamesEmpty = true;
+
+	// 第一次遍历，检查是否所有文件名为空
+	for (const auto& img : imgs)
 	{
-		std::string ext = _options.ext;
-		std::string filename = computeImageHash(img);
-		const GLenum pixelFormat = img->getPixelFormat();
-		if (_options.ext == ".jpg" && pixelFormat != GL_ALPHA && pixelFormat != GL_RGB)
+		if (!img->getFileName().empty())
 		{
-			ext = ".png";
-		}
-		const std::string fullPath = _options.cachePath + "/" + filename + ext;
-		if (osgDB::fileExists(fullPath))
-		{
-			deleteImgs.push_back(img);
+			allFileNamesEmpty = false;
+			break;
 		}
 	}
-	removePackedImages(imgs, deleteImgs);
+
+	// 第二次遍历，执行去重逻辑
+	for (const auto& img : imgs)
+	{
+		if (allFileNamesEmpty)
+		{
+			// 如果文件名都为空，使用哈希值去重
+			std::string hash = computeImageHash(img);
+			if (hashSet.find(hash) == hashSet.end()) // 如果哈希值不重复
+			{
+				hashSet.insert(hash);
+				uniqueImages.push_back(img);
+			}
+		}
+		else
+		{
+			// 使用文件名去重
+			std::string fileName = img->getFileName();
+			if (fileNameSet.find(fileName) == fileNameSet.end()) // 如果文件名不重复
+			{
+				fileNameSet.insert(fileName);
+				uniqueImages.push_back(img);
+			}
+		}
+	}
+
+	// 用去重后的结果替换原始图像列表
+	imgs = std::move(uniqueImages);
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs)
