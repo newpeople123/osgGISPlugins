@@ -18,21 +18,21 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 		}
 		else
 		{
-			/*
+			
 			for (size_t i = 0; i < pair.first->getNumChildren(); ++i)
 			{
-				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(pair.first, osg::CopyOp::DEEP_COPY_NODES);
+				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(pair.first, osg::CopyOp::DEEP_COPY_NODES | osg::CopyOp::DEEP_COPY_USERDATA);
 				geodeCopy->removeChild(0, pair.first->getNumDrawables());
 				geodeCopy->addChild(pair.first->getChild(i));
 				osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(pair.second[0]);
 				transform->addChild(geodeCopy);
 				_groupsToDivideList->addChild(transform);
 			}
-			*/
 			
-			osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(pair.second[0]);
-			transform->addChild(pair.first);
-			_groupsToDivideList->addChild(transform);
+			
+			//osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(pair.second[0]);
+			//transform->addChild(pair.first);
+			//_groupsToDivideList->addChild(transform);
 			
 		}
 	}
@@ -122,7 +122,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
 	_maxLevel = std::log2(max / min);
 	
-	/*
+	
 	std::map<std::string, osg::ref_ptr<osg::Group>> stateSetGroupMap;
 	osg::ref_ptr<osg::Group> largeTextureCoordGroup = new osg::Group;
 
@@ -187,17 +187,13 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	for (const auto& entry : stateSetGroupMap)
 	{
 		const std::string name = entry.first;
-		if (!name.empty())
-		{
-			std::cout << name << std::endl;
-			_groupsToDivideList->addChild(entry.second);
-		}
+		_groupsToDivideList->addChild(entry.second);
 	}
 	for (size_t i = 0; i < largeTextureCoordGroup->getNumChildren(); ++i)
 	{
 		_groupsToDivideList->addChild(largeTextureCoordGroup->getChild(i));
 	}
-	*/
+	
 
 	osg::ref_ptr<B3DMTile> result = divide(_groupsToDivideList, rootBox);
 	return result.release();
@@ -273,8 +269,10 @@ void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<
 			const osg::BoundingBox i3dmTileBB = boundingSphere2BoundingBox(it->get()->node->getBound());
 			if (intersect(b3dmTileBB, i3dmTileBB))
 			{
-				b3dmTile->children.push_back(it->get());
-				it->get()->parent = b3dmTile;
+				osg::ref_ptr<I3DMTile> i3dmTileProxy = new I3DMTile(b3dmTile);
+				b3dmTile->children.push_back(i3dmTileProxy);
+				i3dmTileProxy->children.push_back(it->get());
+				it->get()->parent = i3dmTileProxy;
 				it = i3dmTile->children.erase(it);
 				continue;
 			}
