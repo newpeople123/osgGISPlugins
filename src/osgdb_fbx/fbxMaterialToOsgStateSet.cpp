@@ -625,16 +625,22 @@ osg::ref_ptr<osg::Texture2D> FbxMaterialToOsgStateSet::fbxTextureToOsgTexture(co
 		OSG_WARN << "Could not find valid file for " << fbxFilename << std::endl;
 		return NULL;
 	}
-
-	osg::ref_ptr<osg::Image> pImage = osgDB::readRefImageFile(filename, _options);
-	if (pImage.valid())
+	if (osgDB::FileType::REGULAR_FILE == osgDB::fileType(filename))
 	{
-		osg::ref_ptr<osg::Texture2D> pOsgTex = new osg::Texture2D;
-		pOsgTex->setImage(pImage.get());
-		pOsgTex->setWrap(osg::Texture2D::WRAP_S, convertWrap(fbx->GetWrapModeU()));
-		pOsgTex->setWrap(osg::Texture2D::WRAP_T, convertWrap(fbx->GetWrapModeV()));
-		_imageMap.insert(std::make_pair(fbx->GetFileName(), pOsgTex.get()));
-		return pOsgTex;
+		osg::ref_ptr<osg::Image> pImage = osgDB::readRefImageFile(filename, _options);
+		if (pImage.valid())
+		{
+			osg::ref_ptr<osg::Texture2D> pOsgTex = new osg::Texture2D;
+			pOsgTex->setImage(pImage.get());
+			pOsgTex->setWrap(osg::Texture2D::WRAP_S, convertWrap(fbx->GetWrapModeU()));
+			pOsgTex->setWrap(osg::Texture2D::WRAP_T, convertWrap(fbx->GetWrapModeV()));
+			_imageMap.insert(std::make_pair(fbx->GetFileName(), pOsgTex.get()));
+			return pOsgTex;
+		}
+		else
+		{
+			return NULL;
+		}
 	}
 	else
 	{

@@ -605,6 +605,209 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(
     return osgDB::ReaderWriter::ReadResult(osgGroup.get());
 }
 
+osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& bIsBone, int& nLightCount, FbxProgressCallback pCallback, const float perProgress, float lastProgress)
+{
+
+    if (FbxNodeAttribute* lNodeAttribute = pNode->GetNodeAttribute())
+    {
+        FbxNodeAttribute::EType attrType = lNodeAttribute->GetAttributeType();
+        switch (attrType)
+        {
+        case FbxNodeAttribute::eNurbs:
+        case FbxNodeAttribute::ePatch:
+        case FbxNodeAttribute::eNurbsCurve:
+        case FbxNodeAttribute::eNurbsSurface:
+        {
+            FbxGeometryConverter lConverter(&pSdkManager);
+#if FBXSDK_VERSION_MAJOR < 2014
+            if (!lConverter.TriangulateInPlace(pNode))
+#else
+            if (!lConverter.Triangulate(lNodeAttribute, true, false))
+#endif
+            {
+                OSG_WARN << "Unable to triangulate FBX NURBS " << pNode->GetName() << std::endl;
+            }
+        }
+        break;
+        default:
+            break;
+        }
+    }
+
+    bIsBone = false;
+    bool bCreateSkeleton = false;
+
+    FbxNodeAttribute::EType lAttributeType = FbxNodeAttribute::eUnknown;
+    if (pNode->GetNodeAttribute())
+    {
+        lAttributeType = pNode->GetNodeAttribute()->GetAttributeType();
+        if (lAttributeType == FbxNodeAttribute::eSkeleton)
+        {
+            bIsBone = true;
+        }
+    }
+
+    if (!bIsBone && fbxSkeletons.find(pNode) != fbxSkeletons.end())
+    {
+        bIsBone = true;
+    }
+
+    unsigned nMaterials = pNode->GetMaterialCount();
+    std::vector<StateSetContent > stateSetList;
+
+    for (unsigned i = 0; i < nMaterials; ++i)
+    {
+        FbxSurfaceMaterial* fbxMaterial = pNode->GetMaterial(i);
+        assert(fbxMaterial);
+        stateSetList.push_back(fbxMaterialToOsgStateSet.convert(fbxMaterial));
+    }
+
+    osg::NodeList skeletal, children;
+
+    int nChildCount = pNode->GetChildCount();
+
+    const float nextPerProgress = nChildCount == 0 ? 0 : perProgress / nChildCount; // 计算每个子节点的进度比例
+
+
+    float totalProgress = lastProgress;  // 初始化总进度
+    for (int i = 0; i < nChildCount; ++i)
+    {
+        FbxNode* pChildNode = pNode->GetChild(i);
+
+        if (pChildNode->GetParent() != pNode)
+        {
+            //workaround for bug that occurs in some files exported from Blender
+            continue;
+        }
+
+        bool bChildIsBone = false;
+        osgDB::ReaderWriter::ReadResult childResult = readFbxNode(
+            pChildNode, bChildIsBone, nLightCount, pCallback, nextPerProgress, totalProgress);  // 传递当前的进度累积
+        if (childResult.error())
+        {
+            return childResult;
+        }
+        else if (osg::Node* osgChild = childResult.getNode())
+        {
+
+            //fbxProperty2OsgUserValue(pChildNode, *osgChild);
+            if (bChildIsBone)
+            {
+                if (!bIsBone) bCreateSkeleton = true;
+                skeletal.push_back(osgChild);
+            }
+            else
+            {
+                children.push_back(osgChild);
+            }
+        }
+
+        // 更新总进度，每次递归子节点后，累加子节点的进度
+        totalProgress += nextPerProgress;
+    }
+
+    std::string animName = readFbxAnimation(pNode, pNode->GetName());
+
+    osg::Matrix localMatrix;
+    makeLocalMatrix(pNode, localMatrix);
+    bool bLocalMatrixIdentity = localMatrix.isIdentity();
+
+    osg::ref_ptr<osg::Group> osgGroup;
+
+    bool bEmpty = children.empty() && !bIsBone;
+
+    switch (lAttributeType)
+    {
+    case FbxNodeAttribute::eMesh:
+    {
+        size_t bindMatrixCount = boneBindMatrices.size();
+        osgDB::ReaderWriter::ReadResult meshRes = readFbxMesh(pNode, stateSetList);
+        if (meshRes.error())
+        {
+            return meshRes;
+        }
+        else if (osg::Node* node = meshRes.getNode())
+        {
+            bEmpty = false;
+
+            if (bindMatrixCount != boneBindMatrices.size())
+            {
+                //The mesh is skinned therefore the bind matrix will handle all transformations.
+                localMatrix.makeIdentity();
+                bLocalMatrixIdentity = true;
+            }
+
+            if (animName.empty() &&
+                children.empty() &&
+                skeletal.empty() &&
+                bLocalMatrixIdentity)
+            {
+                return osgDB::ReaderWriter::ReadResult(node);
+            }
+
+            children.insert(children.begin(), node);
+        }
+    }
+    break;
+    case FbxNodeAttribute::eCamera:
+    case FbxNodeAttribute::eLight:
+    {
+        osgDB::ReaderWriter::ReadResult res =
+            lAttributeType == FbxNodeAttribute::eCamera ?
+            readFbxCamera(pNode) : readFbxLight(pNode, nLightCount);
+        if (res.error())
+        {
+            return res;
+        }
+        else if (osg::Group* resGroup = dynamic_cast<osg::Group*>(res.getObject()))
+        {
+            bEmpty = false;
+            if (animName.empty() &&
+                bLocalMatrixIdentity)
+            {
+                osgGroup = resGroup;
+            }
+            else
+            {
+                children.insert(children.begin(), resGroup);
+            }
+        }
+    }
+    break;
+    default:
+        break;
+    }
+
+    if (bEmpty)
+    {
+        osgDB::ReaderWriter::ReadResult(0);
+    }
+
+    if (!osgGroup) osgGroup = createGroupNode(pSdkManager, pNode, animName, localMatrix, bIsBone, nodeMap, fbxScene);
+
+    osg::Group* pAddChildrenTo = osgGroup.get();
+    if (bCreateSkeleton)
+    {
+        osgAnimation::Skeleton* osgSkeleton = getSkeleton(pNode, fbxSkeletons, skeletonMap);
+        osgSkeleton->setDefaultUpdateCallback();
+        pAddChildrenTo->addChild(osgSkeleton);
+        pAddChildrenTo = osgSkeleton;
+    }
+
+    for (osg::NodeList::iterator it = skeletal.begin(); it != skeletal.end(); ++it)
+    {
+        pAddChildrenTo->addChild(it->get());
+    }
+    for (osg::NodeList::iterator it = children.begin(); it != children.end(); ++it)
+    {
+        pAddChildrenTo->addChild(it->get());
+    }
+
+    if (pNode->GetParent() && nChildCount != 0 && pCallback)
+        pCallback(NULL, totalProgress * 100.0f, "");
+    return osgDB::ReaderWriter::ReadResult(osgGroup.get());
+}
+
 osgAnimation::Skeleton* getSkeleton(FbxNode* fbxNode,
     const std::set<const FbxNode*>& fbxSkeletons,
     std::map<FbxNode*, osgAnimation::Skeleton*>& skeletonMap)

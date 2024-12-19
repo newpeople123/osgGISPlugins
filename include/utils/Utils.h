@@ -11,9 +11,17 @@
 #include <osg/Math>
 #include <osg/ComputeBoundsVisitor>
 #include <set>
+#include <osgDB/FileNameUtils>
+#include <osgDB/FileUtils>
+#include <osgDB/ConvertUTF>
+#include <iostream>
+#include <iomanip>  // 用于输出格式化的百分比
+#include <fstream>  // 用于获取文件大小
+#include <indicators/cursor_control.hpp>
+#include <indicators/progress_bar.hpp>
 #include "osgdb_gltf/material/GltfPbrMRMaterial.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
-
+using namespace indicators;
 namespace osgGISPlugins
 {
 	const static double EPSILON = 0.001;
@@ -56,6 +64,116 @@ namespace osgGISPlugins
 		}
 	};
 
+	class CRenderingThread : public OpenThreads::Thread
+	{
+	public:
+
+		ProgressBar bar{
+			option::BarWidth{50},
+			option::PrefixText("Reading model file:"),
+			option::Start{"["},
+			option::Fill{"="},
+			option::Lead{">"},
+			option::Remainder{" "},
+			option::End{"]"},
+			option::ShowElapsedTime{true},
+			option::ShowRemainingTime{true},
+			option::ShowPercentage{true}
+		};
+
+		CRenderingThread(osgDB::ifstream* fin) :_fin(fin)
+		{
+			show_console_cursor(false);
+			fin->seekg(0, std::ifstream::end);
+			_length = fin->tellg();
+			fin->seekg(0, std::ifstream::beg);
+
+		};
+		virtual ~CRenderingThread() {};
+
+		void stop() {
+			show_console_cursor(true);
+			_bStop = true;
+		}
+
+		virtual void run()
+		{
+			if (!_bStop)
+			{
+				int pos = _fin->tellg();
+				while (pos < _length&& !_bStop)
+				{
+					pos = _fin->tellg();
+					double percent = 100.0 * pos / _length;
+
+					// 当百分比大于等于 1% 时打印
+					if (percent >= 1)
+					{
+						bar.set_progress(percent);  // 设置当前进度
+						OpenThreads::Thread::microSleep(100);
+					}
+				}
+				show_console_cursor(true);
+			}
+		};
+
+	protected:
+		osgDB::ifstream* _fin;
+		int _length;
+		bool _bStop = false;
+	};
+
+
+	class ProgressReportingFileReadCallback : public osgDB::Registry::ReadFileCallback
+	{
+	public:
+		CRenderingThread* crt;
+		typedef osgDB::ReaderWriter::ReadResult ReadResult;
+		ProgressReportingFileReadCallback() {}
+		~ProgressReportingFileReadCallback()
+		{
+			if (crt)
+			{
+				crt->join();
+				delete crt;
+				crt = nullptr;
+			}
+		}
+		virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option)
+		{
+			std::string ext = osgDB::getLowerCaseFileExtension(file);
+			osgDB::ReaderWriter::ReadResult rr;
+			osgDB::ReaderWriter* rw = osgDB::Registry::instance()->getReaderWriterForExtension(ext);
+
+			if (rw)
+			{
+				osgDB::ifstream istream(file.c_str(), std::ios::in | std::ios::binary);
+				crt = new CRenderingThread(&istream);
+				crt->startThread();
+				if (istream)
+				{
+
+					rr = rw->readNode(istream, option);
+					if (rr.status()!= osgDB::ReaderWriter::ReadResult::ReadStatus::FILE_LOADED)
+					{
+						crt->stop();
+						crt->cancel();
+						rr = osgDB::Registry::instance()->readNodeImplementation(file, option);
+					}
+					else
+					{
+						crt->join();
+					}
+				}
+			}
+			else
+			{
+				rr = osgDB::Registry::instance()->readNodeImplementation(file, option);
+			}
+
+			return rr;
+		}
+	};
 
 	class Utils {
 	public:

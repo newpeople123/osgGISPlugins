@@ -85,12 +85,13 @@ void registerFileAliases() {
 	instance->addFileExtensionAlias("b3dm", "gltf");
 	instance->addFileExtensionAlias("i3dm", "gltf");
 	instance->addFileExtensionAlias("ktx2", "ktx");
+	instance->setReadFileCallback(new ProgressReportingFileReadCallback);
 }
 
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
-	//readOptions->setOptionString("TessellatePolygons");
+	//readOptions->setOptionString("TessellatePolygons ShowProgress");
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
 	if (!node) {
@@ -286,7 +287,7 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)"));
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\20240529卢沟桥分洪枢纽1.fbx)"));
 	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\龙翔桥站厅)"));
 #ifndef NDEBUG
 #else
@@ -298,7 +299,6 @@ int main(int argc, char** argv)
 		OSG_FATAL << "Input or output path is missing!" << '\n';
 		return 0;
 	}
-
 
 	OSG_NOTICE << "Reading model file..." << std::endl;
 	osg::ref_ptr<osg::Node> node = readModelFile(input);

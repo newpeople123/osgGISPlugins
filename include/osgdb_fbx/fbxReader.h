@@ -63,6 +63,9 @@ public:
     osgDB::ReaderWriter::ReadResult readFbxNode(
         FbxNode*, bool& bIsBone, int& nLightCount);
 
+    osgDB::ReaderWriter::ReadResult readFbxNode(
+        FbxNode*, bool& bIsBone, int& nLightCount, FbxProgressCallback pCallback, const float perProgress = 1.0, float lastProgress = 0.0);
+
     std::string readFbxAnimation(
         FbxNode*, const char* targetName);
 

@@ -33,6 +33,9 @@
     },
     {
       "name": "proj"
+    },
+    {
+      "name": "indicators"
     }
   ],
   "name": "osg-gis-plugins",
@@ -68,6 +71,10 @@
     {
       "name": "stb",
       "version": "2023-04-11#1"
+    },
+    {
+      "name": "indicators",
+      "version": "2.3#0"
     }
   ],
   "version": "1.0.0"
