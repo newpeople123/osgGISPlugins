@@ -10,65 +10,46 @@
 #include <unordered_map>
 #include <limits>
 
-void B3DMTile::computeGeometricError()
+void B3DMTile::buildLOD()
 {
-	if (!this->children.size())
-		return;
-	// 并行计算所有子瓦片的几何误差
-	tbb::parallel_for(size_t(0), this->children.size(), [&](size_t i) {
-		this->children[i]->computeGeometricError();
-		});
+	// 1. 创建代理节点（LOD根节点）
+	osg::ref_ptr<B3DMTile> tileLOD2Proxy = this;
 
-	// 使用预缓存值计算加权误差
-	double totalWeightedError = 0.0;
-	double totalVolume = 0.0;
+	// 2. 创建三级LOD节点
+	auto createLODTile = [this](osg::ref_ptr<B3DMTile> parent, int lodLevel) {
+		auto tile = new B3DMTile(this->node, parent);
+		tile->config = this->config;
+		tile->level = this->level;
+		tile->x = this->x;
+		tile->y = this->y;
+		tile->z = this->z;
+		tile->lod = lodLevel;
+		tile->refine = Refinement::REPLACE;
+		return tile;
+		};
 
-	for (const auto& child : this->children) {
-		if (child->node.valid())
+	// 构建LOD层级
+	osg::ref_ptr<B3DMTile> tileLOD2 = createLODTile(tileLOD2Proxy, 2);
+	osg::ref_ptr<B3DMTile> tileLOD1 = createLODTile(tileLOD2, 1);
+	osg::ref_ptr<B3DMTile> tileLOD0 = createLODTile(tileLOD1, 0);
+	tileLOD0->refine = Refinement::ADD;
+
+	// 建立节点关系
+	tileLOD2Proxy->node = nullptr;
+	tileLOD2Proxy->children.push_back(tileLOD2);
+	tileLOD2->children.push_back(tileLOD1);
+	tileLOD1->children.push_back(tileLOD0);
+
+	// 递归处理子节点
+	for (auto& child : tileLOD2Proxy->children)
+	{
+		if (child.get() != tileLOD2.get())
 		{
-			auto b3dmTile = dynamic_cast<B3DMTile*>(child.get());
-			if (b3dmTile) {
-				double range = std::max(b3dmTile->diagonalLength, 2 * b3dmTile->maxClusterDiagonalLength);
-				double geometricError = range * 0.5 * CesiumGeometricErrorOperator;
-
-				double volume = b3dmTile->diagonalLength > 2 * b3dmTile->maxClusterDiagonalLength
-					? b3dmTile->maxClusterVolume
-					: b3dmTile->volume;
-
-				totalWeightedError += geometricError * volume;
-				totalVolume += volume;
-			}
-			else
-			{
-				osg::ref_ptr<osg::Group> group = child->node->asGroup();
-				if (group->getNumChildren())
-				{
-					osg::ComputeBoundsVisitor cbv;
-					group->getChild(0)->accept(cbv);
-					const osg::BoundingBox boundingBox = cbv.getBoundingBox();
-					const float i3dmGeometricError = (boundingBox._max - boundingBox._min).length() * 0.7 * CesiumGeometricErrorOperator;
-					const float i3dmVolume = (boundingBox._max.x() - boundingBox._min.x()) *
-						(boundingBox._max.y() - boundingBox._min.y()) *
-						(boundingBox._max.z() - boundingBox._min.z());
-					totalWeightedError += i3dmGeometricError * i3dmVolume;
-					totalVolume += i3dmVolume;
-				}
-			}
+			child->config = config;
+			child->buildLOD();
 		}
 	}
 
-	if (totalVolume > 0.0) {
-		this->geometricError = totalWeightedError / totalVolume;
-	}
-
-	// 确保父瓦片的几何误差大于任何子瓦片
-	for (const auto& child : this->children) {
-		if (child->geometricError >= this->geometricError) {
-			this->geometricError = child->geometricError + 0.1;
-			OSG_NOTICE << "父子瓦片几何误差相差无几：父亲：level:" << this->level << ",x:" << this->x << ",y:" << this->y << ",z:" << this->z
-				<< ";儿子：level:" << child->level << ",x:" << child->x << ",y:" << child->y << ",z:" << child->z << std::endl;
-		}
-	}
 }
 
 void B3DMTile::computeBoundingBox()
@@ -77,24 +58,27 @@ void B3DMTile::computeBoundingBox()
 	{
 		osg::ComputeBoundsVisitor cbv;
 		this->node->accept(cbv);
-		this->bb = cbv.getBoundingBox();
-		this->diagonalLength = (this->bb._max - this->bb._min).length();
+		const osg::BoundingBox bb = cbv.getBoundingBox();
+		this->diagonalLength = (bb._max - bb._min).length();
 
 		// 计算体积
-		this->volume = (this->bb._max.x() - this->bb._min.x()) *
-			(this->bb._max.y() - this->bb._min.y()) *
-			(this->bb._max.z() - this->bb._min.z());
+		this->volume = (bb._max.x() - bb._min.x()) *
+			(bb._max.y() - bb._min.y()) *
+			(bb._max.z() - bb._min.z());
 
 		MaxGeometryVisitor mgv;
 		this->node->accept(mgv);
-		this->maxClusterBb = mgv.maxBB;
+		const osg::BoundingBox maxClusterBb = mgv.maxBB;
 
 		// 使用聚类后的体积
-		this->maxClusterVolume = (this->maxClusterBb._max.x() - this->maxClusterBb._min.x()) *
-			(this->maxClusterBb._max.y() - this->maxClusterBb._min.y()) *
-			(this->maxClusterBb._max.z() - this->maxClusterBb._min.z());
+		const double maxClusterVolume = (maxClusterBb._max.x() - maxClusterBb._min.x()) *
+			(maxClusterBb._max.y() - maxClusterBb._min.y()) *
+			(maxClusterBb._max.z() - maxClusterBb._min.z());
 
-		this->maxClusterDiagonalLength = (this->maxClusterBb._min - this->maxClusterBb._max).length();
+		const double maxClusterDiagonalLength = (maxClusterBb._min - maxClusterBb._max).length();
+
+		this->diagonalLength = this->diagonalLength > 2 * maxClusterDiagonalLength ? maxClusterDiagonalLength : this->diagonalLength;
+		this->volume = this->diagonalLength > 2 * maxClusterDiagonalLength ? maxClusterVolume : this->volume;
 	}
 
 #ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
@@ -117,135 +101,9 @@ void B3DMTile::computeBoundingBox()
 			}
 		});
 #endif // !OSG_GIS_PLUGINS_WRITE_TILE_BY_SINGLE_THREAD
-	}
-
-void B3DMTile::buildBaseHlod()
-{
-	if (this->node.valid())
-	{
-		if (!this->parent.valid()) return;
-		if (!this->parent->node.valid())
-		{
-			this->parent->node = new osg::Group;
-		}
-		osg::ref_ptr<osg::Group> parentGroup = this->parent->node->asGroup();
-
-		osg::ref_ptr<osg::Group> group = this->node->asGroup();
-		const osg::BoundingBox boundingBox = this->bb;
-		const double currentRadius = computeRadius(boundingBox, this->axis);
-
-		for (size_t i = 0; i < group->getNumChildren(); ++i)
-		{
-			osg::ref_ptr<osg::Node> childNode = group->getChild(i);
-			osg::ComputeBoundsVisitor childCbv;
-			childNode->accept(childCbv);
-			const osg::BoundingBox childBoundingBox = childCbv.getBoundingBox();
-			const double childRadius = computeRadius(childBoundingBox, this->axis);
-
-			if (childRadius >= currentRadius)
-			{
-				parentGroup->addChild(childNode);
-			}
-		}
-	}
-	else
-	{
-		for (size_t i = 0; i < children.size(); ++i)
-		{
-			osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
-			if (b3dmTile.valid())
-				b3dmTile->buildHlod();
-		}
-
-		buildBaseHlod();
-	}
 }
 
-void B3DMTile::rebuildHlod()
-{
-	if (this->refine == Refinement::UNDEFINED)
-		this->refine = Refinement::REPLACE;
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
-		if (b3dmTile.valid())
-		{
-			if (b3dmTile->node->asGroup()->getNumChildren() == 0)
-			{
-				if (this->children[i]->children.size() == 0)
-				{
-					this->children.erase(this->children.begin() + i);
-					i--;
-					continue;
-				}
-			}
-			b3dmTile->rebuildHlod();
-		}
-	}
-	/*
-	if (this->node.valid())
-	{
-		osg::ref_ptr<osg::Group> group = new osg::Group;
-		for (size_t i = 0; i < this->children.size(); ++i)
-		{
-			if (this->children[i]->type == "b3dm" && this->children[i]->node.valid())
-			{
-				osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
-				osg::ref_ptr<osg::Group> childNodeAsGroup = this->children[i]->node->asGroup();
-				for (size_t k = 0; k < childNodeAsGroup->getNumChildren(); ++k)
-				{
-					osg::ref_ptr<osg::Node> childNode = childNodeAsGroup->getChild(k);
-					bool bFindNode = false;
-					for (size_t j = 0; j < currentNodeAsGroup->getNumChildren(); ++j)
-					{
-						if (currentNodeAsGroup->getChild(j) == childNode)
-						{
-							bFindNode = true;
-							break;
-						}
-					}
-					if (!bFindNode)
-						group->addChild(childNode);
-				}
-			}
-		}
-
-		if (descendantNodeIsEmpty())
-		{
-			this->children.clear();
-			this->geometricError = 0.0;
-		}
-	}
-
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		osg::ref_ptr<B3DMTile> b3dmTile = dynamic_cast<B3DMTile*>(this->children[i].get());
-		if (b3dmTile.valid())
-		{
-			if (b3dmTile->node->asGroup()->getNumChildren() == 0)
-			{
-				if (this->children[i]->children.size() == 0)
-				{
-					this->children.erase(this->children.begin() + i);
-					i--;
-					continue;
-				}
-			}
-			b3dmTile->rebuildHlod();
-		}
-	}
-	*/
-}
-
-void B3DMTile::buildHlod()
-{
-	//buildBaseHlod();
-	rebuildHlod();
-	computeBoundingBox();
-	computeGeometricError();
-}
-
-void B3DMTile::write(const string& str, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options)
+void B3DMTile::write()
 {
 	computeBoundingVolumeBox();
 	setContentUri();
@@ -253,43 +111,66 @@ void B3DMTile::write(const string& str, const float simplifyRatio, const GltfOpt
 	if (this->node.valid() && this->node->asGroup()->getNumChildren())
 	{
 		osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(), osg::CopyOp::DEEP_COPY_ALL);
+		GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions(config.gltfTextureOptions);
 
-		if (simplifyRatio < 1.0 && this->geometricError != 0.0 && this->refine == Refinement::REPLACE)
-		{
-			Simplifier simplifier(pow(simplifyRatio, getMaxLevel() - level - 1), true);
-			nodeCopy->accept(simplifier);
+		// 根据LOD层级应用不同的简化策略
+		switch (this->lod) {
+		case 2: {  // LOD2: 最低精度
+			if (config.simplifyRatio < 1.0)
+			{
+				Simplifier simplifier(config.simplifyRatio, false);
+				nodeCopy->accept(simplifier);
+			}
+			gltfTextureOptions.maxTextureWidth /= 4;
+			gltfTextureOptions.maxTextureHeight /= 4;
+			break;
 		}
-
-
+		case 1: {  // LOD1: 中等精度
+			if (config.simplifyRatio < 1.0)
+			{
+				Simplifier simplifier(config.simplifyRatio, true);
+				nodeCopy->accept(simplifier);
+			}
+			gltfTextureOptions.maxTextureWidth /= 2;
+			gltfTextureOptions.maxTextureHeight /= 2;
+			break;
+		}
+		}
+	
 		GltfOptimizer gltfOptimzier;
 		gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
 		gltfOptimzier.optimize(nodeCopy.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
 
 		BatchIdVisitor biv;
 		nodeCopy->accept(biv);
-		const string path = str + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(level);
+		
+		// 构建输出路径
+		const string outputPath = config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(level);
+		const string filename = "Tile_L" + to_string(lod) + "_" +
+			to_string(x) + "_" +
+			to_string(y) + "_" +
+			to_string(z) + "." + type;
+
+		// 写入文件
 #ifndef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 		tbb::spin_mutex::scoped_lock lock(writeMutex);
-#endif // !OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
-		osgDB::makeDirectory(path);
-		osgDB::writeNodeFile(*nodeCopy.get(), path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "Tile_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + "." + type, options);
+#endif
+		osgDB::makeDirectory(outputPath);
+		osgDB::writeNodeFile(*nodeCopy.get(), outputPath + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + filename, config.options);
 	}
+
 #ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
-	/* single thread */
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
+	for (auto& child : children) {
+		child->write();
 	}
 #else
-	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-		[&](const tbb::blocked_range<size_t>& r)
-		{
-			for (size_t i = r.begin(); i < r.end(); ++i)
-			{
-				this->children[i]->write(str, simplifyRatio, gltfTextureOptions, options);
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, children.size()),
+		[&](const tbb::blocked_range<size_t>& r) {
+			for (size_t i = r.begin(); i < r.end(); ++i) {
+				children[i]->write();
 			}
 		});
-#endif // !OSG_GIS_PLUGINS_WRITE_TILE_BY_SINGLE_THREAD
+#endif
 
 }
 

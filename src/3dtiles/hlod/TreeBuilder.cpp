@@ -27,13 +27,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 				osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(pair.second[0]);
 				transform->addChild(geodeCopy);
 				_groupsToDivideList->addChild(transform);
-			}
-			
-			
-			//osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(pair.second[0]);
-			//transform->addChild(pair.first);
-			//_groupsToDivideList->addChild(transform);
-			
+			}		
 		}
 	}
 	_geodeMatrixMap = geodeMatrixMap;
@@ -48,9 +42,6 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 
 void TreeBuilder::apply(osg::Group& group)
 {
-	// 备份当前矩阵
-	//osg::Matrix previousMatrix = _currentMatrix;
-
 	_currentMatrix = osg::Matrix::identity();
 	// 如果是Transform节点，累积变换矩阵
 	if (osg::Transform* transform = group.asTransform())
@@ -63,9 +54,6 @@ void TreeBuilder::apply(osg::Group& group)
 
 	// 继续遍历子节点
 	traverse(group);
-
-	// 恢复到之前的矩阵状态
-	//_currentMatrix = previousMatrix;
 }
 
 void TreeBuilder::apply(osg::Geode& geode)
@@ -90,14 +78,22 @@ void TreeBuilder::apply(osg::Geode& geode)
 
 }
 
-osg::ref_ptr<B3DMTile> TreeBuilder::divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent, const unsigned int x, const unsigned int y, const unsigned int z, const unsigned int level)
+osg::ref_ptr<B3DMTile> TreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
-	return osg::ref_ptr<B3DMTile>();
+	// 创建新瓦片并设置基本属性
+	osg::ref_ptr<B3DMTile> tile = new B3DMTile(dynamic_cast<B3DMTile*>(parent.get()));
+	tile->level = level;
+	tile->x = x;
+	tile->y = y;
+	tile->z = z;
+	tile->parent = parent;
+
+	// 子类实现具体的分割逻辑
+	return tile;
 }
 
 void TreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile)
 {
-	
 }
 
 osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
@@ -120,7 +116,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	const double yLength = rootBox.yMax() - rootBox.yMin();
 	const double zLength = rootBox.zMax() - rootBox.zMin();
 	const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
-	_maxLevel = std::log2(max / min);
+	_config.maxLevel = std::log2(max / min);
 	
 	
 	std::map<std::string, osg::ref_ptr<osg::Group>> stateSetGroupMap;
@@ -194,8 +190,17 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 		_groupsToDivideList->addChild(largeTextureCoordGroup->getChild(i));
 	}
 	
-
-	osg::ref_ptr<B3DMTile> result = divide(_groupsToDivideList, rootBox);
+	std::vector<osg::Node*> children;
+	const unsigned int num = _groupsToDivideList->getNumChildren();
+	for (unsigned int i = 0; i < num; ++i) {
+		children.push_back(_groupsToDivideList->getChild(i));
+	}
+	std::sort(children.begin(), children.end(), sortNodeByRadius);
+	_groupsToDivideList->removeChildren(0, num);
+	for (unsigned int i = 0; i < num; ++i) {
+		_groupsToDivideList->addChild(children[i]);
+	}
+	osg::ref_ptr<B3DMTile> result = divideB3DM(_groupsToDivideList, rootBox);
 	return result.release();
 }
 
@@ -251,6 +256,7 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 	}
 	
 	osg::ref_ptr<I3DMTile> rootI3dmTile = new I3DMTile;
+	std::sort(i3dmTiles.begin(), i3dmTiles.end(), sortTileNodeByRadius);
 	divideI3DM(i3dmTiles, boundingSphere2BoundingBox(i3dmTileGroup->getBound()), rootI3dmTile);
 
 	return rootI3dmTile;
@@ -269,10 +275,14 @@ void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<
 			const osg::BoundingBox i3dmTileBB = boundingSphere2BoundingBox(it->get()->node->getBound());
 			if (intersect(b3dmTileBB, i3dmTileBB))
 			{
-				osg::ref_ptr<I3DMTile> i3dmTileProxy = new I3DMTile(b3dmTile);
-				b3dmTile->children.push_back(i3dmTileProxy);
-				i3dmTileProxy->children.push_back(it->get());
-				it->get()->parent = i3dmTileProxy;
+				//osg::ref_ptr<I3DMTile> i3dmTileProxy = new I3DMTile(b3dmTile);
+				//b3dmTile->children.push_back(i3dmTileProxy);
+				//i3dmTileProxy->children.push_back(it->get());
+				//it->get()->parent = i3dmTileProxy;
+
+				b3dmTile->children.push_back(it->get());
+				it->get()->parent = b3dmTile;
+
 				it = i3dmTile->children.erase(it);
 				continue;
 			}
@@ -320,6 +330,83 @@ bool TreeBuilder::intersect(const osg::BoundingBox& parentBB, const osg::Boundin
 		{
 			return true;
 		}
+	}
+	return false;
+}
+
+bool TreeBuilder::sortTileNodeByRadius(const osg::ref_ptr<Tile>& a, const osg::ref_ptr<Tile>& b)
+{
+	const float radiusA = a->node->getBound().radius();
+	const float radiusB = b->node->getBound().radius();
+	return radiusA > radiusB;// 按照半径从大到小排序
+}
+
+bool osgGISPlugins::TreeBuilder::sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b)
+{
+	const float radiusA = a->getBound().radius();
+	const float radiusB = b->getBound().radius();
+	return radiusA > radiusB;// 按照半径从大到小排序
+}
+
+bool TreeBuilder::processGeometryWithTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level)
+{
+	if (level >= _config.maxLevel)
+	{
+		tile->node = group;
+		return tile;
+	}
+
+	osg::ref_ptr<osg::Group> childGroup;
+	if (!tile->node.valid())
+		tile->node = new osg::Group;
+	childGroup = tile->node->asGroup();
+
+
+	std::vector<osg::ref_ptr<osg::Node>> needToRemove;
+
+	// 获取所有子节点并按包围球的半径进行排序
+	std::vector<osg::ref_ptr<osg::Node>> children;
+	for (unsigned int i = 0; i < group->getNumChildren(); ++i)
+	{
+		children.push_back(group->getChild(i));
+	}
+
+	osg::BoundingBox bb(bounds);
+	unsigned int textureCount = 0;
+	// 将排序后的子节点添加到子组，并记录需要移除的子节点
+	for (auto& child : children)
+	{
+		const osg::BoundingSphere childBS = child->getBound();
+		const osg::BoundingBox childBB = boundingSphere2BoundingBox(childBS);
+		if (textureCount >= _config.maxTextureCount)
+			break;
+		//自适应四叉树
+		if (intersect(bb, childBB))
+		{
+			TextureCountVisitor tcv;
+			child->accept(tcv);
+			if ((textureCount + tcv.count) <= 15)
+			{
+				textureCount += tcv.count;
+				bb.expandBy(childBB);
+
+				childGroup->addChild(child);
+				needToRemove.push_back(child);
+			}
+		}
+	}
+
+	if (needToRemove.size())
+	{
+		for (auto& child : needToRemove)
+		{
+			group->removeChild(child);
+		}
+	}
+
+	if (!childGroup->getNumChildren())
+	{
+		return true;
 	}
 	return false;
 }

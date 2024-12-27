@@ -287,7 +287,7 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\20240529卢沟桥分洪枢纽1.fbx)"));
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)"));
 	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\龙翔桥站厅)"));
 #ifndef NDEBUG
 #else
@@ -320,12 +320,6 @@ int main(int argc, char** argv)
 		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
 		applyProjection(tNode, epsg, latitude, longitude, height);
-
-		TreeBuilder* treeBuilder = new QuadtreeBuilder;
-		if (treeFormat == "oc")
-			treeBuilder = new OctreeBuilder;
-		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
-		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder);
 
 		std::string optionsStr = "";
 		if (vertexFormat == "draco")
@@ -375,23 +369,29 @@ int main(int argc, char** argv)
 		config.latitude = latitude;
 		config.longitude = longitude;
 		config.height = height;
-		config.simplifyRatio = ratio;
-		config.path = output;
-		config.gltfTextureOptions.maxTextureWidth = maxTextureWidth;
-		config.gltfTextureOptions.maxTextureHeight = maxTextureHeight;
-		config.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
-		config.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
-		config.gltfTextureOptions.ext = "." + textureFormat;
+		config.tileConfig.simplifyRatio = ratio;
+		config.tileConfig.path = output;
+		config.tileConfig.gltfTextureOptions.maxTextureWidth = maxTextureWidth;
+		config.tileConfig.gltfTextureOptions.maxTextureHeight = maxTextureHeight;
+		config.tileConfig.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
+		config.tileConfig.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
+		config.tileConfig.gltfTextureOptions.ext = "." + textureFormat;
 #ifdef _WIN32
-		config.gltfTextureOptions.cachePath = config.path + "\\textures";
+		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "\\textures";
 #else
 		config.gltfTextureOptions.cachePath = config.path + "/textures";
 #endif
-		osgDB::makeDirectory(config.gltfTextureOptions.cachePath);
-		config.options->setOptionString(optionsStr);
+		osgDB::makeDirectory(config.tileConfig.gltfTextureOptions.cachePath);
+		config.tileConfig.options->setOptionString(optionsStr);
+
+		TreeBuilder* treeBuilder = new QuadtreeBuilder;
+		if (treeFormat == "oc")
+			treeBuilder = new OctreeBuilder;
+		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
+		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder,config);
 
 		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
-		const bool result = tileset->toFile(config);
+		const bool result = tileset->write();
 
 		if (result)
 		{

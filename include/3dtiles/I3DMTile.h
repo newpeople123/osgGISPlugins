@@ -28,11 +28,9 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "I3DMTile"; }
 
-		void computeGeometricError() override;
+		void write() override;
 
-		void write(const string& path, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options) override;
-
-		void setContentUri() override;
+		void buildLOD() override;
 
 	};
 }

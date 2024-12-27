@@ -67,12 +67,11 @@ void Tile::setContentUri()
 {
 	if (this->node.valid() && this->node->asGroup()->getNumChildren())
 	{
-		contentUri = to_string(level) + "/" + "Tile_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + "." + type;
+		
 		if (type == "i3dm")
-			contentUri = "InstanceTiles/" + contentUri;
-	}
-	else {
-		return;
+			contentUri = "InstanceTiles/Tile_L" + to_string(lod) + "_" + to_string(z) + "." + type;
+		else
+			contentUri = to_string(level) + "/" + "Tile_L" + to_string(lod) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + "." + type;
 	}
 }
 
@@ -80,6 +79,82 @@ void Tile::computeBoundingVolumeBox()
 {
 	osg::ref_ptr<osg::Group> group = getAllDescendantNodes();
 	boundingVolume.computeBox(group);
+}
+
+void Tile::computeGeometricError()
+{
+	if (!this->children.size())
+		return;
+	for (size_t i = 0; i < this->children.size(); ++i)
+	{
+		this->children[i]->computeGeometricError();
+	}
+
+	const auto& textureOptions = config.gltfTextureOptions;
+	const int maxTextureResolution = osg::maximum(textureOptions.maxTextureWidth,
+		textureOptions.maxTextureHeight);
+
+	// 根据LOD层级确定纹理分辨率缩放因子
+	double textureSizeFactor = 1.0;
+	double CesiumGeometricErrorOperator = 0.0;
+	if (this->node.valid())
+	{
+
+		// LOD2使用1/4分辨率，其他LOD使用1/2分辨率
+		textureSizeFactor = this->lod == 2 ? 0.25 : 0.5;
+
+		const double pixelSize = maxTextureResolution * textureSizeFactor;
+		CesiumGeometricErrorOperator = getCesiumGeometricErrorOperatorByPixelSize(pixelSize);
+	}
+	else
+	{
+		CesiumGeometricErrorOperator = getCesiumGeometricErrorOperatorByPixelSize(InitPixelSize);
+	}
+
+	// 使用预缓存值计算加权误差
+	double totalWeightedError = 0.0;
+	double totalVolume = 0.0;
+	for (const auto& child : this->children) {
+		if (child->node.valid())
+		{
+			auto b3dmTile = dynamic_cast<B3DMTile*>(child.get());
+
+			if (b3dmTile) {
+				double geometricError = b3dmTile->diagonalLength * GEOMETRIC_ERROR_SCALE_FACTOR * CesiumGeometricErrorOperator;
+
+				totalWeightedError += geometricError * b3dmTile->volume;
+				totalVolume += b3dmTile->volume;
+			}
+			else
+			{
+				osg::ref_ptr<osg::Group> group = child->node->asGroup();
+				if (group->getNumChildren())
+				{
+					osg::ComputeBoundsVisitor cbv;
+					group->getChild(0)->accept(cbv);
+					const osg::BoundingBox boundingBox = cbv.getBoundingBox();
+					const float i3dmGeometricError = (boundingBox._max - boundingBox._min).length() * GEOMETRIC_ERROR_SCALE_FACTOR * CesiumGeometricErrorOperator;
+					const float i3dmVolume = (boundingBox._max.x() - boundingBox._min.x()) *
+						(boundingBox._max.y() - boundingBox._min.y()) *
+						(boundingBox._max.z() - boundingBox._min.z());
+					totalWeightedError += i3dmGeometricError * i3dmVolume;
+					totalVolume += i3dmVolume;
+				}
+			}
+
+		}
+	}
+	if (totalVolume > 0.0) {
+		this->geometricError = totalWeightedError / totalVolume;
+	}
+	// 确保父瓦片的几何误差大于任何子瓦片
+	for (const auto& child : this->children) {
+		if (child->geometricError >= this->geometricError) {
+			this->geometricError = child->geometricError + MIN_GEOMETRIC_ERROR_DIFFERENCE;
+			OSG_NOTICE << "父子瓦片几何误差相差无几：父亲：level:" << this->level << ",x:" << this->x << ",y:" << this->y << ",z:" << this->z
+				<< ";儿子：level:" << child->level << ",x:" << child->x << ",y:" << child->y << ",z:" << child->z << std::endl;
+		}
+	}
 }
 
 bool Tile::descendantNodeIsEmpty() const
@@ -139,4 +214,35 @@ bool Tile::valid() const
 	else if(this->type=="b3dm")
 		return this->geometricError == 0.0;
 	return true;
+}
+
+double Tile::getCesiumGeometricErrorOperatorByPixelSize(const float pixelSize)
+{
+	    // 计算视锥体在单位距离处的高度
+    const double frustumHeight = 2.0 * tan(CesiumFrustumFovy * 0.5);
+    // 计算每像素对应的世界空间大小
+    const double pixelWorldSize = frustumHeight / CesiumCanvasViewportHeight;
+    // 计算几何误差系数
+    return (CesiumMaxScreenSpaceError * pixelSize * pixelWorldSize);
+}
+
+void Tile::validate()
+{
+	for (size_t i = 0; i < this->children.size(); ++i)
+	{
+		osg::ref_ptr<Tile> tile = this->children[i].get();
+		if (tile.valid() && tile->type != "i3dm")
+		{
+			if (tile->node->asGroup()->getNumChildren() == 0)
+			{
+				if (this->children[i]->children.size() == 0)
+				{
+					this->children.erase(this->children.begin() + i);
+					i--;
+					continue;
+				}
+			}
+			tile->validate();
+		}
+	}
 }

@@ -101,7 +101,7 @@ namespace osgGISPlugins
 			if (!_bStop)
 			{
 				int pos = _fin->tellg();
-				while (pos < _length&& !_bStop)
+				while (pos < _length && !_bStop && !bar.is_completed())
 				{
 					pos = _fin->tellg();
 					double percent = 100.0 * pos / _length;
@@ -154,7 +154,7 @@ namespace osgGISPlugins
 				{
 
 					rr = rw->readNode(istream, option);
-					if (rr.status()!= osgDB::ReaderWriter::ReadResult::ReadStatus::FILE_LOADED)
+					if (rr.status() != osgDB::ReaderWriter::ReadResult::ReadStatus::FILE_LOADED)
 					{
 						crt->stop();
 						crt->cancel();

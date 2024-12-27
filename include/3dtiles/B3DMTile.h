@@ -6,14 +6,9 @@ using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
 	class B3DMTile :public Tile {
-	private:
-		void buildBaseHlod();
-
-		void rebuildHlod();
 	public:
-		osg::BoundingBox bb, maxClusterBb;
-		double diagonalLength = 0.0, maxClusterDiagonalLength = 0.0;
-		double volume = 0.0, maxClusterVolume = 0.0;
+		double diagonalLength = 0.0;
+		double volume = 0.0;
 
 		B3DMTile() {
 			type = "b3dm";
@@ -36,13 +31,11 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "B3DMTile"; }
 
-		void buildHlod();
-
-		void write(const string& path, const float simplifyRatio, const GltfOptimizer::GltfTextureOptimizationOptions& gltfTextureOptions, const osg::ref_ptr<osgDB::Options> options) override;
+		void write() override;
 
 		static double computeRadius(const osg::BoundingBox& bbox, int axis);
 
-		void computeGeometricError() override;
+		void buildLOD() override;
 
 		void computeBoundingBox();
 	};

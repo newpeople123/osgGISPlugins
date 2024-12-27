@@ -23,13 +23,17 @@ namespace osgGISPlugins
 
 
     protected:
+        // 添加配置结构体
+        struct BuilderConfig {
+            size_t maxTriangleCount = 5.5e5;
+            unsigned int maxTextureCount = 15;
+            int maxLevel = 32;
+            bool enableParallel = true;
+        };
+        BuilderConfig _config;
+
         osg::ref_ptr<osg::Group> _groupsToDivideList = new osg::Group;
 
-        unsigned int _maxLevel = -1;
-
-        size_t _maxTriangleCount = 5.5e5;
-
-        unsigned int _maxTextureCount = 10;
 
         osg::Matrixd _currentMatrix;
 
@@ -37,7 +41,7 @@ namespace osgGISPlugins
 
         virtual void apply(osg::Geode& geode) override;
 
-        virtual osg::ref_ptr<B3DMTile> divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent = nullptr, const unsigned int x = 0, const unsigned int y = 0, const unsigned int z = 0, const unsigned int level = 0);
+        virtual osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0);
 
         virtual void divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>&, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile);
 
@@ -52,6 +56,12 @@ namespace osgGISPlugins
         static float calculateBoundingBoxVolume(const osg::BoundingBox& box);
 
         static bool intersect(const osg::BoundingBox& parentBB, const osg::BoundingBox& childBB);
+
+        static bool sortTileNodeByRadius(const osg::ref_ptr<Tile>& a, const osg::ref_ptr<Tile>& b);
+
+        static bool sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b);
+
+        bool processGeometryWithTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level);
 	};
 }
 

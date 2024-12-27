@@ -58,16 +58,15 @@ json Tileset::toJson() const {
 	return j;
 }
 
-bool Tileset::toFile(Config config) {
+bool Tileset::write() {
 	this->computeGeometricError();
 
 	if (!this->valid())
 		return false;
 
-	config.validate();
-	this->root->write(config.path, config.simplifyRatio, config.gltfTextureOptions, config.options);
+	this->root->write();
 	this->computeTransform(config.longitude, config.latitude, config.height);
-	const string filePath = config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
+	const string filePath = config.tileConfig.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
 	std::setlocale(LC_ALL, "zh_CN.UTF-8");
 	ofstream file(filePath);
 	if (!file.is_open()) {
@@ -95,7 +94,7 @@ void Tileset::computeGeometricError()
 	_node->accept(cbv);
 	osg::BoundingBox bb = cbv.getBoundingBox();
 	double radius = bb.radius();
-	this->geometricError = radius * CesiumGeometricErrorOperator;
+	this->geometricError = radius * Tile::getCesiumGeometricErrorOperatorByPixelSize(InitPixelSize);
 
 
 	if (this->root->node.valid())
@@ -103,7 +102,8 @@ void Tileset::computeGeometricError()
 		double totalVolume = 0.0; // 用于计算加权平均
 		double weightedErrorSum = 0.0; // 加权误差总和
 		osg::ref_ptr<osg::Group> group = this->root->node->asGroup();
-
+		const GltfOptimizer::GltfTextureOptimizationOptions textureOptions = config.tileConfig.gltfTextureOptions;
+		const int maxTextureResolution = textureOptions.maxTextureWidth > textureOptions.maxTextureHeight ? textureOptions.maxTextureWidth : textureOptions.maxTextureHeight;
 		for (size_t i = 0; i < group->getNumChildren(); ++i)
 		{
 			cbv.reset();
@@ -131,9 +131,9 @@ void Tileset::computeGeometricError()
 
 			// 选择合适的误差范围
 			const double range = diagonalLength > 2 * clusterMaxDiagonalLength ? clusterMaxDiagonalLength : radius;
-
+			
 			// 计算该子节点的几何误差
-			const double childNodeGeometricError = range * 0.7 * 0.5 * CesiumGeometricErrorOperator;
+			const double childNodeGeometricError = range * 0.7 * 0.5 * Tile::getCesiumGeometricErrorOperatorByPixelSize(maxTextureResolution / 4);
 
 			// 加权误差计算
 			weightedErrorSum += childNodeGeometricError * (diagonalLength > 2 * clusterMaxDiagonalLength ? clusterVolume : volume);

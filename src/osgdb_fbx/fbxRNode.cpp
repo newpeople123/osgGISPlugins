@@ -742,6 +742,8 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
                 skeletal.empty() &&
                 bLocalMatrixIdentity)
             {
+                if (pNode->GetParent() && nChildCount != 0 && pCallback)
+                    pCallback(NULL, totalProgress * 100.0f, "");
                 return osgDB::ReaderWriter::ReadResult(node);
             }
 

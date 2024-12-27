@@ -1,5 +1,4 @@
 #include "3dtiles/hlod/QuadtreeBuilder.h"
-#include <osgViewer/Viewer>
 int QuadtreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 {
 	float xSpan = bounds._max.x() - bounds._min.x();
@@ -28,99 +27,22 @@ osg::BoundingBox QuadtreeBuilder::computeChildBounds(const osg::BoundingBox& bou
 	return childBound;
 }
 
-osg::ref_ptr<B3DMTile> QuadtreeBuilder::divide(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<Tile> parent, const unsigned int x, const unsigned int y, const unsigned int z, const unsigned int level)
+osg::ref_ptr<B3DMTile> QuadtreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
-	osg::ref_ptr<B3DMTile> tile = new B3DMTile(dynamic_cast<B3DMTile*>(parent.get()));
-	tile->level = level;
-	tile->x = x;
-	tile->y = y;
-	tile->z = z;
-	tile->parent = parent;
+	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
-
-	if (level >= _maxLevel)
-	{
-		tile->node = group;
-		return tile;
-	}
-
-	osg::ref_ptr<osg::Group> childGroup;
-	if (!tile->node.valid())
-		tile->node = new osg::Group;
-	childGroup = tile->node->asGroup();
-
-
-	std::vector<osg::ref_ptr<osg::Node>> needToRemove;
-
-	// 获取所有子节点并按包围球的半径进行排序
-	std::vector<osg::ref_ptr<osg::Node>> children;
-	for (unsigned int i = 0; i < group->getNumChildren(); ++i)
-	{
-		osg::Node* node = group->getChild(i);
-		children.push_back(node);
-	}
-
-	// 按照包围球的半径进行排序
-	std::sort(children.begin(), children.end(), [](const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b) {
-		// 计算球体半径
-		const float radiusA = a->getBound().radius();
-		const float radiusB = b->getBound().radius();
-		return radiusA > radiusB;// 按照半径从大到小排序
-		});
-
-	osg::BoundingBox bb(bounds);
-	unsigned int textureCount = 0;
-	// 将排序后的子节点添加到子组，并记录需要移除的子节点
-	for (auto& child : children)
-	{
-		const osg::BoundingSphere childBS = child->getBound();
-		const osg::BoundingBox childBB = boundingSphere2BoundingBox(childBS);
-		if (textureCount >= 15)
-			break;
-		//自适应四叉树
-		if (intersect(bb, childBB))
-		{
-			TextureCountVisitor tcv;
-			child->accept(tcv);
-			if ((textureCount + tcv.count) <= 15)
-			{
-				textureCount += tcv.count;
-				bb.expandBy(childBB);
-
-				childGroup->addChild(child);
-				needToRemove.push_back(child);
-			}
-		}
-	}
-	//osgViewer::Viewer viewer;
-	//viewer.setSceneData(childGroup);
-	//viewer.run();
-
-	if (needToRemove.size())
-	{
-		for (auto& child : needToRemove)
-		{
-			group->removeChild(child);
-		}
-	}
 	tile->axis = chooseSplitAxis(bounds);
-	if (childGroup->getNumChildren())
-	{
-		tile->refine = Refinement::ADD;
-	}
-	else
-	{
+	if (TreeBuilder::processGeometryWithTextureLimit(group, bounds, tile, level))
 		return tile;
-	}
 
-	osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
+	const osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
 	// 根据选择的轴进行分割
 	for (int a = 0; a < 2; ++a)
 	{
 		for (int b = 0; b < 2; ++b)
 		{
 			const osg::BoundingBox childTileNodeBound = computeChildBounds(bounds, mid, tile->axis, a, b);
-			osg::ref_ptr<B3DMTile> childB3DMTile = divide(group, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, 0, level + 1);
+			osg::ref_ptr<B3DMTile> childB3DMTile = divideB3DM(group, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, 0, level + 1);
 			tile->children.push_back(childB3DMTile);
 		}
 	}
@@ -133,21 +55,13 @@ void QuadtreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, con
 	if (!tile.valid() || group.empty()) return;
 
 	tile->axis = chooseSplitAxis(bounds);
-	osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
+	const osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
 
 	std::vector<osg::BoundingBox> childrenBounds;
 
 	for (int a = 0; a < 2; ++a) {
 		for (int b = 0; b < 2; ++b) {
 			osg::BoundingBox childBounds = computeChildBounds(bounds, mid, tile->axis, a, b);
-			// 按照包围球的半径进行排序
-			std::sort(group.begin(), group.end(), [](const osg::ref_ptr<I3DMTile>& a, const osg::ref_ptr<I3DMTile>& b) {
-				// 计算球体半径
-				const float radiusA = a->node->getBound().radius();
-				const float radiusB = b->node->getBound().radius();
-				return radiusA > radiusB;// 按照半径从大到小排序
-				});
-			std::vector<osg::ref_ptr<I3DMTile>> childGroup;
 			for (auto it = group.begin(); it != group.end();) {
 				osg::ref_ptr<I3DMTile> child = it->get();
 				if (intersect(childBounds, boundingSphere2BoundingBox(child->node->getBound()))) {

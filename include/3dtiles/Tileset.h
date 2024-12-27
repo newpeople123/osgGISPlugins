@@ -38,40 +38,20 @@ namespace osgGISPlugins
 
 	public:
 		struct Config {
-			//存储3dtiles的文件夹
-			string path = "";
 			//纬度，角度制
 			double latitude = 30.0;
 			//经度，角度制
 			double longitude = 116.0;
 			//高度，单位米
 			double height = 100.0;
-			//简化比例，[0-1]
-			float simplifyRatio = 0.5f;
-			//纹理优化设置
-			GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
-			//b3dm、i3dm瓦片导出设置
-			osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+
+			Tile::Config tileConfig;
 
 			void validate() {
-
-				osg::clampTo(this->simplifyRatio, 0.f, 1.f);
-
 				osg::clampTo(this->latitude, -90.0, 90.0);
 				osg::clampTo(this->longitude, -180.0, 180.0);
 
-				osg::clampTo(this->gltfTextureOptions.maxTextureWidth, 2, 8192);
-				osg::clampTo(this->gltfTextureOptions.maxTextureHeight, 2, 8192);
-				osg::clampTo(this->gltfTextureOptions.maxTextureAtlasWidth, 2, 8192);
-				osg::clampTo(this->gltfTextureOptions.maxTextureAtlasHeight, 2, 8192);
-
-				std::string ext = std::string(this->gltfTextureOptions.ext.begin(), this->gltfTextureOptions.ext.end());
-				std::transform(ext.begin(), ext.end(), ext.begin(),
-					[](unsigned char c) { return std::tolower(c); });
-				if (ext != ".jpg" && ext != ".png" && ext != ".webp" && ext != ".ktx2")
-				{
-					this->gltfTextureOptions.ext = ".jpg";
-				}
+				tileConfig.validate();
 			}
 		};
 		string assetVersion = "1.0";
@@ -81,25 +61,33 @@ namespace osgGISPlugins
 		double geometricError;
 		osg::ref_ptr<Tile> root;
 
+		Config config;
+
 		void fromJson(const json& j);
 
 		static Tileset fromFile(const string& filePath);
 
 		json toJson() const;
 
-		bool toFile(Config config);
+		bool write();
 
 		Tileset() = default;
 
-		Tileset(osg::ref_ptr<osg::Node> node, TreeBuilder& builder) :geometricError(0.0), _node(node) {
+		Tileset(osg::ref_ptr<osg::Node> node, TreeBuilder& builder,Config iConfig) :geometricError(0.0), _node(node), config(iConfig){
+			config.validate();
 			osgUtil::Optimizer optimizer;
 			optimizer.optimize(_node, osgUtil::Optimizer::INDEX_MESH);
 			_node->accept(builder);
 			root = builder.build();
+			root->config = config.tileConfig;
 			osg::ref_ptr<B3DMTile> b3dmNode = dynamic_cast<B3DMTile*>(root.get());
+			b3dmNode->config = config.tileConfig;
 			if (b3dmNode.valid())
 			{
-				b3dmNode->buildHlod();
+				b3dmNode->validate();
+				b3dmNode->buildLOD();
+				b3dmNode->computeBoundingBox();
+				b3dmNode->computeGeometricError();
 			}
 		}
 
