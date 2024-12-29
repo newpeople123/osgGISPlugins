@@ -53,13 +53,12 @@ void I3DMTile::computeDiagonalLengthAndVolume()
 			(bb._max.z() - bb._min.z());
 	}
 
-#ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 	/* single thread */
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		this->children[i]->computeDiagonalLengthAndVolume();
-	}
-#else
+	//for (size_t i = 0; i < this->children.size(); ++i)
+	//{
+	//	this->children[i]->computeDiagonalLengthAndVolume();
+	//}
+
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
 		[&](const tbb::blocked_range<size_t>& r)
 		{
@@ -68,5 +67,5 @@ void I3DMTile::computeDiagonalLengthAndVolume()
 				this->children[i]->computeDiagonalLengthAndVolume();
 			}
 	});
-#endif // !OSG_GIS_PLUGINS_WRITE_TILE_BY_SINGLE_THREAD
+
 }

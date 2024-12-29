@@ -607,7 +607,6 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(
 
 osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& bIsBone, int& nLightCount, FbxProgressCallback pCallback, const float perProgress, float lastProgress)
 {
-
     if (FbxNodeAttribute* lNodeAttribute = pNode->GetNodeAttribute())
     {
         FbxNodeAttribute::EType attrType = lNodeAttribute->GetAttributeType();
@@ -665,11 +664,14 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
     osg::NodeList skeletal, children;
 
     int nChildCount = pNode->GetChildCount();
+    float nextPerProgress = perProgress;
+    float currentProgress = lastProgress;
 
-    const float nextPerProgress = nChildCount == 0 ? 0 : perProgress / nChildCount; // 计算每个子节点的进度比例
+    // 如果有子节点，将当前节点的进度分配给所有子节点
+    if (nChildCount > 0) {
+        nextPerProgress = perProgress / nChildCount;
+    }
 
-
-    float totalProgress = lastProgress;  // 初始化总进度
     for (int i = 0; i < nChildCount; ++i)
     {
         FbxNode* pChildNode = pNode->GetChild(i);
@@ -682,9 +684,11 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
 
         bool bChildIsBone = false;
         osgDB::ReaderWriter::ReadResult childResult = readFbxNode(
-            pChildNode, bChildIsBone, nLightCount, pCallback, nextPerProgress, totalProgress);  // 传递当前的进度累积
+            pChildNode, bChildIsBone, nLightCount, pCallback, nextPerProgress, currentProgress);  // 传递当前的进度累积
         if (childResult.error())
         {
+            if (pCallback)
+                pCallback(NULL, currentProgress * 100.0f, "Error processing node");
             return childResult;
         }
         else if (osg::Node* osgChild = childResult.getNode())
@@ -702,8 +706,12 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
             }
         }
 
-        // 更新总进度，每次递归子节点后，累加子节点的进度
-        totalProgress += nextPerProgress;
+        currentProgress += nextPerProgress; // 累加子节点的进度
+
+        // 每处理完一个子节点就回调进度
+        if (pCallback) {
+            pCallback(NULL, currentProgress * 100.0f, "Processing nodes...");
+        }
     }
 
     std::string animName = readFbxAnimation(pNode, pNode->GetName());
@@ -724,6 +732,8 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
         osgDB::ReaderWriter::ReadResult meshRes = readFbxMesh(pNode, stateSetList);
         if (meshRes.error())
         {
+            if (pCallback)
+                pCallback(NULL, currentProgress * 100.0f, "");
             return meshRes;
         }
         else if (osg::Node* node = meshRes.getNode())
@@ -742,8 +752,8 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
                 skeletal.empty() &&
                 bLocalMatrixIdentity)
             {
-                if (pNode->GetParent() && nChildCount != 0 && pCallback)
-                    pCallback(NULL, totalProgress * 100.0f, "");
+                if (pCallback)
+                    pCallback(NULL, currentProgress * 100.0f, "");
                 return osgDB::ReaderWriter::ReadResult(node);
             }
 
@@ -759,6 +769,8 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
             readFbxCamera(pNode) : readFbxLight(pNode, nLightCount);
         if (res.error())
         {
+            if (pCallback)
+                pCallback(NULL, currentProgress * 100.0f, "");
             return res;
         }
         else if (osg::Group* resGroup = dynamic_cast<osg::Group*>(res.getObject()))
@@ -804,9 +816,9 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxNode(FbxNode* pNode, bool& 
     {
         pAddChildrenTo->addChild(it->get());
     }
-
-    if (pNode->GetParent() && nChildCount != 0 && pCallback)
-        pCallback(NULL, totalProgress * 100.0f, "");
+    if (pCallback && !pNode->GetParent()) { // 只在根节点完成时回调100%
+        pCallback(NULL, 100.0f, "Complete");
+    }
     return osgDB::ReaderWriter::ReadResult(osgGroup.get());
 }
 

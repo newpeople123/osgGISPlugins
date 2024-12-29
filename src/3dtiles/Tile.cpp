@@ -65,10 +65,19 @@ void Tile::computeGeometricError()
 {
 	if (!this->children.size())
 		return;
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		this->children[i]->computeGeometricError();
-	}
+	//for (size_t i = 0; i < this->children.size(); ++i)
+	//{
+	//	this->children[i]->computeGeometricError();
+	//}
+
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
+		[&](const tbb::blocked_range<size_t>& r)
+		{
+			for (size_t i = r.begin(); i < r.end(); ++i)
+			{
+				this->children[i]->computeGeometricError();
+			}
+		});
 
 	const auto& textureOptions = config.gltfTextureOptions;
 	const int maxTextureResolution = osg::maximum(textureOptions.maxTextureWidth,
@@ -280,6 +289,10 @@ void Tile::applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::Gl
 	case 1:
 		applyLOD1Strategy(nodeCopy, options);
 		break;
+
+	default:
+		applyLOD0Strategy(nodeCopy);
+		break;
 	}
 }
 
@@ -361,13 +374,12 @@ void Tile::computeDiagonalLengthAndVolume()
 		this->volume = this->diagonalLength > 2 * maxClusterDiagonalLength ? maxClusterVolume : this->volume;
 	}
 
-#ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 	/* single thread */
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		this->children[i]->computeDiagonalLengthAndVolume();
-	}
-#else
+	//for (size_t i = 0; i < this->children.size(); ++i)
+	//{
+	//	this->children[i]->computeDiagonalLengthAndVolume();
+	//}
+
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
 		[&](const tbb::blocked_range<size_t>& r)
 		{
@@ -376,7 +388,6 @@ void Tile::computeDiagonalLengthAndVolume()
 				this->children[i]->computeDiagonalLengthAndVolume();
 			}
 		});
-#endif // !OSG_GIS_PLUGINS_WRITE_TILE_BY_SINGLE_THREAD
 }
 
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
@@ -398,7 +409,7 @@ osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 void Tile::applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
 	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio, false);
+		Simplifier simplifier(config.simplifyRatio * config.simplifyRatio, true);
 		nodeCopy->accept(simplifier);
 	}
 	options.maxTextureWidth /= 4;
@@ -408,9 +419,17 @@ void Tile::applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
 	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio, true);
+		Simplifier simplifier(config.simplifyRatio * config.simplifyRatio, false);
 		nodeCopy->accept(simplifier);
 	}
 	options.maxTextureWidth /= 2;
 	options.maxTextureHeight /= 2;
+}
+
+void Tile::applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy)
+{
+	if (config.simplifyRatio < 1.0) {
+		Simplifier simplifier(config.simplifyRatio, false);
+		nodeCopy->accept(simplifier);
+	}
 }

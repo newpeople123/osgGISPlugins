@@ -174,6 +174,7 @@ namespace osgGISPlugins
 			GltfOptimizer::GltfTextureOptimizationOptions& options);
 		void applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy,
 			GltfOptimizer::GltfTextureOptimizationOptions& options);
+		void applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_TILE_H
