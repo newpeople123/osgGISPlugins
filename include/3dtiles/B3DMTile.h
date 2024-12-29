@@ -7,8 +7,6 @@ namespace osgGISPlugins
 {
 	class B3DMTile :public Tile {
 	public:
-		double diagonalLength = 0.0;
-		double volume = 0.0;
 
 		B3DMTile() {
 			type = "b3dm";
@@ -31,13 +29,15 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "B3DMTile"; }
 
-		void write() override;
+		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) override;
 
-		static double computeRadius(const osg::BoundingBox& bbox, int axis);
+		string getOutputPath() const override;
 
-		void buildLOD() override;
+		string getFullPath() const override;
 
-		void computeBoundingBox();
+		void setContentUri() override;
+
+		B3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) override;
 	};
 }
 #endif // !OSG_GIS_PLUGINS_B3DM_TILE_H

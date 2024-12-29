@@ -131,7 +131,7 @@ void Tileset::computeGeometricError()
 
 			// 选择合适的误差范围
 			const double range = diagonalLength > 2 * clusterMaxDiagonalLength ? clusterMaxDiagonalLength : radius;
-			
+
 			// 计算该子节点的几何误差
 			const double childNodeGeometricError = range * 0.7 * 0.5 * Tile::getCesiumGeometricErrorOperatorByPixelSize(maxTextureResolution / 4);
 

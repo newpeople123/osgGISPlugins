@@ -31,7 +31,7 @@ osg::ref_ptr<B3DMTile> QuadtreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 {
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
-	tile->axis = chooseSplitAxis(bounds);
+	const int axis = chooseSplitAxis(bounds);
 	if (TreeBuilder::processGeometryWithTextureLimit(group, bounds, tile, level))
 		return tile;
 
@@ -41,7 +41,7 @@ osg::ref_ptr<B3DMTile> QuadtreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 	{
 		for (int b = 0; b < 2; ++b)
 		{
-			const osg::BoundingBox childTileNodeBound = computeChildBounds(bounds, mid, tile->axis, a, b);
+			const osg::BoundingBox childTileNodeBound = computeChildBounds(bounds, mid, axis, a, b);
 			osg::ref_ptr<B3DMTile> childB3DMTile = divideB3DM(group, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, 0, level + 1);
 			tile->children.push_back(childB3DMTile);
 		}
@@ -54,14 +54,14 @@ void QuadtreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, con
 	
 	if (!tile.valid() || group.empty()) return;
 
-	tile->axis = chooseSplitAxis(bounds);
+	const int axis = chooseSplitAxis(bounds);
 	const osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
 
 	std::vector<osg::BoundingBox> childrenBounds;
 
 	for (int a = 0; a < 2; ++a) {
 		for (int b = 0; b < 2; ++b) {
-			osg::BoundingBox childBounds = computeChildBounds(bounds, mid, tile->axis, a, b);
+			osg::BoundingBox childBounds = computeChildBounds(bounds, mid, axis, a, b);
 			for (auto it = group.begin(); it != group.end();) {
 				osg::ref_ptr<I3DMTile> child = it->get();
 				if (intersect(childBounds, boundingSphere2BoundingBox(child->node->getBound()))) {

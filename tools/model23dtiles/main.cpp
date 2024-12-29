@@ -287,8 +287,8 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\龙翔桥站厅.fbx)"));
-	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\龙翔桥站厅)"));
+	std::string input = parseArgument(arguments, "-i", std::string());
+	std::string output = parseArgument(arguments, "-o", std::string());
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
@@ -324,40 +324,42 @@ int main(int argc, char** argv)
 		std::string optionsStr = "";
 		if (vertexFormat == "draco")
 		{
+			optionsStr += " ct=draco";
 			if (comporessLevel == "low")
 			{
-				optionsStr = "ct=draco vp=16 vt=14 vc=10 vn=12 vg=18 ";
+				optionsStr += " vp=16 vt=14 vc=10 vn=12 vg=18";
 			}
 			else if (comporessLevel == "high")
 			{
-				optionsStr = "ct=draco vp=12 vt=12 vc=8 vn=8 vg=14 ";
+				optionsStr += " vp=12 vt=12 vc=8 vn=8 vg=14";
 			}
 		}
 		else if (vertexFormat == "meshopt")
 		{
-			optionsStr = "ct=meshopt ";
+			optionsStr += " ct=meshopt";
 		}
 		else if (vertexFormat == "quantize")
 		{
+			optionsStr += " quantize";
 			if (comporessLevel == "low")
 			{
-				optionsStr = "quantize vp=16 vt=14 vn=12 vc=12 ";
+				optionsStr += " vp=16 vt=14 vn=12 vc=12 ";
 			}
 			else if (comporessLevel == "high")
 			{
-				optionsStr = "quantize vp=10 vt=8 vn=4 vc=4 ";
+				optionsStr += " vp=10 vt=8 vn=4 vc=4 ";
 			}
 		}
 		else if (vertexFormat == "quantize_meshopt")
 		{
-			optionsStr = "ct=meshopt ";
+			optionsStr += " ct=meshopt quantize";
 			if (comporessLevel == "low")
 			{
-				optionsStr += "quantize vp=16 vt=14 vn=12 vc=12 ";
+				optionsStr += " quantize vp=16 vt=14 vn=12 vc=12 ";
 			}
 			else if (comporessLevel == "high")
 			{
-				optionsStr += "quantize vp=10 vt=8 vn=4 vc=4 ";
+				optionsStr += " quantize vp=10 vt=8 vn=4 vc=4 ";
 			}
 		}
 		if (arguments.find("-unlit") > 0)

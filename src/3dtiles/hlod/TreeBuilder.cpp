@@ -241,7 +241,7 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 			for (osg::Geode* geode : pair.second)
 			{
 				osg::ref_ptr<osg::UserDataContainer> userData = _geodeUserDataMap[geode].at(userDataIndex);
-				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(geode, osg::CopyOp::DEEP_COPY_ALL);
+				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(geode, osg::CopyOp::SHALLOW_COPY);
 				geodeCopy->setUserDataContainer(userData);
 				transform->addChild(geodeCopy);
 			}
@@ -341,7 +341,7 @@ bool TreeBuilder::sortTileNodeByRadius(const osg::ref_ptr<Tile>& a, const osg::r
 	return radiusA > radiusB;// 按照半径从大到小排序
 }
 
-bool osgGISPlugins::TreeBuilder::sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b)
+bool TreeBuilder::sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b)
 {
 	const float radiusA = a->getBound().radius();
 	const float radiusB = b->getBound().radius();

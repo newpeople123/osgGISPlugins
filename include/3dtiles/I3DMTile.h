@@ -28,10 +28,17 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "I3DMTile"; }
 
-		void write() override;
+		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) override;
 
-		void buildLOD() override;
+		string getOutputPath() const override;
 
+		string getFullPath() const override;
+
+		void setContentUri() override;
+
+		I3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) override;
+
+		void computeDiagonalLengthAndVolume() override;
 	};
 }
 #endif // !OSG_GIS_PLUGINS_I3DM_TILE_H

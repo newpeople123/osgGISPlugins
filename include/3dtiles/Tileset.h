@@ -80,15 +80,7 @@ namespace osgGISPlugins
 			_node->accept(builder);
 			root = builder.build();
 			root->config = config.tileConfig;
-			osg::ref_ptr<B3DMTile> b3dmNode = dynamic_cast<B3DMTile*>(root.get());
-			b3dmNode->config = config.tileConfig;
-			if (b3dmNode.valid())
-			{
-				b3dmNode->validate();
-				b3dmNode->buildLOD();
-				b3dmNode->computeBoundingBox();
-				b3dmNode->computeGeometricError();
-			}
+			root->build();
 		}
 
 		Tileset(const Tileset& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
