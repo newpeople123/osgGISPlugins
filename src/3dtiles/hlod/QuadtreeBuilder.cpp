@@ -32,7 +32,7 @@ osg::ref_ptr<B3DMTile> QuadtreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
 	const int axis = chooseSplitAxis(bounds);
-	if (TreeBuilder::processGeometryWithTextureLimit(group, bounds, tile, level))
+	if (TreeBuilder::processGeometryWithMeshTextureLimit(group, bounds, tile, level))
 		return tile;
 
 	const osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;

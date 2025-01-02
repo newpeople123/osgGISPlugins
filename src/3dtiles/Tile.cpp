@@ -1,5 +1,6 @@
 #include "3dtiles/Tile.h"
-#include <utils/Simplifier.h>
+#include "utils/Simplifier.h"
+#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 void Tile::fromJson(const json& j) {
 	if (j.contains("boundingVolume")) boundingVolume.fromJson(j.at("boundingVolume"));
 	if (j.contains("geometricError")) j.at("geometricError").get_to(geometricError);
@@ -69,7 +70,6 @@ void Tile::computeGeometricError()
 	//{
 	//	this->children[i]->computeGeometricError();
 	//}
-
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
 		[&](const tbb::blocked_range<size_t>& r)
 		{
@@ -83,26 +83,22 @@ void Tile::computeGeometricError()
 	const int maxTextureResolution = osg::maximum(textureOptions.maxTextureWidth,
 		textureOptions.maxTextureHeight);
 
-	// 根据LOD层级确定纹理分辨率缩放因子
-	double textureSizeFactor = 1.0;
-	double CesiumGeometricErrorOperator = 0.0;
+	float pixelSize = InitPixelSize;
 	if (this->node.valid())
 	{
-
-		// LOD2使用1/4分辨率，其他LOD使用1/2分辨率
-		textureSizeFactor = this->lod == 2 ? 0.25 : 0.5;
-
-		const double pixelSize = maxTextureResolution * textureSizeFactor;
-		CesiumGeometricErrorOperator = getCesiumGeometricErrorOperatorByPixelSize(pixelSize);
+		if (this->lod == 2)
+		{
+			pixelSize = maxTextureResolution * 0.25;
+			pixelSize = pixelSize > 128.0 ? 128.0 : pixelSize;
+		}
+		else if (this->lod == 1)
+		{
+			pixelSize = maxTextureResolution * 0.5;
+			pixelSize = pixelSize > 256.0 ? 256 : pixelSize;
+		}
 	}
-	else
-	{
-		CesiumGeometricErrorOperator = getCesiumGeometricErrorOperatorByPixelSize(InitPixelSize);
-	}
-
-	// 使用预缓存值计算加权误差
 	double totalWeightedError = 0.0;
-	double totalVolume = 0.0;
+	double totalWeight = 0.0;
 	for (osg::ref_ptr<Tile> child : this->children) {
 		if (child->lod == -1)
 			for (osg::ref_ptr<Tile> grand : child->children)
@@ -121,24 +117,36 @@ void Tile::computeGeometricError()
 			}
 		if (child->node.valid())
 		{
-			double geometricError = child->diagonalLength * GEOMETRIC_ERROR_SCALE_FACTOR * CesiumGeometricErrorOperator;
-
-			totalWeightedError += geometricError * child->volume;
-			totalVolume += child->volume;
+			double childGeometricError = 0.0;
+			if (this->lod != -1)
+			{
+				const double distance = getDistanceByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR);
+				childGeometricError = getCesiumGeometricErrorByDistance(distance) * child->diagonalLength / child->childDiagonalLength;
+			}
+			else
+			{
+				childGeometricError = getCesiumGeometricErrorByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR);
+			}
+			totalWeightedError += childGeometricError * child->volume;
+			totalWeight += child->volume;
 
 		}
 	}
-	if (totalVolume > 0.0) {
-		this->geometricError = totalWeightedError / totalVolume;
-	}
-	// 确保父瓦片的几何误差大于任何子瓦片
-	for (const auto& child : this->children) {
-		if (child->geometricError >= this->geometricError) {
-			this->geometricError = child->geometricError + MIN_GEOMETRIC_ERROR_DIFFERENCE;
-			OSG_NOTICE << "父亲：level:" << this->level << ",x:" << this->x << ",y:" << this->y << ",z:" << this->z << ",lod:" << this->lod
-				<< ";儿子：level:" << child->level << ",x:" << child->x << ",y:" << child->y << ",z:" << child->z << ",lod:" << child->lod << std::endl;
+	if (totalWeight > 0.0) {
+		this->geometricError = totalWeightedError / totalWeight;
+
+		// 确保父节点误差大于所有子节点
+		double maxChildError = 0.0;
+		for (const auto& child : this->children)
+		{
+			maxChildError = osg::maximum(maxChildError, child->geometricError);
+		}
+		if (this->geometricError < maxChildError)
+		{
+			this->geometricError = maxChildError + MIN_GEOMETRIC_ERROR_DIFFERENCE;
 		}
 	}
+
 }
 
 bool Tile::descendantNodeIsEmpty() const
@@ -204,7 +212,7 @@ bool Tile::valid() const
 		}
 		return isValid;
 	}
-	else if (this->type == "b3dm")
+	else
 		return this->geometricError == 0.0;
 	return true;
 }
@@ -237,19 +245,22 @@ void Tile::build()
 	computeGeometricError();
 }
 
-double Tile::getCesiumGeometricErrorOperatorByPixelSize(const float pixelSize)
+double Tile::getCesiumGeometricErrorByPixelSize(const float pixelSize, const float radius)
 {
-	const double dpp = std::max(CesiumFrustumFovy, 1.0e-17) / CesiumCanvasViewportHeight;
-	const double angularSize = dpp * pixelSize;
-	return CesiumSSEDenominator * CesiumMaxScreenSpaceError / CesiumCanvasClientHeight / tan(angularSize / 2);
+	const double distance = getDistanceByPixelSize(pixelSize, radius);
+	return getCesiumGeometricErrorByDistance(distance);
+}
 
-	// 计算视锥体在单位距离处的高度
-	const double frustumHeight = 2.0 * tan(CesiumFrustumFovy * 0.5);
-	// 计算每像素对应的世界空间大小
-	const double pixelWorldSize = frustumHeight / CesiumCanvasViewportHeight;
-	// 计算几何误差系数
-	const double result = (CesiumMaxScreenSpaceError * pixelSize * pixelWorldSize);
-	return result;
+double Tile::getCesiumGeometricErrorByDistance(const float distance)
+{
+	return CesiumSSEDenominator * CesiumMaxScreenSpaceError * distance / CesiumCanvasClientHeight;
+}
+
+double Tile::getDistanceByPixelSize(const float pixelSize, const float radius)
+{
+	const double angularSize = DPP * pixelSize;
+	const double distance = radius / tan(angularSize / 2.0);
+	return distance;
 }
 
 void Tile::write()
@@ -289,7 +300,6 @@ void Tile::applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::Gl
 	case 1:
 		applyLOD1Strategy(nodeCopy, options);
 		break;
-
 	default:
 		applyLOD0Strategy(nodeCopy);
 		break;
@@ -349,29 +359,32 @@ void Tile::computeDiagonalLengthAndVolume()
 {
 	if (this->node.valid())
 	{
-		osg::ComputeBoundsVisitor cbv;
-		this->node->accept(cbv);
-		const osg::BoundingBox bb = cbv.getBoundingBox();
-		this->diagonalLength = (bb._max - bb._min).length();
+		computeDiagonalLengthAndVolume(this->node);
+	}
+}
 
-		// 计算体积
-		this->volume = (bb._max.x() - bb._min.x()) *
-			(bb._max.y() - bb._min.y()) *
-			(bb._max.z() - bb._min.z());
+void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
+{
+	osg::ComputeBoundsVisitor cbv;
+	gnode->accept(cbv);
+	const osg::BoundingBox bb = cbv.getBoundingBox();
+	this->diagonalLength = (bb._max - bb._min).length();
 
+	// 计算体积
+	this->volume = (bb._max.x() - bb._min.x()) *
+		(bb._max.y() - bb._min.y()) *
+		(bb._max.z() - bb._min.z());
+
+	TextureMetricsVisitor tmv(config.gltfTextureOptions.maxTextureWidth > config.gltfTextureOptions.maxTextureHeight ? config.gltfTextureOptions.maxTextureWidth : config.gltfTextureOptions.maxTextureHeight);
+	gnode->accept(tmv);
+	if (tmv.diagonalLength > 0.0)
+		this->childDiagonalLength = tmv.diagonalLength;
+	else
+	{
 		MaxGeometryVisitor mgv;
-		this->node->accept(mgv);
+		gnode->accept(mgv);
 		const osg::BoundingBox maxClusterBb = mgv.maxBB;
-
-		// 使用聚类后的体积
-		const double maxClusterVolume = (maxClusterBb._max.x() - maxClusterBb._min.x()) *
-			(maxClusterBb._max.y() - maxClusterBb._min.y()) *
-			(maxClusterBb._max.z() - maxClusterBb._min.z());
-
-		const double maxClusterDiagonalLength = (maxClusterBb._min - maxClusterBb._max).length();
-
-		this->diagonalLength = this->diagonalLength > 2 * maxClusterDiagonalLength ? maxClusterDiagonalLength : this->diagonalLength;
-		this->volume = this->diagonalLength > 2 * maxClusterDiagonalLength ? maxClusterVolume : this->volume;
+		this->childDiagonalLength = (maxClusterBb._max - maxClusterBb._min).length();
 	}
 
 	/* single thread */
@@ -390,6 +403,16 @@ void Tile::computeDiagonalLengthAndVolume()
 		});
 }
 
+void Tile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, unsigned int options)
+{
+	GltfOptimizer gltfOptimizer;
+	gltfOptimizer.setGltfTextureOptimizationOptions(textureOptions);
+	gltfOptimizer.optimize(nodeCopy.get(), options);
+
+	BatchIdVisitor biv;
+	nodeCopy->accept(biv);
+}
+
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 {
 	// 使用工厂方法创建对应类型的Tile
@@ -402,6 +425,7 @@ osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 	tile->lod = lodLevel;
 	tile->diagonalLength = this->diagonalLength;
 	tile->volume = this->volume;
+	tile->childDiagonalLength = this->childDiagonalLength;
 	tile->refine = Refinement::REPLACE;
 	return tile;
 }
@@ -409,7 +433,7 @@ osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 void Tile::applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
 	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio * config.simplifyRatio, true);
+		Simplifier simplifier(config.simplifyRatio, true);
 		nodeCopy->accept(simplifier);
 	}
 	options.maxTextureWidth /= 4;
@@ -419,7 +443,7 @@ void Tile::applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
 	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio * config.simplifyRatio, false);
+		Simplifier simplifier(config.simplifyRatio);
 		nodeCopy->accept(simplifier);
 	}
 	options.maxTextureWidth /= 2;
@@ -428,8 +452,8 @@ void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 
 void Tile::applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy)
 {
-	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio, false);
-		nodeCopy->accept(simplifier);
-	}
+	//if (config.simplifyRatio < 1.0) {
+	//	Simplifier simplifier(config.simplifyRatio);
+	//	nodeCopy->accept(simplifier);
+	//}
 }

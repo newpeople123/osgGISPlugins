@@ -28,40 +28,23 @@ namespace osgGISPlugins
 
 	class MaxGeometryVisitor : public osg::NodeVisitor
 	{
-	private:
-		double calculateBoundingBoxVolume(const osg::BoundingBox& bbox) {
-			// 获取包围盒的各个边界
-			double xMin = bbox.xMin();
-			double xMax = bbox.xMax();
-			double yMin = bbox.yMin();
-			double yMax = bbox.yMax();
-			double zMin = bbox.zMin();
-			double zMax = bbox.zMax();
-
-			// 计算长、宽、高
-			double length = xMax - xMin;
-			double width = yMax - yMin;
-			double height = zMax - zMin;
-
-			// 计算并返回体积
-			return length * width * height;
-		}
 	public:
 		osg::BoundingBox maxBB;          // 最大包围盒
+		osg::Geometry* geom;
 
 		MaxGeometryVisitor()
 			: osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
 
-		void apply(osg::Drawable& drawable) override {
-			if (auto geometry = dynamic_cast<osg::Geometry*>(&drawable)) {
-				osg::ComputeBoundsVisitor cbv;
-				geometry->accept(cbv);
-				// 获取当前几何体的包围盒
-				const osg::BoundingBox drawableBB = cbv.getBoundingBox();
-				if (!maxBB.valid() || calculateBoundingBoxVolume(drawableBB) > calculateBoundingBoxVolume(maxBB))
-					maxBB = drawableBB;
-			}
-		}
+		virtual void apply(osg::Transform& transform) override;
+
+		virtual void apply(osg::Geode& geode) override;
+
+		void pushMatrix(const osg::Matrix& matrix);
+
+		void popMatrix();
+
+		osg::Matrix _currentMatrix;
+		std::vector<osg::Matrix> _matrixStack;
 	};
 
 	class CRenderingThread : public OpenThreads::Thread
@@ -91,38 +74,15 @@ namespace osgGISPlugins
 		};
 		virtual ~CRenderingThread() {};
 
-		void stop() {
-			show_console_cursor(true);
-			_bStop = true;
-		}
+		void stop();
 
-		virtual void run()
-		{
-			if (!_bStop)
-			{
-				int pos = _fin->tellg();
-				while (pos < _length && !_bStop && !bar.is_completed())
-				{
-					pos = _fin->tellg();
-					double percent = 100.0 * pos / _length;
-
-					// 当百分比大于等于 1% 时打印
-					if (percent >= 1)
-					{
-						bar.set_progress(percent);  // 设置当前进度
-						OpenThreads::Thread::microSleep(100);
-					}
-				}
-				show_console_cursor(true);
-			}
-		};
+		virtual void run();
 
 	protected:
 		osgDB::ifstream* _fin;
 		int _length;
 		bool _bStop = false;
 	};
-
 
 	class ProgressReportingFileReadCallback : public osgDB::Registry::ReadFileCallback
 	{
@@ -139,40 +99,63 @@ namespace osgGISPlugins
 				crt = nullptr;
 			}
 		}
-		virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option)
+		virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option);
+	};
+
+	class TriangleCountVisitor : public osg::NodeVisitor
+	{
+	public:
+		META_NodeVisitor(osgGISPlugins, TriangleCountVisitor)
+
+			unsigned int count = 0;
+
+		TriangleCountVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+
+		void apply(osg::Drawable& drawable) override;
+
+	private:
+		unsigned int calculateTriangleCount(const GLenum mode, const unsigned int count);
+	};
+
+	class TextureCountVisitor :public osg::NodeVisitor
+	{
+	public:
+		META_NodeVisitor(osgGISPlugins, TextureCountVisitor)
+
+			unsigned int count = 0;
+
+		TextureCountVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+
+		void apply(osg::Drawable& drawable) override;
+	private:
+		std::set<std::string> _names;
+		void countTextures(osg::StateSet* stateSet);
+	};
+
+	class TextureMetricsVisitor : public osg::NodeVisitor
+	{
+		int _resolution = 0.0;
+		double _minTexelDensity; // 用于记录最小纹素密度
+	public:
+		double diagonalLength = 0.0;
+		TextureMetricsVisitor(int resolution) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
 		{
-			std::string ext = osgDB::getLowerCaseFileExtension(file);
-			osgDB::ReaderWriter::ReadResult rr;
-			osgDB::ReaderWriter* rw = osgDB::Registry::instance()->getReaderWriterForExtension(ext);
-
-			if (rw)
-			{
-				osgDB::ifstream istream(file.c_str(), std::ios::in | std::ios::binary);
-				crt = new CRenderingThread(&istream);
-				crt->startThread();
-				if (istream)
-				{
-
-					rr = rw->readNode(istream, option);
-					if (rr.status() != osgDB::ReaderWriter::ReadResult::ReadStatus::FILE_LOADED)
-					{
-						crt->stop();
-						crt->cancel();
-						rr = osgDB::Registry::instance()->readNodeImplementation(file, option);
-					}
-					else
-					{
-						crt->join();
-					}
-				}
-			}
-			else
-			{
-				rr = osgDB::Registry::instance()->readNodeImplementation(file, option);
-			}
-
-			return rr;
+			_minTexelDensity = FLT_MAX;
+			_resolution = resolution;
+			_currentMatrix.makeIdentity();
 		}
+
+		virtual void apply(osg::Transform& transform) override;
+
+		virtual void apply(osg::Geode& geode) override;
+
+	private:
+		void pushMatrix(const osg::Matrix& matrix);
+
+		void popMatrix();
+
+		osg::Matrix _currentMatrix;
+		std::vector<osg::Matrix> _matrixStack;
 	};
 
 	class Utils {
@@ -229,95 +212,5 @@ namespace osgGISPlugins
 			return seed;
 		}
 	};
-
-	class TriangleCountVisitor : public osg::NodeVisitor
-	{
-	public:
-		META_NodeVisitor(osgGISPlugins, TriangleCountVisitor)
-
-			unsigned int count = 0;
-
-		TriangleCountVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
-
-		void apply(osg::Drawable& drawable) override
-		{
-			osg::Geometry* geom = drawable.asGeometry();
-			if (geom)
-			{
-				for (unsigned int i = 0; i < geom->getNumPrimitiveSets(); ++i)
-				{
-					osg::PrimitiveSet* primSet = geom->getPrimitiveSet(i);
-
-					if (osg::DrawArrays* drawArrays = dynamic_cast<osg::DrawArrays*>(primSet))
-					{
-						count += calculateTriangleCount(drawArrays->getMode(), drawArrays->getCount());
-					}
-					else if (osg::DrawElements* drawElements = dynamic_cast<osg::DrawElements*>(primSet))
-					{
-						count += drawElements->getNumIndices() / 3;
-					}
-				}
-			}
-		}
-
-	private:
-		unsigned int calculateTriangleCount(const GLenum mode, const unsigned int count)
-		{
-			switch (mode)
-			{
-			case GL_TRIANGLES:
-				return count / 3;
-			case GL_TRIANGLE_STRIP:
-			case GL_TRIANGLE_FAN:
-			case GL_POLYGON:
-				return count - 2;
-			case GL_QUADS:
-				return (count / 4) * 2;
-			case GL_QUAD_STRIP:
-				return count;
-			default:
-				return 0;
-			}
-		}
-	};
-
-	class TextureCountVisitor :public osg::NodeVisitor
-	{
-	public:
-		META_NodeVisitor(osgGISPlugins, TextureCountVisitor)
-
-			unsigned int count = 0;
-
-		TextureCountVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
-
-		void apply(osg::Drawable& drawable) override
-		{
-			osg::StateSet* stateSet = drawable.getStateSet();
-			if (stateSet)
-			{
-				countTextures(stateSet);
-			}
-		}
-	private:
-		std::set<std::string> _names;
-		void countTextures(osg::StateSet* stateSet)
-		{
-			for (unsigned int i = 0; i < stateSet->getTextureAttributeList().size(); ++i)
-			{
-				const osg::Texture* osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-				if (osgTexture)
-				{
-					const osg::Image* img = osgTexture->getImage(0);
-					const std::string name = img->getFileName();
-					if (_names.find(name) == _names.end())
-					{
-						_names.insert(name);
-						++count;
-					}
-				}
-			}
-		}
-	};
-
 }
 #endif // !OSG_GIS_PLUGINS_UTILS_H

@@ -13,25 +13,26 @@
 #include <tbb/blocked_range.h>
 #include <tbb/spin_mutex.h>
 // 控制导出3dtiles时是否为单线程(启用该宏则为单线程)
-#define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+// #define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
 
-	constexpr double InitPixelSize = 25.0;
-	constexpr double CesiumCanvasClientWidth = 1920;
-	constexpr double CesiumCanvasClientHeight = 1080;
-	constexpr double CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
-	const double CesiumFrustumFov = osg::PI / 3;
+	constexpr float InitPixelSize = 20.0;
+	constexpr int CesiumCanvasClientWidth = 1920;
+	constexpr int CesiumCanvasClientHeight = 936;// if fullscreen,set 1080
+	constexpr float CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;
+	const float CesiumFrustumFov = osg::PI / 3.0;
 	const double CesiumFrustumFovy = CesiumFrustumAspectRatio <= 1 ? CesiumFrustumFov : atan(tan(CesiumFrustumFov * 0.5) / CesiumFrustumAspectRatio) * 2.0;
-	constexpr double CesiumFrustumNear = 0.1;
+	constexpr float CesiumFrustumNear = 0.1;
 	constexpr double CesiumFrustumFar = 10000000000.0;
-	constexpr double CesiumCanvasViewportWidth = CesiumCanvasClientWidth;
-	constexpr double CesiumCanvasViewportHeight = CesiumCanvasClientHeight;
-	const double CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
-	constexpr double CesiumMaxScreenSpaceError = 16.0;
-	constexpr double MIN_GEOMETRIC_ERROR_DIFFERENCE = 0.1;  // 父子节点几何误差最小差值
-	constexpr double GEOMETRIC_ERROR_SCALE_FACTOR = 0.7;    // 几何误差缩放因子
+	constexpr int CesiumCanvasViewportWidth = CesiumCanvasClientWidth;
+	constexpr int CesiumCanvasViewportHeight = CesiumCanvasClientHeight;
+	const float CesiumSSEDenominator = 2.0 * tan(0.5 * CesiumFrustumFovy);
+	const float DPP = osg::maximum(CesiumFrustumFovy, 1.0e-17) / CesiumCanvasViewportHeight;
+	constexpr float CesiumMaxScreenSpaceError = 16.0;
+	constexpr float MIN_GEOMETRIC_ERROR_DIFFERENCE = 0.1;  // 父子节点几何误差最小差值
+	constexpr float DIAGONAL_SCALE_FACTOR = 0.7;    // 几何误差缩放因子
 
 	enum class Refinement {
 		REPLACE,
@@ -92,6 +93,7 @@ namespace osgGISPlugins
 		int lod = -1;
 		double diagonalLength = 0.0;
 		double volume = 0.0;
+		double childDiagonalLength = 0.0;
 
 		Tile() = default;
 		Tile(osg::ref_ptr<Tile> parent, const std::string& type)
@@ -119,39 +121,37 @@ namespace osgGISPlugins
 
 		bool valid() const;
 
-		void cleanupEmptyNodes();
-
 		virtual void build();
 
 		virtual void write();
 
-		virtual void computeDiagonalLengthAndVolume();
-
 		virtual void fromJson(const json& j);
 
-		/**
-		 * 计算基于像素大小的几何误差系数
-		 * @param pixelSize 目标像素大小
-		 * @return 几何误差系数
-		 *
-		 * 计算原理：
-		 * 1. 首先计算每像素对应的视角(dpp)
-		 * 2. 然后计算给定像素大小对应的视角
-		 * 3. 最后根据屏幕空间误差要求计算几何误差系数
-		 */
-		static double getCesiumGeometricErrorOperatorByPixelSize(const float pixelSize);
+		static double getCesiumGeometricErrorByPixelSize(const float pixelSize, const float radius);
+
+		static double getCesiumGeometricErrorByDistance(const float distance);
+
+		static double getDistanceByPixelSize(const float pixelSize, const float radius);
 	protected:
+		void cleanupEmptyNodes();
+
 		bool descendantNodeIsEmpty() const;
 
 		osg::ref_ptr<osg::Group> getAllDescendantNodes() const;
 
 		bool isEmptyNode(const osg::ref_ptr<Tile>& tile) const;
 
+		void computeBoundingVolumeBox();
+
+		void computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& node);
+
+		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, unsigned int options);
+
 		virtual void buildLOD();
 
 		virtual void computeGeometricError();
 
-		void computeBoundingVolumeBox();
+		virtual void computeDiagonalLengthAndVolume();
 
 		virtual void writeChildren();
 
@@ -165,10 +165,10 @@ namespace osgGISPlugins
 		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> parent, int lodLevel);
 
 		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) = 0;
-		virtual void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) = 0;
 		virtual string getOutputPath() const = 0;
 		virtual string getFullPath() const = 0;
 		virtual void setContentUri() = 0;
+		virtual void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) = 0;
 	private:
 		void applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy,
 			GltfOptimizer::GltfTextureOptimizationOptions& options);

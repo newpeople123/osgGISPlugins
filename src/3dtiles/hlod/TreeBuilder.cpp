@@ -348,7 +348,7 @@ bool TreeBuilder::sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::
 	return radiusA > radiusB;// 按照半径从大到小排序
 }
 
-bool TreeBuilder::processGeometryWithTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level)
+bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level)
 {
 	if (level >= _config.maxLevel)
 	{
@@ -373,6 +373,7 @@ bool TreeBuilder::processGeometryWithTextureLimit(osg::ref_ptr<osg::Group> group
 
 	osg::BoundingBox bb(bounds);
 	unsigned int textureCount = 0;
+	unsigned int triangleCount = 0;
 	// 将排序后的子节点添加到子组，并记录需要移除的子节点
 	for (auto& child : children)
 	{
@@ -383,11 +384,16 @@ bool TreeBuilder::processGeometryWithTextureLimit(osg::ref_ptr<osg::Group> group
 		//自适应四叉树
 		if (intersect(bb, childBB))
 		{
-			TextureCountVisitor tcv;
-			child->accept(tcv);
-			if ((textureCount + tcv.count) <= 15)
+			TextureCountVisitor textureCv;
+			child->accept(textureCv);
+
+			TriangleCountVisitor triangleCv;
+			child->accept(triangleCv);
+			if ((textureCount + textureCv.count) <= _config.maxTextureCount
+				&& (triangleCount + triangleCv.count) <= _config.maxTriangleCount)
 			{
-				textureCount += tcv.count;
+				textureCount += textureCv.count;
+				triangleCount += triangleCv.count;
 				bb.expandBy(childBB);
 
 				childGroup->addChild(child);

@@ -25,7 +25,7 @@ namespace osgGISPlugins
     protected:
         // 添加配置结构体
         struct BuilderConfig {
-            size_t maxTriangleCount = 5.5e5;
+            size_t maxTriangleCount = 5.0e5;
             unsigned int maxTextureCount = 15;
             int maxLevel = 32;
             bool enableParallel = true;
@@ -61,7 +61,7 @@ namespace osgGISPlugins
 
         static bool sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b);
 
-        bool processGeometryWithTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level);
+        bool processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level);
 	};
 }
 

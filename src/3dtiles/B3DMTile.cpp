@@ -1,16 +1,10 @@
 #include "3dtiles/B3DMTile.h"
-#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
-#include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileUtils>
+using namespace osgGISPlugins;
 
 void B3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
-	GltfOptimizer gltfOptimizer;
-	gltfOptimizer.setGltfTextureOptimizationOptions(options);
-	gltfOptimizer.optimize(nodeCopy.get(), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
-
-	BatchIdVisitor biv;
-	nodeCopy->accept(biv);
+	Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
 }
 
 string B3DMTile::getOutputPath() const

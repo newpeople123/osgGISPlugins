@@ -94,7 +94,7 @@ void Tileset::computeGeometricError()
 	_node->accept(cbv);
 	osg::BoundingBox bb = cbv.getBoundingBox();
 	double radius = bb.radius();
-	this->geometricError = radius * Tile::getCesiumGeometricErrorOperatorByPixelSize(InitPixelSize);
+	this->geometricError = Tile::getCesiumGeometricErrorByPixelSize(InitPixelSize, radius);
 
 
 	if (this->root->node.valid())
@@ -133,19 +133,19 @@ void Tileset::computeGeometricError()
 			const double range = diagonalLength > 2 * clusterMaxDiagonalLength ? clusterMaxDiagonalLength : radius;
 
 			// 计算该子节点的几何误差
-			const double childNodeGeometricError = range * 0.7 * 0.5 * Tile::getCesiumGeometricErrorOperatorByPixelSize(maxTextureResolution / 4);
+			const double childNodeGeometricError = Tile::getCesiumGeometricErrorByPixelSize(maxTextureResolution / 4, range * 0.7);
 
 			// 加权误差计算
-			weightedErrorSum += childNodeGeometricError * (diagonalLength > 2 * clusterMaxDiagonalLength ? clusterVolume : volume);
-			totalVolume += (diagonalLength > 2 * clusterMaxDiagonalLength ? clusterVolume : volume);
+			weightedErrorSum += childNodeGeometricError * (diagonalLength > 2 * clusterMaxDiagonalLength ? volume : clusterVolume);
+			totalVolume += (diagonalLength > 2 * clusterMaxDiagonalLength ? volume : clusterVolume);
 		}
 
 		// 如果总的体积大于0，计算加权平均几何误差
 		if (totalVolume > 0.0)
 		{
-			this->geometricError = weightedErrorSum / totalVolume;
+			this->geometricError = osg::maximum(this->geometricError, weightedErrorSum / totalVolume);
 		}
 	}
-	if (this->geometricError <= this->root->geometricError)
-		this->geometricError = this->root->geometricError * 1.5;
+
+	this->geometricError = osg::maximum(this->geometricError, this->root->geometricError * 1.5);
 }

@@ -1,18 +1,10 @@
 #include "3dtiles/I3DMTile.h"
-#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
-#include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 
 void I3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
-	GltfOptimizer gltfOptimizer;
-	gltfOptimizer.setGltfTextureOptimizationOptions(options);
-	osg::ref_ptr<osg::Group> group = nodeCopy->asGroup();
-	gltfOptimizer.optimize(group->getChild(0), GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
-
-	BatchIdVisitor biv;
-	nodeCopy->accept(biv);
+	Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 }
 
 string I3DMTile::getOutputPath() const
@@ -42,30 +34,6 @@ void I3DMTile::computeDiagonalLengthAndVolume()
 	if (this->node.valid())
 	{
 		osg::ref_ptr<osg::Node> instanceNode = this->node->asGroup()->getChild(0);
-		osg::ComputeBoundsVisitor cbv;
-		instanceNode->accept(cbv);
-		const osg::BoundingBox bb = cbv.getBoundingBox();
-		this->diagonalLength = (bb._max - bb._min).length();
-
-		// 计算体积
-		this->volume = (bb._max.x() - bb._min.x()) *
-			(bb._max.y() - bb._min.y()) *
-			(bb._max.z() - bb._min.z());
+		Tile::computeDiagonalLengthAndVolume(instanceNode);
 	}
-
-	/* single thread */
-	//for (size_t i = 0; i < this->children.size(); ++i)
-	//{
-	//	this->children[i]->computeDiagonalLengthAndVolume();
-	//}
-
-	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-		[&](const tbb::blocked_range<size_t>& r)
-		{
-			for (size_t i = r.begin(); i < r.end(); ++i)
-			{
-				this->children[i]->computeDiagonalLengthAndVolume();
-			}
-	});
-
 }
