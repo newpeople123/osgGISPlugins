@@ -37,11 +37,11 @@ osg::ref_ptr<B3DMTile> OctreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 		//自适应四叉树
 		if (intersect(bb, childBB))
 		{
-			TextureCountVisitor tcv;
+			Utils::TextureCounterVisitor tcv;
 			child->accept(tcv);
-			if ((textureCount + tcv.count) <= 15)
+			if ((textureCount + tcv.getCount()) <= 15)
 			{
-				textureCount += tcv.count;
+				textureCount += tcv.getCount();
 				bb.expandBy(childBB);
 
 				childGroup->addChild(child);

@@ -117,7 +117,7 @@ void Tileset::computeGeometricError()
 				(bb._max.y() - bb._min.y()) *
 				(bb._max.z() - bb._min.z());
 
-			MaxGeometryVisitor mgv;
+			Utils::MaxGeometryVisitor mgv;
 			node->accept(mgv);
 			const osg::BoundingBox clusterMaxBound = mgv.maxBB;
 

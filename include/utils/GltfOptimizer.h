@@ -280,7 +280,7 @@ namespace osgGISPlugins
         class MergeTransformVisitor :public osgUtil::BaseOptimizerVisitor
         {
         private:
-            std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Node>>, MatrixHash, MatrixEqual> _matrixNodesMap;
+            std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Node>>, Utils::MatrixHash, Utils::MatrixEqual> _matrixNodesMap;
             osg::Matrixd _currentMatrix;
         public:
             MergeTransformVisitor(osgUtil::Optimizer* optimizer = 0) :

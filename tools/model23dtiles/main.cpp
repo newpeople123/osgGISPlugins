@@ -85,14 +85,17 @@ void registerFileAliases() {
 	instance->addFileExtensionAlias("b3dm", "gltf");
 	instance->addFileExtensionAlias("i3dm", "gltf");
 	instance->addFileExtensionAlias("ktx2", "ktx");
-	instance->setReadFileCallback(new ProgressReportingFileReadCallback);
+	instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
 }
 
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
-	//readOptions->setOptionString("TessellatePolygons ShowProgress");
+#ifndef NDEBUG
 	readOptions->setOptionString("ShowProgress");
+#else
+	readOptions->setOptionString("TessellatePolygons ShowProgress");
+#endif // !NDEBUG
 
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
@@ -289,8 +292,8 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\data\dgn\工厂三维总装.fbx)"));
-	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\工厂三维总装)"));
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\广州塔.fbx)"));
+	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\广州塔)"));
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());

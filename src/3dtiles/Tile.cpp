@@ -66,18 +66,18 @@ void Tile::computeGeometricError()
 {
 	if (!this->children.size())
 		return;
-	//for (size_t i = 0; i < this->children.size(); ++i)
-	//{
-	//	this->children[i]->computeGeometricError();
-	//}
-	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-		[&](const tbb::blocked_range<size_t>& r)
-		{
-			for (size_t i = r.begin(); i < r.end(); ++i)
-			{
-				this->children[i]->computeGeometricError();
-			}
-		});
+	for (size_t i = 0; i < this->children.size(); ++i)
+	{
+		this->children[i]->computeGeometricError();
+	}
+	//tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
+	//	[&](const tbb::blocked_range<size_t>& r)
+	//	{
+	//		for (size_t i = r.begin(); i < r.end(); ++i)
+	//		{
+	//			this->children[i]->computeGeometricError();
+	//		}
+	//	});
 
 	const auto& textureOptions = config.gltfTextureOptions;
 	const int maxTextureResolution = osg::maximum(textureOptions.maxTextureWidth,
@@ -331,27 +331,46 @@ void Tile::writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy)
 
 void Tile::buildLOD()
 {
-	// 1. 创建代理节点（LOD根节点）
-	osg::ref_ptr<Tile> tileLOD2Proxy = this;
+	// 创建代理节点（LOD根节点）
+	osg::ref_ptr<Tile> rootProxy = this;
+	unsigned int size = rootProxy->children.size();
 
-	// 构建LOD层级
-	osg::ref_ptr<Tile> tileLOD2 = createLODTile(tileLOD2Proxy, 2);
-	osg::ref_ptr<Tile> tileLOD1 = createLODTile(tileLOD2, 1);
-	osg::ref_ptr<Tile> tileLOD0 = createLODTile(tileLOD1, 0);
-	tileLOD0->refine = Refinement::ADD;
+	if (rootProxy->node.valid())
+	{
+		osg::ref_ptr<Tile> lodProxy;
 
-	// 建立节点关系
-	tileLOD2Proxy->node = nullptr;
-	tileLOD2Proxy->children.push_back(tileLOD2);
-	tileLOD2->children.push_back(tileLOD1);
-	tileLOD1->children.push_back(tileLOD0);
-
-	// 递归处理子节点
-	for (auto& child : tileLOD2Proxy->children) {
-		if (child.get() != tileLOD2.get()) {
-			child->config = config;
-			child->buildLOD();
+		// 根据是否有子节点决定是否需要额外的代理层
+		if (this->children.size() > 0)
+		{
+			lodProxy = createLODTile(rootProxy, -1);
+			rootProxy->node = nullptr;
+			rootProxy->children.push_back(lodProxy);
 		}
+		else
+		{
+			lodProxy = rootProxy;
+		}
+
+		// 构建LOD层级
+		osg::ref_ptr<Tile> tileLOD2 = createLODTile(lodProxy, 2);
+		osg::ref_ptr<Tile> tileLOD1 = createLODTile(tileLOD2, 1);
+		osg::ref_ptr<Tile> tileLOD0 = createLODTile(tileLOD1, 0);
+
+		// 设置属性和关系
+		tileLOD0->refine = Refinement::ADD;
+		lodProxy->node = nullptr;
+		lodProxy->children.push_back(tileLOD2);
+		tileLOD2->children.push_back(tileLOD1);
+		tileLOD1->children.push_back(tileLOD0);
+
+		size = rootProxy->children.size() - 1;// 最后一个是lod2或者lodProxy,不处理
+	}
+	// 递归处理子节点
+	for (size_t i=0;i< size;++i)
+	{
+		auto& child = rootProxy->children.at(i);
+		child->config = config;
+		child->buildLOD();
 	}
 }
 
@@ -375,13 +394,13 @@ void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
 		(bb._max.y() - bb._min.y()) *
 		(bb._max.z() - bb._min.z());
 
-	TextureMetricsVisitor tmv(config.gltfTextureOptions.maxTextureWidth > config.gltfTextureOptions.maxTextureHeight ? config.gltfTextureOptions.maxTextureWidth : config.gltfTextureOptions.maxTextureHeight);
+	Utils::TextureMetricsVisitor tmv(config.gltfTextureOptions.maxTextureWidth > config.gltfTextureOptions.maxTextureHeight ? config.gltfTextureOptions.maxTextureWidth : config.gltfTextureOptions.maxTextureHeight);
 	gnode->accept(tmv);
 	if (tmv.diagonalLength > 0.0)
 		this->childDiagonalLength = tmv.diagonalLength;
 	else
 	{
-		MaxGeometryVisitor mgv;
+		Utils::MaxGeometryVisitor mgv;
 		gnode->accept(mgv);
 		const osg::BoundingBox maxClusterBb = mgv.maxBB;
 		this->childDiagonalLength = (maxClusterBb._max - maxClusterBb._min).length();
@@ -416,16 +435,16 @@ void Tile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 {
 	// 使用工厂方法创建对应类型的Tile
-	auto tile = createTileOfSameType(this->node, parent);
-	tile->config = this->config;
-	tile->level = this->level;
-	tile->x = this->x;
-	tile->y = this->y;
-	tile->z = this->z;
+	auto tile = createTileOfSameType(parent->node, parent);
+	tile->config = parent->config;
+	tile->level = parent->level;
+	tile->x = parent->x;
+	tile->y = parent->y;
+	tile->z = parent->z;
 	tile->lod = lodLevel;
-	tile->diagonalLength = this->diagonalLength;
-	tile->volume = this->volume;
-	tile->childDiagonalLength = this->childDiagonalLength;
+	tile->diagonalLength = parent->diagonalLength;
+	tile->volume = parent->volume;
+	tile->childDiagonalLength = parent->childDiagonalLength;
 	tile->refine = Refinement::REPLACE;
 	return tile;
 }

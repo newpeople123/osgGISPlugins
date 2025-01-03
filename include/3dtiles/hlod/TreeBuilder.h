@@ -18,14 +18,14 @@ namespace osgGISPlugins
 
         virtual osg::ref_ptr<B3DMTile> build();
 
-        std::map<osg::Geode*, osg::MatrixList> _geodeMatrixMap;
-        std::map<osg::Geode*, std::vector<osg::ref_ptr<osg::UserDataContainer>>> _geodeUserDataMap;
+        std::unordered_map<osg::Geode*, osg::MatrixList, Utils::GeodeHash, Utils::GeodeEqual> _geodeMatrixMap;
+        std::unordered_map<osg::Geode*, std::vector<osg::ref_ptr<osg::UserDataContainer>>, Utils::GeodeHash, Utils::GeodeEqual> _geodeUserDataMap;
 
 
     protected:
         // 添加配置结构体
         struct BuilderConfig {
-            size_t maxTriangleCount = 5.0e5;
+            size_t maxTriangleCount = 5.5e5;
             unsigned int maxTextureCount = 15;
             int maxLevel = 32;
             bool enableParallel = true;
