@@ -13,7 +13,7 @@
 #include <tbb/blocked_range.h>
 #include <tbb/spin_mutex.h>
 // 控制导出3dtiles时是否为单线程(启用该宏则为单线程)
-// #define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+#define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
@@ -139,8 +139,6 @@ namespace osgGISPlugins
 
 		osg::ref_ptr<osg::Group> getAllDescendantNodes() const;
 
-		bool isEmptyNode(const osg::ref_ptr<Tile>& tile) const;
-
 		void computeBoundingVolumeBox();
 
 		void computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& node);
@@ -167,6 +165,7 @@ namespace osgGISPlugins
 		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) = 0;
 		virtual string getOutputPath() const = 0;
 		virtual string getFullPath() const = 0;
+		virtual string getTextureCachePath(const string textureCachePath) const = 0;
 		virtual void setContentUri() = 0;
 		virtual void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) = 0;
 	private:

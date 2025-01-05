@@ -6,7 +6,7 @@ bool Utils::compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs)
 {
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {
-			if(!osg::equivalent(lhs(i, j), rhs(i, j)))
+			if (!osg::equivalent(lhs(i, j), rhs(i, j), 0.001))
 				return false;
 		}
 	}
@@ -356,7 +356,7 @@ bool Utils::compareUniformValue(const osg::Uniform& u1, const osg::Uniform& u2)
 	}
 	case osg::Uniform::FLOAT_VEC3:
 	{
-		osg::Vec3f v1, v2;
+		osg::Vec3d v1, v2;
 		u1.get(v1); u2.get(v2);
 		return osg::equivalent(v1.x(), v2.x()) && osg::equivalent(v1.y(), v2.y()) && osg::equivalent(v1.z(), v2.z());
 	}
@@ -477,7 +477,19 @@ unsigned int Utils::TriangleCounterVisitor::calculateTriangleCount(const GLenum 
 void Utils::TextureCounterVisitor::apply(osg::Drawable& drawable)
 {
 	osg::ref_ptr<osg::StateSet> stateSet = drawable.getStateSet();
-	_stateSets.insert(stateSet);
+	int index = -1;
+	for (size_t j = 0; j < _stateSets.size(); j++)
+	{
+		const osg::ref_ptr<osg::StateSet> key = _stateSets.at(j);
+		if (Utils::compareStateSet(key, stateSet))
+		{
+			index = j;
+			break;
+		}
+
+	}
+	if (index == -1)
+		_stateSets.push_back(stateSet);
 }
 
 void Utils::TextureMetricsVisitor::apply(osg::Transform& transform)

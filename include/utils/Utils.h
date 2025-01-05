@@ -147,34 +147,6 @@ namespace osgGISPlugins
 			return true;
 		}
 
-		struct StateSetEqual
-		{
-			bool operator () (const osg::ref_ptr<osg::StateSet>& ss1, const  osg::ref_ptr<osg::StateSet>& ss2) const
-			{
-				return Utils::compareStateSet(ss1, ss2);
-			}
-		};
-
-		struct StateSetHash {
-			std::size_t operator()(const osg::ref_ptr<osg::StateSet>& ss) const {
-				return std::hash<const void*>{}(ss.get());  // 使用地址进行哈希
-			}
-		};
-
-		struct GeodeEqual
-		{
-			bool operator () (const osg::ref_ptr<osg::Geode>& geode1, const osg::ref_ptr<osg::Geode>& geode2) const
-			{
-				return Utils::compareGeode(geode1, geode2);
-			}
-		};
-
-		struct GeodeHash {
-			std::size_t operator()(const osg::ref_ptr<osg::Geode>& geode) const {
-				return std::hash<const void*>{}(geode.get());  // 使用地址进行哈希
-			}
-		};
-
 		struct MatrixEqual {
 			bool operator()(const osg::Matrixd& lhs, const osg::Matrixd& rhs) const {
 				return Utils::compareMatrix(lhs, rhs);
@@ -319,7 +291,7 @@ namespace osgGISPlugins
 				return _stateSets.size();
 			}
 		private:
-			std::unordered_set<osg::ref_ptr<osg::StateSet>, StateSetHash, StateSetEqual> _stateSets;
+			std::vector<osg::ref_ptr<osg::StateSet>> _stateSets;
 		};
 
 		class TextureMetricsVisitor : public osg::NodeVisitor

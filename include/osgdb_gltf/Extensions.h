@@ -12,6 +12,9 @@
 #include <type_traits>
 #define BASECOLOR_TEXTURE_FILENAME "osgGisPlugins-filename"
 
+#define ORIGIN_WIDTH "origin-width"
+#define ORIGIN_HEIGHT "origin-height"
+
 #define TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME "osgGisPlugins-basecolor-KHR_texture_transform"
 #define TEX_TRANSFORM_BASECOLOR_OFFSET_X "osgGisPlugins-basecolor-offsetX"
 #define TEX_TRANSFORM_BASECOLOR_OFFSET_Y "osgGisPlugins-basecolor-offsetY"

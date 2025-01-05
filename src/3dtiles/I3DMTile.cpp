@@ -18,6 +18,12 @@ string I3DMTile::getFullPath() const
 		"Tile_L" + to_string(lod) + "_" + to_string(z) + "." + type;
 }
 
+string I3DMTile::getTextureCachePath(const string textureCachePath) const
+{
+	return textureCachePath + OSG_GIS_PLUGINS_PATH_SPLIT_STRING +
+		"Tile_" + to_string(z) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(lod);
+}
+
 void I3DMTile::setContentUri()
 {
 	if (this->lod != -1)
@@ -31,9 +37,6 @@ I3DMTile* I3DMTile::createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_
 
 void I3DMTile::computeDiagonalLengthAndVolume()
 {
-	if (this->node.valid())
-	{
-		osg::ref_ptr<osg::Node> instanceNode = this->node->asGroup()->getChild(0);
-		Tile::computeDiagonalLengthAndVolume(instanceNode);
-	}
+	osg::ref_ptr<osg::Node> instanceNode = this->node->asGroup()->getChild(0);
+	Tile::computeDiagonalLengthAndVolume(instanceNode);
 }

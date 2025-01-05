@@ -66,18 +66,20 @@ void Tile::computeGeometricError()
 {
 	if (!this->children.size())
 		return;
-	for (size_t i = 0; i < this->children.size(); ++i)
-	{
-		this->children[i]->computeGeometricError();
-	}
-	//tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-	//	[&](const tbb::blocked_range<size_t>& r)
-	//	{
-	//		for (size_t i = r.begin(); i < r.end(); ++i)
-	//		{
-	//			this->children[i]->computeGeometricError();
-	//		}
-	//	});
+
+	//for (size_t i = 0; i < this->children.size(); ++i)
+	//{
+	//	this->children[i]->computeGeometricError();
+	//}
+
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
+		[&](const tbb::blocked_range<size_t>& r)
+		{
+			for (size_t i = r.begin(); i < r.end(); ++i)
+			{
+				this->children[i]->computeGeometricError();
+			}
+		});
 
 	const auto& textureOptions = config.gltfTextureOptions;
 	const int maxTextureResolution = osg::maximum(textureOptions.maxTextureWidth,
@@ -120,7 +122,7 @@ void Tile::computeGeometricError()
 			double childGeometricError = 0.0;
 			if (this->lod != -1)
 			{
-				const double distance = getDistanceByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR);
+				const double distance = getDistanceByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR) * 0.5;
 				childGeometricError = getCesiumGeometricErrorByDistance(distance) * child->diagonalLength / child->childDiagonalLength;
 			}
 			else
@@ -134,17 +136,16 @@ void Tile::computeGeometricError()
 	}
 	if (totalWeight > 0.0) {
 		this->geometricError = totalWeightedError / totalWeight;
-
-		// 确保父节点误差大于所有子节点
-		double maxChildError = 0.0;
-		for (const auto& child : this->children)
-		{
-			maxChildError = osg::maximum(maxChildError, child->geometricError);
-		}
-		if (this->geometricError < maxChildError)
-		{
-			this->geometricError = maxChildError + MIN_GEOMETRIC_ERROR_DIFFERENCE;
-		}
+	}
+	// 确保父节点误差大于所有子节点
+	double maxChildError = 0.0;
+	for (const auto& child : this->children)
+	{
+		maxChildError = osg::maximum(maxChildError, child->geometricError);
+	}
+	if (maxChildError >= this->geometricError)
+	{
+		this->geometricError = maxChildError + MIN_GEOMETRIC_ERROR_DIFFERENCE;
 	}
 
 }
@@ -182,15 +183,6 @@ osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 	return group;
 }
 
-bool Tile::isEmptyNode(const osg::ref_ptr<Tile>& tile) const
-{
-	if (!tile->node.valid() || !tile->node->asGroup()) {
-		return true;
-	}
-	return tile->node->asGroup()->getNumChildren() == 0 &&
-		tile->children.empty();
-}
-
 bool Tile::valid() const
 {
 	const size_t size = this->children.size();
@@ -219,19 +211,13 @@ bool Tile::valid() const
 
 void Tile::cleanupEmptyNodes()
 {
-	for (size_t i = 0; i < children.size();) {
-		auto tile = children[i];
-		if (!tile.valid()) {
-			children.erase(children.begin() + i);
-			continue;
-		}
+	for (size_t i = 0; i < this->children.size();) {
+		osg::ref_ptr<Tile> child = this->children[i];
+		child->cleanupEmptyNodes();  // 递归清理子节点
 
-		if (tile->type != "i3dm") {  // i3dm类型特殊处理
-			if (isEmptyNode(tile)) {
-				children.erase(children.begin() + i);
-				continue;
-			}
-			tile->cleanupEmptyNodes();  // 递归清理子节点
+		if (!child->node.valid() && child->children.size() == 0) {
+			this->children.erase(this->children.begin() + i);
+			continue;
 		}
 		++i;
 	}
@@ -268,7 +254,7 @@ void Tile::write()
 	computeBoundingVolumeBox();
 	setContentUri();  // 这个已经在基类中处理了不同类型的路径构建
 
-	if (this->node.valid() && this->node->asGroup()->getNumChildren()) {
+	if (this->node.valid()) {
 		writeNode();
 	}
 
@@ -309,7 +295,12 @@ void Tile::applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::Gl
 void Tile::writeNode()
 {
 	// 1. 准备节点
-	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(), osg::CopyOp::DEEP_COPY_ALL);
+	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(), 
+		osg::CopyOp::DEEP_COPY_NODES |
+		osg::CopyOp::DEEP_COPY_DRAWABLES |
+		osg::CopyOp::DEEP_COPY_ARRAYS |  
+		osg::CopyOp::DEEP_COPY_PRIMITIVES |
+		osg::CopyOp::DEEP_COPY_USERDATA);
 
 	// 2. 配置纹理选项
 	GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions(config.gltfTextureOptions);
@@ -320,6 +311,9 @@ void Tile::writeNode()
 
 	// 4. 写入文件
 	writeToFile(nodeCopy);
+
+	nodeCopy = nullptr;
+	osgDB::Registry::instance()->clearObjectCache();
 }
 
 void Tile::writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy)
@@ -376,36 +370,35 @@ void Tile::buildLOD()
 
 void Tile::computeDiagonalLengthAndVolume()
 {
-	if (this->node.valid())
-	{
-		computeDiagonalLengthAndVolume(this->node);
-	}
+	computeDiagonalLengthAndVolume(this->node);
 }
 
 void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
 {
-	osg::ComputeBoundsVisitor cbv;
-	gnode->accept(cbv);
-	const osg::BoundingBox bb = cbv.getBoundingBox();
-	this->diagonalLength = (bb._max - bb._min).length();
-
-	// 计算体积
-	this->volume = (bb._max.x() - bb._min.x()) *
-		(bb._max.y() - bb._min.y()) *
-		(bb._max.z() - bb._min.z());
-
-	Utils::TextureMetricsVisitor tmv(config.gltfTextureOptions.maxTextureWidth > config.gltfTextureOptions.maxTextureHeight ? config.gltfTextureOptions.maxTextureWidth : config.gltfTextureOptions.maxTextureHeight);
-	gnode->accept(tmv);
-	if (tmv.diagonalLength > 0.0)
-		this->childDiagonalLength = tmv.diagonalLength;
-	else
+	if (gnode.valid())
 	{
-		Utils::MaxGeometryVisitor mgv;
-		gnode->accept(mgv);
-		const osg::BoundingBox maxClusterBb = mgv.maxBB;
-		this->childDiagonalLength = (maxClusterBb._max - maxClusterBb._min).length();
-	}
+		osg::ComputeBoundsVisitor cbv;
+		gnode->accept(cbv);
+		const osg::BoundingBox bb = cbv.getBoundingBox();
+		this->diagonalLength = (bb._max - bb._min).length();
 
+		// 计算体积
+		this->volume = (bb._max.x() - bb._min.x()) *
+			(bb._max.y() - bb._min.y()) *
+			(bb._max.z() - bb._min.z());
+
+		Utils::TextureMetricsVisitor tmv(config.gltfTextureOptions.maxTextureWidth > config.gltfTextureOptions.maxTextureHeight ? config.gltfTextureOptions.maxTextureWidth : config.gltfTextureOptions.maxTextureHeight);
+		gnode->accept(tmv);
+		if (tmv.diagonalLength > 0.0)
+			this->childDiagonalLength = tmv.diagonalLength;
+		else
+		{
+			Utils::MaxGeometryVisitor mgv;
+			gnode->accept(mgv);
+			const osg::BoundingBox maxClusterBb = mgv.maxBB;
+			this->childDiagonalLength = (maxClusterBb._max - maxClusterBb._min).length();
+		}
+	}
 	/* single thread */
 	//for (size_t i = 0; i < this->children.size(); ++i)
 	//{
@@ -457,6 +450,8 @@ void Tile::applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 	}
 	options.maxTextureWidth /= 4;
 	options.maxTextureHeight /= 4;
+	options.maxTextureAtlasWidth /= 4;
+	options.maxTextureAtlasHeight /= 4;
 }
 
 void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
@@ -467,6 +462,8 @@ void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 	}
 	options.maxTextureWidth /= 2;
 	options.maxTextureHeight /= 2;
+	options.maxTextureAtlasWidth /= 2;
+	options.maxTextureAtlasHeight /= 2;
 }
 
 void Tile::applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy)

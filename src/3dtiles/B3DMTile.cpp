@@ -19,6 +19,13 @@ string B3DMTile::getFullPath() const
 		to_string(y) + "_" + to_string(z) + "." + type;
 }
 
+string B3DMTile::getTextureCachePath(const string textureCachePath) const
+{
+	return textureCachePath + OSG_GIS_PLUGINS_PATH_SPLIT_STRING +
+		"Tile_" + to_string(x) + "_" +
+		to_string(y) + "_" + to_string(z) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(lod);
+}
+
 void B3DMTile::setContentUri()
 {
 	if (this->lod != -1)

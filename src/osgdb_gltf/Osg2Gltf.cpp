@@ -609,7 +609,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 		return -1;
 	}
 	std::string filename;
-	osgImage->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
+	osgTexture->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
 	if (filename.empty())
 	{
 		filename = osgImage->getFileName();
@@ -630,7 +630,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	{
 		const osg::ref_ptr<osg::Texture> existTexture = _textures[i].get();
 		std::string existPathName;
-		existTexture->getImage(0)->getUserValue(BASECOLOR_TEXTURE_FILENAME, existPathName);
+		existTexture->getUserValue(BASECOLOR_TEXTURE_FILENAME, existPathName);
 		if (existPathName.empty())
 		{
 			existPathName = existTexture->getImage(0)->getFileName();

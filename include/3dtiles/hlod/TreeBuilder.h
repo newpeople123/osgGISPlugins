@@ -18,15 +18,19 @@ namespace osgGISPlugins
 
         virtual osg::ref_ptr<B3DMTile> build();
 
-        std::unordered_map<osg::Geode*, osg::MatrixList, Utils::GeodeHash, Utils::GeodeEqual> _geodeMatrixMap;
-        std::unordered_map<osg::Geode*, std::vector<osg::ref_ptr<osg::UserDataContainer>>, Utils::GeodeHash, Utils::GeodeEqual> _geodeUserDataMap;
+        std::vector<osg::ref_ptr<osg::Geode>> _geodes;
+        std::vector<osg::MatrixList> _matrixs;
+        std::vector<std::vector<osg::ref_ptr<osg::UserDataContainer>>> _dataContainers;
 
+        std::vector<osg::ref_ptr<osg::Geode>> _instanceGeodes;
+        std::vector<osg::MatrixList> _instanceMatrixs;
+        std::vector<std::vector<osg::ref_ptr<osg::UserDataContainer>>> _instanceDataContainers;
 
     protected:
         // 添加配置结构体
         struct BuilderConfig {
-            size_t maxTriangleCount = 5.5e5;
-            unsigned int maxTextureCount = 15;
+            size_t maxTriangleCount = 2.0e5;
+            unsigned int maxTextureCount = 100;
             int maxLevel = 32;
             bool enableParallel = true;
         };
@@ -51,15 +55,17 @@ namespace osgGISPlugins
 
         void regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<I3DMTile> i3dmTile);
 
-        static osg::BoundingBox boundingSphere2BoundingBox(const osg::BoundingSphere& bs);
+        static osg::BoundingBox computeBoundingBox(const osg::ref_ptr<osg::Node> node);
 
-        static float calculateBoundingBoxVolume(const osg::BoundingBox& box);
+        static double calculateBoundingBoxVolume(const osg::BoundingBox& box);
 
-        static bool intersect(const osg::BoundingBox& parentBB, const osg::BoundingBox& childBB);
+        static bool intersect(const osg::BoundingBox& tileBBox, const osg::BoundingBox& nodeBBox);
 
         static bool sortTileNodeByRadius(const osg::ref_ptr<Tile>& a, const osg::ref_ptr<Tile>& b);
 
         static bool sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::ref_ptr<osg::Node>& b);
+
+        void processOverSizedNodes();
 
         bool processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level);
 	};

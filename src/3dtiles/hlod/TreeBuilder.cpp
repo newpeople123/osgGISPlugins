@@ -7,36 +7,41 @@
 using namespace osgGISPlugins;
 osg::ref_ptr<B3DMTile> TreeBuilder::build()
 {
-	std::unordered_map<osg::Geode*, osg::MatrixList, Utils::GeodeHash, Utils::GeodeEqual> geodeMatrixMap;
-	std::unordered_map<osg::Geode*, std::vector<osg::ref_ptr<osg::UserDataContainer>>, Utils::GeodeHash, Utils::GeodeEqual> geodeUseDataMap;
-	for (const auto pair : _geodeMatrixMap)
+	for (size_t i=0;i<_geodes.size();++i)
 	{
-		if (pair.second.size() > 1)
+		osg::MatrixList matrixs = _matrixs.at(i);
+		osg::ref_ptr<osg::Geode> gnode = _geodes.at(i);
+		if (matrixs.size() > 1)
 		{
-			geodeMatrixMap.insert(pair);
-			geodeUseDataMap[pair.first] = _geodeUserDataMap[pair.first];
+			_instanceGeodes.push_back(gnode);
+			_instanceMatrixs.push_back(matrixs);
+			std::vector<osg::ref_ptr<osg::UserDataContainer>> instanceUserDatas = _dataContainers.at(i);
+			_instanceDataContainers.push_back(instanceUserDatas);
 		}
 		else
 		{
-			
-			for (size_t i = 0; i < pair.first->getNumChildren(); ++i)
+			const unsigned int num = gnode->getNumDrawables();
+			for (size_t j = 0; j < num; ++j)
 			{
-				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(pair.first, osg::CopyOp::DEEP_COPY_NODES | osg::CopyOp::DEEP_COPY_USERDATA);
-				geodeCopy->removeChild(0, pair.first->getNumDrawables());
-				geodeCopy->addChild(pair.first->getChild(i));
-				osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(pair.second[0]);
+				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::DEEP_COPY_NODES | osg::CopyOp::DEEP_COPY_USERDATA);
+				geodeCopy->removeChild(0, num);
+				geodeCopy->addChild(gnode->getChild(j));
+				osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(matrixs[0]);
 				transform->addChild(geodeCopy);
+				transform->computeBound();
 				_groupsToDivideList->addChild(transform);
-			}		
+			}
 		}
 	}
-	_geodeMatrixMap = geodeMatrixMap;
-	_geodeUserDataMap = geodeUseDataMap;
+
+	_geodes.clear();
+	_matrixs.clear();
+	_dataContainers.clear();
 
 	osg::ref_ptr<B3DMTile> b3dmTile = generateB3DMTile();
 	osg::ref_ptr<I3DMTile> i3dmTile = generateI3DMTile();
 	regroupI3DMTile(b3dmTile, i3dmTile);
-	
+
 	return b3dmTile;
 }
 
@@ -45,7 +50,7 @@ void TreeBuilder::apply(osg::Group& group)
 	_currentMatrix = osg::Matrix::identity();
 	// 如果是Transform节点，累积变换矩阵
 	if (osg::Transform* transform = group.asTransform())
-	{	
+	{
 		const osg::MatrixList matrix_list = transform->getWorldMatrices();
 		for (const osg::Matrixd& matrix : matrix_list) {
 			_currentMatrix = _currentMatrix * matrix;
@@ -62,9 +67,32 @@ void TreeBuilder::apply(osg::Geode& geode)
 	if (gnode->getNumDrawables() == 0)
 		return;
 	osg::ref_ptr<osg::UserDataContainer> userData = gnode->getUserDataContainer();
-	_geodeMatrixMap[gnode].push_back(_currentMatrix);
-	_geodeUserDataMap[gnode].push_back(userData);
+	int index = -1;
+	for (size_t i = 0; i < _geodes.size(); ++i)
+	{
+		if (Utils::compareGeode(_geodes.at(i), gnode))
+		{
+			index = i;
+			break;
+		}
+	}
+	if (index != -1)
+	{
+		_matrixs.at(index).push_back(_currentMatrix);
+		_dataContainers.at(index).push_back(userData);
+	}
+	else
+	{
+		_geodes.push_back(gnode);
 
+		osg::MatrixList matrixList;
+		matrixList.push_back(_currentMatrix);
+		_matrixs.push_back(matrixList);
+
+		std::vector<osg::ref_ptr<osg::UserDataContainer>> userDatas;
+		userDatas.push_back(userData);
+		_dataContainers.push_back(userDatas);
+	}
 }
 
 osg::ref_ptr<B3DMTile> TreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
@@ -85,34 +113,18 @@ void TreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const o
 {
 }
 
+
 osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 {
-	double min = FLT_MAX;
-	for (size_t i = 0; i < _groupsToDivideList->getNumChildren(); ++i)
-	{
-		osg::ref_ptr<osg::Group> item = _groupsToDivideList->getChild(i)->asGroup();		
-		const osg::BoundingBox bb = boundingSphere2BoundingBox(item->getBound());
-		const double xLength = bb.xMax() - bb.xMin();
-		const double yLength = bb.yMax() - bb.yMin();
-		const double zLength = bb.zMax() - bb.zMin();
-		min = osg::minimum(osg::minimum(osg::minimum(min, xLength), yLength), zLength);
-	}
-
-	const osg::BoundingBox rootBox = boundingSphere2BoundingBox(_groupsToDivideList->getBound());
-	const double xLength = rootBox.xMax() - rootBox.xMin();
-	const double yLength = rootBox.yMax() - rootBox.yMin();
-	const double zLength = rootBox.zMax() - rootBox.zMin();
-	const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
-	_config.maxLevel = std::log2(max / min);
-	
-	
-	std::unordered_map<osg::ref_ptr<osg::StateSet>, osg::ref_ptr<osg::Group>, Utils::StateSetHash, Utils::StateSetEqual> stateSetGroupMap;
+	std::vector<osg::ref_ptr<osg::StateSet>> uniqueStateSets;
+	std::vector<osg::ref_ptr<osg::Group>> stateSetGroup;
 	osg::ref_ptr<osg::Group> largeTextureCoordGroup = new osg::Group;
 
 	for (size_t i = 0; i < _groupsToDivideList->getNumChildren(); ++i)
 	{
-		osg::ref_ptr<osg::Node> child = _groupsToDivideList->getChild(i);
-		osg::ref_ptr<osg::Geometry> geometry = child->asGroup()->getChild(0)->asGeode()->getChild(0)->asGeometry();
+		const osg::ref_ptr<osg::Group> child = _groupsToDivideList->getChild(i)->asGroup();
+		const osg::ref_ptr<osg::Geode> childGeode = child->getChild(0)->asGeode();
+		osg::ref_ptr<osg::Geometry> geometry = childGeode->getChild(0)->asGeometry();
 		if (geometry.valid())
 		{
 			osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
@@ -142,100 +154,121 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 			}
 			else
 			{
-				osg::ref_ptr<osg::Group> group = stateSetGroupMap[stateSet];
-				if (group.valid())
+				int index = -1;
+				for (size_t j = 0; j < uniqueStateSets.size(); j++)
 				{
-					group->addChild(child);
+					const osg::ref_ptr<osg::StateSet> key = uniqueStateSets.at(j);
+					if (Utils::compareStateSet(key, stateSet))
+					{
+						index = j;
+						break;
+					}
+
 				}
+				if (index != -1)
+					stateSetGroup[index]->addChild(child);
 				else
 				{
-					group = new osg::Group;
-					group->addChild(child);
-					stateSetGroupMap[stateSet] = group;
+					osg::ref_ptr<osg::Group> val = new osg::Group;
+					val->addChild(child);
+					stateSetGroup.push_back(val);
+					uniqueStateSets.push_back(stateSet);
 				}
 			}
 		}
 	}
 
-	_groupsToDivideList->removeChildren(0, _groupsToDivideList->getNumChildren());
-	for (const auto& entry : stateSetGroupMap)
+	osg::ref_ptr<osg::Group> tempGroup1 = new osg::Group;
+	for (const osg::ref_ptr<osg::Group> group : stateSetGroup)
 	{
-		_groupsToDivideList->addChild(entry.second);
+		tempGroup1->addChild(group);
 	}
 	for (size_t i = 0; i < largeTextureCoordGroup->getNumChildren(); ++i)
 	{
-		_groupsToDivideList->addChild(largeTextureCoordGroup->getChild(i));
+		tempGroup1->addChild(largeTextureCoordGroup->getChild(i));
 	}
-	
+	//_groupsToDivideList = tempGroup1;
+
+	//processOverSizedNodes();
+
 	std::vector<osg::Node*> children;
 	const unsigned int num = _groupsToDivideList->getNumChildren();
 	for (unsigned int i = 0; i < num; ++i) {
 		children.push_back(_groupsToDivideList->getChild(i));
 	}
 	std::sort(children.begin(), children.end(), sortNodeByRadius);
-	_groupsToDivideList->removeChildren(0, num);
+	osg::ref_ptr<osg::Group> tempGroup2 = new osg::Group;
 	for (unsigned int i = 0; i < num; ++i) {
-		_groupsToDivideList->addChild(children[i]);
+		tempGroup2->addChild(children[i]);
 	}
+	_groupsToDivideList = tempGroup2;
+
+	double min = FLT_MAX;
+	osg::BoundingBox rootBox;
+	for (size_t i = 0; i < _groupsToDivideList->getNumChildren(); ++i)
+	{
+		osg::ref_ptr<osg::Node> item = _groupsToDivideList->getChild(i);
+		const osg::BoundingBox bb = computeBoundingBox(item);
+		if (bb.valid())
+		{
+			double xLength = bb.xMax() - bb.xMin();
+			xLength = xLength == 0.0 ? FLT_MAX : xLength;
+			double yLength = bb.yMax() - bb.yMin();
+			yLength = yLength == 0.0 ? FLT_MAX : yLength;
+			double zLength = bb.zMax() - bb.zMin();
+			zLength = zLength == 0.0 ? FLT_MAX : zLength;
+			min = osg::minimum(osg::minimum(osg::minimum(min, xLength), yLength), zLength);
+			rootBox.expandBy(bb);
+		}
+	}
+
+	const double xLength = rootBox.xMax() - rootBox.xMin();
+	const double yLength = rootBox.yMax() - rootBox.yMin();
+	const double zLength = rootBox.zMax() - rootBox.zMin();
+	const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
+	_config.maxLevel = std::log2(max / min);
 	osg::ref_ptr<B3DMTile> result = divideB3DM(_groupsToDivideList, rootBox);
+	if (_groupsToDivideList->getNumChildren())
+		OSG_NOTICE << "_groupsToDivideList's length > 0!" << std::endl;
 	return result.release();
 }
 
 osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 {
-	
-	std::unordered_map<std::vector<osg::Matrixd>, std::vector<osg::Geode*>, Utils::MatrixsHash, Utils::MatrixsEqual> groupedGeodes;
-
-	for (const auto& pair : _geodeMatrixMap) {
-		osg::Geode* geode = pair.first;
-		const auto& matrices = pair.second;
-
-		// 查找是否已经有一个具有相同矩阵列表的组  
-		auto it = groupedGeodes.find(matrices);
-		if (it == groupedGeodes.end()) {
-			// 如果没有找到，创建一个新组  
-			groupedGeodes[matrices].push_back(geode);
-		}
-		else {
-			// 如果已经存在，添加geode到这个组  
-			it->second.push_back(geode);
-		}
-	}
-
 	std::vector<osg::ref_ptr<I3DMTile>> i3dmTiles;
 	osg::ref_ptr<osg::Group> i3dmTileGroup = new osg::Group;
-	size_t index = 0;
-	for (const auto& pair : groupedGeodes)
+
+	for (size_t i=0;i<_instanceGeodes.size();i++)
 	{
 		osg::ref_ptr<I3DMTile> childI3dmTile = new I3DMTile;
 		childI3dmTile->node = new osg::Group;
 		osg::ref_ptr<osg::Group> group = childI3dmTile->node->asGroup();
-		unsigned int userDataIndex = 0;
-		for (const auto matrix : pair.first)
+
+		const osg::ref_ptr<osg::Geode> gnode = _instanceGeodes.at(i);
+		const osg::MatrixList matrixs = _instanceMatrixs.at(i);
+		const std::vector<osg::ref_ptr<osg::UserDataContainer>> userDatas = _instanceDataContainers.at(i);
+		for (size_t j = 0; j < matrixs.size(); j++)
 		{
+			const osg::Matrixd matrix = matrixs.at(j);
+			const osg::ref_ptr<osg::UserDataContainer> userData = userDatas.at(j);
+
 			osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
 			transform->setMatrix(matrix);
-			for (osg::Geode* geode : pair.second)
-			{
-				osg::ref_ptr<osg::UserDataContainer> userData = _geodeUserDataMap[geode].at(userDataIndex);
-				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(geode, osg::CopyOp::SHALLOW_COPY);
-				geodeCopy->setUserDataContainer(userData);
-				transform->addChild(geodeCopy);
-			}
+			osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::SHALLOW_COPY);
+			geodeCopy->setUserDataContainer(userData);
+			transform->addChild(geodeCopy);
 			group->addChild(transform);
-
-			userDataIndex++;
 		}
-		childI3dmTile->z = index;
+		childI3dmTile->z = i;
 		i3dmTiles.push_back(childI3dmTile);
 		i3dmTileGroup->addChild(group);
-		index++;
 	}
-	
+
 	osg::ref_ptr<I3DMTile> rootI3dmTile = new I3DMTile;
 	std::sort(i3dmTiles.begin(), i3dmTiles.end(), sortTileNodeByRadius);
-	divideI3DM(i3dmTiles, boundingSphere2BoundingBox(i3dmTileGroup->getBound()), rootI3dmTile);
-
+	divideI3DM(i3dmTiles, computeBoundingBox(i3dmTileGroup), rootI3dmTile);
+	if (i3dmTiles.size())
+		OSG_NOTICE << "i3dmTiles's length > 0!" << std::endl;
 	return rootI3dmTile;
 }
 
@@ -245,11 +278,11 @@ void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<
 	if (!b3dmTile.valid()) return;
 	if (b3dmTile->node.valid())
 	{
-		const osg::BoundingBox b3dmTileBB = boundingSphere2BoundingBox(b3dmTile->node->getBound());
-		
-		for (auto it=i3dmTile->children.begin();it!= i3dmTile->children.end();)
+		const osg::BoundingBox b3dmTileBB = computeBoundingBox(b3dmTile->node);
+
+		for (auto it = i3dmTile->children.begin(); it != i3dmTile->children.end();)
 		{
-			const osg::BoundingBox i3dmTileBB = boundingSphere2BoundingBox(it->get()->node->getBound());
+			const osg::BoundingBox i3dmTileBB = computeBoundingBox(it->get()->node);
 			if (intersect(b3dmTileBB, i3dmTileBB))
 			{
 				//osg::ref_ptr<I3DMTile> i3dmTileProxy = new I3DMTile(b3dmTile);
@@ -264,7 +297,7 @@ void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<
 				continue;
 			}
 			++it;
-		}		
+		}
 	}
 	//TODO:If i3dm tiles are outside the b3dm tree range
 	if (i3dmTile->children.size())
@@ -280,16 +313,15 @@ void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<
 	}
 }
 
-osg::BoundingBox TreeBuilder::boundingSphere2BoundingBox(const osg::BoundingSphere& bs)
+osg::BoundingBox TreeBuilder::computeBoundingBox(const osg::ref_ptr<osg::Node> node)
 {
-	const osg::Vec3f center = bs.center();
-	const float radius = bs.radius();
-	const osg::Vec3f min = center - osg::Vec3f(radius, radius, radius);
-	const osg::Vec3f max = center + osg::Vec3f(radius, radius, radius);
-	return osg::BoundingBox(min, max);
+	osg::ComputeBoundsVisitor cbv;
+	node->accept(cbv);
+	const osg::BoundingBox bbox = cbv.getBoundingBox();
+	return bbox;
 }
 
-float TreeBuilder::calculateBoundingBoxVolume(const osg::BoundingBox& box)
+double TreeBuilder::calculateBoundingBoxVolume(const osg::BoundingBox& box)
 {
 	float width = box._max.x() - box._min.x();
 	float height = box._max.y() - box._min.y();
@@ -298,16 +330,21 @@ float TreeBuilder::calculateBoundingBoxVolume(const osg::BoundingBox& box)
 	return (width > 0 && height > 0 && depth > 0) ? (width * height * depth) : 0.0f;
 }
 
-bool TreeBuilder::intersect(const osg::BoundingBox& parentBB, const osg::BoundingBox& childBB)
+bool TreeBuilder::intersect(const osg::BoundingBox& tileBBox, const osg::BoundingBox& nodeBBox)
 {
-	const osg::BoundingBox intersectBB = parentBB.intersect(childBB);
-	if (intersectBB.valid())
+	if (!tileBBox.valid() || !nodeBBox.valid())
+		return false;
+	
+	if (tileBBox.contains(nodeBBox._min) && tileBBox.contains(nodeBBox._max))
+		return true;
+
+	if (tileBBox.intersects(nodeBBox))
 	{
-		if (calculateBoundingBoxVolume(intersectBB) * 4.0 > calculateBoundingBoxVolume(childBB))
-		{
+		const osg::Vec3d center = nodeBBox.center();
+		if (tileBBox.contains(center))
 			return true;
-		}
 	}
+
 	return false;
 }
 
@@ -325,12 +362,92 @@ bool TreeBuilder::sortNodeByRadius(const osg::ref_ptr<osg::Node>& a, const osg::
 	return radiusA > radiusB;// 按照半径从大到小排序
 }
 
+void TreeBuilder::processOverSizedNodes()
+{
+	std::vector<osg::ref_ptr<osg::Node>> oversizedNodes;
+
+	// 第一步：识别需要拆分的节点
+	for (unsigned int i = 0; i < _groupsToDivideList->getNumChildren(); ++i)
+	{
+		osg::ref_ptr<osg::Node> node = _groupsToDivideList->getChild(i);
+
+		// 检查三角形数量
+		Utils::TriangleCounterVisitor triangleCv;
+		node->accept(triangleCv);
+
+		if (triangleCv.count > _config.maxTriangleCount)
+		{
+			if (node->asGroup()->getNumChildren() > 1)
+				oversizedNodes.push_back(node);
+		}
+	}
+
+	// 第二步：处理需要拆分的节点
+	for (auto& node : oversizedNodes)
+	{
+		// 从原始列表中移除
+		_groupsToDivideList->removeChild(node);
+
+		// 获取节点的包围盒
+		osg::BoundingBox bb = computeBoundingBox(node);
+
+		// 创建空间划分网格
+		const int gridSize = 2; // 可以根据需要调整
+		std::vector<osg::ref_ptr<osg::Group>> subGroups;
+		for (int i = 0; i < gridSize * gridSize * gridSize; ++i)
+		{
+			subGroups.push_back(new osg::Group);
+		}
+
+		// 遍历节点中的几何体，根据空间位置分配到不同的子组
+		osg::Group* group = node->asGroup();
+		if (group)
+		{
+			for (unsigned int i = 0; i < group->getNumChildren(); ++i)
+			{
+				osg::ref_ptr<osg::Node> child = group->getChild(i);
+				osg::BoundingSphere bs = child->getBound();
+				osg::Vec3 center = bs.center();
+
+				// 计算在哪个子空间
+				int xIndex = (center.x() - bb._min.x()) / (bb._max.x() - bb._min.x()) * gridSize;
+				int yIndex = (center.y() - bb._min.y()) / (bb._max.y() - bb._min.y()) * gridSize;
+				int zIndex = (center.z() - bb._min.z()) / (bb._max.z() - bb._min.z()) * gridSize;
+
+				xIndex = osg::clampBetween(xIndex, 0, gridSize - 1);
+				yIndex = osg::clampBetween(yIndex, 0, gridSize - 1);
+				zIndex = osg::clampBetween(zIndex, 0, gridSize - 1);
+
+				int index = xIndex + yIndex * gridSize + zIndex * gridSize * gridSize;
+				subGroups[index]->addChild(child);
+			}
+		}
+
+		// 将非空的子组添加回主列表
+		for (auto& subGroup : subGroups)
+		{
+			if (subGroup->getNumChildren() > 0)
+			{
+				_groupsToDivideList->addChild(subGroup);
+			}
+		}
+	}
+
+	if (oversizedNodes.size() > 0) processOverSizedNodes();
+}
+
 bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level)
 {
 	if (level >= _config.maxLevel)
 	{
-		tile->node = group;
-		return tile;
+		tile->node = new osg::Group;
+		const unsigned int size = group->getNumChildren();
+		for (size_t i = 0; i < size; i++)
+		{
+			tile->node->asGroup()->addChild(group->getChild(i));
+		}
+		group->removeChildren(0, size);
+		return true;
 	}
 
 	osg::ref_ptr<osg::Group> childGroup;
@@ -349,49 +466,54 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 	}
 
 	osg::BoundingBox bb(bounds);
-	unsigned int textureCount = 0;
-	unsigned int triangleCount = 0;
-	osg::ref_ptr<osg::Node> outMaxTriangleCountNode = nullptr;
+	unsigned int textureCount = 0, triangleCount = 0;
+	osg::ref_ptr<osg::Node> outTriangleCountNode = nullptr;
 	// 将排序后的子节点添加到子组，并记录需要移除的子节点
 	for (auto& child : children)
 	{
-		const osg::BoundingSphere childBS = child->getBound();
-		const osg::BoundingBox childBB = boundingSphere2BoundingBox(childBS);
-		if (textureCount >= _config.maxTextureCount)
+		//if (textureCount >= _config.maxTextureCount)
+		//	break;
+		if (triangleCount >= _config.maxTriangleCount)
 			break;
+
+		const osg::BoundingBox childBB = computeBoundingBox(child);
 		//自适应四叉树
 		if (intersect(bb, childBB))
 		{
-			Utils::TextureCounterVisitor textureCv;
-			child->accept(textureCv);
-			const unsigned int childTextureCount = textureCv.getCount();
+			childGroup->addChild(child);
 
-			Utils::TriangleCounterVisitor triangleCv;
-			child->accept(triangleCv);
-			if ((textureCount + childTextureCount) <= _config.maxTextureCount)
-			{
-				if ((triangleCount + triangleCv.count) <= _config.maxTriangleCount)
+			Utils::TriangleCounterVisitor triangleCV;
+			child->accept(triangleCV);
+
+			//Utils::TextureCounterVisitor textureCV;
+			//childGroup->accept(textureCV);
+			//if (textureCV.getCount() <= _config.maxTextureCount)
+			//{
+				if (triangleCV.count + triangleCount <= _config.maxTriangleCount)
 				{
-					textureCount += childTextureCount;
-					triangleCount += triangleCv.count;
-					bb.expandBy(childBB);
-
-					childGroup->addChild(child);
+					triangleCount += triangleCV.count;
+					//textureCount = textureCV.getCount();
+					//bb.expandBy(childBB);
 					needToRemove.push_back(child);
 				}
-				else {
-					if(outMaxTriangleCountNode==nullptr)
-						// 如果超出三角形数量限制，保存子节点
-						outMaxTriangleCountNode = child;
+				else
+				{
+					childGroup->removeChild(child);
+					if (!outTriangleCountNode.valid())
+						outTriangleCountNode = child;
 				}
-			}
+			//}
+			//else
+			//{
+			//	childGroup->removeChild(child);
+			//}
 		}
 	}
-	// 如果没有子节点被添加到 childGroup，添加一个超出三角形数量限制的节点
-	if (childGroup->getNumChildren() == 0 && outMaxTriangleCountNode.valid())
+
+	if (outTriangleCountNode.valid() && childGroup->getNumChildren() == 0)
 	{
-		childGroup->addChild(outMaxTriangleCountNode);
-		needToRemove.push_back(outMaxTriangleCountNode);
+		childGroup->addChild(outTriangleCountNode);
+		group->removeChild(outTriangleCountNode);
 	}
 
 	if (needToRemove.size())
@@ -401,10 +523,8 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 			group->removeChild(child);
 		}
 	}
+	if (childGroup->getNumChildren() == 0)
+		tile->node = nullptr;
 
-	if (!childGroup->getNumChildren())
-	{
-		return true;
-	}
-	return false;
+	return group->getNumChildren() == 0;
 }

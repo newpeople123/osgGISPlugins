@@ -1,4 +1,5 @@
 #include "3dtiles/hlod/OctreeBuilder.h"
+
 osg::ref_ptr<B3DMTile> OctreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
@@ -30,8 +31,7 @@ osg::ref_ptr<B3DMTile> OctreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 	// 将排序后的子节点添加到子组，并记录需要移除的子节点
 	for (auto& child : children)
 	{
-		const osg::BoundingSphere childBS = child->getBound();
-		const osg::BoundingBox childBB = boundingSphere2BoundingBox(childBS);
+		const osg::BoundingBox childBB = computeBoundingBox(child);
 		if (textureCount >= _config.maxTextureCount)
 			break;
 		//自适应四叉树
@@ -62,7 +62,7 @@ osg::ref_ptr<B3DMTile> OctreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 		return tile;
 	}
 
-	const osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
+	const osg::Vec3d mid = (bounds._max + bounds._min) * 0.5f;
 	// 根据选择的轴进行分割
 	for (int a = 0; a < 2; ++a)
 	{
@@ -96,7 +96,7 @@ void OctreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const
 {
 	if (!tile.valid() || group.empty()) return;
 
-	const osg::Vec3f mid = (bounds._max + bounds._min) * 0.5f;
+	const osg::Vec3d mid = (bounds._max + bounds._min) * 0.5f;
 
 	std::vector<osg::BoundingBox> childrenBounds;
 
@@ -118,7 +118,7 @@ void OctreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const
 				);
 				for (auto it = group.begin(); it != group.end();) {
 					osg::ref_ptr<I3DMTile> child = it->get();
-					if (intersect(childBounds, boundingSphere2BoundingBox(child->node->getBound()))) {
+					if (intersect(childBounds, computeBoundingBox(child->node))) {
 						child->parent = tile;
 						tile->children.push_back(child);
 						it = group.erase(it);
@@ -142,3 +142,4 @@ void OctreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const
 		}
 	}
 }
+

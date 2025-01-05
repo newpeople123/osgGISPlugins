@@ -214,11 +214,13 @@ namespace osgGISPlugins
 
             void optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>& gltfMaterial, const osg::ref_ptr<osg::Geometry>& geom);
 
+            bool gltfMaterialHasTexture(const osg::ref_ptr<GltfMaterial>& gltfMaterial);
+
             void packOsgTextures();
 
             void packOsgMaterials();
 
-            void exportImage(const osg::ref_ptr<osg::Image>& img);
+            std::string exportImage(const osg::ref_ptr<osg::Image>& img);
 
             void packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer);
 
@@ -228,13 +230,13 @@ namespace osgGISPlugins
 
             void processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
 
-            void updateGltfMaterialUserValue(osg::Geometry* geometry,
-                osg::ref_ptr<osg::StateSet>& stateSetCopy,
-                osg::ref_ptr<GltfMaterial> packedGltfMaterial,
-                TexturePacker& packer,
-                const int width,
-                const int height,
-                const osg::ref_ptr<osg::Texture2D>& oldTexture,
+            void updateGltfMaterialUserValue(osg::ref_ptr<GltfMaterial> gltfMaterial,
+                osg::ref_ptr<osg::Texture2D> texture,
+                const double offsetX,
+                const double offsetY,
+                const double scaleX,
+                const double scaleY,
+                const std::string fullPath,
                 const GltfTextureType type);
 
             void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& images, const GltfTextureType type);
@@ -252,8 +254,8 @@ namespace osgGISPlugins
             GltfTextureOptimizationOptions _options;
 
             //osgMaterial
-            std::vector<GltfMaterial*> _gltfMaterials;
-            std::map<osg::Geometry*, GltfMaterial*> _geometryMatMap;
+            std::vector<osg::ref_ptr<GltfMaterial>> _gltfMaterials;
+            std::unordered_map<osg::Geometry*, osg::ref_ptr<GltfMaterial>> _geometryMatMap;
 
             //osgTexture
             std::vector<osg::ref_ptr<osg::Image>> _images;

@@ -34,6 +34,8 @@ namespace osgGISPlugins
 
 		string getFullPath() const override;
 
+		string getTextureCachePath(const string textureCachePath) const override;
+
 		void setContentUri() override;
 
 		I3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) override;
