@@ -637,7 +637,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 		osg::ref_ptr<osg::Image> image = texture->getImage(0);
 		if (image.valid())
 		{
-			resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);;
+			image = resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+			texture->setImage(image);
 			if (_options.packTexture)
 			{
 				bool bBuildTexturePacker = true;
@@ -716,7 +717,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_
 			osg::ref_ptr<osg::Image> image = texture->getImage(0);
 			if (image.valid())
 			{
-				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);;
+				image = resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+				texture->setImage(image);
 			}
 		}
 	}
@@ -888,7 +890,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+			packedImage = resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 			packer.setScales(scaleWidth, sclaeHeight);
@@ -1065,7 +1067,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+			packedImage = resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 			packer.setScales(scaleWidth, sclaeHeight);
@@ -1203,7 +1205,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vect
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+			packedImage = resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 			packer.setScales(scaleWidth, sclaeHeight);
@@ -1260,7 +1262,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 		if (packedImage.valid() && deleteImgs.size())
 		{
 			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+			packedImage = resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			const int width = packedImage->s(), height = packedImage->t();
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 			packer.setScales(scaleWidth, sclaeHeight);
@@ -1422,7 +1424,7 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::re
 	return fullPath;
 }
 
-bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight)
+osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight)
 {
 	int originalWidth = -1;
 	int originalHeight = -1;
@@ -1440,8 +1442,13 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 
 	newWidth = newWidth > maxWidth ? maxWidth : newWidth;
 	newHeight = newHeight > maxHeight ? maxHeight : newHeight;
-	img->scaleImage(newWidth, newHeight, img->r());
-	return true;
+	if (newWidth == originalWidth && newHeight == newHeight)
+	{
+		osg::ref_ptr<osg::Image> imgCopy = osg::clone(img.get(), osg::CopyOp::DEEP_COPY_IMAGES);
+		imgCopy->scaleImage(newWidth, newHeight, img->r());
+		return imgCopy;
+	}
+	return img;
 }
 
 std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const osg::ref_ptr<osg::Image>& image)
