@@ -22,11 +22,15 @@
 #include "osgdb_gltf/material/GltfPbrMRMaterial.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 #include <unordered_set>
+#include <unordered_map>
 using namespace indicators;
 namespace osgGISPlugins
 {
 	class Utils {
 	public:
+		static void pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets);
+
+		static bool isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords);
 
 		static bool compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs);
 
@@ -316,6 +320,26 @@ namespace osgGISPlugins
 
 			void popMatrix();
 
+			osg::Matrix _currentMatrix;
+			std::vector<osg::Matrix> _matrixStack;
+		};
+
+		class DrawcallCommandCounterVisitor :public osg::NodeVisitor
+		{
+		public:
+			DrawcallCommandCounterVisitor():osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN){}
+
+			void apply(osg::Transform& transform) override;
+
+			void apply(osg::Drawable& drawable) override;
+
+			unsigned int getCount() const;
+		private:
+			void pushMatrix(const osg::Matrix& matrix);
+
+			void popMatrix();
+
+			std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Geometry>>, Utils::MatrixHash, Utils::MatrixEqual> _matrixGeometryMap;
 			osg::Matrix _currentMatrix;
 			std::vector<osg::Matrix> _matrixStack;
 		};

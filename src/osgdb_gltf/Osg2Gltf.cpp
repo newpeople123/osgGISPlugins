@@ -128,10 +128,16 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 	{
 		apply(static_cast<osg::Node&>(drawable));
 		if (geom->getNumPrimitiveSets() == 0)
+		{
+			_model.nodes.pop_back();
 			return;
+		}
 		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		if (positions->size() <= 0)
+		{
+			_model.nodes.pop_back();
 			return;
+		}
 
 		const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 		bool pushedStateSet = false;
@@ -344,7 +350,11 @@ tinygltf::Model Osg2Gltf::getGltfModel()
 	_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
 	std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
 	_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
-
+	if (!_model.nodes.size())
+	{
+		_model.defaultScene = -1;
+		_model.scenes.clear();
+	}
 
 	return _model;
 }

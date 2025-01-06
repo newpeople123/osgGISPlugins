@@ -2,11 +2,43 @@
 
 using namespace osgGISPlugins;
 
+void Utils::pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets)
+{
+	int index = -1;
+	for (size_t j = 0; j < uniqueStateSets.size(); j++)
+	{
+		const osg::ref_ptr<osg::StateSet> key = uniqueStateSets.at(j);
+		if (Utils::compareStateSet(key, stateSet))
+		{
+			index = j;
+			break;
+		}
+
+	}
+	if (index == -1)
+		uniqueStateSets.push_back(stateSet);
+}
+
+bool Utils::isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords)
+{
+	for (osg::Vec2 texCoord : *texCoords.get())
+	{
+		const float texCoordX = osg::absolute(texCoord.x());
+		const float texCoordY = osg::absolute(texCoord.y());
+
+		if (texCoordX > 1.0 || texCoordY > 1.0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool Utils::compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs)
 {
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {
-			if (!osg::equivalent(lhs(i, j), rhs(i, j), 0.001))
+			if (!osg::equivalent(lhs(i, j), rhs(i, j)))
 				return false;
 		}
 	}
@@ -477,19 +509,7 @@ unsigned int Utils::TriangleCounterVisitor::calculateTriangleCount(const GLenum 
 void Utils::TextureCounterVisitor::apply(osg::Drawable& drawable)
 {
 	osg::ref_ptr<osg::StateSet> stateSet = drawable.getStateSet();
-	int index = -1;
-	for (size_t j = 0; j < _stateSets.size(); j++)
-	{
-		const osg::ref_ptr<osg::StateSet> key = _stateSets.at(j);
-		if (Utils::compareStateSet(key, stateSet))
-		{
-			index = j;
-			break;
-		}
-
-	}
-	if (index == -1)
-		_stateSets.push_back(stateSet);
+	pushStateSet2UniqueStateSets(stateSet, _stateSets);
 }
 
 void Utils::TextureMetricsVisitor::apply(osg::Transform& transform)
@@ -661,6 +681,72 @@ void Utils::MaxGeometryVisitor::pushMatrix(const osg::Matrix& matrix)
 }
 
 void Utils::MaxGeometryVisitor::popMatrix()
+{
+	if (!_matrixStack.empty())
+	{
+		_currentMatrix = _matrixStack.back();
+		_matrixStack.pop_back();
+	}
+}
+
+void Utils::DrawcallCommandCounterVisitor::apply(osg::Transform& transform)
+{
+	osg::Matrix matrix;
+	if (transform.computeLocalToWorldMatrix(matrix, this))
+	{
+		pushMatrix(matrix);
+		traverse(transform);
+		popMatrix();
+	}
+}
+
+void Utils::DrawcallCommandCounterVisitor::apply(osg::Drawable& drawable)
+{
+	_matrixGeometryMap[_currentMatrix].push_back(drawable.asGeometry());
+}
+
+unsigned int Utils::DrawcallCommandCounterVisitor::getCount() const
+{
+	unsigned int count = 0;
+	for (auto it= _matrixGeometryMap.begin();it!= _matrixGeometryMap.end();++it)
+	{
+		if (it->second.size() == 1)
+			count++;
+		else
+		{
+			std::vector<osg::ref_ptr<osg::StateSet>> stateSets;
+			std::vector<osg::ref_ptr<osg::StateSet>> repeatStateSets;
+
+			for (size_t i = 0; i < it->second.size(); i++)
+			{
+				osg::ref_ptr<osg::Geometry> geometry = it->second.at(i);
+				osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+				osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geometry->getTexCoordArray(0));
+				if (texCoords.valid())
+				{
+					if(isRepeatTexCoords(texCoords))
+						pushStateSet2UniqueStateSets(stateSet, repeatStateSets);
+					else
+						pushStateSet2UniqueStateSets(stateSet, stateSets);
+				}
+				else
+					pushStateSet2UniqueStateSets(stateSet, stateSets);
+			}
+
+			count += repeatStateSets.size() + stateSets.size();
+		}
+	}
+
+	return count;
+}
+
+void Utils::DrawcallCommandCounterVisitor::pushMatrix(const osg::Matrix& matrix)
+{
+	_matrixStack.push_back(_currentMatrix);
+	_currentMatrix = _currentMatrix * matrix;
+}
+
+void Utils::DrawcallCommandCounterVisitor::popMatrix()
 {
 	if (!_matrixStack.empty())
 	{

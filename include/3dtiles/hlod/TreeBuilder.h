@@ -31,6 +31,8 @@ namespace osgGISPlugins
         struct BuilderConfig {
             size_t maxTriangleCount = 2.0e5;
             unsigned int maxTextureCount = 100;
+            unsigned int initDrawcallCommandCount = 5;
+            unsigned int maxDrawcallCommandCount = 20;
             int maxLevel = 32;
             bool enableParallel = true;
         };
@@ -38,10 +40,14 @@ namespace osgGISPlugins
 
         osg::ref_ptr<osg::Group> _groupsToDivideList = new osg::Group;
 
+        osg::Matrix _currentMatrix;
+        std::vector<osg::Matrix> _matrixStack;
 
-        osg::Matrixd _currentMatrix;
+        void pushMatrix(const osg::Matrix& matrix);
 
-        virtual void apply(osg::Group& group) override;
+        void popMatrix();
+
+        virtual void apply(osg::Transform& transform) override;
 
         virtual void apply(osg::Geode& geode) override;
 
@@ -67,7 +73,7 @@ namespace osgGISPlugins
 
         void processOverSizedNodes();
 
-        bool processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level);
+        bool processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile);
 	};
 }
 

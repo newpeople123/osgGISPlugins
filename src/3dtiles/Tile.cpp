@@ -122,7 +122,7 @@ void Tile::computeGeometricError()
 			double childGeometricError = 0.0;
 			if (this->lod != -1)
 			{
-				const double distance = getDistanceByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR) * 0.5;
+				const double distance = getDistanceByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR);
 				childGeometricError = getCesiumGeometricErrorByDistance(distance) * child->diagonalLength / child->childDiagonalLength;
 			}
 			else
@@ -468,8 +468,8 @@ void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 
 void Tile::applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy)
 {
-	//if (config.simplifyRatio < 1.0) {
-	//	Simplifier simplifier(config.simplifyRatio);
-	//	nodeCopy->accept(simplifier);
-	//}
+	if (config.simplifyRatio < 1.0) {
+		Simplifier simplifier(config.simplifyRatio);
+		nodeCopy->accept(simplifier);
+	}
 }

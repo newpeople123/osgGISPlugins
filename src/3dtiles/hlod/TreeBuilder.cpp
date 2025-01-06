@@ -45,20 +45,37 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 	return b3dmTile;
 }
 
-void TreeBuilder::apply(osg::Group& group)
+void TreeBuilder::pushMatrix(const osg::Matrix& matrix)
 {
-	_currentMatrix = osg::Matrix::identity();
-	// 如果是Transform节点，累积变换矩阵
-	if (osg::Transform* transform = group.asTransform())
-	{
-		const osg::MatrixList matrix_list = transform->getWorldMatrices();
-		for (const osg::Matrixd& matrix : matrix_list) {
-			_currentMatrix = _currentMatrix * matrix;
-		}
-	}
+	_matrixStack.push_back(_currentMatrix);
+	_currentMatrix = _currentMatrix * matrix;
+}
 
-	// 继续遍历子节点
-	traverse(group);
+void TreeBuilder::popMatrix()
+{
+	if (!_matrixStack.empty())
+	{
+		_currentMatrix = _matrixStack.back();
+		_matrixStack.pop_back();
+	}
+}
+
+void TreeBuilder::apply(osg::Transform& transform)
+{
+	//osg::Matrix matrix;
+	//if (transform.computeLocalToWorldMatrix(matrix, this))
+	//{
+	//	pushMatrix(matrix);
+	//	traverse(transform);
+	//	popMatrix();
+	//}
+
+	_currentMatrix = osg::Matrix::identity();
+	const osg::MatrixList matrix_list = transform.getWorldMatrices();
+	for (const osg::Matrixd& matrix : matrix_list) {
+		_currentMatrix = _currentMatrix * matrix;
+	}
+	traverse(transform);
 }
 
 void TreeBuilder::apply(osg::Geode& geode)
@@ -436,9 +453,9 @@ void TreeBuilder::processOverSizedNodes()
 	if (oversizedNodes.size() > 0) processOverSizedNodes();
 }
 
-bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile, const int level)
+bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile)
 {
-	if (level >= _config.maxLevel)
+	if (tile->level >= _config.maxLevel)
 	{
 		tile->node = new osg::Group;
 		const unsigned int size = group->getNumChildren();
@@ -449,6 +466,9 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 		group->removeChildren(0, size);
 		return true;
 	}
+
+	unsigned int maxDrawcallCommandCount = (tile->level + 1) * _config.initDrawcallCommandCount;
+	maxDrawcallCommandCount = maxDrawcallCommandCount > _config.maxDrawcallCommandCount ? _config.maxDrawcallCommandCount : maxDrawcallCommandCount;
 
 	osg::ref_ptr<osg::Group> childGroup;
 	if (!tile->node.valid())
@@ -465,35 +485,30 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 		children.push_back(group->getChild(i));
 	}
 
-	osg::BoundingBox bb(bounds);
-	unsigned int textureCount = 0, triangleCount = 0;
+	unsigned int drawcallCommandCount = 0, triangleCount = 0;
 	osg::ref_ptr<osg::Node> outTriangleCountNode = nullptr;
 	// 将排序后的子节点添加到子组，并记录需要移除的子节点
 	for (auto& child : children)
 	{
-		//if (textureCount >= _config.maxTextureCount)
-		//	break;
 		if (triangleCount >= _config.maxTriangleCount)
 			break;
 
 		const osg::BoundingBox childBB = computeBoundingBox(child);
-		//自适应四叉树
-		if (intersect(bb, childBB))
+		if (intersect(bounds, childBB))
 		{
 			childGroup->addChild(child);
 
 			Utils::TriangleCounterVisitor triangleCV;
 			child->accept(triangleCV);
 
-			//Utils::TextureCounterVisitor textureCV;
-			//childGroup->accept(textureCV);
-			//if (textureCV.getCount() <= _config.maxTextureCount)
-			//{
+			Utils::DrawcallCommandCounterVisitor dccv;
+			childGroup->accept(dccv);
+			if (dccv.getCount() <= maxDrawcallCommandCount)
+			{
 				if (triangleCV.count + triangleCount <= _config.maxTriangleCount)
 				{
 					triangleCount += triangleCV.count;
-					//textureCount = textureCV.getCount();
-					//bb.expandBy(childBB);
+					drawcallCommandCount = dccv.getCount();
 					needToRemove.push_back(child);
 				}
 				else
@@ -502,11 +517,13 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 					if (!outTriangleCountNode.valid())
 						outTriangleCountNode = child;
 				}
-			//}
-			//else
-			//{
-			//	childGroup->removeChild(child);
-			//}
+			}
+			else
+			{
+				childGroup->removeChild(child);
+				if (!outTriangleCountNode.valid())
+					outTriangleCountNode = child;
+			}
 		}
 	}
 
@@ -524,7 +541,10 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 		}
 	}
 	if (childGroup->getNumChildren() == 0)
+	{
 		tile->node = nullptr;
+		return true;
+	}
 
 	return group->getNumChildren() == 0;
 }
