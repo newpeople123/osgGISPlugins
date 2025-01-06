@@ -292,8 +292,8 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\data\dgn\工厂三维总装.fbx)"));
-	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\工厂三维总装)"));
+	std::string input = parseArgument(arguments, "-i", std::string(R"(C:\baidunetdiskdownload\data\dgn\工厂三维总装.fbx)"));
+	std::string output = parseArgument(arguments, "-o", std::string(R"(C:\Users\94764\Desktop\nginx-1.26.2\html\3dtiles\工厂三维总装)"));
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());

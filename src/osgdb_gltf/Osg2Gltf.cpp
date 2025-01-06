@@ -71,8 +71,9 @@ void Osg2Gltf::apply(osg::Group& group)
 
 	for (unsigned i = 0; i < group.getNumChildren(); ++i)
 	{
-		int id = _osgNodeSeqMap[group.getChild(i)];
-		_model.nodes.back().children.push_back(id);
+		const int id = _osgNodeSeqMap[group.getChild(i)];
+		if (_model.nodes.size() - 1 != id)
+			_model.nodes.back().children.push_back(id);
 	}
 }
 
@@ -126,18 +127,13 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 	if (geom.valid())
 	{
-		apply(static_cast<osg::Node&>(drawable));
 		if (geom->getNumPrimitiveSets() == 0)
-		{
-			_model.nodes.pop_back();
 			return;
-		}
 		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		if (positions->size() <= 0)
-		{
-			_model.nodes.pop_back();
 			return;
-		}
+
+		apply(static_cast<osg::Node&>(drawable));
 
 		const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 		bool pushedStateSet = false;
@@ -350,10 +346,11 @@ tinygltf::Model Osg2Gltf::getGltfModel()
 	_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
 	std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
 	_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
-	if (!_model.nodes.size())
+	if (!_model.meshes.size())
 	{
-		_model.defaultScene = -1;
-		_model.scenes.clear();
+		tinygltf::Model model;
+		model.asset.version = "2.0";
+		return model;
 	}
 
 	return _model;
@@ -624,7 +621,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	{
 		filename = osgImage->getFileName();
 	}
-	
+
 	if (!osgDB::fileExists(filename))
 	{
 		OSG_WARN << "image file " << filename << " not found!" << std::endl;

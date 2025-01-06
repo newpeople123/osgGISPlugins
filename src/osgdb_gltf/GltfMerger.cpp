@@ -7,6 +7,7 @@
 using namespace osgGISPlugins;
 void GltfMerger::mergeMeshes()
 {
+	if (!_model.scenes.size()) return;
 	// 矩阵对应的primitive
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, Utils::MatrixHash, Utils::MatrixEqual> matrixPrimitiveMap;
 	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap);

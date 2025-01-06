@@ -105,6 +105,7 @@ std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getPositi
 
 void GltfMeshQuantizeCompressor::apply()
 {
+	if (!_model.scenes.size()) return;
 	_materialIndexes.clear();
 
 	std::tuple<double, double, double, double> result = getPositionBounds();

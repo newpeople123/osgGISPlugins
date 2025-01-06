@@ -156,7 +156,7 @@ namespace osgGISPlugins
 		virtual void applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy,
 			GltfOptimizer::GltfTextureOptimizationOptions& options);
 
-		virtual void writeNode();
+		virtual bool writeNode();
 
 		virtual void writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy);
 

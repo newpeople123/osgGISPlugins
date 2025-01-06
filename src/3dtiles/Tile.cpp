@@ -165,7 +165,7 @@ bool Tile::descendantNodeIsEmpty() const
 osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 {
 	osg::ref_ptr<osg::Group> group = new osg::Group;
-	if (this->node.valid()) {
+	if (this->node.valid() && this->lod == 0) {
 		osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
 		for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
 		{
@@ -252,10 +252,10 @@ double Tile::getDistanceByPixelSize(const float pixelSize, const float radius)
 void Tile::write()
 {
 	computeBoundingVolumeBox();
-	setContentUri();  // 这个已经在基类中处理了不同类型的路径构建
 
 	if (this->node.valid()) {
-		writeNode();
+		if(writeNode())
+			setContentUri();
 	}
 
 	writeChildren();
@@ -292,19 +292,26 @@ void Tile::applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::Gl
 	}
 }
 
-void Tile::writeNode()
+bool Tile::writeNode()
 {
 	// 1. 准备节点
-	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(), 
+	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(),
 		osg::CopyOp::DEEP_COPY_NODES |
 		osg::CopyOp::DEEP_COPY_DRAWABLES |
-		osg::CopyOp::DEEP_COPY_ARRAYS |  
+		osg::CopyOp::DEEP_COPY_ARRAYS |
 		osg::CopyOp::DEEP_COPY_PRIMITIVES |
 		osg::CopyOp::DEEP_COPY_USERDATA);
 
 	// 2. 配置纹理选项
 	GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions(config.gltfTextureOptions);
 	applyLODStrategy(nodeCopy, gltfTextureOptions);
+
+
+	Utils::TriangleCounterVisitor tcv;
+	nodeCopy->accept(tcv);
+	if (tcv.count == 0)
+		return false;
+
 
 	// 3. 优化节点
 	optimizeNode(nodeCopy, gltfTextureOptions);
@@ -313,11 +320,12 @@ void Tile::writeNode()
 	writeToFile(nodeCopy);
 
 	nodeCopy = nullptr;
-	osgDB::Registry::instance()->clearObjectCache();
+	return true;
 }
 
 void Tile::writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy)
 {
+
 	const string outputPath = getOutputPath();
 	osgDB::makeDirectory(outputPath);
 	osgDB::writeNodeFile(*nodeCopy.get(), getFullPath(), config.options);
@@ -360,7 +368,7 @@ void Tile::buildLOD()
 		size = rootProxy->children.size() - 1;// 最后一个是lod2或者lodProxy,不处理
 	}
 	// 递归处理子节点
-	for (size_t i=0;i< size;++i)
+	for (size_t i = 0; i < size; ++i)
 	{
 		auto& child = rootProxy->children.at(i);
 		child->config = config;
@@ -469,7 +477,7 @@ void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::G
 void Tile::applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy)
 {
 	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio);
+		Simplifier simplifier(config.simplifyRatio * 1.5);
 		nodeCopy->accept(simplifier);
 	}
 }

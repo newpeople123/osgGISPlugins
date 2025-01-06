@@ -65,6 +65,14 @@ namespace osgGISPlugins {
             destination->resize(meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, _targetErrorAggressive));
         }
 
+        if (!destination->size())
+        {
+            geom.setVertexArray(nullptr);
+            geom.setTexCoordArray(0, nullptr);
+            geom.setNormalArray(nullptr);
+            geom.setPrimitiveSet(psetIndex, new DrawElementsType(osg::PrimitiveSet::TRIANGLES, 0, nullptr));
+        }
+
         // 创建用于查找使用过的顶点的集合
         std::unordered_set<size_t> usedVertices(destination->begin(), destination->end());
 
