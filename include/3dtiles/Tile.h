@@ -33,7 +33,7 @@ namespace osgGISPlugins
 	constexpr float CesiumMaxScreenSpaceError = 16.0;
 	constexpr float MIN_GEOMETRIC_ERROR_DIFFERENCE = 0.1;  // 父子节点几何误差最小差值
 	constexpr float DIAGONAL_SCALE_FACTOR = 0.7;    // 几何误差缩放因子
-	constexpr float LOD_FACTOR = 0.1;
+	constexpr float LOD_FACTOR = 1.0;
 
 	enum class Refinement {
 		REPLACE,
