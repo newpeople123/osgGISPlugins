@@ -1442,12 +1442,13 @@ osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageT
 
 	newWidth = newWidth > maxWidth ? maxWidth : newWidth;
 	newHeight = newHeight > maxHeight ? maxHeight : newHeight;
-	if (newWidth == originalWidth && newHeight == newHeight)
-	{
-		osg::ref_ptr<osg::Image> imgCopy = osg::clone(img.get(), osg::CopyOp::DEEP_COPY_IMAGES);
-		imgCopy->scaleImage(newWidth, newHeight, img->r());
-		return imgCopy;
-	}
+	//if (newWidth == originalWidth && newHeight == newHeight)
+	//{
+	//	osg::ref_ptr<osg::Image> imgCopy = osg::clone(img.get(), osg::CopyOp::DEEP_COPY_IMAGES);
+	//	imgCopy->scaleImage(newWidth, newHeight, img->r());
+	//	return imgCopy;
+	//}
+	img->scaleImage(newWidth, newHeight, img->r());
 	return img;
 }
 

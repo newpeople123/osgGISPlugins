@@ -73,7 +73,7 @@ namespace osgGISPlugins
             VERTEX_POSTTRANSFORM = (1 << 19),
             VERTEX_PRETRANSFORM = (1 << 20),
             BUFFER_OBJECT_SETTINGS = (1 << 21),
-            INDEX_MESH_BY_MESHOPTIMIZER = (1 << 22),
+            INDEX_MESH_BY_MESHOPTIMIZER = (1 << 22),// 简化前调用
             VERTEX_CACHE_BY_MESHOPTIMIZER = (1 << 23),
             OVER_DRAW_BY_MESHOPTIMIZER = (1 << 24),
             VERTEX_FETCH_BY_MESHOPTIMIZER = (1 << 25),

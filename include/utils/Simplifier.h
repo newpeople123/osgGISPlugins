@@ -10,6 +10,7 @@ namespace osgGISPlugins {
         bool _aggressive = false, _lockBorders = false;
         float _targetError = 1e-2f, _targetErrorAggressive = 1e-1f;
     public:
+        float lodError = 0.0;
         Simplifier(const double sampleRatio, const bool aggressive = false,
             const bool lockBorders = false, const float targetError = 1e-2f) :osgUtil::Simplifier(sampleRatio),
             _aggressive(aggressive), _lockBorders(lockBorders) {
@@ -59,10 +60,12 @@ namespace osgGISPlugins {
         osg::ref_ptr<IndexArrayType> destination = new IndexArrayType(indiceCount);
         const unsigned int targetIndexCount = static_cast<unsigned int>(indiceCount * _sampleRatio);
         const size_t stride = sizeof(osg::Vec3);
-        destination->resize(meshopt_simplify(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, _targetError, options));
-
+        float resultError = 0.f;
+        destination->resize(meshopt_simplify(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, _targetError, options, &resultError));
+        this->lodError = osg::maximum(this->lodError, resultError);
         if (_aggressive && destination->size() > targetIndexCount) {
-            destination->resize(meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, _targetErrorAggressive));
+            destination->resize(meshopt_simplifySloppy(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, _targetErrorAggressive, &resultError));
+            this->lodError = osg::maximum(this->lodError, resultError);
         }
 
         if (!destination->size())

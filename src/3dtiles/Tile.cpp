@@ -81,54 +81,25 @@ void Tile::computeGeometricError()
 			}
 		});
 
-	const auto& textureOptions = config.gltfTextureOptions;
-	const int maxTextureResolution = osg::maximum(textureOptions.maxTextureWidth,
-		textureOptions.maxTextureHeight);
-
-	float pixelSize = InitPixelSize;
-	if (this->node.valid())
-	{
-		if (this->lod == 2)
-		{
-			pixelSize = maxTextureResolution * 0.25;
-			pixelSize = pixelSize > 128.0 ? 128.0 : pixelSize;
-		}
-		else if (this->lod == 1)
-		{
-			pixelSize = maxTextureResolution * 0.5;
-			pixelSize = pixelSize > 256.0 ? 256 : pixelSize;
-		}
-	}
 	double totalWeightedError = 0.0;
 	double totalWeight = 0.0;
 	for (osg::ref_ptr<Tile> child : this->children) {
-		if (child->lod == -1)
-			for (osg::ref_ptr<Tile> grand : child->children)
-			{
-				if (
-					child->level == grand->level &&
-					child->x == grand->x &&
-					child->y == grand->y &&
-					child->z == grand->z &&
-					grand->lod == 2
-					)
-				{
-					child = grand;
-					break;
-				}
-			}
 		if (child->node.valid())
 		{
 			double childGeometricError = 0.0;
+
 			if (this->lod != -1)
 			{
-				const double distance = getDistanceByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR);
-				childGeometricError = getCesiumGeometricErrorByDistance(distance) * child->diagonalLength / child->childDiagonalLength;
+				if (child->lod == 0)
+					childGeometricError = getCesiumGeometricErrorByLodError(this->lodError * 0.5, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
+				else
+					childGeometricError = getCesiumGeometricErrorByLodError(child->lodError, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
 			}
 			else
 			{
-				childGeometricError = getCesiumGeometricErrorByPixelSize(pixelSize, child->childDiagonalLength * DIAGONAL_SCALE_FACTOR);
+				childGeometricError = getCesiumGeometricErrorByPixelSize(InitPixelSize, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
 			}
+
 			totalWeightedError += childGeometricError * child->volume;
 			totalWeight += child->volume;
 
@@ -237,6 +208,18 @@ double Tile::getCesiumGeometricErrorByPixelSize(const float pixelSize, const flo
 	return getCesiumGeometricErrorByDistance(distance);
 }
 
+double Tile::getCesiumGeometricErrorByLodError(const float lodError, const double radius)
+{
+	/*
+	float d = max(0, distance(camera_position, mesh_center) - mesh_radius);
+	float e = d * (tan(camera_fovy / 2) * 2 / screen_height); // 1px in mesh space
+	bool lod_ok = e * lod_factor >= lod_error;
+	*/
+	const double distance = lodError / LOD_FACTOR / (tan(CesiumFrustumFovy / 2) * 2 / CesiumCanvasClientHeight) + radius;
+	const double geometricError = getCesiumGeometricErrorByDistance(distance);
+	return geometricError;
+}
+
 double Tile::getCesiumGeometricErrorByDistance(const float distance)
 {
 	return CesiumSSEDenominator * CesiumMaxScreenSpaceError * distance / CesiumCanvasClientHeight;
@@ -254,7 +237,7 @@ void Tile::write()
 	computeBoundingVolumeBox();
 
 	if (this->node.valid()) {
-		if(writeNode())
+		if (writeNode())
 			setContentUri();
 	}
 
@@ -277,49 +260,18 @@ void Tile::writeChildren()
 #endif
 }
 
-void Tile::applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
-{
-	switch (this->lod) {
-	case 2:
-		applyLOD2Strategy(nodeCopy, options);
-		break;
-	case 1:
-		applyLOD1Strategy(nodeCopy, options);
-		break;
-	default:
-		applyLOD0Strategy(nodeCopy);
-		break;
-	}
-}
-
 bool Tile::writeNode()
 {
-	// 1. 准备节点
-	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(node.get(),
-		osg::CopyOp::DEEP_COPY_NODES |
-		osg::CopyOp::DEEP_COPY_DRAWABLES |
-		osg::CopyOp::DEEP_COPY_ARRAYS |
-		osg::CopyOp::DEEP_COPY_PRIMITIVES |
-		osg::CopyOp::DEEP_COPY_USERDATA);
-
-	// 2. 配置纹理选项
-	GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions(config.gltfTextureOptions);
-	applyLODStrategy(nodeCopy, gltfTextureOptions);
-
-
 	Utils::TriangleCounterVisitor tcv;
-	nodeCopy->accept(tcv);
+	node->accept(tcv);
 	if (tcv.count == 0)
 		return false;
 
+	optimizeNode(node, config.gltfTextureOptions);
 
-	// 3. 优化节点
-	optimizeNode(nodeCopy, gltfTextureOptions);
+	writeToFile(node);
 
-	// 4. 写入文件
-	writeToFile(nodeCopy);
-
-	nodeCopy = nullptr;
+	node = nullptr;
 	return true;
 }
 
@@ -365,6 +317,14 @@ void Tile::buildLOD()
 		tileLOD2->children.push_back(tileLOD1);
 		tileLOD1->children.push_back(tileLOD0);
 
+		GltfOptimizer optimizer;
+		optimizer.optimize(tileLOD0->node.get(), GltfOptimizer::INDEX_MESH_BY_MESHOPTIMIZER);
+		optimizer.optimize(tileLOD1->node.get(), GltfOptimizer::INDEX_MESH_BY_MESHOPTIMIZER);
+		optimizer.optimize(tileLOD2->node.get(), GltfOptimizer::INDEX_MESH_BY_MESHOPTIMIZER);
+		tileLOD0->applyLODStrategy();
+		tileLOD1->applyLODStrategy();
+		tileLOD2->applyLODStrategy();
+
 		size = rootProxy->children.size() - 1;// 最后一个是lod2或者lodProxy,不处理
 	}
 	// 递归处理子节点
@@ -394,18 +354,6 @@ void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
 		this->volume = (bb._max.x() - bb._min.x()) *
 			(bb._max.y() - bb._min.y()) *
 			(bb._max.z() - bb._min.z());
-
-		Utils::TextureMetricsVisitor tmv(config.gltfTextureOptions.maxTextureWidth > config.gltfTextureOptions.maxTextureHeight ? config.gltfTextureOptions.maxTextureWidth : config.gltfTextureOptions.maxTextureHeight);
-		gnode->accept(tmv);
-		if (tmv.diagonalLength > 0.0)
-			this->childDiagonalLength = tmv.diagonalLength;
-		else
-		{
-			Utils::MaxGeometryVisitor mgv;
-			gnode->accept(mgv);
-			const osg::BoundingBox maxClusterBb = mgv.maxBB;
-			this->childDiagonalLength = (maxClusterBb._max - maxClusterBb._min).length();
-		}
 	}
 	/* single thread */
 	//for (size_t i = 0; i < this->children.size(); ++i)
@@ -435,8 +383,14 @@ void Tile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::
 
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 {
+	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(parent->node.get(),
+		osg::CopyOp::DEEP_COPY_NODES |
+		osg::CopyOp::DEEP_COPY_DRAWABLES |
+		osg::CopyOp::DEEP_COPY_ARRAYS |
+		osg::CopyOp::DEEP_COPY_PRIMITIVES |
+		osg::CopyOp::DEEP_COPY_USERDATA);
 	// 使用工厂方法创建对应类型的Tile
-	auto tile = createTileOfSameType(parent->node, parent);
+	auto tile = createTileOfSameType(nodeCopy, parent);
 	tile->config = parent->config;
 	tile->level = parent->level;
 	tile->x = parent->x;
@@ -445,39 +399,49 @@ osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 	tile->lod = lodLevel;
 	tile->diagonalLength = parent->diagonalLength;
 	tile->volume = parent->volume;
-	tile->childDiagonalLength = parent->childDiagonalLength;
 	tile->refine = Refinement::REPLACE;
 	return tile;
 }
 
-void Tile::applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
+void Tile::applyLODStrategy()
 {
-	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio, true);
-		nodeCopy->accept(simplifier);
+	switch (this->lod) {
+	case 2:
+		applyLODStrategy(0.5f, 0.25f);
+		break;
+	case 1:
+		applyLODStrategy(1.0f, 0.5f);
+		break;
+	default:
+		break;
 	}
-	options.maxTextureWidth /= 4;
-	options.maxTextureHeight /= 4;
-	options.maxTextureAtlasWidth /= 4;
-	options.maxTextureAtlasHeight /= 4;
 }
 
-void Tile::applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy, GltfOptimizer::GltfTextureOptimizationOptions& options)
+void Tile::applyLODStrategy(const float simplifyRatioFactor, const float textureFactor)
 {
 	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio);
-		nodeCopy->accept(simplifier);
+		Simplifier simplifier(config.simplifyRatio * simplifyRatioFactor);
+		node->accept(simplifier);
+		lodError = simplifier.lodError;
+		if (osg::equivalent(lodError, 0.0f))
+		{
+			this->parent->children.push_back(this->children[0]);
+			this->children[0]->parent = this->parent;
+			auto it = std::find(this->parent->children.begin(), this->parent->children.end(), this);
+			if (it != this->parent->children.end()) {
+				this->parent->children.erase(it);
+			}
+			node = nullptr;
+			return;
+		}
 	}
-	options.maxTextureWidth /= 2;
-	options.maxTextureHeight /= 2;
-	options.maxTextureAtlasWidth /= 2;
-	options.maxTextureAtlasHeight /= 2;
-}
 
-void Tile::applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy)
-{
-	if (config.simplifyRatio < 1.0) {
-		Simplifier simplifier(config.simplifyRatio * 1.5);
-		nodeCopy->accept(simplifier);
-	}
+	config.gltfTextureOptions.maxTextureWidth *= textureFactor;
+	config.gltfTextureOptions.maxTextureHeight *= textureFactor;
+	config.gltfTextureOptions.maxTextureAtlasWidth *= textureFactor;
+	config.gltfTextureOptions.maxTextureAtlasHeight *= textureFactor;
+	osg::clampTo(config.gltfTextureOptions.maxTextureWidth, 128, 8192);
+	osg::clampTo(config.gltfTextureOptions.maxTextureHeight, 128, 8192);
+	osg::clampTo(config.gltfTextureOptions.maxTextureAtlasWidth, 256, 8192);
+	osg::clampTo(config.gltfTextureOptions.maxTextureAtlasHeight, 256, 8192);
 }

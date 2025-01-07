@@ -13,7 +13,7 @@
 #include <tbb/blocked_range.h>
 #include <tbb/spin_mutex.h>
 // 控制导出3dtiles时是否为单线程(启用该宏则为单线程)
-// #define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
+#define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
@@ -33,6 +33,7 @@ namespace osgGISPlugins
 	constexpr float CesiumMaxScreenSpaceError = 16.0;
 	constexpr float MIN_GEOMETRIC_ERROR_DIFFERENCE = 0.1;  // 父子节点几何误差最小差值
 	constexpr float DIAGONAL_SCALE_FACTOR = 0.7;    // 几何误差缩放因子
+	constexpr float LOD_FACTOR = 0.1;
 
 	enum class Refinement {
 		REPLACE,
@@ -54,7 +55,7 @@ namespace osgGISPlugins
 			osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 
 			void validate() {
-				osg::clampTo(this->simplifyRatio, 0.f, 1.f);
+				osg::clampTo(this->simplifyRatio, 0.f, 0.9f);
 
 				this->gltfTextureOptions.maxTextureWidth = osg::Image::computeNearestPowerOfTwo(this->gltfTextureOptions.maxTextureWidth);
 				this->gltfTextureOptions.maxTextureHeight = osg::Image::computeNearestPowerOfTwo(this->gltfTextureOptions.maxTextureHeight);
@@ -91,9 +92,9 @@ namespace osgGISPlugins
 		int y = -1;
 		int z = -1;
 		int lod = -1;
+		float lodError = 0.0;
 		double diagonalLength = 0.0;
 		double volume = 0.0;
-		double childDiagonalLength = 0.0;
 
 		Tile() = default;
 		Tile(osg::ref_ptr<Tile> parent, const std::string& type)
@@ -129,6 +130,8 @@ namespace osgGISPlugins
 
 		static double getCesiumGeometricErrorByPixelSize(const float pixelSize, const float radius);
 
+		static double getCesiumGeometricErrorByLodError(const float lodError, const double radius);
+
 		static double getCesiumGeometricErrorByDistance(const float distance);
 
 		static double getDistanceByPixelSize(const float pixelSize, const float radius);
@@ -153,8 +156,7 @@ namespace osgGISPlugins
 
 		virtual void writeChildren();
 
-		virtual void applyLODStrategy(osg::ref_ptr<osg::Node>& nodeCopy,
-			GltfOptimizer::GltfTextureOptimizationOptions& options);
+		virtual void applyLODStrategy();
 
 		virtual bool writeNode();
 
@@ -169,11 +171,7 @@ namespace osgGISPlugins
 		virtual void setContentUri() = 0;
 		virtual void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) = 0;
 	private:
-		void applyLOD2Strategy(osg::ref_ptr<osg::Node>& nodeCopy,
-			GltfOptimizer::GltfTextureOptimizationOptions& options);
-		void applyLOD1Strategy(osg::ref_ptr<osg::Node>& nodeCopy,
-			GltfOptimizer::GltfTextureOptimizationOptions& options);
-		void applyLOD0Strategy(osg::ref_ptr<osg::Node>& nodeCopy);
+		void applyLODStrategy(const float simplifyRatioFactor, const float textureFactor);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_TILE_H
