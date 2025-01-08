@@ -246,18 +246,9 @@ void Tile::write()
 
 void Tile::writeChildren()
 {
-#ifdef OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 	for (auto& child : children) {
 		child->write();
 	}
-#else
-	tbb::parallel_for(tbb::blocked_range<size_t>(0, children.size()),
-		[&](const tbb::blocked_range<size_t>& r) {
-			for (size_t i = r.begin(); i < r.end(); ++i) {
-				children[i]->write();
-			}
-		});
-#endif
 }
 
 bool Tile::writeNode()

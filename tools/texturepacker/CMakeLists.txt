@@ -2,24 +2,17 @@ set(TOOL_NAME "texturepacker")
 
 # 查找源文件
 aux_source_directory(. DIR_SRCS)
-source_group("src" FILES ${DIR_SRCS})
-source_group("src/optimizer/texture" FILES 
-${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
-)
 
 # 定义可执行文件
-add_executable(${TOOL_NAME} ${DIR_SRCS} 
-${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
-)
+add_executable(${TOOL_NAME} ${DIR_SRCS} ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp)
 
 # 编译当前程序时会先编译这些项目
 add_dependencies(${TOOL_NAME} osgdb_gltf)
 add_dependencies(${TOOL_NAME} osgdb_fbx)
 add_dependencies(${TOOL_NAME} osgdb_ktx)
 add_dependencies(${TOOL_NAME} osgdb_webp)
-source_group("include/optimizer/texture" FILES 
-${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
-) 
+source_group("include" FILES ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h) 
+source_group("src" FILES ${DIR_SRCS} ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp)
 
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)

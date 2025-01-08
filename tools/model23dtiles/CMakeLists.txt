@@ -2,15 +2,14 @@ set(TOOL_NAME "model23dtiles")
 
 # 查找源文件
 aux_source_directory(. DIR_SRCS)
-source_group("src" FILES ${DIR_SRCS})
 
 # 定义可执行文件
 file(GLOB_RECURSE THREED_TILES_HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/*.h)
 file(GLOB_RECURSE THREED_TILES_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/*.cpp)
-file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
-file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
+file(GLOB_RECURSE UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
+file(GLOB_RECURSE UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
 ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS} 
-${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} 
+${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES} 
 ${THREED_TILES_HEADER_FILES} ${THREED_TILES_SOURCE_FILES}
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp
@@ -31,14 +30,15 @@ ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h 
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h 
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h)
-source_group("include/util" FILES ${UTILS_HEADER_FILES})
+source_group("include/utils" FILES ${UTILS_HEADER_FILES})
 
 source_group("src" FILES ${DIR_SRCS})
 source_group("src/3dtiles" FILES 
 ${THREED_TILES_SOURCE_FILES} 
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp 
-${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp)
-source_group("src/util" FILES ${UTILS_SOURCE_FILES} ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
+source_group("src/utils" FILES ${UTILS_SOURCE_FILES})
 
 
 # 查找 meshoptimizer 包

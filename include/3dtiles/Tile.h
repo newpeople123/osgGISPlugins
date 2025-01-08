@@ -11,9 +11,6 @@
 #include <osgDB/WriteFile>
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
-#include <tbb/spin_mutex.h>
-// 控制导出3dtiles时是否为单线程(启用该宏则为单线程)
-#define OSG_GIS_PLUGINS_ENABLE_WRITE_TILE_BY_SINGLE_THREAD
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {

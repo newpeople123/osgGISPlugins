@@ -62,8 +62,6 @@ project(osgGISPlugins)
 add_subdirectory(src)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_subdirectory(tests)
-else()
-    add_subdirectory(tests)
 endif()
 add_subdirectory(tools)
 
