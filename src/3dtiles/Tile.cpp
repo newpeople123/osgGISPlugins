@@ -423,7 +423,6 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 				this->parent->children.erase(it);
 			}
 			node = nullptr;
-			return;
 		}
 	}
 
@@ -431,8 +430,4 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 	config.gltfTextureOptions.maxTextureHeight *= textureFactor;
 	config.gltfTextureOptions.maxTextureAtlasWidth *= textureFactor;
 	config.gltfTextureOptions.maxTextureAtlasHeight *= textureFactor;
-	osg::clampTo(config.gltfTextureOptions.maxTextureWidth, 128, 8192);
-	osg::clampTo(config.gltfTextureOptions.maxTextureHeight, 128, 8192);
-	osg::clampTo(config.gltfTextureOptions.maxTextureAtlasWidth, 256, 8192);
-	osg::clampTo(config.gltfTextureOptions.maxTextureAtlasHeight, 256, 8192);
 }

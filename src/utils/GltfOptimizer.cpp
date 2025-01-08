@@ -1082,7 +1082,10 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::r
 					bAdd = false;
 			}
 			if (bAdd)
+			{
+				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
 				imgs.push_back(image);
+			}
 		}
 	}
 }
@@ -1334,7 +1337,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 
 	newWidth = newWidth > maxWidth ? maxWidth : newWidth;
 	newHeight = newHeight > maxHeight ? maxHeight : newHeight;
-	if (newWidth == originalWidth && newHeight == newHeight)
+	if (newWidth != originalWidth || newHeight != originalHeight)
 	{
 		img->scaleImage(newWidth, newHeight, img->r());
 	}
