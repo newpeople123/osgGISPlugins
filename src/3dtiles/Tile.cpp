@@ -270,8 +270,8 @@ void Tile::writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy)
 {
 
 	const string outputPath = getOutputPath();
-	osgDB::makeDirectory(outputPath);
-	osgDB::writeNodeFile(*nodeCopy.get(), getFullPath(), config.options);
+	if(osgDB::makeDirectory(outputPath))
+		osgDB::writeNodeFile(*nodeCopy.get(), getFullPath(), config.options);
 }
 
 void Tile::buildLOD()

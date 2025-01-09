@@ -14,8 +14,8 @@
 #include <windows.h>
 #endif
 #include "3dtiles/Tileset.h"
-#include "3dtiles/hlod/QuadtreeBuilder.h"
-#include "3dtiles/hlod/OctreeBuilder.h"
+#include "3dtiles/hlod/QuadTreeBuilder.h"
+#include "3dtiles/hlod/OcTreeBuilder.h"
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>

@@ -30,7 +30,7 @@ int main(int argc, char** argv)
     if (arguments.read("-h") || arguments.read("--help"))
     {
         usage->write(std::cout);
-        return 1;
+        return 100;
     }
 
     std::string input, output;
@@ -52,30 +52,30 @@ int main(int argc, char** argv)
     if (input.empty()) {
         std::cerr << "input file can not be null!" << '\n';
         usage->write(std::cout);
-        return 0;
+        return 1;
     }
 
     if (output.empty()) {
         std::cerr << "output file can not be null!" << '\n';
         usage->write(std::cout);
-        return 0;
+        return 2;
     }
 
     std::ifstream b3dmFile(input, std::ios::binary);
     if (!b3dmFile) {
         std::cerr << "can not open this b3dm file:" << input << '\n';
-        return 0;
+        return 3;
     }
 
     B3DMFile b3dm;
     b3dmFile.read(reinterpret_cast<char*>(&b3dm.header), sizeof(Base3DModelHeader));
     if (std::strncmp(b3dm.header.magic, "b3dm", 4) != 0) {
         std::cerr << "invalid b3dm file,b3dm header's magic is not \"b3dm\":" << input << '\n';
-        return 0;
+        return 4;
     }
     if (b3dm.header.version != 1) {
         std::cerr << "invalid b3dm file,b3dm header's version is not \"1\":" << input << '\n';
-        return 0;
+        return 5;
     }
     //读取Feature Table JSON
     if (b3dm.header.featureTableJSONByteLength > 0)
@@ -112,7 +112,7 @@ int main(int argc, char** argv)
     std::ofstream gltfFile(output, std::ios::binary);
     if (!gltfFile) {
         std::cerr << "create gltf/glb file failed:" << output << '\n';
-        return false;
+        return 6;
     }
 
     gltfFile.write(b3dm.glbData.c_str(), glbLength);
@@ -136,5 +136,5 @@ int main(int argc, char** argv)
     else {
         std::cout << "Successfully converted B3DM to GLB:" << input << " -> " << output << '\n';
     }
-    return 1;
+    return 0;
 }

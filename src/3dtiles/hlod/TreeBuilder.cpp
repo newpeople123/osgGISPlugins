@@ -130,7 +130,6 @@ void TreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const o
 {
 }
 
-
 osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 {
 	std::vector<osg::ref_ptr<osg::StateSet>> uniqueStateSets;
@@ -243,7 +242,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	const double yLength = rootBox.yMax() - rootBox.yMin();
 	const double zLength = rootBox.zMax() - rootBox.zMin();
 	const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
-	_config.maxLevel = std::log2(max / min);
+	_config.setMaxLevel(std::log2(max / min));
 	osg::ref_ptr<B3DMTile> result = divideB3DM(_groupsToDivideList, rootBox);
 	if (_groupsToDivideList->getNumChildren())
 		OSG_NOTICE << "_groupsToDivideList's length > 0!" << std::endl;
@@ -392,7 +391,7 @@ void TreeBuilder::processOverSizedNodes()
 		Utils::TriangleCounterVisitor triangleCv;
 		node->accept(triangleCv);
 
-		if (triangleCv.count > _config.maxTriangleCount)
+		if (triangleCv.count > _config.getMaxTriangleCount())
 		{
 			if (node->asGroup()->getNumChildren() > 1)
 				oversizedNodes.push_back(node);
@@ -453,9 +452,9 @@ void TreeBuilder::processOverSizedNodes()
 	if (oversizedNodes.size() > 0) processOverSizedNodes();
 }
 
-bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile)
+bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> tile)
 {
-	if (tile->level >= _config.maxLevel)
+	if (tile->level >= _config.getMaxLevel())
 	{
 		tile->node = new osg::Group;
 		const unsigned int size = group->getNumChildren();
@@ -467,8 +466,8 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 		return true;
 	}
 
-	unsigned int maxDrawcallCommandCount = (tile->level + 1) * _config.initDrawcallCommandCount;
-	maxDrawcallCommandCount = maxDrawcallCommandCount > _config.maxDrawcallCommandCount ? _config.maxDrawcallCommandCount : maxDrawcallCommandCount;
+	unsigned int maxDrawcallCommandCount = (tile->level + 1) * _config.InitDrawcallCommandCount;
+	maxDrawcallCommandCount = maxDrawcallCommandCount > _config.getMaxDrawcallCommandCount() ? _config.getMaxDrawcallCommandCount() : maxDrawcallCommandCount;
 
 	osg::ref_ptr<osg::Group> childGroup;
 	if (!tile->node.valid())
@@ -490,7 +489,7 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 	// 将排序后的子节点添加到子组，并记录需要移除的子节点
 	for (auto& child : children)
 	{
-		if (triangleCount >= _config.maxTriangleCount)
+		if (triangleCount >= _config.getMaxTriangleCount())
 			break;
 
 		const osg::BoundingBox childBB = computeBoundingBox(child);
@@ -505,7 +504,7 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 			childGroup->accept(dccv);
 			if (dccv.getCount() <= maxDrawcallCommandCount)
 			{
-				if (triangleCV.count + triangleCount <= _config.maxTriangleCount)
+				if (triangleCV.count + triangleCount <= _config.getMaxTriangleCount())
 				{
 					triangleCount += triangleCV.count;
 					drawcallCommandCount = dccv.getCount();
@@ -547,4 +546,21 @@ bool TreeBuilder::processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> g
 	}
 
 	return group->getNumChildren() == 0;
+}
+
+bool TreeBuilder::processI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, const osg::ref_ptr<I3DMTile> tile)
+{
+	for (auto it = group.begin(); it != group.end();) {
+		osg::ref_ptr<I3DMTile> child = it->get();
+		if (intersect(bounds, computeBoundingBox(child->node))) {
+			child->parent = tile;
+			tile->children.push_back(child);
+			it = group.erase(it);
+			continue;
+		}
+		++it;
+	}
+	if (tile->children.size())
+		return false;
+	return true;
 }

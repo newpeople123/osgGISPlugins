@@ -4,12 +4,14 @@
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
-	class OctreeBuilder :public TreeBuilder
+	class OcTreeBuilder :public TreeBuilder
 	{
 	public:
-		META_NodeVisitor(osgGISPlugins, OctreeBuilder)
+		META_NodeVisitor(osgGISPlugins, OcTreeBuilder)
 
-			OctreeBuilder() :TreeBuilder() {}
+		OcTreeBuilder() :TreeBuilder() {}
+
+		OcTreeBuilder(BuilderConfig config) :TreeBuilder(config) {}
 
 	private:
 		osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0) override;

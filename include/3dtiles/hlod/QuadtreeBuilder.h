@@ -4,19 +4,16 @@
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
-	class QuadtreeBuilder :public TreeBuilder
+	class QuadTreeBuilder :public TreeBuilder
 	{
 	public:
-		META_NodeVisitor(osgGISPlugins, QuadtreeBuilder)
+		META_NodeVisitor(osgGISPlugins, QuadTreeBuilder)
 
-			QuadtreeBuilder() :TreeBuilder() {}
+		QuadTreeBuilder() :TreeBuilder() {}
+
+		QuadTreeBuilder(BuilderConfig config) :TreeBuilder(config) {}
 
 	private:
-		struct SplitResult {
-			osg::BoundingBox bounds;
-			std::vector<osg::ref_ptr<osg::Node>> nodes;
-		};
-
 		int chooseSplitAxis(const osg::BoundingBox& bounds);
 
 		osg::BoundingBox computeChildBounds(const osg::BoundingBox& bounds, int axis, int a, int b);

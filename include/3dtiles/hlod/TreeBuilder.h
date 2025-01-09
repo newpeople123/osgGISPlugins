@@ -12,9 +12,48 @@ namespace osgGISPlugins
     class TreeBuilder :public osg::NodeVisitor
 	{
     public:
+        struct BuilderConfig {
+        public:
+            const unsigned int InitDrawcallCommandCount = 5;
+            void setMaxTriagnleCount(const unsigned int val)
+            {
+                maxTriangleCount = val;
+            }
+            void setMaxDrawcallCommandCount(const unsigned int val)
+            {
+                maxDrawcallCommandCount = val < InitDrawcallCommandCount ? InitDrawcallCommandCount : val;
+            }
+            void setMaxLevel(const unsigned int val)
+            {
+                maxLevel = val;
+            }
+            unsigned int getMaxTriangleCount() const {
+                return maxTriangleCount;
+            }
+            unsigned int getMaxDrawcallCommandCount() const {
+                return maxDrawcallCommandCount;
+            }
+            int getMaxLevel() const {
+                return maxLevel;
+            }
+        private:
+            unsigned int maxTriangleCount = 2.0e5;
+            unsigned int maxDrawcallCommandCount = 20;
+            int maxLevel = 32;
+        };
+    protected:
+        BuilderConfig _config;
+
+        osg::ref_ptr<osg::Group> _groupsToDivideList = new osg::Group;
+
+        osg::Matrix _currentMatrix;
+        std::vector<osg::Matrix> _matrixStack;
+    public:
         META_NodeVisitor(osgGISPlugins, TreeBuilder)
 
         TreeBuilder() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {};
+
+		TreeBuilder(BuilderConfig config) :_config(config), osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {};
 
         virtual osg::ref_ptr<B3DMTile> build();
 
@@ -27,22 +66,6 @@ namespace osgGISPlugins
         std::vector<std::vector<osg::ref_ptr<osg::UserDataContainer>>> _instanceDataContainers;
 
     protected:
-        // 添加配置结构体
-        struct BuilderConfig {
-            size_t maxTriangleCount = 2.0e5;
-            unsigned int maxTextureCount = 100;
-            unsigned int initDrawcallCommandCount = 5;
-            unsigned int maxDrawcallCommandCount = 20;
-            int maxLevel = 32;
-            bool enableParallel = true;
-        };
-        BuilderConfig _config;
-
-        osg::ref_ptr<osg::Group> _groupsToDivideList = new osg::Group;
-
-        osg::Matrix _currentMatrix;
-        std::vector<osg::Matrix> _matrixStack;
-
         void pushMatrix(const osg::Matrix& matrix);
 
         void popMatrix();
@@ -73,7 +96,10 @@ namespace osgGISPlugins
 
         void processOverSizedNodes();
 
-        bool processGeometryWithMeshTextureLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<Tile> tile);
+        bool processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> tile);
+
+        bool processI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, const osg::ref_ptr<I3DMTile> tile);
+
 	};
 }
 

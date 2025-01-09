@@ -12,8 +12,9 @@
 #include <windows.h>
 #endif
 #include "3dtiles/Tileset.h"
-#include "3dtiles/hlod/QuadtreeBuilder.h"
-#include "3dtiles/hlod/OctreeBuilder.h"
+#include "3dtiles/hlod/QuadTreeBuilder.h"
+#include "3dtiles/hlod/OcTreeBuilder.h"
+#include "3dtiles/hlod/KDTreeBuilder.h"
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
@@ -239,7 +240,7 @@ int main(int argc, char** argv)
 	usage->addCommandLineOption("-o <folder>", "output 3dtiles path,must be a directory.");
 	usage->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "texture format,option values are png、jpg、webp、ktx2，default value is jpg.");
 	usage->addCommandLineOption("-vf <draco/meshopt/quantize/quantize_meshopt>", "vertex format,option values are draco、meshopt、quantize、quantize_meshopt,default is none.");
-	usage->addCommandLineOption("-t <quad/oc>", " tree format,option values are quad、oc,default is oc.");
+	usage->addCommandLineOption("-t <quad/oc/kd>", " tree format,option values are quad、oc、kd,default is oc.");
 	usage->addCommandLineOption("-ratio <number>", "Simplified ratio of intermediate nodes.default is 0.5.");
 	usage->addCommandLineOption("-lat <number>", "datum point's latitude.");
 	usage->addCommandLineOption("-lng <number>", "datum point's longitude.");
@@ -256,7 +257,8 @@ int main(int argc, char** argv)
 	usage->addCommandLineOption("-recomputeNormal", "Recalculate normals.");
 	usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit, the model is not affected by lighting.");
 	usage->addCommandLineOption("-epsg", "Specify the projection coordinate system, which is mutually exclusive with -lat、-lng、height.");
-
+	usage->addCommandLineOption("-maxTriangleCount", "Triangle limit per tile, default is 200,000; larger values result in larger tiles which may load slower and cause lag; smaller values result in smaller tiles but increase tile requests, which can also cause lag.");
+	usage->addCommandLineOption("-maxDrawcallCommandCount", "Drawcall command limit per tile, default is 20; this limit actually restricts the number of materials and meshes per tile; larger values result in larger tiles which may cause lag; smaller values result in smaller tiles but increase tile requests, which can also cause lag.");
 
 	usage->addCommandLineOption("-h or --help", "Display command line parameters.");
 
@@ -264,7 +266,7 @@ int main(int argc, char** argv)
 	if (arguments.read("-h") || arguments.read("--help"))
 	{
 		usage->write(std::cout);
-		return 1;
+		return 100;
 	}
 
 
@@ -292,8 +294,11 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
-	std::string input = parseArgument(arguments, "-i", std::string(R"(C:\baidunetdiskdownload\data\dgn\工厂三维总装.fbx)"));
-	std::string output = parseArgument(arguments, "-o", std::string(R"(C:\Users\94764\Desktop\nginx-1.26.2\html\3dtiles\工厂三维总装)"));
+	const unsigned int maxTriangleCount = parseArgument(arguments, "-maxTriangleCount", 2.0e5);
+	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-maxDrawcallCommandCount", 20);
+
+	std::string input = parseArgument(arguments, "-i", std::string());
+	std::string output = parseArgument(arguments, "-o", std::string());
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
@@ -302,7 +307,7 @@ int main(int argc, char** argv)
 
 	if (input.empty() || output.empty()) {
 		OSG_FATAL << "Input or output path is missing!" << '\n';
-		return 0;
+		return 1;
 	}
 
 	OSG_NOTICE << "Reading model file..." << std::endl;
@@ -310,7 +315,7 @@ int main(int argc, char** argv)
 	if (!node.valid())
 	{
 		OSG_FATAL << "Error:can not read 3d model file!" << '\n';
-		return 0;
+		return 2;
 	}
 	try
 	{
@@ -391,9 +396,15 @@ int main(int argc, char** argv)
 		osgDB::makeDirectory(config.tileConfig.gltfTextureOptions.cachePath);
 		config.tileConfig.options->setOptionString(optionsStr);
 
-		TreeBuilder* treeBuilder = new QuadtreeBuilder;
+		TreeBuilder::BuilderConfig treeConfig;
+		treeConfig.setMaxDrawcallCommandCount(maxDrawcallCommandCount);
+		treeConfig.setMaxTriagnleCount(maxTriangleCount);
+
+		TreeBuilder* treeBuilder = new QuadTreeBuilder(treeConfig);
 		if (treeFormat == "oc")
-			treeBuilder = new OctreeBuilder;
+			treeBuilder = new OcTreeBuilder(treeConfig);
+		else if (treeFormat == "quad")
+			treeBuilder = new KDTreeBuilder(treeConfig);
 		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
 		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder,config);
 
@@ -407,6 +418,8 @@ int main(int argc, char** argv)
 		else
 		{
 			OSG_FATAL << "Failed converted " + input + " to 3dtiles..." << std::endl;
+			delete treeBuilder;
+			return 3;
 		}
 		delete treeBuilder;
 
@@ -414,12 +427,14 @@ int main(int argc, char** argv)
 	catch (const std::invalid_argument& e)
 	{
 		OSG_FATAL << "invalid input: " << e.what() << '\n';
+		return 4;
 	}
 	catch (const std::out_of_range& e)
 	{
 		OSG_FATAL << "value out of range: " << e.what() << '\n';
+		return 5;
 	}
 
 
-	return 1;
+	return 0;
 }

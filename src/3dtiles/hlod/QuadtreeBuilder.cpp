@@ -1,5 +1,5 @@
-#include "3dtiles/hlod/QuadtreeBuilder.h"
-int QuadtreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
+#include "3dtiles/hlod/QuadTreeBuilder.h"
+int QuadTreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 {
 	float xSpan = bounds._max.x() - bounds._min.x();
 	float ySpan = bounds._max.y() - bounds._min.y();
@@ -11,7 +11,7 @@ int QuadtreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 	return 2;
 }
 
-osg::BoundingBox QuadtreeBuilder::computeChildBounds(const osg::BoundingBox& bounds, int axis, int a, int b)
+osg::BoundingBox QuadTreeBuilder::computeChildBounds(const osg::BoundingBox& bounds, int axis, int a, int b)
 {
 	osg::BoundingBox childBound;
 
@@ -32,12 +32,12 @@ osg::BoundingBox QuadtreeBuilder::computeChildBounds(const osg::BoundingBox& bou
 	return childBound;
 }
 
-osg::ref_ptr<B3DMTile> QuadtreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
+osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
 
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
-	if (TreeBuilder::processGeometryWithMeshTextureLimit(group, bounds, tile))
+	if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
 		return tile;
 
 	const int axis = chooseSplitAxis(bounds);
@@ -61,40 +61,27 @@ osg::ref_ptr<B3DMTile> QuadtreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 	return tile;
 }
 
-void QuadtreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) {
+void QuadTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) {
 
 	if (!tile.valid() || group.empty()) return;
 
+	if (TreeBuilder::processI3DM(group, bounds, tile))
+		return;
+
 	const int axis = chooseSplitAxis(bounds);
-
-	std::vector<osg::BoundingBox> childrenBounds;
-
-	for (int a = 0; a < 2; ++a) {
-		for (int b = 0; b < 2; ++b) {
-			osg::BoundingBox childBounds = computeChildBounds(bounds, axis, a, b);
-			for (auto it = group.begin(); it != group.end();) {
-				osg::ref_ptr<I3DMTile> child = it->get();
-				if (intersect(childBounds, computeBoundingBox(child->node))) {
-					child->parent = tile;
-					tile->children.push_back(child);
-					it = group.erase(it);
-					continue;
+	for (size_t i = 0; i < tile->children.size(); ++i)
+	{
+		for (int a = 0; a < 2; ++a) {
+			for (int b = 0; b < 2; ++b) {
+				if (group.size() > 0)
+				{
+					const osg::BoundingBox childBounds = computeChildBounds(bounds, axis, a, b);
+					divideI3DM(group, childBounds, dynamic_cast<I3DMTile*>(tile->children[i].get()));
 				}
-				++it;
-			}
-			if (tile->children.size())
-				childrenBounds.push_back(childBounds);
-		}
-	}
-
-	for (auto& item : childrenBounds) {
-		for (size_t i = 0; i < tile->children.size(); ++i)
-		{
-			if (group.size() > 0)
-			{
-				divideI3DM(group, item, dynamic_cast<I3DMTile*>(tile->children[i].get()));
+				else
+					return;
 			}
 		}
-	}
 
+	}
 }

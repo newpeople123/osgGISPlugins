@@ -30,7 +30,7 @@ int main(int argc, char** argv)
     if (arguments.read("-h") || arguments.read("--help"))
     {
         usage->write(std::cout);
-        return 1;
+        return 100;
     }
 
     std::string input = "", output = "";
@@ -41,14 +41,14 @@ int main(int argc, char** argv)
     {
         OSG_FATAL << "input file can not be null!" << '\n';
         usage->write(std::cout);
-        return 0;
+        return 1;
     }
 
     if (output.empty())
     {
         OSG_FATAL << "output file can not be null!" << '\n';
         usage->write(std::cout);
-        return 0;
+        return 2;
     }
 #ifndef NDEBUG
 #else
@@ -89,5 +89,5 @@ int main(int argc, char** argv)
             OSG_NOTICE << "Successfully simplify model!" << std::endl;
         }
     }
-    return 1;
+    return 0;
 }
