@@ -32,6 +32,7 @@ json BoundingVolume::toJson() const {
 
 void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
 {
+	if (!node.valid()) return;
 	osg::ComputeBoundsVisitor cbv;
 	node->accept(cbv);
 	const osg::BoundingBox boundingBox = cbv.getBoundingBox();

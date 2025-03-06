@@ -24,20 +24,20 @@ namespace osgGISPlugins
 
         struct GltfTextureOptimizationOptions
         {
-            int maxWidth = 512;
-            int maxHeight = 512;
+            int maxTextureWidth = 512;
+            int maxTextureHeight = 512;
             int maxTextureAtlasWidth = 2048;
             int maxTextureAtlasHeight = 2048;
 
             std::string ext = ".png";
-            std::string cachePath = "";
+            std::string cachePath = "./";
             bool packTexture = true;
             GltfTextureOptimizationOptions& operator=(const GltfTextureOptimizationOptions& other)
             {
                 if (this != &other)
                 { // 避免自赋值
-                    maxWidth = other.maxWidth;
-                    maxHeight = other.maxHeight;
+                    maxTextureWidth = other.maxTextureWidth;
+                    maxTextureHeight = other.maxTextureHeight;
                     maxTextureAtlasWidth = other.maxTextureAtlasWidth;
                     maxTextureAtlasHeight = other.maxTextureAtlasHeight;
                     ext = other.ext;
@@ -73,7 +73,7 @@ namespace osgGISPlugins
             VERTEX_POSTTRANSFORM = (1 << 19),
             VERTEX_PRETRANSFORM = (1 << 20),
             BUFFER_OBJECT_SETTINGS = (1 << 21),
-            INDEX_MESH_BY_MESHOPTIMIZER = (1 << 22),
+            INDEX_MESH_BY_MESHOPTIMIZER = (1 << 22),// 简化前调用
             VERTEX_CACHE_BY_MESHOPTIMIZER = (1 << 23),
             OVER_DRAW_BY_MESHOPTIMIZER = (1 << 24),
             VERTEX_FETCH_BY_MESHOPTIMIZER = (1 << 25),
@@ -83,7 +83,6 @@ namespace osgGISPlugins
 
 
             REDUCE_DRAWCALL_OPTIMIZATIONS = 
-            MERGE_TRANSFORMS |
             TEXTURE_ATLAS_BUILDER_BY_STB |
             VERTEX_CACHE_BY_MESHOPTIMIZER |
             OVER_DRAW_BY_MESHOPTIMIZER |
@@ -211,54 +210,57 @@ namespace osgGISPlugins
 
             void optimizeOsgTextureSize(osg::ref_ptr<osg::Texture2D> texture);
 
-            void exportOsgTexture(osg::ref_ptr<osg::Texture2D> texture);
+            void exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture);
 
             void optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>& gltfMaterial, const osg::ref_ptr<osg::Geometry>& geom);
+
+            static bool gltfMaterialHasTexture(const osg::ref_ptr<GltfMaterial>& gltfMaterial);
 
             void packOsgTextures();
 
             void packOsgMaterials();
 
-            void exportImage(const osg::ref_ptr<osg::Image>& img);
+            std::string exportImage(const osg::ref_ptr<osg::Image>& img);
 
-            void packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer);
+            static void packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer);
 
             osg::ref_ptr<osg::Image> packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs);
 
-            void removePackedImages(std::vector<osg::ref_ptr<osg::Image>>& imgs, const std::vector<osg::ref_ptr<osg::Image>>& deleteImgs);
+            static void removePackedImages(std::vector<osg::ref_ptr<osg::Image>>& imgs, const std::vector<osg::ref_ptr<osg::Image>>& deleteImgs);
 
-            void processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
-
-            void updateGltfMaterialUserValue(osg::Geometry* geometry,
-                osg::ref_ptr<osg::StateSet>& stateSetCopy,
-                osg::ref_ptr<GltfMaterial> packedGltfMaterial,
-                TexturePacker& packer,
-                const int width,
-                const int height,
-                const osg::ref_ptr<osg::Texture2D>& oldTexture,
+            void updateGltfMaterialUserValue(osg::ref_ptr<GltfMaterial> gltfMaterial,
+                osg::ref_ptr<osg::Texture2D> texture,
+                const double offsetX,
+                const double offsetY,
+                const double scaleX,
+                const double scaleY,
+                const std::string fullPath,
                 const GltfTextureType type);
 
-            void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& images, const GltfTextureType type);
-
-            bool resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
-
-            int findNearestPowerOfTwo(int value);
-
-            std::string computeImageHash(const osg::ref_ptr<osg::Image>& img);
+            static void resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
 
             static bool compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2);
 
             void addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs);
 
-            void processGltfGeneralImages(std::vector<osg::ref_ptr<osg::Image>>& imgs, const GltfTextureType type);
+            void processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
 
-            void removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs);
+            void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
+
+            void processGltfGeneralImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
+
+            void processTextureImages(
+                std::vector<osg::ref_ptr<osg::Image>>& images,
+                const GltfTextureType type,
+                const std::function<osg::ref_ptr<osg::Texture2D>(GltfMaterial*)>& getTextureFunc);
+
+            static void removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs);
 
             GltfTextureOptimizationOptions _options;
 
             //osgMaterial
-            std::vector<GltfMaterial*> _gltfMaterials;
-            std::map<osg::Geometry*, GltfMaterial*> _geometryMatMap;
+            std::vector<osg::ref_ptr<GltfMaterial>> _gltfMaterials;
+            std::unordered_map<osg::Geometry*, osg::ref_ptr<GltfMaterial>> _geometryGltfMaterialMap;
 
             //osgTexture
             std::vector<osg::ref_ptr<osg::Image>> _images;
@@ -267,25 +269,27 @@ namespace osgGISPlugins
             TextureAtlasBuilderVisitor(const GltfTextureOptimizationOptions options, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, VERTEX_FETCH_BY_MESHOPTIMIZER), _options(options)
             {
             }
+            
+            static std::string computeImageHash(const osg::ref_ptr<osg::Image>& img);
 
             void apply(osg::Drawable& drawable) override;
 
             void packTextures();
+
             ~TextureAtlasBuilderVisitor()
             {
                 _gltfMaterials.clear();
-                _geometryMatMap.clear();
+                _geometryGltfMaterialMap.clear();
 
                 _images.clear();
                 _geometryImgMap.clear();
-
             }
         };
 
         class MergeTransformVisitor :public osgUtil::BaseOptimizerVisitor
         {
         private:
-            std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Node>>, MatrixHash, MatrixEqual> _matrixNodesMap;
+            std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Node>>, Utils::MatrixHash, Utils::MatrixEqual> _matrixNodesMap;
             osg::Matrixd _currentMatrix;
         public:
             MergeTransformVisitor(osgUtil::Optimizer* optimizer = 0) :

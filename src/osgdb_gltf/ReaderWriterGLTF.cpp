@@ -166,7 +166,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
         gltfModel.extensionsUsed.push_back("KHR_materials_unlit");
     }
 
-
     GltfMerger* gltfMerger = new GltfMerger(gltfModel, mergeMaterial, mergeMesh);
     processorManager.addProcessor(gltfMerger);
     processorManager.process();

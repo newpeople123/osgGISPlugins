@@ -7,11 +7,12 @@
 using namespace osgGISPlugins;
 void GltfMerger::mergeMeshes()
 {
+	if (!_model.scenes.size()) return;
 	// 矩阵对应的primitive
-	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual> matrixPrimitiveMap;
+	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, Utils::MatrixHash, Utils::MatrixEqual> matrixPrimitiveMap;
 	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap);
-	if (matrixPrimitiveMap.size() <= 1)
-		return;
+	//if (matrixPrimitiveMap.size() <= 1)
+	//	return;
 
 	// 新的accessor、bufferView和buffer
 	std::vector<tinygltf::Accessor> newAccessors;
@@ -29,7 +30,7 @@ void GltfMerger::mergeMeshes()
 		newBuffers.push_back(buffer);
 	}
 	//构建一个新的矩阵到mesh的映射
-	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Mesh>, MatrixHash, MatrixEqual> matrixMeshMap;
+	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Mesh>, Utils::MatrixHash, Utils::MatrixEqual> matrixMeshMap;
 
 	for (const auto& matrixPrimitiveItem : matrixPrimitiveMap) {
 		// 材质对应的primitve集合(此时这些primitive都有相同的变换矩阵)
@@ -684,7 +685,7 @@ void GltfMerger::apply()
 		mergeMeshes();
 }
 
-void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, MatrixHash, MatrixEqual>& matrixPrimitiveMap, osg::Matrixd matrix)
+void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, Utils::MatrixHash, Utils::MatrixEqual>& matrixPrimitiveMap, osg::Matrixd matrix)
 {
 	const tinygltf::Node& node = _model.nodes[index];
 	matrix.preMult(convertGltfNodeToOsgMatrix(node));

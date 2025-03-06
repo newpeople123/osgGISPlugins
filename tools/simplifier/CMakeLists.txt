@@ -19,7 +19,7 @@ ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
 
 # 定义可执行文件
 add_executable(${TOOL_NAME} ${DIR_SRCS} 
-${UTILS_SOURCE_FILES} ${UTILS_SOURCE_FILES} 
+${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES} 
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h

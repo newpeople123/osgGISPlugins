@@ -12,8 +12,9 @@
 #include <windows.h>
 #endif
 #include "3dtiles/Tileset.h"
-#include "3dtiles/hlod/QuadtreeBuilder.h"
-#include "3dtiles/hlod/OctreeBuilder.h"
+#include "3dtiles/hlod/QuadTreeBuilder.h"
+#include "3dtiles/hlod/OcTreeBuilder.h"
+#include "3dtiles/hlod/KDTreeBuilder.h"
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
@@ -35,7 +36,7 @@ private:
 		return quat * localPosition;
 	}
 public:
-	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal) ,osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
 
 
 	}
@@ -85,16 +86,22 @@ void registerFileAliases() {
 	instance->addFileExtensionAlias("b3dm", "gltf");
 	instance->addFileExtensionAlias("i3dm", "gltf");
 	instance->addFileExtensionAlias("ktx2", "ktx");
+	instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
 }
 
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
+#ifndef NDEBUG
+	readOptions->setOptionString("ShowProgress");
+#else
 	readOptions->setOptionString("TessellatePolygons");
+#endif // !NDEBUG
+
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
 	if (!node) {
-		OSG_FATAL << "Error: Cannot read 3D model file!" << '\n';
+		OSG_NOTICE << "Error: Cannot read 3D model file!" << '\n';
 	}
 
 	return node;
@@ -124,12 +131,12 @@ T parseArgument(osg::ArgumentParser& arguments, const std::string& option, const
 PJ* createProjection(PJ_CONTEXT* ctx, const std::string& srcEpsg, const std::string& dstEpsg) {
 	PJ* proj = proj_create_crs_to_crs(ctx, srcEpsg.c_str(), dstEpsg.c_str(), nullptr);
 	if (!proj) {
-		OSG_FATAL << "Error creating projections from EPSG codes!" << std::endl;
+		OSG_NOTICE << "Error creating projections from EPSG codes!" << std::endl;
 		return nullptr;
 	}
 	PJ* projTransform = proj_normalize_for_visualization(ctx, proj);
 	if (!projTransform) {
-		OSG_FATAL << "Failed to normalize PROJ transformation!" << std::endl;
+		OSG_NOTICE << "Failed to normalize PROJ transformation!" << std::endl;
 		proj_destroy(proj);
 		return nullptr;
 	}
@@ -137,7 +144,7 @@ PJ* createProjection(PJ_CONTEXT* ctx, const std::string& srcEpsg, const std::str
 }
 
 // 应用偏移量、朝向
-osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(osg::ref_ptr<osg::Node>& node, const double translationX, const double translationY, const double translationZ, const std::string upAxis, const std::string ext)
+osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(osg::ref_ptr<osg::Node>& node, const double translationX, const double translationY, const double translationZ, const std::string upAxis,const std::string ext)
 {
 
 	osg::Vec3d datumPoint = osg::Vec3d(-translationX, -translationY, -translationY);
@@ -173,48 +180,48 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 {
 	if (!epsg.empty())
 	{
-		node->computeBound();
-		const osg::BoundingSphere bs = node->getBound();
-		if (!bs.valid())
-		{
-			OSG_FATAL << "Error:Invalid model bounding box!" << std::endl;
-			exit(0);
-		}
-		const osg::Vec3d center = bs.center();
-		const string dstEpsg = "EPSG:4326";
-		const string srcEpsg = "EPSG:" + epsg;
-		PJ_CONTEXT* ctx = proj_context_create();
-		if (!ctx)
-		{
-			OSG_FATAL << "Error creating projection context!" << std::endl;
-			exit(0);
-		}
-		const char* searchPath[] = { "./share/proj" };
-		proj_context_set_search_paths(ctx, 1, searchPath);
-		const char* dbPath = proj_context_get_database_path(ctx);
-		if (!dbPath) {
-			OSG_FATAL << "Proj database not found. Please check your search path." << std::endl;
+			node->computeBound();
+			const osg::BoundingSphere bs = node->getBound();
+			if (!bs.valid())
+			{
+				OSG_NOTICE << "Error:Invalid model bounding box!" << std::endl;
+				exit(0);
+			}
+			const osg::Vec3d center = bs.center();
+			const string dstEpsg = "EPSG:4326";
+			const string srcEpsg = "EPSG:" + epsg;
+			PJ_CONTEXT* ctx = proj_context_create();
+			if (!ctx)
+			{
+				OSG_NOTICE << "Error creating projection context!" << std::endl;
+				exit(0);
+			}
+			const char* searchPath[] = { "./share/proj" };
+			proj_context_set_search_paths(ctx, 1, searchPath);
+			const char* dbPath = proj_context_get_database_path(ctx);
+			if (!dbPath) {
+				OSG_NOTICE << "Proj database not found. Please check your search path." << std::endl;
+				proj_context_destroy(ctx);
+				exit(0);
+			}
+
+			PJ* projTo4326 = createProjection(ctx, srcEpsg, dstEpsg);
+
+			PJ_COORD inputCoord = proj_coord(center.x(), -center.z(), center.y(), 0);
+			PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
+			latitude = outputCoord.xyz.y;
+			longitude = outputCoord.xyz.x;
+			height = outputCoord.xyz.z;
+
+			const osg::EllipsoidModel ellipsoidModel;
+			osg::Matrixd localToWorld;
+			ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), height, localToWorld);
+			PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
+			CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
+			node->accept(ctv);
+			proj_destroy(projTo4326);
+			proj_destroy(projTo4978);
 			proj_context_destroy(ctx);
-			exit(0);
-		}
-
-		PJ* projTo4326 = createProjection(ctx, srcEpsg, dstEpsg);
-
-		PJ_COORD inputCoord = proj_coord(center.x(), -center.z(), center.y(), 0);
-		PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
-		latitude = outputCoord.xyz.y;
-		longitude = outputCoord.xyz.x;
-		height = outputCoord.xyz.z;
-
-		const osg::EllipsoidModel ellipsoidModel;
-		osg::Matrixd localToWorld;
-		ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), height, localToWorld);
-		PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
-		CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
-		node->accept(ctv);
-		proj_destroy(projTo4326);
-		proj_destroy(projTo4978);
-		proj_context_destroy(ctx);
 	}
 }
 
@@ -233,7 +240,7 @@ int main(int argc, char** argv)
 	usage->addCommandLineOption("-o <folder>", "output 3dtiles path,must be a directory.");
 	usage->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "texture format,option values are png、jpg、webp、ktx2，default value is jpg.");
 	usage->addCommandLineOption("-vf <draco/meshopt/quantize/quantize_meshopt>", "vertex format,option values are draco、meshopt、quantize、quantize_meshopt,default is none.");
-	usage->addCommandLineOption("-t <quad/oc>", " tree format,option values are quad、oc,default is oc.");
+	usage->addCommandLineOption("-t <quad/oc/kd>", " tree format,option values are quad、oc、kd,default is quad.");
 	usage->addCommandLineOption("-ratio <number>", "Simplified ratio of intermediate nodes.default is 0.5.");
 	usage->addCommandLineOption("-lat <number>", "datum point's latitude.");
 	usage->addCommandLineOption("-lng <number>", "datum point's longitude.");
@@ -250,7 +257,8 @@ int main(int argc, char** argv)
 	usage->addCommandLineOption("-recomputeNormal", "Recalculate normals.");
 	usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit, the model is not affected by lighting.");
 	usage->addCommandLineOption("-epsg", "Specify the projection coordinate system, which is mutually exclusive with -lat、-lng、height.");
-
+	usage->addCommandLineOption("-maxTriangleCount <number>", "Triangle limit per tile, default is 200000; larger values result in larger tiles which may load slower and cause lag; smaller values result in smaller tiles but increase tile requests, which can also cause lag.");
+	usage->addCommandLineOption("-maxDrawcallCommandCount <number>", "Drawcall command limit per tile, default is 20; this limit actually restricts the number of materials and meshes per tile; larger values result in larger tiles which may cause lag; smaller values result in smaller tiles but increase tile requests, which can also cause lag.");
 
 	usage->addCommandLineOption("-h or --help", "Display command line parameters.");
 
@@ -258,12 +266,8 @@ int main(int argc, char** argv)
 	if (arguments.read("-h") || arguments.read("--help"))
 	{
 		usage->write(std::cout);
-		return 1;
+		return 100;
 	}
-
-
-
-	OSG_NOTICE << "Resolving parameters..." << std::endl;
 
 	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("jpg"));
 	const std::string vertexFormat = parseArgument(arguments, "-vf", std::string("none"));
@@ -286,6 +290,9 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
 
+	const unsigned int maxTriangleCount = parseArgument(arguments, "-maxTriangleCount", 2.0e5);
+	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-maxDrawcallCommandCount", 20);
+
 	std::string input = parseArgument(arguments, "-i", std::string());
 	std::string output = parseArgument(arguments, "-o", std::string());
 #ifndef NDEBUG
@@ -295,18 +302,19 @@ int main(int argc, char** argv)
 #endif // !NDEBUG
 
 	if (input.empty() || output.empty()) {
-		std::cout << "Input or output path is missing!" << '\n';
+		OSG_NOTICE << "Input or output path is missing!" << '\n';
 		usage->write(std::cout);
-		return 0;
+		return 1;
 	}
 
+	OSG_NOTICE << "Resolving parameters..." << std::endl;
 
 	OSG_NOTICE << "Reading model file..." << std::endl;
 	osg::ref_ptr<osg::Node> node = readModelFile(input);
 	if (!node.valid())
 	{
-		std::cout << "Error:can not read 3d model file!" << '\n';
-		return 0;
+		OSG_NOTICE << "Error:can not read 3d model file!" << '\n';
+		return 2;
 	}
 	try
 	{
@@ -322,49 +330,45 @@ int main(int argc, char** argv)
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
 		applyProjection(tNode, epsg, latitude, longitude, height);
 
-		TreeBuilder* treeBuilder = new QuadtreeBuilder;
-		if (treeFormat == "oc")
-			treeBuilder = new OctreeBuilder;
-		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
-		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder);
-
 		std::string optionsStr = "";
 		if (vertexFormat == "draco")
 		{
+			optionsStr += " ct=draco";
 			if (comporessLevel == "low")
 			{
-				optionsStr = "ct=draco vp=16 vt=14 vc=10 vn=12 vg=18 ";
+				optionsStr += " vp=16 vt=14 vc=10 vn=12 vg=18";
 			}
 			else if (comporessLevel == "high")
 			{
-				optionsStr = "ct=draco vp=12 vt=12 vc=8 vn=8 vg=14 ";
+				optionsStr += " vp=12 vt=12 vc=8 vn=8 vg=14";
 			}
 		}
 		else if (vertexFormat == "meshopt")
 		{
-			optionsStr = "ct=meshopt ";
+			optionsStr += " ct=meshopt";
 		}
 		else if (vertexFormat == "quantize")
 		{
+			optionsStr += " quantize";
 			if (comporessLevel == "low")
 			{
-				optionsStr = "quantize vp=16 vt=14 vn=12 vc=12 ";
+				optionsStr += " vp=16 vt=14 vn=12 vc=12 ";
 			}
 			else if (comporessLevel == "high")
 			{
-				optionsStr = "quantize vp=10 vt=8 vn=4 vc=4 ";
+				optionsStr += " vp=10 vt=8 vn=4 vc=4 ";
 			}
 		}
 		else if (vertexFormat == "quantize_meshopt")
 		{
-			optionsStr = "ct=meshopt ";
+			optionsStr += " ct=meshopt quantize";
 			if (comporessLevel == "low")
 			{
-				optionsStr += "quantize vp=16 vt=14 vn=12 vc=12 ";
+				optionsStr += " quantize vp=16 vt=14 vn=12 vc=12 ";
 			}
 			else if (comporessLevel == "high")
 			{
-				optionsStr += "quantize vp=10 vt=8 vn=4 vc=4 ";
+				optionsStr += " quantize vp=10 vt=8 vn=4 vc=4 ";
 			}
 		}
 		if (arguments.find("-unlit") > 0)
@@ -376,23 +380,35 @@ int main(int argc, char** argv)
 		config.latitude = latitude;
 		config.longitude = longitude;
 		config.height = height;
-		config.simplifyRatio = ratio;
-		config.path = output;
-		config.gltfTextureOptions.maxWidth = maxTextureWidth;
-		config.gltfTextureOptions.maxHeight = maxTextureHeight;
-		config.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
-		config.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
-		config.gltfTextureOptions.ext = "." + textureFormat;
+		config.tileConfig.simplifyRatio = ratio;
+		config.tileConfig.path = output;
+		config.tileConfig.gltfTextureOptions.maxTextureWidth = maxTextureWidth;
+		config.tileConfig.gltfTextureOptions.maxTextureHeight = maxTextureHeight;
+		config.tileConfig.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
+		config.tileConfig.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
+		config.tileConfig.gltfTextureOptions.ext = "." + textureFormat;
 #ifdef _WIN32
-		config.gltfTextureOptions.cachePath = config.path + "\\textures";
+		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "\\textures";
 #else
 		config.gltfTextureOptions.cachePath = config.path + "/textures";
 #endif
-		osgDB::makeDirectory(config.gltfTextureOptions.cachePath);
-		config.options->setOptionString(optionsStr);
+		osgDB::makeDirectory(config.tileConfig.gltfTextureOptions.cachePath);
+		config.tileConfig.options->setOptionString(optionsStr);
+
+		TreeBuilder::BuilderConfig treeConfig;
+		treeConfig.setMaxDrawcallCommandCount(maxDrawcallCommandCount);
+		treeConfig.setMaxTriagnleCount(maxTriangleCount);
+
+		TreeBuilder* treeBuilder = new QuadTreeBuilder(treeConfig);
+		if (treeFormat == "oc")
+			treeBuilder = new OcTreeBuilder(treeConfig);
+		else if (treeFormat == "quad")
+			treeBuilder = new KDTreeBuilder(treeConfig);
+		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
+		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder,config);
 
 		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
-		const bool result = tileset->toFile(config);
+		const bool result = tileset->write();
 
 		if (result)
 		{
@@ -400,20 +416,24 @@ int main(int argc, char** argv)
 		}
 		else
 		{
-			OSG_FATAL << "Failed converted " + input + " to 3dtiles..." << std::endl;
+			OSG_NOTICE << "Failed converted " + input + " to 3dtiles..." << std::endl;
+			delete treeBuilder;
+			return 3;
 		}
 		delete treeBuilder;
 
 	}
 	catch (const std::invalid_argument& e)
 	{
-		OSG_FATAL << "invalid input: " << e.what() << '\n';
+		OSG_NOTICE << "invalid input: " << e.what() << '\n';
+		return 4;
 	}
 	catch (const std::out_of_range& e)
 	{
-		OSG_FATAL << "value out of range: " << e.what() << '\n';
+		OSG_NOTICE << "value out of range: " << e.what() << '\n';
+		return 5;
 	}
 
 
-	return 1;
+	return 0;
 }

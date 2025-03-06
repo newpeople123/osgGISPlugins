@@ -43,7 +43,7 @@ int main(int argc, char** argv)
     if (arguments.read("-h") || arguments.read("--help"))
     {
         usage->write(std::cout);
-        return 1;
+        return 100;
     }
 
     std::vector<std::string> inputFiles;
@@ -87,14 +87,14 @@ int main(int argc, char** argv)
     if (inputFiles.empty()) {
         std::cerr << "Input files cannot be empty!" << '\n';
         usage->write(std::cout);
-        return 0;
+        return 1;
     }
 
     // 检查输出路径是否为空
     if (output.empty()) {
         std::cerr << "Output file cannot be empty!" << '\n';
         usage->write(std::cout);
-        return 0;
+        return 2;
     }
 
     // 检查宽度和高度是否为2的幂次
@@ -104,12 +104,12 @@ int main(int argc, char** argv)
 
     if (width <= 0 || !isPowerOfTwo(width)) {
         std::cerr << "Width must be a positive power of 2!" << '\n';
-        return 0;
+        return 3;
     }
 
     if (height <= 0 || !isPowerOfTwo(height)) {
         std::cerr << "Height must be a positive power of 2!" << '\n';
-        return 0;
+        return 3;
     }
 
     std::vector<osg::ref_ptr<osg::Image>> images;
@@ -166,14 +166,14 @@ int main(int argc, char** argv)
             if (!osgDB::fileExists(osgDB::getFilePath(output))) {
                 if (!osgDB::makeDirectory(osgDB::getFilePath(output))) {
                     std::cerr << "Failed to create directory: " << osgDB::getFilePath(output) << '\n';
-                    return 1;
+                    return 4;
                 }
             }
             std::ofstream infoOutFile(infoOutputPath);
             if (!infoOutFile.is_open()) {
                 std::cerr << "Failed to open file for writing: " << osgDB::convertStringFromCurrentCodePageToUTF8(infoOutputPath) << '\n';
                 std::cerr << "Erro code: " << errno << " (" << std::strerror(errno) << ")" << std::endl;
-                return 1;
+                return 5;
             }
             infoOutFile << atlasInfo;
             infoOutFile.close();
@@ -184,5 +184,5 @@ int main(int argc, char** argv)
     }
     else
         std::cerr << "Failed to pack texture atlas! The texture atlas size is too small!" << '\n';
-    return 1;
+    return 0;
 }

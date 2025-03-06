@@ -17,6 +17,7 @@
 using namespace osgGISPlugins;
 int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
 {
+
 	for (int i = 0; i < _model.materials.size(); ++i)
 	{
 		if (gltfMaterial == _model.materials.at(i))
@@ -70,8 +71,9 @@ void Osg2Gltf::apply(osg::Group& group)
 
 	for (unsigned i = 0; i < group.getNumChildren(); ++i)
 	{
-		int id = _osgNodeSeqMap[group.getChild(i)];
-		_model.nodes.back().children.push_back(id);
+		const int id = _osgNodeSeqMap[group.getChild(i)];
+		if (_model.nodes.size() - 1 != id)
+			_model.nodes.back().children.push_back(id);
 	}
 }
 
@@ -125,12 +127,13 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
 	if (geom.valid())
 	{
-		apply(static_cast<osg::Node&>(drawable));
 		if (geom->getNumPrimitiveSets() == 0)
 			return;
 		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		if (positions->size() <= 0)
 			return;
+
+		apply(static_cast<osg::Node&>(drawable));
 
 		const osg::ref_ptr< osg::StateSet > ss = drawable.getStateSet();
 		bool pushedStateSet = false;
@@ -294,6 +297,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 				const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geom->getVertexAttribArray(0));
 				if (batchIds.valid())
 				{
+
 					if (batchIds->size() == positions->size())
 					{
 						getOrCreateBufferView(batchIds, GL_ARRAY_BUFFER_ARB);
@@ -342,6 +346,13 @@ tinygltf::Model Osg2Gltf::getGltfModel()
 	_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
 	std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
 	_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
+	if (!_model.meshes.size())
+	{
+		tinygltf::Model model;
+		model.asset.version = "2.0";
+		return model;
+	}
+
 	return _model;
 }
 
@@ -559,6 +570,7 @@ int Osg2Gltf::getCurrentMaterial()
 			//gltfMaterial.alphaMode = "MASK";
 			//gltfMaterial.alphaCutoff = 0.5;
 		}
+
 		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 		if (osgMaterial.valid())
 		{
@@ -604,8 +616,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 		return -1;
 	}
 	std::string filename;
-	osgImage->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
-
+	osgTexture->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
 	if (filename.empty())
 	{
 		filename = osgImage->getFileName();
@@ -613,6 +624,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 
 	if (!osgDB::fileExists(filename))
 	{
+		OSG_WARN << "image file " << filename << " not found!" << std::endl;
 		return -1;
 	}
 	std::ifstream file(osgDB::convertStringFromUTF8toCurrentCodePage(filename), std::ios::binary);
@@ -621,12 +633,11 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 		OSG_FATAL << "Texture file \"" << filename << "\" exists,but failed to read.";
 		return -1;
 	}
-
 	for (unsigned int i = 0; i < _textures.size(); i++)
 	{
 		const osg::ref_ptr<osg::Texture> existTexture = _textures[i].get();
 		std::string existPathName;
-		existTexture->getImage(0)->getUserValue(BASECOLOR_TEXTURE_FILENAME, existPathName);
+		existTexture->getUserValue(BASECOLOR_TEXTURE_FILENAME, existPathName);
 		if (existPathName.empty())
 		{
 			existPathName = existTexture->getImage(0)->getFileName();

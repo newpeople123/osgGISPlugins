@@ -35,6 +35,13 @@
 #include <osgdb_fbx/fbxReader.h>
 #include <osgdb_fbx/WriterNodeVisitor.h>
 
+#define SHOW_READ_MODEL_PROGRESS 1
+#ifdef SHOW_READ_MODEL_PROGRESS
+#include <indicators/cursor_control.hpp>
+#include <indicators/progress_bar.hpp>
+using namespace indicators;
+#endif // SHOW_READ_MODEL_PROGRESS
+
 /// Returns true if the given node is a basic root group with no special information.
 /// Used in conjunction with UseFbxRoot option.
 /// Identity transforms are considered as basic root nodes.
@@ -89,7 +96,6 @@ bool isBasicRootNode(const osg::Node& node)
 
     return true;
 }
-
 
 class CleanUpFbx
 {
@@ -209,6 +215,36 @@ void resolveBindMatrices(
         }
     }
 }
+#ifdef SHOW_READ_MODEL_PROGRESS
+ProgressBar bar{
+    option::BarWidth{50},
+    option::PrefixText("Reading model file:"),
+    option::Start{"["},
+    option::Fill{"="},
+    option::Lead{">"},
+    option::Remainder{" "},
+    option::End{"]"},
+    option::ShowElapsedTime{true},
+    option::ShowRemainingTime{true},
+    option::ShowPercentage{true}
+};
+
+// 定义读取fbx模型进度回调函数
+bool readFbxFileProgressCallback(void* pArgs, float pPercentage, const char* pStatus) {
+    //pStatus是构件或材质名称
+    //pPercentage是进度百分比
+    bar.set_progress(pPercentage / 2);//全部读取完毕，进度是50%
+    return true;  // 继续导入
+}
+
+// 定义转换fbxsdk数据结构到osg的数据结构的进度回调函数
+bool convertFbxStruct2OsgStructProgressCallback(void* pArgs, float pPercentage, const char* pStatus) {
+    //pPercentage是进度百分比
+    if (bar.is_completed()) return true;
+    bar.set_progress(50 + pPercentage / 2);//起始进度为50%，转换完毕则为100%
+    return true;  // 这里返回true或false没有任何影响
+}
+#endif // SHOW_READ_MODEL_PROGRESS
 
 osgDB::ReaderWriter::ReadResult
 ReaderWriterFBX::readNode(const std::string& filenameInit,
@@ -242,7 +278,27 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
         std::string utf8filename(osgDB::convertStringFromCurrentCodePageToUTF8(filename));
 #endif
         FbxImporter* lImporter = FbxImporter::Create(pSdkManager, "");
-
+#ifdef SHOW_READ_MODEL_PROGRESS
+        bool showProgress = false;
+        if (options)
+        {
+            std::istringstream iss(options->getOptionString());
+            std::string opt;
+            while (iss >> opt)
+            {
+                if (opt == "ShowProgress")
+                {
+                    showProgress = true;
+                    break;
+                }
+            }
+        }
+        if (showProgress)
+        {
+            show_console_cursor(false);
+            lImporter->SetProgressCallback(readFbxFileProgressCallback);
+        }
+#endif // SHOW_READ_MODEL_PROGRESS
         if (!lImporter->Initialize(filename.c_str(), -1, pSdkManager->GetIOSettings()))
         {
 #if FBXSDK_VERSION_MAJOR < 2014
@@ -277,6 +333,7 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
             bool lightmapTextures = false;
             bool tessellatePolygons = false;
             bool zUp = false;
+            bool showProgress = false;
             if (options)
             {
                 std::istringstream iss(options->getOptionString());
@@ -298,6 +355,10 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
                     if (opt == "ZUp")
                     {
                         zUp = true;
+                    }
+                    if (opt == "ShowProgress")
+                    {
+                        showProgress = true;
                     }
                 }
             }
@@ -363,7 +424,18 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
                 lightmapTextures,
                 tessellatePolygons);
 
-            ReadResult res = reader.readFbxNode(pNode, bIsBone, nLightCount);
+            ReadResult res;
+#ifdef SHOW_READ_MODEL_PROGRESS
+            if (showProgress)
+            {
+                res = reader.readFbxNode(pNode, bIsBone, nLightCount, convertFbxStruct2OsgStructProgressCallback);
+                show_console_cursor(true);
+            }
+            else
+                res = reader.readFbxNode(pNode, bIsBone, nLightCount);
+#else
+            res = reader.readFbxNode(pNode, bIsBone, nLightCount);
+#endif // SHOW_READ_MODEL_PROGRESS
 
             if (res.success())
             {

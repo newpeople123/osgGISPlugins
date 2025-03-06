@@ -7,10 +7,10 @@ using namespace osgGISPlugins;
 void Tileset::computeTransform(const double lng, const double lat, const double h)
 {
 	const osg::EllipsoidModel ellipsoidModel;
-	osg::Matrixd matrix;
-	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, matrix);
+	osg::Matrixd localToWorld;
+	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, localToWorld);
 
-	const double* ptr = matrix.ptr();
+	const double* ptr = localToWorld.ptr();
 	for (unsigned i = 0; i < 16; ++i)
 		this->root->transform.push_back(*ptr++);
 }
@@ -58,16 +58,15 @@ json Tileset::toJson() const {
 	return j;
 }
 
-bool Tileset::toFile(Config config) {
+bool Tileset::write() {
 	this->computeGeometricError();
 
 	if (!this->valid())
 		return false;
 
-	config.validate();
-	this->root->write(config.path, config.simplifyRatio, config.gltfTextureOptions, config.options);
+	this->root->write();
 	this->computeTransform(config.longitude, config.latitude, config.height);
-	const string filePath = config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
+	const string filePath = config.tileConfig.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
 	std::setlocale(LC_ALL, "zh_CN.UTF-8");
 	ofstream file(filePath);
 	if (!file.is_open()) {
@@ -95,24 +94,58 @@ void Tileset::computeGeometricError()
 	_node->accept(cbv);
 	osg::BoundingBox bb = cbv.getBoundingBox();
 	double radius = bb.radius();
-	this->geometricError = radius * CesiumGeometricErrorOperator;
+	this->geometricError = Tile::getCesiumGeometricErrorByPixelSize(InitPixelSize, radius);
 
 
 	if (this->root->node.valid())
 	{
-		double groupGeometricErros = 0.0;
+		double totalVolume = 0.0; // 用于计算加权平均
+		double weightedErrorSum = 0.0; // 加权误差总和
 		osg::ref_ptr<osg::Group> group = this->root->node->asGroup();
+		const GltfOptimizer::GltfTextureOptimizationOptions textureOptions = config.tileConfig.gltfTextureOptions;
+		const int maxTextureResolution = textureOptions.maxTextureWidth > textureOptions.maxTextureHeight ? textureOptions.maxTextureWidth : textureOptions.maxTextureHeight;
 		for (size_t i = 0; i < group->getNumChildren(); ++i)
 		{
 			cbv.reset();
 			osg::ref_ptr<osg::Node> node = group->getChild(i);
 			node->accept(cbv);
 			bb = cbv.getBoundingBox();
-			radius = bb.radius();
-			groupGeometricErros += std::pow(radius * CesiumGeometricErrorOperator, 2);
+			const double diagonalLength = (bb._max - bb._min).length();
+
+			// 计算体积
+			const double volume = (bb._max.x() - bb._min.x()) *
+				(bb._max.y() - bb._min.y()) *
+				(bb._max.z() - bb._min.z());
+
+			Utils::MaxGeometryVisitor mgv;
+			node->accept(mgv);
+			const osg::BoundingBox clusterMaxBound = mgv.maxBB;
+
+			// 计算聚类体积
+			const double clusterVolume = (clusterMaxBound._max.x() - clusterMaxBound._min.x()) *
+				(clusterMaxBound._max.y() - clusterMaxBound._min.y()) *
+				(clusterMaxBound._max.z() - clusterMaxBound._min.z());
+
+			// 计算聚类体积的对角线长度
+			const double clusterMaxDiagonalLength = (clusterMaxBound._min - clusterMaxBound._max).length();
+
+			// 选择合适的误差范围
+			const double range = diagonalLength > 2 * clusterMaxDiagonalLength ? clusterMaxDiagonalLength : radius;
+
+			// 计算该子节点的几何误差
+			const double childNodeGeometricError = Tile::getCesiumGeometricErrorByPixelSize(maxTextureResolution / 4, range * 0.7);
+
+			// 加权误差计算
+			weightedErrorSum += childNodeGeometricError * (diagonalLength > 2 * clusterMaxDiagonalLength ? volume : clusterVolume);
+			totalVolume += (diagonalLength > 2 * clusterMaxDiagonalLength ? volume : clusterVolume);
 		}
-		this->geometricError = groupGeometricErros / this->geometricError;
+
+		// 如果总的体积大于0，计算加权平均几何误差
+		if (totalVolume > 0.0)
+		{
+			this->geometricError = osg::maximum(this->geometricError, weightedErrorSum / totalVolume);
+		}
 	}
-	if (this->geometricError <= this->root->geometricError)
-		this->geometricError = this->root->geometricError * 1.5;
+
+	this->geometricError = osg::maximum(this->geometricError, this->root->geometricError * 1.5);
 }

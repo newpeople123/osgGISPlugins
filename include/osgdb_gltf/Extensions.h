@@ -12,6 +12,9 @@
 #include <type_traits>
 #define BASECOLOR_TEXTURE_FILENAME "osgGisPlugins-filename"
 
+#define ORIGIN_WIDTH "origin-width"
+#define ORIGIN_HEIGHT "origin-height"
+
 #define TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME "osgGisPlugins-basecolor-KHR_texture_transform"
 #define TEX_TRANSFORM_BASECOLOR_OFFSET_X "osgGisPlugins-basecolor-offsetX"
 #define TEX_TRANSFORM_BASECOLOR_OFFSET_Y "osgGisPlugins-basecolor-offsetY"
@@ -60,22 +63,159 @@
 #define TEX_TRANSFORM_SG_SCALE_X "osgGisPlugins-SG-scaleX"
 #define TEX_TRANSFORM_SG_SCALE_Y "osgGisPlugins-SG-scaleY"
 #define TEX_TRANSFORM_SG_TEXCOORD "osgGisPlugins-SG-texCoord"
+
 namespace osgGISPlugins
 {
     struct GltfExtension
     {
     protected:
-        tinygltf::Value::Object value;
+        static bool compareValue(const tinygltf::Value::Object& val1,
+            const tinygltf::Value::Object& val2) {
+            if (val1.size() != val2.size()) return false;
 
+            for (const auto& pair : val1) {
+                auto it = val2.find(pair.first);
+                if (it == val2.end()) return false;
+
+                const tinygltf::Value& v1 = pair.second;
+                const tinygltf::Value& v2 = it->second;
+
+                if (v1.Type() != v2.Type()) return false;
+
+                switch (v1.Type()) {
+                case tinygltf::Type::REAL_TYPE:
+                    if (!osg::equivalent(v1.Get<double>(), v2.Get<double>())) return false;
+                    break;
+                case tinygltf::Type::INT_TYPE:
+                    if (v1.Get<int>() != v2.Get<int>()) return false;
+                    break;
+                case tinygltf::Type::BOOL_TYPE:
+                    if (v1.Get<bool>() != v2.Get<bool>()) return false;
+                    break;
+                case tinygltf::Type::STRING_TYPE:
+                    if (v1.Get<std::string>() != v2.Get<std::string>()) return false;
+                    break;
+                case tinygltf::Type::ARRAY_TYPE:
+                    if (!compareArray(v1.Get<tinygltf::Value::Array>(),
+                        v2.Get<tinygltf::Value::Array>())) return false;
+                    break;
+                case tinygltf::Type::OBJECT_TYPE:
+                    if (!compareValue(v1.Get<tinygltf::Value::Object>(),
+                        v2.Get<tinygltf::Value::Object>())) return false;
+                    break;
+                default:
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        static bool compareArray(const tinygltf::Value::Array& arr1,
+            const tinygltf::Value::Array& arr2) {
+            if (arr1.size() != arr2.size()) return false;
+
+            for (size_t i = 0; i < arr1.size(); ++i) {
+                const tinygltf::Value& v1 = arr1[i];
+                const tinygltf::Value& v2 = arr2[i];
+
+                if (v1.Type() != v2.Type()) return false;
+
+                switch (v1.Type()) {
+                case tinygltf::Type::REAL_TYPE:
+                    if (!osg::equivalent(v1.Get<double>(), v2.Get<double>())) return false;
+                    break;
+                case tinygltf::Type::INT_TYPE:
+                    if (v1.Get<int>() != v2.Get<int>()) return false;
+                    break;
+                    // ... 其他类型的比较
+                }
+            }
+            return true;
+        }
+
+        static bool compareTexture2D(osg::ref_ptr<osg::Texture2D> texture1, osg::ref_ptr<osg::Texture2D> texture2)
+        {
+            if (texture1 == texture2)
+            {
+                return true;
+            }
+            if (texture1.valid() != texture2.valid())
+            {
+                return false;
+            }
+            if (!texture1)
+            {
+                return true;
+            }
+
+            if (texture1->getWrap(osg::Texture::WRAP_S) != texture2->getWrap(osg::Texture::WRAP_S))
+            {
+                return false;
+            }
+            if (texture1->getWrap(osg::Texture::WRAP_T) != texture2->getWrap(osg::Texture::WRAP_T))
+            {
+                return false;
+            }
+            if (texture1->getWrap(osg::Texture::WRAP_R) != texture2->getWrap(osg::Texture::WRAP_R))
+            {
+                return false;
+            }
+            if (texture1->getFilter(osg::Texture::MIN_FILTER) != texture2->getFilter(osg::Texture::MIN_FILTER))
+            {
+                return false;
+            }
+            if (texture1->getFilter(osg::Texture::MAG_FILTER) != texture2->getFilter(osg::Texture::MAG_FILTER))
+            {
+                return false;
+            }
+
+            if (texture1->getNumImages() != texture2->getNumImages())
+            {
+                return false;
+            }
+
+            osg::ref_ptr<osg::Image> img1 = texture1->getImage();
+            osg::ref_ptr<osg::Image> img2 = texture2->getImage();
+            if (img1->getFileName() != img2->getFileName())
+            {
+                return false;
+            }
+            if (img1->s() != img2->s())
+            {
+                return false;
+            }
+            if (img1->r() != img2->r())
+            {
+                return false;
+            }
+            if (img1->t() != img2->t())
+            {
+                return false;
+            }
+            if (img1->getTotalDataSize() != img2->getTotalDataSize())
+            {
+                return false;
+            }
+            return true;
+        }
     public:
-        const std::string name;
+        tinygltf::Value::Object value;
+        std::string name;
 
-        GltfExtension(const std::string &name) : name(name) {}
+        GltfExtension(const std::string& name) : name(name) {}
 
         GltfExtension() = default;
         virtual ~GltfExtension() = default;
+        virtual bool compare(const GltfExtension& other) const {
+            if (this == &other) return true;
+            if (name != other.name) return false;
+            return compareValue(value, other.value);
+        }
+
+        virtual GltfExtension* clone() = 0;
+
         template <typename T>
-        T Get(const std::string &key) const
+        T Get(const std::string& key) const
         {
             tinygltf::Value::Object::const_iterator item = value.find(key);
             if (item != value.end())
@@ -90,20 +230,20 @@ namespace osgGISPlugins
             return tinygltf::Value(value);
         }
 
-        virtual tinygltf::Value::Object &GetValueObject()
+        virtual tinygltf::Value::Object& GetValueObject()
         {
             return value;
         }
 
-        virtual void SetValue(const tinygltf::Value::Object &val)
+        virtual void SetValue(const tinygltf::Value::Object& val)
         {
             value = val;
         }
 
         template <typename T, size_t N>
-        std::array<T, N> GetArray(const std::string &key) const
+        std::array<T, N> GetArray(const std::string& key) const
         {
-            std::array<T, N> result = {0.0}; // 初始化为 0
+            std::array<T, N> result = { 0.0 }; // 初始化为 0
             tinygltf::Value::Object::const_iterator item = value.find(key);
             if (item != value.end())
             {
@@ -121,14 +261,14 @@ namespace osgGISPlugins
 
         template <typename T>
         typename std::enable_if<!std::is_same<T, int>::value>::type
-        checkAndSet(const T &val, tinygltf::Value &tinygltfVal)
+            checkAndSet(const T& val, tinygltf::Value& tinygltfVal)
         {
             tinygltfVal = tinygltf::Value(val);
         }
 
         template <typename T>
         typename std::enable_if<std::is_same<T, int>::value>::type
-        checkAndSet(const T &val, tinygltf::Value &tinygltfVal)
+            checkAndSet(const T& val, tinygltf::Value& tinygltfVal)
         {
             if (val != -1)
             {
@@ -137,14 +277,14 @@ namespace osgGISPlugins
         }
 
         template <typename T>
-        void Set(const std::string &key, const T &val)
+        void Set(const std::string& key, const T& val)
         {
             tinygltf::Value tinygltfVal;
             checkAndSet(val, tinygltfVal);
             value[key] = std::move(tinygltfVal);
         }
 
-        tinygltf::Value::Object TextureInfo2Object(const tinygltf::TextureInfo &textureInfo)
+        tinygltf::Value::Object TextureInfo2Object(const tinygltf::TextureInfo& textureInfo)
         {
             tinygltf::Value::Object obj;
 
@@ -153,7 +293,7 @@ namespace osgGISPlugins
             if (textureInfo.extensions.size() > 0)
             {
                 tinygltf::Value::Object extensionsObj;
-                for (const auto &ext : textureInfo.extensions)
+                for (const auto& ext : textureInfo.extensions)
                 {
                     extensionsObj[ext.first] = ext.second;
                 }
@@ -167,7 +307,7 @@ namespace osgGISPlugins
             return obj;
         }
 
-        tinygltf::TextureInfo Object2TextureInfo(const tinygltf::Value::Object &obj)
+        tinygltf::TextureInfo Object2TextureInfo(const tinygltf::Value::Object& obj)
         {
             tinygltf::TextureInfo textureInfo;
 
@@ -189,8 +329,8 @@ namespace osgGISPlugins
             auto extensionsIt = obj.find("extensions");
             if (extensionsIt != obj.end() && extensionsIt->second.IsObject())
             {
-                const tinygltf::Value::Object &extensionsObj = extensionsIt->second.Get<tinygltf::Value::Object>();
-                for (const auto &ext : extensionsObj)
+                const tinygltf::Value::Object& extensionsObj = extensionsIt->second.Get<tinygltf::Value::Object>();
+                for (const auto& ext : extensionsObj)
                 {
                     textureInfo.extensions[ext.first] = ext.second;
                 }
@@ -204,11 +344,6 @@ namespace osgGISPlugins
             }
 
             return textureInfo;
-        }
-
-        virtual GltfExtension *clone()
-        {
-            return new GltfExtension;
         }
 
     private:
@@ -295,6 +430,22 @@ namespace osgGISPlugins
             return value;
         }
 
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* clearcoat = dynamic_cast<const KHR_materials_clearcoat*>(&other);
+            if (!clearcoat) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (compareTexture2D(osgClearcoatTexture, clearcoat->osgClearcoatTexture)) return false;
+            if (compareTexture2D(osgClearcoatRoughnessTexture, clearcoat->osgClearcoatRoughnessTexture)) return false;
+            if (compareTexture2D(osgClearcoatNormalTexture, clearcoat->osgClearcoatNormalTexture)) return false;
+
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_materials_clearcoat *newExtension = new KHR_materials_clearcoat;
@@ -363,6 +514,19 @@ namespace osgGISPlugins
             return value;
         }
 
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* anisotropy = dynamic_cast<const KHR_materials_anisotropy*>(&other);
+            if (!anisotropy) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (compareTexture2D(osgAnisotropyTexture, anisotropy->osgAnisotropyTexture)) return false;
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_materials_anisotropy *newExtension = new KHR_materials_anisotropy;
@@ -399,6 +563,17 @@ namespace osgGISPlugins
             KHR_materials_emissive_strength *newExtension = new KHR_materials_emissive_strength;
             newExtension->setEmissiveStrength(this->getEmissiveStrength());
             return newExtension;
+        }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* strength = dynamic_cast<const KHR_materials_emissive_strength*>(&other);
+            if (!strength) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
         }
     };
 
@@ -486,6 +661,21 @@ namespace osgGISPlugins
             value = val;
         }
 
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* pbrSpecularGlossiness = dynamic_cast<const KHR_materials_pbrSpecularGlossiness*>(&other);
+            if (!pbrSpecularGlossiness) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (compareTexture2D(osgSpecularGlossinessTexture, pbrSpecularGlossiness->osgSpecularGlossinessTexture)) return false;
+            if (compareTexture2D(osgDiffuseTexture, pbrSpecularGlossiness->osgDiffuseTexture)) return false;
+
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_materials_pbrSpecularGlossiness *newExtension = new KHR_materials_pbrSpecularGlossiness;
@@ -523,6 +713,24 @@ namespace osgGISPlugins
         void setIor(double val)
         {
             Set("ior", val);
+        }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* ior = dynamic_cast<const KHR_materials_ior*>(&other);
+            if (!ior) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
+        }
+
+        GltfExtension* clone() override
+        {
+            KHR_materials_ior* newExtension = new KHR_materials_ior;
+            newExtension->setIor(this->getIor());
+            return newExtension;
         }
     };
 
@@ -570,6 +778,22 @@ namespace osgGISPlugins
             Set("sheenColorTexture", TextureInfo2Object(sheenColorTexture));
             Set("sheenRoughnessTexture", TextureInfo2Object(sheenRoughnessTexture));
             return value;
+        }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* sheen = dynamic_cast<const KHR_materials_sheen*>(&other);
+            if (!sheen) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (!compareTexture2D(osgSheenColorTexture, sheen->osgSheenColorTexture)) return false;
+
+            if (!compareTexture2D(osgSheenRoughnessTexture, sheen->osgSheenRoughnessTexture)) return false;
+
+
+            return true;
         }
 
         GltfExtension *clone() override
@@ -646,6 +870,19 @@ namespace osgGISPlugins
             return value;
         }
 
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* volume = dynamic_cast<const KHR_materials_volume*>(&other);
+            if (!volume) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (!compareTexture2D(osgThicknessTexture, volume->osgThicknessTexture)) return false;
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_materials_volume *newExtension = new KHR_materials_volume;
@@ -707,6 +944,22 @@ namespace osgGISPlugins
             return value;
         }
 
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* specular = dynamic_cast<const KHR_materials_specular*>(&other);
+            if (!specular) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (!compareTexture2D(osgSpecularTexture, specular->osgSpecularTexture)) return false;
+
+            if (!compareTexture2D(osgSpecularColorTexture, specular->osgSpecularColorTexture)) return false;
+
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_materials_specular *newExtension = new KHR_materials_specular;
@@ -758,6 +1011,19 @@ namespace osgGISPlugins
         {
             Set("transmissionTexture", TextureInfo2Object(transmissionTexture));
             return value;
+        }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* transmission = dynamic_cast<const KHR_materials_transmission*>(&other);
+            if (!transmission) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            if (!compareTexture2D(osgTransmissionTexture, transmission->osgTransmissionTexture)) return false;
+
+            return true;
         }
 
         GltfExtension *clone() override
@@ -846,6 +1112,17 @@ namespace osgGISPlugins
             Set("_BATCHID", val);
         }
 
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* compression = dynamic_cast<const KHR_draco_mesh_compression*>(&other);
+            if (!compression) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_draco_mesh_compression *newExtension = new KHR_draco_mesh_compression;
@@ -863,6 +1140,12 @@ namespace osgGISPlugins
     struct KHR_mesh_quantization : GltfExtension
     {
         KHR_mesh_quantization() : GltfExtension("KHR_mesh_quantization") {}
+
+        GltfExtension* clone() override
+        {
+            KHR_mesh_quantization* newExtension = new KHR_mesh_quantization;
+            return newExtension;
+        }
     };
 
     struct EXT_meshopt_compression : GltfExtension
@@ -915,11 +1198,39 @@ namespace osgGISPlugins
         {
             return Get<std::string>("mode");
         }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* compression = dynamic_cast<const EXT_meshopt_compression*>(&other);
+            if (!compression) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
+        }
+
+        GltfExtension* clone() override
+        {
+            EXT_meshopt_compression* newExtension = new EXT_meshopt_compression;
+            newExtension->setBuffer(this->getBuffer());
+            newExtension->setByteLength(this->getByteLength());
+            newExtension->setByteStride(this->getByteStride());
+            newExtension->setCount(this->getCount());
+            newExtension->setMode(this->getMode());
+            return newExtension;
+        }
     };
 
     struct EXT_mesh_gpu_instancing : GltfExtension
     {
         EXT_mesh_gpu_instancing() : GltfExtension("EXT_mesh_gpu_instancing") {}
+
+        GltfExtension* clone() override
+        {
+            EXT_mesh_gpu_instancing* newExtension = new EXT_mesh_gpu_instancing;
+            return newExtension;
+        }
     };
 #pragma endregion
 
@@ -938,6 +1249,18 @@ namespace osgGISPlugins
         {
             Set("source", val);
         }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* basisu = dynamic_cast<const KHR_texture_basisu*>(&other);
+            if (!basisu) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_texture_basisu *newExtension = new KHR_texture_basisu;
@@ -988,6 +1311,18 @@ namespace osgGISPlugins
         {
             Set("rotation", val);
         }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* transform = dynamic_cast<const KHR_texture_transform*>(&other);
+            if (!transform) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
+        }
+
         GltfExtension *clone() override
         {
             KHR_texture_transform *newExtension = new KHR_texture_transform;
@@ -1014,6 +1349,19 @@ namespace osgGISPlugins
         {
             Set("source", val);
         }
+
+        bool compare(const GltfExtension& other) const override {
+            if (this == &other) return true;
+
+            const auto* webp = dynamic_cast<const EXT_texture_webp*>(&other);
+            if (!webp) return false;
+
+            if (!GltfExtension::compare(other)) return false;
+
+            return true;
+        }
+
+
         GltfExtension *clone() override
         {
             EXT_texture_webp *newExtension = new EXT_texture_webp;

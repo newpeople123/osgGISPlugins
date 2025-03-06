@@ -43,6 +43,8 @@ public:
     }
 
     virtual ReadResult readNode(const std::string& filename, const Options*) const;
+
+
     virtual WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const;
 };
 

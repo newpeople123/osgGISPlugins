@@ -27,35 +27,25 @@ namespace osgGISPlugins {
 
         META_Object(osg, GltfPbrMRMaterial);
 
-        bool operator==(const GltfPbrMRMaterial& other)
+        virtual bool compare(const GltfMaterial& other) const override
         {
-            if (!GltfMaterial::operator==(other))
-            {
+            const GltfPbrMRMaterial* pbrMR = dynamic_cast<const GltfPbrMRMaterial*>(&other);
+            if (!pbrMR) return false;
+
+            // 基类比较
+            if (!GltfMaterial::compare(*pbrMR)) return false;
+
+            // PBR 特有属性比较
+            if (!compareTexture2D(metallicRoughnessTexture, pbrMR->metallicRoughnessTexture))
                 return false;
-            }
-            if (!compareTexture2D(metallicRoughnessTexture, other.metallicRoughnessTexture))
-            {
+            if (!compareTexture2D(baseColorTexture, pbrMR->baseColorTexture))
                 return false;
-            }
-            if (!compareTexture2D(baseColorTexture, other.baseColorTexture))
-            {
-                return false;
-            }
-            for (size_t i = 0; i < 4; ++i)
-            {
-                if (baseColorFactor[i] != other.baseColorFactor[i])
-                {
-                    return false;
-                }
-            }
-            if (metallicFactor != other.metallicFactor)
-            {
-                return false;
-            }
-            if (roughnessFactor != other.roughnessFactor)
-            {
-                return false;
-            }
+
+            // 因子比较
+            if (!compareArray(baseColorFactor, pbrMR->baseColorFactor)) return false;
+            if (!osg::equivalent(metallicFactor, pbrMR->metallicFactor)) return false;
+            if (!osg::equivalent(roughnessFactor, pbrMR->roughnessFactor)) return false;
+
             return true;
         }
     };

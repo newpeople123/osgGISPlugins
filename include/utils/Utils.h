@@ -8,156 +8,341 @@
 #include <osg/Material>
 #include <osg/Geode>
 #include <osg/Texture2D>
+#include <osg/Math>
+#include <osg/ComputeBoundsVisitor>
 #include <set>
+#include <osgDB/FileNameUtils>
+#include <osgDB/FileUtils>
+#include <osgDB/ConvertUTF>
+#include <iostream>
+#include <iomanip>  // 用于输出格式化的百分比
+#include <fstream>  // 用于获取文件大小
+#include <indicators/cursor_control.hpp>
+#include <indicators/progress_bar.hpp>
 #include "osgdb_gltf/material/GltfPbrMRMaterial.h"
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
-
+#include <unordered_set>
+#include <unordered_map>
+using namespace indicators;
 namespace osgGISPlugins
 {
-    const static double EPSILON = 0.001;
+	class Utils {
+	public:
+		static void pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets);
 
-    class Utils {
-    public:
-        static bool compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs);
+		static bool isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords);
 
-        static bool compareMatrixs(const std::vector<osg::Matrixd>& lhses, const std::vector<osg::Matrixd>& rhses);
+		static bool compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs);
 
-        static bool compareStateSet(osg::ref_ptr<osg::StateSet> stateSet1, osg::ref_ptr<osg::StateSet> stateSet2);
+		static bool compareMatrixs(const std::vector<osg::Matrixd>& lhses, const std::vector<osg::Matrixd>& rhses);
 
-        static bool comparePrimitiveSet(osg::ref_ptr<osg::PrimitiveSet> pSet1, osg::ref_ptr<osg::PrimitiveSet> pSet2);
+		static bool compareStateSet(const osg::ref_ptr<osg::StateSet>& stateSet1, const osg::ref_ptr<osg::StateSet>& stateSet2);
 
-        static bool compareGeometry(osg::ref_ptr<osg::Geometry> geom1, osg::ref_ptr<osg::Geometry> geom2);
+		static bool comparePrimitiveSet(const osg::ref_ptr<osg::PrimitiveSet>& pSet1, const osg::ref_ptr<osg::PrimitiveSet>& pSet2);
 
-        static bool compareGeode(osg::Geode& geode1, osg::Geode& geode2);
-    };
+		static bool compareGeometry(const osg::ref_ptr<osg::Geometry>& geom1, const osg::ref_ptr<osg::Geometry>& geom2);
 
-    struct MatrixEqual {
-        bool operator()(const osg::Matrixd& lhs, const osg::Matrixd& rhs) const {
-            return Utils::compareMatrix(lhs, rhs);
-        }
-    };
+		static bool compareGeode(const osg::ref_ptr<osg::Geode>& geode1, const osg::ref_ptr<osg::Geode>& geode2);
 
-    struct MatrixsEqual {
-        bool operator()(const std::vector<osg::Matrixd>& lhses, const std::vector<osg::Matrixd>& rhses) const {
-            return Utils::compareMatrixs(lhses, rhses);
-        }
-    };
+		static bool compareDrawElements(const osg::DrawElements* de1, const osg::DrawElements* de2);
 
-    struct MatrixHash {
-        std::size_t operator()(const osg::Matrixd& matrix) const {
-            std::size_t seed = 0;
-            for (int i = 0; i < 4; ++i) {
-                for (int j = 0; j < 4; ++j) {
-                    seed ^= std::hash<double>()(matrix(i, j)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-                }
-            }
-            return seed;
-        }
-    };
+		static bool compareDrawArrays(const osg::DrawArrays* da1, const osg::DrawArrays* da2);
 
-    struct MatrixsHash {
-        std::size_t operator()(const std::vector<osg::Matrixd>& matrixs) const {
-            std::size_t seed = 0;
-            for (const auto matrix : matrixs)
-            {
-                for (int i = 0; i < 4; ++i) {
-                    for (int j = 0; j < 4; ++j) {
-                        seed ^= std::hash<double>()(matrix(i, j)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-                    }
-                }
-            }
-            return seed;
-        }
-    };
+		static bool compareArray(const osg::Array* array1, const osg::Array* array2);
 
-    class TriangleCountVisitor : public osg::NodeVisitor
-    {
-    public:
-        META_NodeVisitor(osgGISPlugins, TriangleCountVisitor)
+		static bool compareUniformValue(const osg::Uniform& u1, const osg::Uniform& u2);
 
-            unsigned int count = 0;
+		template<typename T, typename DrawElementsType>
+		static bool compareDrawElementsTemplate(const DrawElementsType* de1,
+			const DrawElementsType* de2)
+		{
+			if (!de1 || !de2) return false;
 
-        TriangleCountVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+			if (de1->getNumIndices() != de2->getNumIndices())
+				return false;
 
-        void apply(osg::Drawable& drawable) override
-        {
-            osg::Geometry* geom = drawable.asGeometry();
-            if (geom)
-            {
-                for (unsigned int i = 0; i < geom->getNumPrimitiveSets(); ++i)
-                {
-                    osg::PrimitiveSet* primSet = geom->getPrimitiveSet(i);
+			for (unsigned int i = 0; i < de1->getNumIndices(); ++i)
+			{
+				if (de1->index(i) != de2->index(i))
+					return false;
+			}
+			return true;
+		}
 
-                    if (osg::DrawArrays* drawArrays = dynamic_cast<osg::DrawArrays*>(primSet))
-                    {
-                        count += calculateTriangleCount(drawArrays->getMode(), drawArrays->getCount());
-                    }
-                    else if (osg::DrawElements* drawElements = dynamic_cast<osg::DrawElements*>(primSet))
-                    {
-                        count += drawElements->getNumIndices() / 3;
-                    }
-                }
-            }
-        }
+		// 主模板声明 - 只声明不定义，强制使用特化版本
+		template<typename VecType>
+		static bool compareVec(const typename VecType::value_type& v1,
+			const typename VecType::value_type& v2);
 
-    private:
-        unsigned int calculateTriangleCount(const GLenum mode, const unsigned int count)
-        {
-            switch (mode)
-            {
-            case GL_TRIANGLES:
-                return count / 3;
-            case GL_TRIANGLE_STRIP:
-            case GL_TRIANGLE_FAN:
-            case GL_POLYGON:
-                return count - 2;
-            case GL_QUADS:
-                return (count / 4) * 2;
-            case GL_QUAD_STRIP:
-                return count;
-            default:
-                return 0;
-            }
-        }
-    };
+		// int 特化
+		template<>
+		static bool compareVec<osg::IntArray>(const int& v1, const int& v2)
+		{
+			return v1 == v2;
+		}
 
-    class TextureCountVisitor :public osg::NodeVisitor
-    {
-    public:
-        META_NodeVisitor(osgGISPlugins, TextureCountVisitor)
+		// float 特化
+		template<>
+		static bool compareVec<osg::FloatArray>(const float& v1, const float& v2)
+		{
+			return osg::equivalent(v1, v2);
+		}
 
-            unsigned int count = 0;
+		// Vec2f 特化
+		template<>
+		static bool compareVec<osg::Vec2Array>(const osg::Vec2f& v1, const osg::Vec2f& v2)
+		{
+			return osg::equivalent(v1.x(), v2.x()) &&
+				osg::equivalent(v1.y(), v2.y());
+		}
 
-        TextureCountVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+		// Vec2b 特化
+		template<>
+		static bool compareVec<osg::Vec2bArray>(const osg::Vec2b& v1, const osg::Vec2b& v2)
+		{
+			return v1 == v2;
+		}
 
-        void apply(osg::Drawable& drawable) override
-        {
-            osg::StateSet* stateSet = drawable.getStateSet();
-            if (stateSet)
-            {
-                countTextures(stateSet);
-            }
-        }
-    private:
-        std::set<std::string> _names;
-        void countTextures(osg::StateSet* stateSet)
-        {
-            for (unsigned int i = 0; i < stateSet->getTextureAttributeList().size(); ++i)
-            {
-                const osg::Texture* osgTexture = dynamic_cast<osg::Texture*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-                if (osgTexture)
-                {
-                    const osg::Image* img = osgTexture->getImage(0);
-                    const std::string name = img->getFileName();
-                    if (_names.find(name) == _names.end())
-                    {
-                        _names.insert(name);
-                        ++count;
-                    }
-                }
-            }
-        }
-    };
+		// Vec3b 特化
+		template<>
+		static bool compareVec<osg::Vec3bArray>(const osg::Vec3b& v1, const osg::Vec3b& v2)
+		{
+			return v1 == v2;
+		}
 
+		// Vec3f 特化
+		template<>
+		static bool compareVec<osg::Vec3Array>(const osg::Vec3f& v1, const osg::Vec3f& v2)
+		{
+			return osg::equivalent(v1.x(), v2.x()) &&
+				osg::equivalent(v1.y(), v2.y()) &&
+				osg::equivalent(v1.z(), v2.z());
+		}
+
+		// Vec4f 特化
+		template<>
+		static bool compareVec<osg::Vec4Array>(const osg::Vec4f& v1, const osg::Vec4f& v2)
+		{
+			return osg::equivalent(v1.x(), v2.x()) &&
+				osg::equivalent(v1.y(), v2.y()) &&
+				osg::equivalent(v1.z(), v2.z()) &&
+				osg::equivalent(v1.w(), v2.w());
+		}
+
+		// Vec4ub 特化
+		template<>
+		static bool compareVec<osg::Vec4ubArray>(const osg::Vec4ub& v1, const osg::Vec4ub& v2)
+		{
+			return v1 == v2;
+		}
+
+		// 主比较函数保持不变
+		template<typename T>
+		static bool compareVecArray(const T* array1, const T* array2)
+		{
+			if (!array1 || !array2) return false;
+			if (array1->size() != array2->size()) return false;
+
+			for (size_t i = 0; i < array1->size(); ++i)
+			{
+				if (!compareVec<T>(array1->at(i), array2->at(i)))
+					return false;
+			}
+			return true;
+		}
+
+		struct MatrixEqual {
+			bool operator()(const osg::Matrixd& lhs, const osg::Matrixd& rhs) const {
+				return Utils::compareMatrix(lhs, rhs);
+			}
+		};
+
+		struct MatrixsEqual {
+			bool operator()(const std::vector<osg::Matrixd>& lhses, const std::vector<osg::Matrixd>& rhses) const {
+				return Utils::compareMatrixs(lhses, rhses);
+			}
+		};
+
+		struct MatrixHash {
+			std::size_t operator()(const osg::Matrixd& matrix) const {
+				std::size_t seed = 0;
+				for (int i = 0; i < 4; ++i) {
+					for (int j = 0; j < 4; ++j) {
+						seed ^= std::hash<double>()(matrix(i, j)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+					}
+				}
+				return seed;
+			}
+		};
+
+		struct MatrixsHash {
+			std::size_t operator()(const std::vector<osg::Matrixd>& matrixs) const {
+				std::size_t seed = 0;
+				for (const auto matrix : matrixs)
+				{
+					for (int i = 0; i < 4; ++i) {
+						for (int j = 0; j < 4; ++j) {
+							seed ^= std::hash<double>()(matrix(i, j)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+						}
+					}
+				}
+				return seed;
+			}
+		};
+
+		class MaxGeometryVisitor : public osg::NodeVisitor
+		{
+		public:
+			osg::BoundingBox maxBB;          // 最大包围盒
+			osg::Geometry* geom;
+
+			MaxGeometryVisitor()
+				: osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
+
+			virtual void apply(osg::Transform& transform) override;
+
+			virtual void apply(osg::Geode& geode) override;
+
+			void pushMatrix(const osg::Matrix& matrix);
+
+			void popMatrix();
+
+			osg::Matrix _currentMatrix;
+			std::vector<osg::Matrix> _matrixStack;
+		};
+
+		class CRenderingThread : public OpenThreads::Thread
+		{
+		public:
+
+			ProgressBar bar{
+				option::BarWidth{50},
+				option::PrefixText("Reading model file:"),
+				option::Start{"["},
+				option::Fill{"="},
+				option::Lead{">"},
+				option::Remainder{" "},
+				option::End{"]"},
+				option::ShowElapsedTime{true},
+				option::ShowRemainingTime{true},
+				option::ShowPercentage{true}
+			};
+
+			CRenderingThread(osgDB::ifstream* fin) :_fin(fin)
+			{
+				show_console_cursor(false);
+				fin->seekg(0, std::ifstream::end);
+				_length = fin->tellg();
+				fin->seekg(0, std::ifstream::beg);
+
+			};
+			virtual ~CRenderingThread() {};
+
+			void stop();
+
+			virtual void run();
+
+		protected:
+			osgDB::ifstream* _fin;
+			int _length;
+			bool _bStop = false;
+		};
+
+		class ProgressReportingFileReadCallback : public osgDB::Registry::ReadFileCallback
+		{
+		public:
+			CRenderingThread* crt;
+			typedef osgDB::ReaderWriter::ReadResult ReadResult;
+			ProgressReportingFileReadCallback() {}
+			~ProgressReportingFileReadCallback()
+			{
+				if (crt)
+				{
+					crt->join();
+					delete crt;
+					crt = nullptr;
+				}
+			}
+			virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option);
+		};
+
+		class TriangleCounterVisitor : public osg::NodeVisitor
+		{
+		public:
+			META_NodeVisitor(osgGISPlugins, TriangleCounterVisitor)
+
+				unsigned int count = 0;
+
+			TriangleCounterVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+
+			void apply(osg::Drawable& drawable) override;
+
+		private:
+			unsigned int calculateTriangleCount(const GLenum mode, const unsigned int count);
+		};
+
+		class TextureCounterVisitor :public osg::NodeVisitor
+		{
+		public:
+			META_NodeVisitor(osgGISPlugins, TextureCounterVisitor)
+
+				TextureCounterVisitor() :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+
+			void apply(osg::Drawable& drawable) override;
+
+			unsigned int getCount() const
+			{
+				return _stateSets.size();
+			}
+		private:
+			std::vector<osg::ref_ptr<osg::StateSet>> _stateSets;
+		};
+
+		class TextureMetricsVisitor : public osg::NodeVisitor
+		{
+			int _resolution = 0.0;
+			double _minTexelDensity; // 用于记录最小纹素密度
+		public:
+			double diagonalLength = 0.0;
+			TextureMetricsVisitor(int resolution) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
+			{
+				_minTexelDensity = FLT_MAX;
+				_resolution = resolution;
+				_currentMatrix.makeIdentity();
+			}
+
+			virtual void apply(osg::Transform& transform) override;
+
+			virtual void apply(osg::Geode& geode) override;
+
+		private:
+			void pushMatrix(const osg::Matrix& matrix);
+
+			void popMatrix();
+
+			osg::Matrix _currentMatrix;
+			std::vector<osg::Matrix> _matrixStack;
+		};
+
+		class DrawcallCommandCounterVisitor :public osg::NodeVisitor
+		{
+		public:
+			DrawcallCommandCounterVisitor():osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN){}
+
+			void apply(osg::Transform& transform) override;
+
+			void apply(osg::Drawable& drawable) override;
+
+			unsigned int getCount() const;
+		private:
+			void pushMatrix(const osg::Matrix& matrix);
+
+			void popMatrix();
+
+			std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Geometry>>, Utils::MatrixHash, Utils::MatrixEqual> _matrixGeometryMap;
+			osg::Matrix _currentMatrix;
+			std::vector<osg::Matrix> _matrixStack;
+		};
+	};
 }
 #endif // !OSG_GIS_PLUGINS_UTILS_H

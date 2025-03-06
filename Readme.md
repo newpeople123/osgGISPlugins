@@ -139,7 +139,7 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 ## model23dtiles
 
 1、将3D模型转换为3dtiles 1.0；
-2、支持四叉树和八叉树结构的3dtiles；
+2、支持KD树、四叉树和八叉树结构的3dtiles；
 3、支持webp/ktx2纹理压缩；
 4、支持draco和meshoptimizer压缩及顶点量化；
 5、支持纹理合并(减少drawcall次数)；
@@ -153,9 +153,9 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 
 #### 命令行格式
 
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit`
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc/kd> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit -maxTriangleCount 300000 -maxDrawcallCommandCount 25`
 或
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc> -ratio <Number> -o <DIR> -epsg <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit`
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc/kd> -ratio <Number> -o <DIR> -epsg <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit -maxTriangleCount 300000 -maxDrawcallCommandCount 25`
 
 #### 示例命令
 
@@ -174,22 +174,24 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
 `-tf` 纹理压缩格式，可选值有：png、jpg、webp、ktx2，默认值为：jpg。
 `-vf` 顶点压缩格式，可选的值有：draco、meshopt、quantize、quantize_meshopt，无默认值，即不对顶点进行压缩。
 `-comporessLevel` draco压缩级别/顶点量化级别，可选的值为：low、medium、high，默认值为：medium，仅当vf的值为quantize、quantize_meshopt和draco时生效。
-`-t` 3dtiles的组织结构，可以为四叉树或八叉树，可选的值有：quad、oc，默认值为：quad。
+`-t` 3dtiles的组织结构，可以为KD树、四叉树或八叉树，可选的值有：kd、quad、oc，默认值为：quad。
 `-ratio` 3dtiles中间节点的简化比例，默认值为：0.5。
-`-lat` 纬度,默认30。
-`-lng` 经度，默认116。
+`-lat` 纬度,默认30.0。
+`-lng` 经度，默认116.0。
 `-height` 高度，默认300。
 `-translationX` 重设模型原点位置的x坐标，默认值为0。
 `-translationY` 重设模型原点位置的y坐标，默认值为0。
 `-translationZ` 重设模型原点位置的z坐标，默认值为0。
-`-upAxis` 模型向上方向，可选的只有：X、Y、Z，需大写，默认值为：Y(fbx模型不需设定该参数，默认会将fbx模型转换为Y轴向上)。
+`-upAxis` 模型向上方向，可选的只有：X、Y、Z，需大写，默认值为：Y(fbx模型不需设定该参数，无论fbx模型是哪个轴朝上，默认都会将fbx模型转换为Y轴向上)。
 `-maxTextureWidth` 单个纹理的最大宽度，默认值为256，需为2的幂次。
 `-maxTextureHeight` 单个纹理的最大高度，默认值为256，需为2的幂次。
 `-maxTextureAtlasWidth` 纹理图集的最大宽度，默认值为2048，需为2的幂次，且值要大于maxTextureWidth的值，否则将不会构建纹理图集。
 `-maxTextureAtlasHeight` 纹理图集的最大高度，默认值为2048，需为2的幂次，且值要大于maxTextureHeight的值，否则将不会构建纹理图集。
+`-maxTriangleCount` 3dtiles瓦片的最大三角面数量，默认为20w。
+`-maxDrawcallCommandCount` 3dtiles瓦片的最大drawcall数量，默认值为20。
 `-recomputeNormal` 重新计算法线
-`-unlit`启用`KHR_materials_unlit`扩展，适用于烘焙过的模型
-`-epsg`若模型顶点坐标为投影坐标系，指定epsg编码，与lat、lng和height参数互斥
+`-unlit` 启用 `KHR_materials_unlit`扩展，适用于烘焙过的模型
+`-epsg` 若模型顶点坐标为投影坐标系，指定epsg编码，与lat、lng和height参数互斥
 
 ## simplifier
 
@@ -249,7 +251,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
 </div>
 
 1、编译需要fbxsdk和修改后的tinygltf等库，但是文件太大无法上传，因此放在了百度网盘中(链接：[https://pan.baidu.com/s/16YB3yUm8jEC6Ep4q4O_PoQ?pwd=2o84](https://pan.baidu.com/s/16YB3yUm8jEC6Ep4q4O_PoQ?pwd=2o84)
-提取码：2o84 )，下载解压后放在和src同级目录下即可；
+提取码：2o84 )，下载解压后放在和src同级目录下即可；同时网盘中有编译好的windows/linux的文件；
 2、编译时需要修改根目录下的CMakeLists.txt文件中CMAKE_TOOLCHAIN_FILE变量的值为本地vcpkg工具路径。
 
 其他方式：
@@ -265,16 +267,15 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
 # 缺陷
 
 1、当前不支持i3dm、b3dm、gltf/glb文件的导入；
-2、model23dtiles不支持构建kd树；
+2、model23dtiles工具构建kd树、四叉树或八叉树时，需要寻找可以实例化的模型构件，但这个过程较慢，影响总体速度；
 ...
 
 # 后续计划
 
 1、更新相关依赖库到最新版本(尤其是meshoptimizer)
-2、model23dtiles支持导出无光照的瓦片；
-3、model23dtiles支持重新计算法线功能；
 ...
 
 # 关于作者
 
 这是作者的第一个开源项目，非常感谢[osg](https://github.com/openscenegraph/OpenSceneGraph)、[osgEarth](https://github.com/gwaldron/osgearth)、[osgVerse](https://github.com/xarray/osgverse)、[Fbx2glTF](https://github.com/facebookincubator/FBX2glTF)、[3dtiles](https://github.com/fanvanzh/3dtiles)等开源项目对我的启发和帮助。
+联系方式：vx:jlcdhznextwhere
