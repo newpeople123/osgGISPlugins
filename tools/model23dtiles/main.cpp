@@ -390,7 +390,7 @@ int main(int argc, char** argv)
 #ifdef _WIN32
 		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "\\textures";
 #else
-		config.gltfTextureOptions.cachePath = config.path + "/textures";
+		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "/textures";
 #endif
 		osgDB::makeDirectory(config.tileConfig.gltfTextureOptions.cachePath);
 		config.tileConfig.options->setOptionString(optionsStr);

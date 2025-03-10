@@ -754,3 +754,65 @@ void Utils::DrawcallCommandCounterVisitor::popMatrix()
 		_matrixStack.pop_back();
 	}
 }
+
+// int 特化
+template<>
+bool Utils::compareVec<osg::IntArray>(const int& v1, const int& v2)
+{
+	return v1 == v2;
+}
+
+// float 特化
+template<>
+bool Utils::compareVec<osg::FloatArray>(const float& v1, const float& v2)
+{
+	return osg::equivalent(v1, v2);
+}
+
+// Vec2f 特化
+template<>
+bool Utils::compareVec<osg::Vec2Array>(const osg::Vec2f& v1, const osg::Vec2f& v2)
+{
+	return osg::equivalent(v1.x(), v2.x()) &&
+		osg::equivalent(v1.y(), v2.y());
+}
+
+// Vec2b 特化
+template<>
+bool Utils::compareVec<osg::Vec2bArray>(const osg::Vec2b& v1, const osg::Vec2b& v2)
+{
+	return v1 == v2;
+}
+
+// Vec3b 特化
+template<>
+bool Utils::compareVec<osg::Vec3bArray>(const osg::Vec3b& v1, const osg::Vec3b& v2)
+{
+	return v1 == v2;
+}
+
+// Vec3f 特化
+template<>
+bool Utils::compareVec<osg::Vec3Array>(const osg::Vec3f& v1, const osg::Vec3f& v2)
+{
+	return osg::equivalent(v1.x(), v2.x()) &&
+		osg::equivalent(v1.y(), v2.y()) &&
+		osg::equivalent(v1.z(), v2.z());
+}
+
+// Vec4f 特化
+template<>
+bool Utils::compareVec<osg::Vec4Array>(const osg::Vec4f& v1, const osg::Vec4f& v2)
+{
+	return osg::equivalent(v1.x(), v2.x()) &&
+		osg::equivalent(v1.y(), v2.y()) &&
+		osg::equivalent(v1.z(), v2.z()) &&
+		osg::equivalent(v1.w(), v2.w());
+}
+
+// Vec4ub 特化
+template<>
+bool Utils::compareVec<osg::Vec4ubArray>(const osg::Vec4ub& v1, const osg::Vec4ub& v2)
+{
+	return v1 == v2;
+}
