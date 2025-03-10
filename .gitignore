@@ -3,6 +3,7 @@ vcpkg_installed/
 
 # 构建输出文件夹
 build/**
+out/**
 
 # Visual Studio 相关文件夹和配置
 .vs/
