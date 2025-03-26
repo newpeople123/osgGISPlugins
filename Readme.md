@@ -278,4 +278,4 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
 # 关于作者
 
 这是作者的第一个开源项目，非常感谢[osg](https://github.com/openscenegraph/OpenSceneGraph)、[osgEarth](https://github.com/gwaldron/osgearth)、[osgVerse](https://github.com/xarray/osgverse)、[Fbx2glTF](https://github.com/facebookincubator/FBX2glTF)、[3dtiles](https://github.com/fanvanzh/3dtiles)等开源项目对我的启发和帮助。
-联系方式：vx:jlcdhznextwhere
+联系方式：vx:jlcdhznextwhere     ps:添加时备注说明来意，不然有时候我不知道咋回事可能会拒绝添加，谢谢！

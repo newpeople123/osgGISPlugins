@@ -48,7 +48,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 void TreeBuilder::pushMatrix(const osg::Matrix& matrix)
 {
 	_matrixStack.push_back(_currentMatrix);
-	_currentMatrix = _currentMatrix * matrix;
+	_currentMatrix = matrix * _currentMatrix;
 }
 
 void TreeBuilder::popMatrix()
@@ -62,20 +62,13 @@ void TreeBuilder::popMatrix()
 
 void TreeBuilder::apply(osg::Transform& transform)
 {
-	//osg::Matrix matrix;
-	//if (transform.computeLocalToWorldMatrix(matrix, this))
-	//{
-	//	pushMatrix(matrix);
-	//	traverse(transform);
-	//	popMatrix();
-	//}
-
-	_currentMatrix = osg::Matrix::identity();
-	const osg::MatrixList matrix_list = transform.getWorldMatrices();
-	for (const osg::Matrixd& matrix : matrix_list) {
-		_currentMatrix = _currentMatrix * matrix;
+	osg::Matrix matrix;
+	if (transform.computeLocalToWorldMatrix(matrix, this))
+	{
+		pushMatrix(matrix);
+		traverse(transform);
+		popMatrix();
 	}
-	traverse(transform);
 }
 
 void TreeBuilder::apply(osg::Geode& geode)
