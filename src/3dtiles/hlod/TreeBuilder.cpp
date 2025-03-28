@@ -48,7 +48,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 void TreeBuilder::pushMatrix(const osg::Matrix& matrix)
 {
 	_matrixStack.push_back(_currentMatrix);
-	_currentMatrix = _currentMatrix * matrix;
+	_currentMatrix = matrix * _currentMatrix;
 }
 
 void TreeBuilder::popMatrix()
