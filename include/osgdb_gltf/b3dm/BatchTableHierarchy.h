@@ -8,6 +8,7 @@
 using namespace nlohmann;
 namespace osgGISPlugins
 {
+    const std::string NAME = "GeodeName";
     struct Class
     {
         std::string name;
