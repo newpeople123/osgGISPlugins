@@ -13,40 +13,50 @@ void BatchTableHierarchyVisitor::apply(osg::Geode& geode) {
 	//fbx的最小单位对应osg::Geode
 	if (geode.getNumDrawables()) {
 		traverse(geode);
+
 		UserDataVisitor userDataVisitor;
 		const osg::ref_ptr<osg::UserDataContainer> userDataContainer = geode.getUserDataContainer();
-		if (userDataContainer.valid()) {
-			Attributes attributes;
 
-			std::set<std::string> keys;
+		Attributes attributes;
+		std::set<std::string> keys;
+		if (userDataContainer.valid()) {
+
 			for (unsigned int j = 0; j < userDataContainer->getNumUserObjects(); ++j)
 			{
-				osg::ValueObject* userObject = userDataContainer->getUserObject(j)->asValueObject();
-
-				const std::string key = userObject->getName();
-				keys.insert(key);
-				userDataVisitor.clear();
-				userObject->get(userDataVisitor);
-
-				attributes.insert(std::make_pair(key, userDataVisitor.value()));
-			}
-			bool isNameAdded = false;
-			unsigned int index = 0;
-			while (!isNameAdded)
-			{
-				const std::string name = index == 0 ? "name" : "name" + std::to_string(index);
-				if (keys.find(name) == keys.end()) {
-					attributes.insert(std::make_pair(name, geode.getName()));
-					isNameAdded = true;
+				osg::Object* ref = userDataContainer->getUserObject(j);
+				if (ref) {
+					osg::ValueObject* userObject = ref->asValueObject();
+					if (userObject)
+					{
+						const std::string key = userObject->getName();
+						keys.insert(key);
+						userDataVisitor.clear();
+						userObject->get(userDataVisitor);
+						attributes.insert(std::make_pair(key, userDataVisitor.value()));
+					}
 				}
-				index++;
 			}
-
-			_batchIdAttributesMap.insert(std::make_pair(_currentBatchId, attributes));
-
-			const BatchTableHierarchyVisitor::StringVector attrNames = convertAttributesToVector(attributes);
-			_attributeNameBatchIdsMap[attrNames].push_back(_currentBatchId);
 		}
+
+		std::string defaultName = geode.getName();
+		bool hasNameKey = (keys.find(NAME) != keys.end());
+
+		if (hasNameKey) {
+			attributes[NAME] = userDataVisitor.value();
+		}
+		else {
+			if (!defaultName.empty()) {
+				attributes[NAME] = defaultName;
+			}
+			else {
+				attributes[NAME] = "Unnamed_Geode";
+			}
+		}
+
+		_batchIdAttributesMap.insert(std::make_pair(_currentBatchId, attributes));
+
+		const BatchTableHierarchyVisitor::StringVector attrNames = convertAttributesToVector(attributes);
+		_attributeNameBatchIdsMap[attrNames].push_back(_currentBatchId);
 
 		_batchParentIdMap.insert(std::make_pair(_currentBatchId, _currentParentBatchId));
 	}
