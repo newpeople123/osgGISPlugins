@@ -641,8 +641,10 @@ namespace osgGISPlugins
 
         tinygltf::Value GetValue() override
         {
-            Set("specularGlossinessTexture", TextureInfo2Object(specularGlossinessTexture));
-            Set("diffuseTexture", TextureInfo2Object(diffuseTexture));
+			if (specularGlossinessTexture.index != -1)
+				Set("specularGlossinessTexture", TextureInfo2Object(specularGlossinessTexture));
+			if (diffuseTexture.index != -1)
+				Set("diffuseTexture", TextureInfo2Object(diffuseTexture));
             return tinygltf::Value(value);
         }
 
