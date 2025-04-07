@@ -187,18 +187,6 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 		}
 	}
 
-	osg::ref_ptr<osg::Group> tempGroup1 = new osg::Group;
-	for (const osg::ref_ptr<osg::Group> group : stateSetGroup)
-	{
-		tempGroup1->addChild(group);
-	}
-	for (size_t i = 0; i < largeTextureCoordGroup->getNumChildren(); ++i)
-	{
-		tempGroup1->addChild(largeTextureCoordGroup->getChild(i));
-	}
-	//_groupsToDivideList = tempGroup1;
-
-	//processOverSizedNodes();
 
 	std::vector<osg::Node*> children;
 	const unsigned int num = _groupsToDivideList->getNumChildren();
@@ -206,11 +194,11 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 		children.push_back(_groupsToDivideList->getChild(i));
 	}
 	std::sort(children.begin(), children.end(), sortNodeByRadius);
-	osg::ref_ptr<osg::Group> tempGroup2 = new osg::Group;
+	osg::ref_ptr<osg::Group> tempGroup = new osg::Group;
 	for (unsigned int i = 0; i < num; ++i) {
-		tempGroup2->addChild(children[i]);
+		tempGroup->addChild(children[i]);
 	}
-	_groupsToDivideList = tempGroup2;
+	_groupsToDivideList = tempGroup;
 
 	double min = FLT_MAX;
 	osg::BoundingBox rootBox;

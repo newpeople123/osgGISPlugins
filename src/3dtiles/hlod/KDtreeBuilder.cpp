@@ -112,9 +112,6 @@ osg::ref_ptr<B3DMTile> KDTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
     const int level) {
     osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
-    if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
-        return tile;
-
     // 使用SAH找到最佳分割
     int bestAxis;
     float bestPos;
@@ -125,6 +122,9 @@ osg::ref_ptr<B3DMTile> KDTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
         tile->node = group;
         return tile;
     }
+
+    if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
+        return tile;
 
     // 创建左右子节点的包围盒
     osg::BoundingBox leftBounds = bounds;

@@ -402,7 +402,7 @@ int main(int argc, char** argv)
 		TreeBuilder* treeBuilder = new QuadTreeBuilder(treeConfig);
 		if (treeFormat == "oc")
 			treeBuilder = new OcTreeBuilder(treeConfig);
-		else if (treeFormat == "quad")
+		else if (treeFormat == "kd")
 			treeBuilder = new KDTreeBuilder(treeConfig);
 		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
 		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder,config);
