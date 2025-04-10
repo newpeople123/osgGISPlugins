@@ -29,26 +29,26 @@ namespace osgGISPlugins {
 
 		static unsigned int encodeExpOne(float v, int bits);
 
-		static osg::ref_ptr<osg::Vec3uiArray> encodeExpParallel(std::vector<float> vertex, int bits);
+		static osg::ref_ptr<osg::Vec3uiArray> encodeExpParallel(const std::vector<float>& vertex, int bits);
 
 		static int quantizeColor(float v, int bytebits, int bits);
 
-		void quantizeMesh(tinygltf::Mesh& mesh, const double minVX, const double minVY, const double minVZ, const double scaleV);
+		void quantizeMesh(tinygltf::Mesh& mesh, double minVX, double minVY, double minVZ, double scaleV);
 
-		void recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
+		void recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, const tinygltf::Accessor& accessor, double minTx, double minTy, double scaleTx, double scaleTy) const;
 
-		void processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy);
+		void processMaterial(const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor, double minTx, double minTy, double scaleTx, double scaleTy);
 
 		std::tuple<double, double, double, double> getTexcoordBounds(
 			const tinygltf::Primitive& primitive,
-			const tinygltf::Accessor& accessor);
+			const tinygltf::Accessor& accessor) const;
 
-		std::tuple<double, double, double, double> getPositionBounds();
+		std::tuple<double, double, double, double> getPositionBounds() const;
 
 	public:
 		//启用该扩展需要展开变换矩阵，如果不展开的话，压缩率很低，所以这里要求必须展开
 		KHR_mesh_quantization meshQuanExtension;
-		GltfMeshQuantizeCompressor(tinygltf::Model& model, const MeshQuantizeCompressionOptions compressionOptions) :GltfCompressor(model, "KHR_mesh_quantization"), _compressionOptions(compressionOptions) {
+		GltfMeshQuantizeCompressor(tinygltf::Model& model, const MeshQuantizeCompressionOptions& compressionOptions) :GltfCompressor(model, "KHR_mesh_quantization"), _compressionOptions(compressionOptions) {
 			if (_compressionOptions.PositionQuantizationBits > 16)
 			{
 				_compressionOptions.PositionFloat = true;
@@ -61,7 +61,7 @@ namespace osgGISPlugins {
 
 		void apply() override;
 
-		static bool valid(tinygltf::Model& model);
+		static bool valid(const tinygltf::Model& model);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_GLTF_MESH_QUANTIZE_COMPRESSOR_H

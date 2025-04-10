@@ -23,9 +23,9 @@ namespace osgGISPlugins {
 	private:
 		DracoCompressionOptions _compressionOptions;
 
-		draco::GeometryAttribute::Type getTypeFromAttributeName(const std::string& name);
+		static draco::GeometryAttribute::Type getTypeFromAttributeName(const std::string& name);
 
-		draco::DataType getDataType(const int componentType);
+		static draco::DataType getDataType(int componentType);
 
 		template<typename T>
 		int initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor);
@@ -35,20 +35,20 @@ namespace osgGISPlugins {
 		/// <param name="mesh"></param>
 		void compressMesh(tinygltf::Mesh& mesh);
 
-		void setDracoEncoderOptions(draco::Encoder& encoder);
+		void setDracoEncoderOptions(draco::Encoder& encoder) const;
 
 		template<typename T>
-		void initDracoMeshFaces(const tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh);
+		void initDracoMeshFaces(tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh);
 
-		void adjustIndices(const std::unordered_set<int>& bufferViewsToRemove);
+		void adjustIndices(const std::unordered_set<int>& bufferViewsToRemove) const;
 	public:
 		KHR_draco_mesh_compression extension;
-		GltfDracoCompressor(tinygltf::Model& model, const DracoCompressionOptions compressionOptions) :GltfCompressor(model, "KHR_draco_mesh_compression"), _compressionOptions(compressionOptions) {}
+		GltfDracoCompressor(tinygltf::Model& model, const DracoCompressionOptions& compressionOptions) :GltfCompressor(model, "KHR_draco_mesh_compression"), _compressionOptions(compressionOptions) {}
 		void apply() override;
 	};
 
 	template<typename T>
-	inline int GltfDracoCompressor::initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor)
+	int GltfDracoCompressor::initPointAttribute(draco::Mesh& dracoMesh, const std::string& attributeName, const tinygltf::Accessor& accessor)
 	{
 		std::vector<T> bufferData = getBufferData<T>(accessor);
 
@@ -79,11 +79,11 @@ namespace osgGISPlugins {
 
 
 	template<typename T>
-	inline void GltfDracoCompressor::initDracoMeshFaces(const tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh)
+	void GltfDracoCompressor::initDracoMeshFaces(const tinygltf::Accessor indicesAccessor, draco::Mesh& dracoMesh)
 	{
 		std::vector<T> indices = getBufferData<T>(indicesAccessor);
 		assert(indices.size() % 3 == 0);
-		size_t numFaces = indices.size() / 3;
+		const size_t numFaces = indices.size() / 3;
 		dracoMesh.SetNumFaces(numFaces);
 		for (size_t i = 0; i < numFaces; i++)
 		{

@@ -9,7 +9,7 @@ class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
 private:
     template<class T>
-    void putVal(std::vector<unsigned char>& buf, T val) const;
+    static void putVal(std::vector<unsigned char>& buf, T val);
 public:
     ReaderWriterGLTF() {
         supportsExtension("gltf", "GLTF format");
@@ -94,23 +94,22 @@ public:
     ReadResult readNode(const std::string& filename, const Options*) const override;
     WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const override;
 
-    std::string createFeatureB3DMTableJSON(const osg::Vec3& center,  unsigned short batchLength) const;
+    static std::string createFeatureB3DMTableJSON(const osg::Vec3& center,  unsigned short batchLength);
 
-    std::string createFeatureI3DMTableJSON(const unsigned int length) const;
+    static std::string createFeatureI3DMTableJSON(unsigned int length);
 
-    std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const;
+    static std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms);
 
-    std::string createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const;
+    static std::string createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor);
 
-    WriteResult writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const;
+    static WriteResult writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile);
 
-    WriteResult writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile) const;
+    static WriteResult writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile);
 
 };
 
 template<class T>
-inline void ReaderWriterGLTF::putVal(std::vector<unsigned char>& buffer, T val) const
-{
+ void ReaderWriterGLTF::putVal(std::vector<unsigned char>& buffer, T val) {
     unsigned char const* p = reinterpret_cast<unsigned char const*>(&val);
     buffer.insert(buffer.end(), p, p + sizeof(T));
 }

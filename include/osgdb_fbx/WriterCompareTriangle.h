@@ -1,9 +1,7 @@
 #ifndef _3DS_WRITER_COMPARE_TRIANGLE_HEADER__
 #define _3DS_WRITER_COMPARE_TRIANGLE_HEADER__
 
-#include <osg/Geode>
 #include <osg/Geometry>
-#include <iostream>
 
 struct Triangle
 {
@@ -21,10 +19,10 @@ public:
     bool operator()(const std::pair<Triangle, int>& t1,
                     const std::pair<Triangle, int>& t2) const;
 private:
-    void // This function prevents the scene being cut into too many boxes
+    static void // This function prevents the scene being cut into too many boxes
         setMaxMin(unsigned int& nbVerticesX,
                   unsigned int& nbVerticesY,
-                  unsigned int& nbVerticesZ) const;
+                  unsigned int& nbVerticesZ);
 
     /**
     *  Cut the scene in different box to sort.
@@ -40,9 +38,9 @@ private:
     *  \return the place of the box in the vector.
     *  \sa See cutScene() about the definition of the boxes for faces sorting.
     */
-    int inWhichBox(const osg::Vec3::value_type x,
-                   const osg::Vec3::value_type y,
-                   const osg::Vec3::value_type z) const;
+    int inWhichBox(osg::Vec3::value_type x,
+                   osg::Vec3::value_type y,
+                   osg::Vec3::value_type z) const;
 
     const osg::Geode&                    geode;
     std::vector<osg::BoundingBox>        boxList;

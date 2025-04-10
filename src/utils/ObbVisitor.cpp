@@ -1,13 +1,14 @@
 #include "utils/ObbVisitor.h"
+#include <osg/Geode>
 using namespace osgGISPlugins;
 
 void OBBVisitor::apply(osg::Group& group)
 {
 	// 备份当前矩阵
-	osg::Matrix previousMatrix = _currentMatrix;
+	const osg::Matrix previousMatrix = _currentMatrix;
 
 	// 如果是Transform节点，累积变换矩阵
-	if (osg::Transform* transform = group.asTransform())
+	if (const osg::Transform* transform = group.asTransform())
 	{
 		osg::Matrix localMatrix;
 		transform->computeLocalToWorldMatrix(localMatrix, this);
@@ -43,7 +44,7 @@ void OBBVisitor::apply(osg::Geode& geode)
 
 void OBBVisitor::calculateOBB()
 {
-	int num = _vertices->size();
+	const int num = _vertices->size();
 	osg::Matrix matTransform = getOBBOrientation(_vertices);
 
 	matTransform = transpose(matTransform);
@@ -93,7 +94,7 @@ void OBBVisitor::computeExtAxis()
 	_extentZ = _zAxis * _extents.z();
 }
 
-osg::Matrix OBBVisitor::getOBBOrientation(osg::ref_ptr<osg::Vec3Array> vertices)
+osg::Matrix OBBVisitor::getOBBOrientation(const osg::ref_ptr<osg::Vec3Array>& vertices)
 {
 	osg::Matrix result;
 
@@ -113,7 +114,7 @@ osg::Matrix OBBVisitor::getOBBOrientation(osg::ref_ptr<osg::Vec3Array> vertices)
 	return evecs;
 }
 
-osg::Matrix OBBVisitor::getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> vertices)
+osg::Matrix OBBVisitor::getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array>& vertices)
 {
 	int i;
 	osg::Matrix result;
@@ -127,7 +128,7 @@ osg::Matrix OBBVisitor::getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> 
 	S2[0][2] = S2[1][2] = S2[2][2] = 0.0;
 
 	// get center of mass
-	int vertCount = vertices->size();
+	const int vertCount = vertices->size();
 	for (i = 0; i < vertCount; i++)
 	{
 		S1[0] += (*vertices)[i].x();
@@ -142,7 +143,7 @@ osg::Matrix OBBVisitor::getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> 
 		S2[1][2] += (*vertices)[i].y() * (*vertices)[i].z();
 	}
 
-	float n = (float)vertCount;
+	const float n = (float)vertCount;
 	// now get covariances
 	result(0, 0) = (float)(S2[0][0] - S1[0] * S1[0] / n) / n;
 	result(1, 1) = (float)(S2[1][1] - S1[1] * S1[1] / n) / n;
@@ -159,7 +160,7 @@ osg::Matrix OBBVisitor::getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> 
 
 void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a)
 {
-	int n = 3;
+	const int n = 3;
 	int j, iq, ip, i;
 	double tresh, theta, tau, t, sm, s, h, g, c;
 	int nrot;
@@ -200,8 +201,8 @@ void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix
 			for (iq = ip + 1; iq < n; iq++)
 			{
 				g = 100.0 * fabs(a(ip, iq)/*a.m[ip + iq * 4]*/);
-				float dmip = getElement(d, ip);
-				float dmiq = getElement(d, iq);
+				const float dmip = getElement(d, ip);
+				const float dmiq = getElement(d, iq);
 
 				if (i > 3 && fabs(dmip) + g == fabs(dmip) && fabs(dmiq) + g == fabs(dmiq))
 				{
@@ -252,7 +253,7 @@ void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix
 	*dout = d;
 }
 
-float& OBBVisitor::getElement(osg::Vec3& point, int index)
+float& OBBVisitor::getElement(osg::Vec3& point, const int index)
 {
 	if (index == 0)
 		return point.x();

@@ -9,12 +9,12 @@ namespace osgGISPlugins
 	public:
 		META_NodeVisitor(osgGISPlugins, OcTreeBuilder)
 
-		OcTreeBuilder() :TreeBuilder() {}
+		OcTreeBuilder() {}
 
-		OcTreeBuilder(BuilderConfig config) :TreeBuilder(config) {}
+		OcTreeBuilder(const BuilderConfig config) :TreeBuilder(config) {}
 
 	private:
-		osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0) override;
+		osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, int x = 0, int y = 0, int z = 0, int level = 0) override;
 
 		void divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) override;
 	};

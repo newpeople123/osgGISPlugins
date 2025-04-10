@@ -98,7 +98,7 @@ int main(int argc, char** argv)
     }
 
     // 检查宽度和高度是否为2的幂次
-    auto isPowerOfTwo = [](int n) {
+    auto isPowerOfTwo = [](const int n) {
         return (n > 0) && ((n & (n - 1)) == 0);
         };
 

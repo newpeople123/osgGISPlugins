@@ -1,6 +1,5 @@
 #include "osgdb_gltf/GltfMerger.h"
 #include <osg/Math>
-#include <osg/MatrixTransform>
 #include <algorithm>
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 
@@ -95,8 +94,7 @@ void GltfMerger::mergeMeshes()
 	}
 }
 
-void GltfMerger::mergeBuffers()
-{
+void GltfMerger::mergeBuffers() const {
 	tinygltf::Buffer totalBuffer;
 	tinygltf::Buffer fallbackBuffer;
 	fallbackBuffer.name = "fallback";
@@ -495,7 +493,7 @@ std::vector<tinygltf::Mesh> GltfMerger::mergePrimitives(const std::pair<int, std
 	return combinedMeshes;
 }
 
-void GltfMerger::mergeIndice(tinygltf::Accessor& newIndiceAccessor, tinygltf::BufferView& newIndiceBV, tinygltf::Buffer& newIndiceBuffer, const tinygltf::Accessor oldIndiceAccessor, const unsigned int positionCount)
+void GltfMerger::mergeIndice(tinygltf::Accessor& newIndiceAccessor, tinygltf::BufferView& newIndiceBV, tinygltf::Buffer& newIndiceBuffer, const tinygltf::Accessor& oldIndiceAccessor, const unsigned int positionCount)
 {
 	newIndiceAccessor.type = oldIndiceAccessor.type;
 	if (newIndiceAccessor.count == 0)
@@ -602,8 +600,7 @@ void GltfMerger::mergeIndice(tinygltf::Accessor& newIndiceAccessor, tinygltf::Bu
 	}
 }
 
-void GltfMerger::mergeAttribute(tinygltf::Accessor& newAttributeAccessor, tinygltf::BufferView& newAttributeBV, tinygltf::Buffer& newAttributeBuffer, const tinygltf::Accessor& oldAttributeAccessor)
-{
+void GltfMerger::mergeAttribute(tinygltf::Accessor& newAttributeAccessor, tinygltf::BufferView& newAttributeBV, tinygltf::Buffer& newAttributeBuffer, const tinygltf::Accessor& oldAttributeAccessor) const {
 	newAttributeAccessor.count += oldAttributeAccessor.count;
 	newAttributeAccessor.componentType = oldAttributeAccessor.componentType;
 	newAttributeAccessor.type = oldAttributeAccessor.type;
@@ -685,13 +682,13 @@ void GltfMerger::apply()
 		mergeMeshes();
 }
 
-void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, Utils::MatrixHash, Utils::MatrixEqual>& matrixPrimitiveMap, osg::Matrixd matrix)
+void GltfMerger::collectMeshNodes(const size_t index, std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, Utils::MatrixHash, Utils::MatrixEqual>& matrixPrimitiveMap, osg::Matrixd matrix)
 {
 	const tinygltf::Node& node = _model.nodes[index];
 	matrix.preMult(convertGltfNodeToOsgMatrix(node));
 
 	if (node.mesh == -1) {
-		for (size_t childIndex : node.children) {
+		for (const size_t childIndex : node.children) {
 			collectMeshNodes(childIndex, matrixPrimitiveMap, matrix);
 		}
 	}
@@ -701,25 +698,24 @@ void GltfMerger::collectMeshNodes(size_t index, std::unordered_map<osg::Matrixd,
 	}
 }
 
-void GltfMerger::reindexBufferAndAccessor(const tinygltf::Accessor& accessor, tinygltf::BufferView& tBv, tinygltf::Buffer& tBuffer, tinygltf::Accessor& newAccessor, unsigned int sum, bool isIndices)
-{
-	tinygltf::BufferView& bv = _model.bufferViews[accessor.bufferView];
+void GltfMerger::reindexBufferAndAccessor(const tinygltf::Accessor& accessor, tinygltf::BufferView& tBv, tinygltf::Buffer& tBuffer, tinygltf::Accessor& newAccessor, const unsigned int sum, const bool isIndices) const {
+	const tinygltf::BufferView& bv = _model.bufferViews[accessor.bufferView];
 	tinygltf::Buffer& buffer = _model.buffers[bv.buffer];
 
 	tBv.byteStride = bv.byteStride;
 	tBv.target = bv.target;
 	if (accessor.componentType != newAccessor.componentType) {
 		if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT && accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-			unsigned short* oldIndicesChar = reinterpret_cast<unsigned short*>(buffer.data.data());
+			const unsigned short* oldIndicesChar = reinterpret_cast<unsigned short*>(buffer.data.data());
 			std::vector<unsigned int> indices;
 
 			for (size_t i = 0; i < accessor.count; ++i) {
-				unsigned short ushortVal = *oldIndicesChar++;
+				const unsigned short ushortVal = *oldIndicesChar++;
 				unsigned int uintVal = static_cast<unsigned int>(ushortVal + sum);
 				indices.push_back(uintVal);
 			}
 
-			unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
+			const unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
 			const unsigned int size = bv.byteLength * 2;
 
 			for (unsigned int k = 0; k < size; ++k) {
@@ -733,28 +729,28 @@ void GltfMerger::reindexBufferAndAccessor(const tinygltf::Accessor& accessor, ti
 	else {
 		if (isIndices) {
 			if (newAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-				unsigned int* oldIndicesChar = reinterpret_cast<unsigned int*>(buffer.data.data());
+				const unsigned int* oldIndicesChar = reinterpret_cast<unsigned int*>(buffer.data.data());
 				std::vector<unsigned int> indices;
 				for (unsigned int i = 0; i < accessor.count; ++i) {
-					unsigned int oldUintVal = *oldIndicesChar++;
+					const unsigned int oldUintVal = *oldIndicesChar++;
 					unsigned int uintVal = oldUintVal + sum;
 					indices.push_back(uintVal);
 				}
-				unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
+				const unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
 				const unsigned int size = bv.byteLength;
 				for (unsigned int i = 0; i < size; ++i) {
 					tBuffer.data.push_back(*indicesUChar++);
 				}
 			}
 			else {
-				unsigned short* oldIndicesChar = reinterpret_cast<unsigned short*>(buffer.data.data());
+				const unsigned short* oldIndicesChar = reinterpret_cast<unsigned short*>(buffer.data.data());
 				std::vector<unsigned short> indices;
 				for (size_t i = 0; i < accessor.count; ++i) {
-					unsigned short oldUshortVal = *oldIndicesChar++;
+					const unsigned short oldUshortVal = *oldIndicesChar++;
 					unsigned short ushortVal = oldUshortVal + sum;
 					indices.push_back(ushortVal);
 				}
-				unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
+				const unsigned char* indicesUChar = reinterpret_cast<unsigned char*>(indices.data());
 				const unsigned int size = bv.byteLength;
 				for (size_t i = 0; i < size; ++i) {
 					tBuffer.data.push_back(*indicesUChar++);

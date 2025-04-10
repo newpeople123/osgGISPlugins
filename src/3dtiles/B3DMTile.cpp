@@ -1,5 +1,4 @@
 #include "3dtiles/B3DMTile.h"
-#include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 
 void B3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
@@ -32,7 +31,7 @@ void B3DMTile::setContentUri()
 		contentUri = to_string(level) + "/" + "Tile_L" + to_string(lod) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + "." + type;
 }
 
-B3DMTile* B3DMTile::createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent)
+B3DMTile* B3DMTile::createTileOfSameType(const osg::ref_ptr<osg::Node> node, const osg::ref_ptr<Tile> parent)
 {
 	return new B3DMTile(node, dynamic_cast<B3DMTile*>(parent.get()));
 }

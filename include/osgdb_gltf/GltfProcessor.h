@@ -13,21 +13,21 @@ namespace osgGISPlugins {
         tinygltf::Model& _model;
 
         template<typename T>
-        std::vector<T> getBufferData(const tinygltf::Buffer& buffer, const size_t byteOffset, const size_t numComponents, const size_t count);
+        std::vector<T> getBufferData(const tinygltf::Buffer& buffer, size_t byteOffset, size_t numComponents, size_t count);
 
         template<typename T>
         std::vector<T> getBufferData(const tinygltf::Accessor& accessor);
 
-        size_t calculateNumComponents(const int type);
+        static size_t calculateNumComponents(int type);
 
-        void restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, osg::ref_ptr<osg::Array> newBufferData);
+        static void restoreBuffer(tinygltf::Buffer& buffer, tinygltf::BufferView& bufferView, const osg::ref_ptr<osg::Array>& newBufferData);
     public:
         GltfProcessor(tinygltf::Model& model) :_model(model) {}
         virtual void apply() = 0;
     };
 
     template<typename T>
-    inline std::vector<T> GltfProcessor::getBufferData(const tinygltf::Buffer& buffer, const size_t byteOffset,const size_t numComponents, const size_t count)
+    std::vector<T> GltfProcessor::getBufferData(const tinygltf::Buffer& buffer, const size_t byteOffset,const size_t numComponents, const size_t count)
     {
         std::vector<T> values;
         const void* data_ptr = buffer.data.data() + byteOffset;
@@ -37,7 +37,7 @@ namespace osgGISPlugins {
     }
 
     template<typename T>
-    inline std::vector<T> GltfProcessor::getBufferData(const tinygltf::Accessor& accessor)
+    std::vector<T> GltfProcessor::getBufferData(const tinygltf::Accessor& accessor)
     {
         const size_t numComponents = calculateNumComponents(accessor.type);
         const tinygltf::BufferView& bufferView = _model.bufferViews[accessor.bufferView];

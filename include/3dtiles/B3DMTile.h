@@ -12,22 +12,22 @@ namespace osgGISPlugins
 			type = "b3dm";
 		}
 
-		B3DMTile(osg::ref_ptr<osg::Node> node, osg::ref_ptr<B3DMTile> parent)
+		B3DMTile(const osg::ref_ptr<osg::Node>& node, const osg::ref_ptr<B3DMTile>& parent)
 			: Tile(node, parent,"b3dm") {}
 
-		B3DMTile(osg::ref_ptr<B3DMTile> parent)
+		B3DMTile(const osg::ref_ptr<B3DMTile>& parent)
 			: Tile(parent, "b3dm") {}
 
 		B3DMTile(const B3DMTile& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: Tile(other, copyop) {}
 
-		virtual osg::Object* cloneType() const { return new B3DMTile(); }
+		osg::Object* cloneType() const override { return new B3DMTile(); }
 
-		virtual osg::Object* clone(const osg::CopyOp& copyop) const { return new B3DMTile(*this, copyop); }
+		osg::Object* clone(const osg::CopyOp& copyop) const override { return new B3DMTile(*this, copyop); }
 
-		virtual const char* libraryName() const { return "osgGISPlugins"; }
+		const char* libraryName() const override { return "osgGISPlugins"; }
 
-		virtual const char* className() const { return "B3DMTile"; }
+		const char* className() const override { return "B3DMTile"; }
 
 		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) override;
 
@@ -35,7 +35,7 @@ namespace osgGISPlugins
 
 		string getFullPath() const override;
 
-		string getTextureCachePath(const string textureCachePath) const override;
+		string getTextureCachePath(string textureCachePath) const override;
 
 		void setContentUri() override;
 

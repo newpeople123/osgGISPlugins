@@ -30,7 +30,7 @@ json BoundingVolume::toJson() const {
 	return j;
 }
 
-void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
+void BoundingVolume::computeBox(const osg::ref_ptr<osg::Node>& node)
 {
 	if (!node.valid()) return;
 	osg::ComputeBoundsVisitor cbv;
@@ -57,7 +57,7 @@ void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
 	this->box.push_back(size.z() / 2);
 }
 
-void BoundingVolume::computeSphere(osg::ref_ptr<osg::Node> node)
+void BoundingVolume::computeSphere(const osg::ref_ptr<osg::Node>& node)
 {
 	osg::ComputeBoundsVisitor cbv;
 	node->accept(cbv);

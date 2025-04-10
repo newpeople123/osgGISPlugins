@@ -2,10 +2,10 @@
 #define OSG_GIS_PLUINS_BOUNDING_VOLUME_H
 #include <osg/Object>
 #include <nlohmann/json.hpp>
-using json = nlohmann::json;
-using namespace std;
 namespace osgGISPlugins
 {
+	using namespace std;
+	using json = nlohmann::json;
 	class BoundingVolume :public osg::Object {
 	public:
 		vector<double> region;
@@ -23,19 +23,19 @@ namespace osgGISPlugins
 
 		json toJson() const;
 
-		virtual osg::Object* cloneType() const { return new BoundingVolume(); }
+		osg::Object* cloneType() const override { return new BoundingVolume(); }
 
-		virtual osg::Object* clone(const osg::CopyOp& copyop) const { return new BoundingVolume(*this, copyop); }
+		osg::Object* clone(const osg::CopyOp& copyop) const override { return new BoundingVolume(*this, copyop); }
 
-		virtual const char* libraryName() const { return "osgGISPlugins"; }
+		const char* libraryName() const override { return "osgGISPlugins"; }
 
-		virtual const char* className() const { return "BoundingVolume"; }
+		const char* className() const override { return "BoundingVolume"; }
 
-		void computeBox(osg::ref_ptr<osg::Node> node);
+		void computeBox(const osg::ref_ptr<osg::Node>& node);
 
-		void computeSphere(osg::ref_ptr<osg::Node> node);
+		void computeSphere(const osg::ref_ptr<osg::Node>& node);
 
-		void computeRegion(osg::ref_ptr<osg::Node> node, const double latitude, const double longitude, const double height);
+		void computeRegion(osg::ref_ptr<osg::Node> node, double latitude, double longitude, double height);
 	};
 }
 #endif // !OSG_GIS_PLUINS_BOUNDING_VOLUME_H

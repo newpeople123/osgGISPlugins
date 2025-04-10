@@ -46,15 +46,14 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
         nc_node.accept(osg2gltf);
     tinygltf::Model gltfModel = osg2gltf.getGltfModel();
 
-    const bool embedImages = true;
     bool embedBuffers = false, prettyPrint = false, isBinary = ext != "gltf", mergeMaterial = true, mergeMesh = true, unlit = false;
-    GltfDracoCompressor::DracoCompressionOptions dracoCompressOption;
-    GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions quantizeCompressOption;
     GltfProcessorManager processorManager;
 
     if (options)
     {
-        std::istringstream iss(options->getOptionString());
+	    GltfMeshQuantizeCompressor::MeshQuantizeCompressionOptions quantizeCompressOption;
+	    GltfDracoCompressor::DracoCompressionOptions dracoCompressOption;
+	    std::istringstream iss(options->getOptionString());
         std::string opt;
         bool quantize = false;
         while (iss >> opt)
@@ -175,7 +174,8 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
     {
         try
         {
-            bool isSuccess = writer.WriteGltfSceneToFile(
+	        constexpr bool embedImages = true;
+	        bool isSuccess = writer.WriteGltfSceneToFile(
                 &gltfModel,
                 filename,
                 embedImages,           // embedImages
@@ -192,43 +192,36 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
             return WriteResult::ERROR_IN_WRITING_FILE;
         }
     }
-    else
+
+    std::ostringstream gltfBuf;
+    writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, false, isBinary);
+
+    if (ext == "b3dm")
     {
-        std::ostringstream gltfBuf;
-        writer.WriteGltfSceneToStream(&gltfModel, gltfBuf, false, isBinary);
-
-        if (ext == "b3dm")
-        {
-            B3DMFile b3dmFile;
-            const osg::Vec3 center;
-            b3dmFile.featureTableJSON = createFeatureB3DMTableJSON(center, bthv.getBatchLength());
-            b3dmFile.batchTableJSON = createBatchTableJSON(bthv);
-            b3dmFile.glbData = gltfBuf.str();
-            b3dmFile.calculateHeaderSizes();
-            nc_node.unref_nodelete();
-            return writeB3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), b3dmFile);
-        }
-        else
-        {
-            I3DMFile i3dmFile;
-            osg::ref_ptr<osg::Group> matrixTransforms = nc_node.asGroup();
-            const size_t length = matrixTransforms->getNumChildren();
-
-            i3dmFile.featureTableJSON = createFeatureI3DMTableJSON(length);
-            i3dmFile.featureTableBinary = createFeatureI3DMTableBinary(matrixTransforms);
-            i3dmFile.batchTableJSON = createBatchTableJSON(bthv);
-            i3dmFile.glbData = gltfBuf.str();
-            i3dmFile.calculateHeaderSizes();
-            nc_node.unref_nodelete();
-            return writeI3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), i3dmFile);
-        }
+        B3DMFile b3dmFile;
+        const osg::Vec3 center;
+        b3dmFile.featureTableJSON = createFeatureB3DMTableJSON(center, bthv.getBatchLength());
+        b3dmFile.batchTableJSON = createBatchTableJSON(bthv);
+        b3dmFile.glbData = gltfBuf.str();
+        b3dmFile.calculateHeaderSizes();
+        nc_node.unref_nodelete();
+        return writeB3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), b3dmFile);
     }
+
+    I3DMFile i3dmFile;
+    osg::ref_ptr<osg::Group> matrixTransforms = nc_node.asGroup();
+    const size_t length = matrixTransforms->getNumChildren();
+
+    i3dmFile.featureTableJSON = createFeatureI3DMTableJSON(length);
+    i3dmFile.featureTableBinary = createFeatureI3DMTableBinary(matrixTransforms);
+    i3dmFile.batchTableJSON = createBatchTableJSON(bthv);
+    i3dmFile.glbData = gltfBuf.str();
+    i3dmFile.calculateHeaderSizes();
     nc_node.unref_nodelete();
-    return WriteResult::ERROR_IN_WRITING_FILE;
+    return writeI3DMFile(osgDB::convertStringFromUTF8toCurrentCodePage(filename), i3dmFile);
 }
 
-std::string ReaderWriterGLTF::createFeatureB3DMTableJSON(const osg::Vec3& center, unsigned short batchLength) const
-{
+std::string ReaderWriterGLTF::createFeatureB3DMTableJSON(const osg::Vec3& center, unsigned short batchLength) {
     json featureTable;
     featureTable["BATCH_LENGTH"] = batchLength;
     featureTable["RTC_CENTER"] = { center.x(), center.y(), center.z() };
@@ -240,8 +233,7 @@ std::string ReaderWriterGLTF::createFeatureB3DMTableJSON(const osg::Vec3& center
     return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int length) const
-{
+std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int length) {
     json featureTable;
     featureTable["INSTANCES_LENGTH"] = length;
 
@@ -296,8 +288,7 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableJSON(const unsigned int leng
     return featureTableStr;
 }
 
-std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const
-{
+std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) {
     const unsigned int length = matrixTransforms->getNumChildren();
 
     // 预先分配足够的内存空间，避免动态扩展
@@ -400,8 +391,7 @@ std::string ReaderWriterGLTF::createFeatureI3DMTableBinary(osg::ref_ptr<osg::Gro
     return featureTableBinaryStr;
 }
 
-std::string ReaderWriterGLTF::createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const
-{
+std::string ReaderWriterGLTF::createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) {
     json batchTable = json::object();
 
     const auto attributeNameBatchIdsMap = batchTableHierarchyVisitor.getAttributeNameBatchIdsMap();
@@ -458,8 +448,7 @@ std::string ReaderWriterGLTF::createBatchTableJSON(BatchTableHierarchyVisitor& b
     return batchTableStr;
 }
 
-osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const
-{
+osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) {
     std::vector<unsigned char> b3dmBuffer;
     b3dmBuffer.insert(b3dmBuffer.end(), b3dmFile.header.magic, b3dmFile.header.magic + 4);
     putVal(b3dmBuffer, b3dmFile.header.version);
@@ -493,8 +482,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeB3DMFile(const std::stri
     return WriteResult::FILE_SAVED;
 }
 
-osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile) const
-{
+osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile) {
     std::vector<unsigned char> i3dmBuffer;
     i3dmBuffer.insert(i3dmBuffer.end(), i3dmFile.header.magic, i3dmFile.header.magic + 4);
     putVal(i3dmBuffer, i3dmFile.header.version);

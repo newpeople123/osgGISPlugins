@@ -22,14 +22,13 @@ bool TextureDetails::transparent() const
 	return image != 0 ? image->isImageTranslucent() : false;
 }
 
-void TextureDetails::assignTextureIfRequired(osg::StateSet* stateSet, unsigned int unit)
-{
+void TextureDetails::assignTextureIfRequired(osg::StateSet* stateSet, const unsigned int unit) const {
 	if (!texture) return;
 
 	stateSet->setTextureAttributeAndModes(unit, texture.get());
 }
 
-void TextureDetails::assignTexMatIfRequired(osg::StateSet* stateSet, unsigned int unit)
+void TextureDetails::assignTexMatIfRequired(osg::StateSet* stateSet, const unsigned int unit)
 {
 	if (scale.x() != 1.0 || scale.y() != 1.0)
 	{
@@ -38,14 +37,14 @@ void TextureDetails::assignTexMatIfRequired(osg::StateSet* stateSet, unsigned in
 	}
 }
 
-static osg::Texture::WrapMode convertWrap(FbxFileTexture::EWrapMode wrap)
+static osg::Texture::WrapMode convertWrap(const FbxFileTexture::EWrapMode wrap)
 {
 	return wrap == FbxFileTexture::eRepeat ?
 		osg::Texture2D::REPEAT : osg::Texture2D::CLAMP_TO_EDGE;
 }
 
 template <typename T>
-T getValue(const FbxProperty& props, std::string propName, const T& def) {
+T getValue(const FbxProperty& props, const std::string propName, const T& def) {
 	const FbxProperty prop = props.FindHierarchical(propName.c_str());
 	return prop.IsValid() ? prop.Get<T>() : def;
 }
@@ -130,7 +129,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			mat->metallicFactor = metalness;
 			mat->roughnessFactor = roughness;
 
-			auto getTex = [&](std::string propName) -> const osg::ref_ptr<osg::Texture2D> {
+			auto getTex = [&](const std::string& propName) -> const osg::ref_ptr<osg::Texture2D> {
 				osg::ref_ptr<osg::Texture2D> ptr = nullptr;
 				const FbxProperty texProp = physicalProps.Find((propName + "_map").c_str(), false);
 				if (texProp.IsValid()) {
@@ -139,7 +138,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 						// skip this texture if the _on property exists *and* is explicitly false
 						return ptr;
 					}
-					FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
+					const FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
 					if (fileTexture)
 					{
 						ptr = fbxTextureToOsgTexture(fileTexture);
@@ -149,8 +148,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				return ptr;
 				};
 
-			auto getFbxFileTextureTex = [&](std::string propName) -> const FbxFileTexture* {
-				FbxFileTexture* ptr = nullptr;
+			auto getFbxFileTextureTex = [&](const std::string& propName) -> const FbxFileTexture* {
+				const FbxFileTexture* ptr = nullptr;
 				const FbxProperty texProp = physicalProps.Find((propName + "_map").c_str(), false);
 				if (texProp.IsValid()) {
 					const FbxProperty useProp = physicalProps.Find((propName + "_map_on").c_str(), false);
@@ -158,7 +157,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 						// skip this texture if the _on property exists *and* is explicitly false
 						return ptr;
 					}
-					FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
+					const FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
 					if (fileTexture)
 					{
 						ptr = fileTexture;
@@ -242,11 +241,11 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				OSG_INFO << "3dsMax Metalness/Roughness Material." << std::endl;
 				pOsgMat->setName(pFbxMat->GetName());
 				osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
-				auto getTex = [&](std::string propName) -> const FbxFileTexture* {
-					FbxFileTexture* ptr = nullptr;
+				auto getTex = [&](const std::string& propName) -> const FbxFileTexture* {
+					const FbxFileTexture* ptr = nullptr;
 					const FbxProperty texProp = pbrProps.Find((propName + "_map").c_str(), false);
 					if (texProp.IsValid()) {
-						FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
+						const FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
 						if (fileTexture)
 						{
 							//ptr = fbxTextureToOsgTexture(fileTexture);
@@ -334,11 +333,11 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				result.material = pOsgMat;
 				osg::ref_ptr<GltfPbrSGMaterial> mat = dynamic_cast<GltfPbrSGMaterial*>(pOsgMat.get());
 
-				auto getTex = [&](std::string propName) -> const FbxFileTexture* {
-					FbxFileTexture* ptr = nullptr;
+				auto getTex = [&](const std::string& propName) -> const FbxFileTexture* {
+					const FbxFileTexture* ptr = nullptr;
 					const FbxProperty texProp = pbrProps.Find((propName + "_map").c_str(), false);
 					if (texProp.IsValid()) {
-						FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
+						const FbxFileTexture* fileTexture = selectFbxFileTexture(texProp);
 						if (fileTexture)
 						{
 							//ptr = fbxTextureToOsgTexture(fileTexture);
@@ -517,7 +516,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 		if (shadingModel.Lower() == "blinn" || shadingModel.Lower() == "phong") {
 			pOsgMat->setName(pFbxMat->GetName());
 
-			auto getRoughness = [&](float shininess) { return sqrtf(2.0f / (2.0f + shininess)); };
+			auto getRoughness = [&](const float shininess) { return sqrtf(2.0f / (2.0f + shininess)); };
 			mat->metallicFactor = 0.4;
 			const FbxProperty shininessProp = pFbxMat->FindProperty("Shininess");
 			if (shininessProp.IsValid()) {
@@ -704,7 +703,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 osg::ref_ptr<osg::Texture2D> FbxMaterialToOsgStateSet::fbxTextureToOsgTexture(const FbxFileTexture* fbx)
 {
 	// Try to find image in cache
-	ImageMap::iterator it = _imageMap.find(fbx->GetFileName());
+	const ImageMap::iterator it = _imageMap.find(fbx->GetFileName());
 	if (it != _imageMap.end())
 		return it->second;
 
@@ -743,7 +742,7 @@ osg::ref_ptr<osg::Texture2D> FbxMaterialToOsgStateSet::fbxTextureToOsgTexture(co
 	}
 	if (osgDB::FileType::REGULAR_FILE == osgDB::fileType(filename))
 	{
-		osg::ref_ptr<osg::Image> pImage = osgDB::readRefImageFile(filename, _options);
+		const osg::ref_ptr<osg::Image> pImage = osgDB::readRefImageFile(filename, _options);
 		if (pImage.valid())
 		{
 			osg::ref_ptr<osg::Texture2D> pOsgTex = new osg::Texture2D;
@@ -769,14 +768,14 @@ FbxFileTexture* FbxMaterialToOsgStateSet::selectFbxFileTexture(const FbxProperty
 	if (lProperty.IsValid())
 	{
 		// check if layered textures are used...
-		int layeredTextureCount = lProperty.GetSrcObjectCount<FbxLayeredTexture>();
+		const int layeredTextureCount = lProperty.GetSrcObjectCount<FbxLayeredTexture>();
 		if (layeredTextureCount)
 		{
 			// find the first valud FileTexture
 			for (int layeredTextureIndex = 0; layeredTextureIndex < layeredTextureCount; ++layeredTextureIndex)
 			{
-				FbxLayeredTexture* layered_texture = FbxCast<FbxLayeredTexture>(lProperty.GetSrcObject<FbxLayeredTexture>(layeredTextureIndex));
-				int lNbTex = layered_texture->GetSrcObjectCount<FbxFileTexture>();
+				const FbxLayeredTexture* layered_texture = FbxCast<FbxLayeredTexture>(lProperty.GetSrcObject<FbxLayeredTexture>(layeredTextureIndex));
+				const int lNbTex = layered_texture->GetSrcObjectCount<FbxFileTexture>();
 				for (int lTextureIndex = 0; lTextureIndex < lNbTex; lTextureIndex++)
 				{
 					FbxFileTexture* lTexture = FbxCast<FbxFileTexture>(layered_texture->GetSrcObject<FbxFileTexture>(lTextureIndex));
@@ -787,7 +786,7 @@ FbxFileTexture* FbxMaterialToOsgStateSet::selectFbxFileTexture(const FbxProperty
 		else
 		{
 			// find the first valud FileTexture
-			int lNbTex = lProperty.GetSrcObjectCount<FbxFileTexture>();
+			const int lNbTex = lProperty.GetSrcObjectCount<FbxFileTexture>();
 			for (int lTextureIndex = 0; lTextureIndex < lNbTex; lTextureIndex++)
 			{
 				FbxFileTexture* lTexture = FbxCast<FbxFileTexture>(lProperty.GetSrcObject<FbxFileTexture>(lTextureIndex));
@@ -802,7 +801,7 @@ TextureDetails* FbxMaterialToOsgStateSet::selectTextureDetails(const FbxProperty
 {
 	if (lProperty.IsValid())
 	{
-		FbxFileTexture* fileTexture = selectFbxFileTexture(lProperty);
+		const FbxFileTexture* fileTexture = selectFbxFileTexture(lProperty);
 		if (fileTexture)
 		{
 			TextureDetails* textureDetails = new TextureDetails();
@@ -821,7 +820,7 @@ void FbxMaterialToOsgStateSet::checkInvertTransparency()
 	for (FbxMaterialMap::const_iterator it = _fbxMaterialMap.begin(); it != _fbxMaterialMap.end(); ++it)
 	{
 		const osg::Material* pMaterial = it->second.material.get();
-		float alpha = pMaterial->getDiffuse(osg::Material::FRONT).a();
+		const float alpha = pMaterial->getDiffuse(osg::Material::FRONT).a();
 		if (alpha > 0.999f)
 		{
 			++oneAlpha;

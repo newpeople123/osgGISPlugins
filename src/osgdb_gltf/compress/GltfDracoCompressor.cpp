@@ -48,6 +48,7 @@ draco::DataType GltfDracoCompressor::getDataType(const int componentType)
 	case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: return draco::DataType::DT_UINT16;
 	case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: return draco::DataType::DT_UINT32;
 	case TINYGLTF_COMPONENT_TYPE_FLOAT: return draco::DataType::DT_FLOAT32;
+	default: break;
 	}
 	return draco::DataType::DT_INVALID;
 }
@@ -106,7 +107,6 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		if (primitive.indices != -1) {
 			tinygltf::Accessor& indicesAccessor = _model.accessors[primitive.indices];
 			const tinygltf::BufferView& indicesBv = _model.bufferViews[indicesAccessor.bufferView];
-			const tinygltf::Buffer& indicesBuffer = _model.buffers[indicesBv.buffer];
 
 			switch (indicesAccessor.componentType) {
 			case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -267,12 +267,11 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 	adjustIndices(bufferViewsToRemove);
 }
 
-void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferViewsToRemove)
-{
+void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferViewsToRemove) const {
 	std::vector<int> bufferViewsToRemoveVector(bufferViewsToRemove.begin(), bufferViewsToRemove.end());
 	std::sort(bufferViewsToRemoveVector.begin(), bufferViewsToRemoveVector.end(), std::greater<int>());
 
-	for (int bufferViewId : bufferViewsToRemoveVector) {
+	for (const int bufferViewId : bufferViewsToRemoveVector) {
 		_model.bufferViews.erase(_model.bufferViews.begin() + bufferViewId);
 
 		for (tinygltf::Accessor& accessor : _model.accessors) {
@@ -294,7 +293,7 @@ void GltfDracoCompressor::adjustIndices(const std::unordered_set<int>& bufferVie
 					tinygltf::Value::Object& dracoExtension = dracoExtensionIt->second.Get<tinygltf::Value::Object>();
 					tinygltf::Value::Object::iterator bufferViewIt = dracoExtension.find("bufferView");
 					if (bufferViewIt != dracoExtension.end()) {
-						int dracoBufferViewId = bufferViewIt->second.GetNumberAsInt();
+						const int dracoBufferViewId = bufferViewIt->second.GetNumberAsInt();
 						if (dracoBufferViewId > bufferViewId) {
 							bufferViewIt->second = tinygltf::Value(dracoBufferViewId - 1);
 						}
@@ -313,8 +312,7 @@ void GltfDracoCompressor::apply()
 	}
 }
 
-void GltfDracoCompressor::setDracoEncoderOptions(draco::Encoder& encoder)
-{
+void GltfDracoCompressor::setDracoEncoderOptions(draco::Encoder& encoder) const {
 	encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, _compressionOptions.PositionQuantizationBits);
 	encoder.SetAttributeQuantization(draco::GeometryAttribute::TEX_COORD, _compressionOptions.TexCoordQuantizationBits);
 	encoder.SetAttributeQuantization(draco::GeometryAttribute::NORMAL, _compressionOptions.NormalQuantizationBits);

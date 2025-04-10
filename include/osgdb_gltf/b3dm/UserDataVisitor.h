@@ -6,26 +6,26 @@ namespace osgGISPlugins {
     class UserDataVisitor : public osg::ValueObject::GetValueVisitor
     {
     public:
-        virtual void apply(bool value) { _ss << value; }
-        virtual void apply(char value) { _ss << value; }
-        virtual void apply(unsigned char value) { _ss << value; }
-        virtual void apply(short value) { _ss << value; }
-        virtual void apply(unsigned short value) { _ss << value; }
-        virtual void apply(int value) { _ss << value; }
-        virtual void apply(unsigned int value) { _ss << value; }
-        virtual void apply(float value) { _ss << value; }
-        virtual void apply(double value) { _ss << value; }
-        virtual void apply(const std::string& value) { _ss << value; }
-        virtual void apply(const osg::Vec2f& value) { _ss << value; }
-        virtual void apply(const osg::Vec3f& value) { _ss << value; }
-        virtual void apply(const osg::Vec4f& value) { _ss << value; }
-        virtual void apply(const osg::Vec2d& value) { _ss << value; }
-        virtual void apply(const osg::Vec3d& value) { _ss << value; }
-        virtual void apply(const osg::Vec4d& value) { _ss << value; }
-        virtual void apply(const osg::Quat& value) { _ss << value; }
-        virtual void apply(const osg::Plane& value) { _ss << value; }
-        virtual void apply(const osg::Matrixf& value) { _ss << value; }
-        virtual void apply(const osg::Matrixd& value) { _ss << value; }
+	    void apply(const bool value) override { _ss << value; }
+	    void apply(const char value) override { _ss << value; }
+	    void apply(const unsigned char value) override { _ss << value; }
+	    void apply(const short value) override { _ss << value; }
+	    void apply(const unsigned short value) override { _ss << value; }
+	    void apply(const int value) override { _ss << value; }
+	    void apply(const unsigned int value) override { _ss << value; }
+	    void apply(const float value) override { _ss << value; }
+	    void apply(const double value) override { _ss << value; }
+	    void apply(const std::string& value) override { _ss << value; }
+	    void apply(const osg::Vec2f& value) override { _ss << value; }
+	    void apply(const osg::Vec3f& value) override { _ss << value; }
+	    void apply(const osg::Vec4f& value) override { _ss << value; }
+	    void apply(const osg::Vec2d& value) override { _ss << value; }
+	    void apply(const osg::Vec3d& value) override { _ss << value; }
+	    void apply(const osg::Vec4d& value) override { _ss << value; }
+	    void apply(const osg::Quat& value) override { _ss << value; }
+	    void apply(const osg::Plane& value) override { _ss << value; }
+	    void apply(const osg::Matrixf& value) override { _ss << value; }
+	    void apply(const osg::Matrixd& value) override { _ss << value; }
         std::string value() const { return _ss.str(); }
         void clear() {
             _ss.str(""); // 将流的内容重置为空字符串

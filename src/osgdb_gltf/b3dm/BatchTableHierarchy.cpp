@@ -25,7 +25,7 @@ void BatchTableHierarchyVisitor::apply(osg::Geode& geode) {
 			{
 				osg::Object* ref = userDataContainer->getUserObject(j);
 				if (ref) {
-					osg::ValueObject* userObject = ref->asValueObject();
+					const osg::ValueObject* userObject = ref->asValueObject();
 					if (userObject)
 					{
 						const std::string key = userObject->getName();
@@ -38,8 +38,8 @@ void BatchTableHierarchyVisitor::apply(osg::Geode& geode) {
 			}
 		}
 
-		std::string defaultName = geode.getName();
-		bool hasNameKey = (keys.find(NAME) != keys.end());
+		const std::string defaultName = geode.getName();
+		const bool hasNameKey = (keys.find(NAME) != keys.end());
 
 		if (hasNameKey) {
 			attributes[NAME] = userDataVisitor.value();

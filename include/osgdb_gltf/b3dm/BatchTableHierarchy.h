@@ -64,7 +64,7 @@ namespace osgGISPlugins
     public:
         META_NodeVisitor(osgGISPlugins, BatchTableHierarchyVisitor)
 
-            BatchTableHierarchyVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentBatchId(0), _currentParentBatchId(0) {}
+            BatchTableHierarchyVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentParentBatchId(0), _currentBatchId(0) {}
 
         void apply(osg::Geode& geode) override;
         void apply(osg::Group& group) override;
@@ -96,8 +96,8 @@ namespace osgGISPlugins
         std::map<unsigned int, unsigned int> _batchParentIdMap;
         typedef std::vector<std::string> StringVector;
 
-        bool areAttributeNamesEqual(const Attributes& attributes, const StringVector& attributeNames);
-        StringVector convertAttributesToVector(const Attributes& attributes);
+        static bool areAttributeNamesEqual(const Attributes& attributes, const StringVector& attributeNames);
+        static StringVector convertAttributesToVector(const Attributes& attributes);
 
         std::map<std::vector<std::string>, std::vector<unsigned int>> _attributeNameBatchIdsMap;
     };

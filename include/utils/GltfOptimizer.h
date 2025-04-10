@@ -147,10 +147,10 @@ namespace osgGISPlugins
         {
         private:
             template<typename DrawElementsType, typename IndexArrayType>
-            static void reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex);
+            static void reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, unsigned int psetIndex);
         public:
             template<typename DrawElementsType, typename IndexArrayType>
-            static osg::ref_ptr<IndexArrayType> reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex, osg::MixinVector<unsigned int>& remap, const bool bGenerateIndex = true, const size_t uniqueVertexNum = 0);
+            static osg::ref_ptr<IndexArrayType> reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, unsigned int psetIndex, osg::MixinVector<unsigned int>& remap, bool bGenerateIndex = true, size_t uniqueVertexNum = 0);
 
             ReindexMeshVisitor(osgUtil::Optimizer* optimizer = 0) :
                 BaseOptimizerVisitor(optimizer, INDEX_MESH_BY_MESHOPTIMIZER)
@@ -208,9 +208,9 @@ namespace osgGISPlugins
         private:
             void optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Geometry>& geom);
 
-            void optimizeOsgTextureSize(osg::ref_ptr<osg::Texture2D> texture);
+            void optimizeOsgTextureSize(const osg::ref_ptr<osg::Texture2D>& texture) const;
 
-            void exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture);
+            void exportOsgTextureIfNeeded(const osg::ref_ptr<osg::Texture2D>& texture) const;
 
             void optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>& gltfMaterial, const osg::ref_ptr<osg::Geometry>& geom);
 
@@ -220,38 +220,38 @@ namespace osgGISPlugins
 
             void packOsgMaterials();
 
-            std::string exportImage(const osg::ref_ptr<osg::Image>& img);
+            std::string exportImage(const osg::ref_ptr<osg::Image>& img) const;
 
             static void packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer);
 
-            osg::ref_ptr<osg::Image> packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs);
+            osg::ref_ptr<osg::Image> packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs) const;
 
             static void removePackedImages(std::vector<osg::ref_ptr<osg::Image>>& imgs, const std::vector<osg::ref_ptr<osg::Image>>& deleteImgs);
 
-            void updateGltfMaterialUserValue(osg::ref_ptr<GltfMaterial> gltfMaterial,
-                osg::ref_ptr<osg::Texture2D> texture,
-                const double offsetX,
-                const double offsetY,
-                const double scaleX,
-                const double scaleY,
-                const std::string fullPath,
-                const GltfTextureType type);
+            static void updateGltfMaterialUserValue(osg::ref_ptr<GltfMaterial> gltfMaterial,
+                                                    osg::ref_ptr<osg::Texture2D> texture,
+                                                    double offsetX,
+                                                    double offsetY,
+                                                    double scaleX,
+                                                    double scaleY,
+                                                    const std::string& fullPath,
+                                                    GltfTextureType type);
 
-            static void resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
+            static void resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, int maxWidth, int maxHeight);
 
-            static bool compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2);
+            static bool compareImageHeight(const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2);
 
-            void addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs);
+            void addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs) const;
 
-            void processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
+            void processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, GltfTextureType type);
 
-            void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
+            void processGltfPbrSGImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, GltfTextureType type);
 
-            void processGltfGeneralImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type);
+            void processGltfGeneralImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, GltfTextureType type);
 
             void processTextureImages(
                 std::vector<osg::ref_ptr<osg::Image>>& images,
-                const GltfTextureType type,
+                GltfTextureType type,
                 const std::function<osg::ref_ptr<osg::Texture2D>(GltfMaterial*)>& getTextureFunc);
 
             static void removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs);
@@ -266,7 +266,7 @@ namespace osgGISPlugins
             std::vector<osg::ref_ptr<osg::Image>> _images;
             std::map<osg::Geometry*, osg::ref_ptr<osg::Image>> _geometryImgMap;
         public:
-            TextureAtlasBuilderVisitor(const GltfTextureOptimizationOptions options, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, VERTEX_FETCH_BY_MESHOPTIMIZER), _options(options)
+            TextureAtlasBuilderVisitor(const GltfTextureOptimizationOptions& options, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, VERTEX_FETCH_BY_MESHOPTIMIZER), _options(options)
             {
             }
             
@@ -276,8 +276,7 @@ namespace osgGISPlugins
 
             void packTextures();
 
-            ~TextureAtlasBuilderVisitor()
-            {
+            ~TextureAtlasBuilderVisitor() override {
                 _gltfMaterials.clear();
                 _geometryGltfMaterialMap.clear();
 
@@ -299,7 +298,7 @@ namespace osgGISPlugins
 
             void apply(osg::Geode& geode) override;
 
-            osg::Node* getNode();
+            osg::Node* getNode() const;
         };
 
     private:
@@ -307,10 +306,10 @@ namespace osgGISPlugins
     };
 
     template<typename DrawElementsType, typename IndexArrayType>
-    inline void GltfOptimizer::ReindexMeshVisitor::reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex)
+    void GltfOptimizer::ReindexMeshVisitor::reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex)
     {
         osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geometry.getVertexAttribArray(0));
-        osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
+        const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
         if (!positions.valid())
         {
             return;
@@ -342,11 +341,11 @@ namespace osgGISPlugins
     }
 
     template<typename DrawElementsType, typename IndexArrayType>
-    inline osg::ref_ptr<IndexArrayType> GltfOptimizer::ReindexMeshVisitor::reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex, osg::MixinVector<unsigned int>& remap, const bool bGenerateIndex, const size_t uniqueVertexNum)
+    osg::ref_ptr<IndexArrayType> GltfOptimizer::ReindexMeshVisitor::reindexMesh(osg::Geometry& geometry, osg::ref_ptr<DrawElementsType> drawElements, const unsigned int psetIndex, osg::MixinVector<unsigned int>& remap, const bool bGenerateIndex, const size_t uniqueVertexNum)
     {
-        osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geometry.getVertexAttribArray(0));
-        osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
-        osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geometry.getNormalArray());
+        const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geometry.getVertexAttribArray(0));
+        const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
+        const osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geometry.getNormalArray());
         osg::ref_ptr<osg::Vec2Array> texCoords = nullptr;
         if (geometry.getNumTexCoordArrays())
         {
@@ -403,16 +402,16 @@ namespace osgGISPlugins
                 batchIdData.push_back(b);
             }
         }
-        meshopt_Stream vertexStream = { vertexData.asVector().data(), sizeof(Attr), sizeof(Attr) };
+        const meshopt_Stream vertexStream = { vertexData.asVector().data(), sizeof(Attr), sizeof(Attr) };
         streams.push_back(vertexStream);
         if (normals.valid())
         {
-            meshopt_Stream normalStream = { normalData.asVector().data(), sizeof(Attr), sizeof(Attr) };
+            const meshopt_Stream normalStream = { normalData.asVector().data(), sizeof(Attr), sizeof(Attr) };
             streams.push_back(normalStream);
         }
         if (texCoords.valid())
         {
-            meshopt_Stream texCoordStream = { texCoordData.asVector().data(), sizeof(Attr), sizeof(Attr) };
+            const meshopt_Stream texCoordStream = { texCoordData.asVector().data(), sizeof(Attr), sizeof(Attr) };
             streams.push_back(texCoordStream);
         }
 
@@ -428,10 +427,10 @@ namespace osgGISPlugins
             assert(uniqueVertexCount <= count);
         }
 
-        osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(count);
-        osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(count);
-        osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(count);
-        osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(count);
+        const osg::ref_ptr<osg::Vec3Array> optimizedVertices = new osg::Vec3Array(count);
+        const osg::ref_ptr<osg::Vec3Array> optimizedNormals = new osg::Vec3Array(count);
+        const osg::ref_ptr<osg::Vec2Array> optimizedTexCoords = new osg::Vec2Array(count);
+        const osg::ref_ptr<osg::FloatArray> optimizedBatchIds = new osg::FloatArray(count);
         osg::ref_ptr<IndexArrayType> optimizedIndices = new IndexArrayType(indices->size());
 
         meshopt_remapIndexBuffer(&(*optimizedIndices)[0], &(*indices)[0], indices->size(), &remap.asVector()[0]);
@@ -480,7 +479,7 @@ namespace osgGISPlugins
     }
 
     template<typename DrawElementsType, typename IndexArrayType>
-    inline void GltfOptimizer::VertexCacheVisitor::processDrawElements(osg::PrimitiveSet* pset, IndexArrayType& indices)
+    void GltfOptimizer::VertexCacheVisitor::processDrawElements(osg::PrimitiveSet* pset, IndexArrayType& indices)
     {
         DrawElementsType* drawElements = dynamic_cast<DrawElementsType*>(pset);
         if (drawElements)

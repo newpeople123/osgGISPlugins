@@ -1,8 +1,11 @@
 #include "utils/Utils.h"
 
+#include <osgDB/FileNameUtils>
+#include "osgdb_gltf/material/GltfMaterial.h"
+
 using namespace osgGISPlugins;
 
-void Utils::pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets)
+void Utils::pushStateSet2UniqueStateSets(const osg::ref_ptr<osg::StateSet>& stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets)
 {
 	int index = -1;
 	for (size_t j = 0; j < uniqueStateSets.size(); j++)
@@ -19,7 +22,7 @@ void Utils::pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, s
 		uniqueStateSets.push_back(stateSet);
 }
 
-bool Utils::isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords)
+bool Utils::isRepeatTexCoords(const osg::ref_ptr<osg::Vec2Array>& texCoords)
 {
 	for (osg::Vec2 texCoord : *texCoords.get())
 	{
@@ -79,7 +82,7 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 		GL_POLYGON_SMOOTH
 	};
 
-	for (GLenum mode : modes) {
+	for (const GLenum mode : modes) {
 		if (ss1->getMode(mode) != ss2->getMode(mode))
 			return false;
 	}
@@ -182,15 +185,15 @@ bool Utils::comparePrimitiveSet(const osg::ref_ptr<osg::PrimitiveSet>& pSet1, co
 	if (pSet1->getNumIndices() != pSet2->getNumIndices()) return false;
 
 	// 根据具体类型比较
-	if (osg::DrawElements* de1 = dynamic_cast<osg::DrawElements*>(pSet1.get()))
+	if (const osg::DrawElements* de1 = dynamic_cast<osg::DrawElements*>(pSet1.get()))
 	{
-		osg::DrawElements* de2 = dynamic_cast<osg::DrawElements*>(pSet2.get());
+		const osg::DrawElements* de2 = dynamic_cast<osg::DrawElements*>(pSet2.get());
 		if (!de2) return false;
 		return compareDrawElements(de1, de2);
 	}
-	else if (osg::DrawArrays* da1 = dynamic_cast<osg::DrawArrays*>(pSet1.get()))
+	else if (const osg::DrawArrays* da1 = dynamic_cast<osg::DrawArrays*>(pSet1.get()))
 	{
-		osg::DrawArrays* da2 = dynamic_cast<osg::DrawArrays*>(pSet2.get());
+		const osg::DrawArrays* da2 = dynamic_cast<osg::DrawArrays*>(pSet2.get());
 		if (!da2) return false;
 		return compareDrawArrays(da1, da2);
 	}
@@ -206,15 +209,15 @@ bool Utils::compareDrawElements(const osg::DrawElements* de1, const osg::DrawEle
 	switch (de1->getType())
 	{
 	case osg::PrimitiveSet::DrawElementsUBytePrimitiveType:
-		return compareDrawElementsTemplate<GLubyte, osg::DrawElementsUByte>(
+		return compareDrawElementsTemplate<osg::DrawElementsUByte>(
 			static_cast<const osg::DrawElementsUByte*>(de1),
 			static_cast<const osg::DrawElementsUByte*>(de2));
 	case osg::PrimitiveSet::DrawElementsUShortPrimitiveType:
-		return compareDrawElementsTemplate<GLushort, osg::DrawElementsUShort>(
+		return compareDrawElementsTemplate<osg::DrawElementsUShort>(
 			static_cast<const osg::DrawElementsUShort*>(de1),
 			static_cast<const osg::DrawElementsUShort*>(de2));
 	case osg::PrimitiveSet::DrawElementsUIntPrimitiveType:
-		return compareDrawElementsTemplate<GLuint, osg::DrawElementsUInt>(
+		return compareDrawElementsTemplate<osg::DrawElementsUInt>(
 			static_cast<const osg::DrawElementsUInt*>(de1),
 			static_cast<const osg::DrawElementsUInt*>(de2));
 	default:
@@ -418,7 +421,7 @@ void Utils::CRenderingThread::run()
 		while (pos < _length && !_bStop && !bar.is_completed())
 		{
 			pos = _fin->tellg();
-			double percent = 100.0 * pos / _length;
+			const double percent = 100.0 * pos / _length;
 
 			// 当百分比大于等于 1% 时打印
 			if (percent >= 1)
@@ -433,9 +436,9 @@ void Utils::CRenderingThread::run()
 
 osgDB::ReaderWriter::ReadResult Utils::ProgressReportingFileReadCallback::readNode(const std::string& file, const osgDB::Options* option)
 {
-	std::string ext = osgDB::getLowerCaseFileExtension(file);
+	const std::string ext = osgDB::getLowerCaseFileExtension(file);
 	osgDB::ReaderWriter::ReadResult rr;
-	osgDB::ReaderWriter* rw = osgDB::Registry::instance()->getReaderWriterForExtension(ext);
+	const osgDB::ReaderWriter* rw = osgDB::Registry::instance()->getReaderWriterForExtension(ext);
 
 	if (rw)
 	{
@@ -475,11 +478,11 @@ void Utils::TriangleCounterVisitor::apply(osg::Drawable& drawable)
 		{
 			osg::PrimitiveSet* primSet = geom->getPrimitiveSet(i);
 
-			if (osg::DrawArrays* drawArrays = dynamic_cast<osg::DrawArrays*>(primSet))
+			if (const osg::DrawArrays* drawArrays = dynamic_cast<osg::DrawArrays*>(primSet))
 			{
 				count += calculateTriangleCount(drawArrays->getMode(), drawArrays->getCount());
 			}
-			else if (osg::DrawElements* drawElements = dynamic_cast<osg::DrawElements*>(primSet))
+			else if (const osg::DrawElements* drawElements = dynamic_cast<osg::DrawElements*>(primSet))
 			{
 				count += drawElements->getNumIndices() / 3;
 			}
@@ -508,7 +511,7 @@ unsigned int Utils::TriangleCounterVisitor::calculateTriangleCount(const GLenum 
 
 void Utils::TextureCounterVisitor::apply(osg::Drawable& drawable)
 {
-	osg::ref_ptr<osg::StateSet> stateSet = drawable.getStateSet();
+	const osg::ref_ptr<osg::StateSet> stateSet = drawable.getStateSet();
 	pushStateSet2UniqueStateSets(stateSet, _stateSets);
 }
 
@@ -540,7 +543,7 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 		if (!osgTexture.valid()) continue;
 		if (!osgTexture->getNumImages()) continue;
 
-		osg::Image* image = osgTexture->getImage();
+		const osg::Image* image = osgTexture->getImage();
 		if (!image) continue;
 
 		// 获取顶点数组和纹理坐标
@@ -560,7 +563,7 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 		// 计算几何体表面积
 		for (unsigned int j = 0; j < geometry->getNumPrimitiveSets(); ++j)
 		{
-			osg::PrimitiveSet* primSet = geometry->getPrimitiveSet(j);
+			const osg::PrimitiveSet* primSet = geometry->getPrimitiveSet(j);
 			if (primSet->getMode() != osg::PrimitiveSet::TRIANGLES) continue;
 
 			for (unsigned int k = 0; k < primSet->getNumIndices(); k += 3)
@@ -575,7 +578,7 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 		}
 
 		// 计算 UV 面积
-		double uvArea = (texMax.x() - texMin.x()) * (texMax.y() - texMin.y());
+		const double uvArea = (texMax.x() - texMin.x()) * (texMax.y() - texMin.y());
 		if (uvArea <= 0.0) continue; // 如果 UV 面积无效，跳过
 
 		// 计算纹理总像素数
@@ -588,7 +591,7 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 		// 计算纹素密度
 		if (totalArea > 0.0 && uvArea > 0.0)
 		{
-			double texelDensity = texturePixelCount / (uvArea * totalArea);
+			const double texelDensity = texturePixelCount / (uvArea * totalArea);
 			if (texelDensity < _minTexelDensity)
 			{
 				_minTexelDensity = texelDensity;
@@ -640,7 +643,7 @@ void Utils::MaxGeometryVisitor::apply(osg::Geode& geode)
 		// 计算几何体的面积和体积
 		for (unsigned int j = 0; j < geometry->getNumPrimitiveSets(); ++j)
 		{
-			osg::PrimitiveSet* primSet = geometry->getPrimitiveSet(j);
+			const osg::PrimitiveSet* primSet = geometry->getPrimitiveSet(j);
 			if (primSet->getMode() != osg::PrimitiveSet::TRIANGLES) continue;
 
 			for (unsigned int k = 0; k < primSet->getNumIndices(); k += 3)
@@ -719,8 +722,8 @@ unsigned int Utils::DrawcallCommandCounterVisitor::getCount() const
 
 			for (size_t i = 0; i < it->second.size(); i++)
 			{
-				osg::ref_ptr<osg::Geometry> geometry = it->second.at(i);
-				osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+				const osg::ref_ptr<osg::Geometry> geometry = it->second.at(i);
+				const osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
 				osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geometry->getTexCoordArray(0));
 				if (texCoords.valid())
 				{

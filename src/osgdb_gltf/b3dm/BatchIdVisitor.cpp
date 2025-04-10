@@ -8,7 +8,7 @@ void BatchIdVisitor::apply(osg::Drawable& drawable) {
     if (geometry) {
         const osg::Vec3Array* positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
         if (positions&&positions->size()) {
-            osg::ref_ptr<osg::FloatArray> batchIds = new osg::FloatArray;
+            const osg::ref_ptr<osg::FloatArray> batchIds = new osg::FloatArray;
             batchIds->assign(positions->size(), _currentBatchId);
 
             const osg::Array* vertexAttrib = geometry->getVertexAttribArray(0);

@@ -2,7 +2,6 @@
 #include "utils/GltfOptimizer.h"
 #include <osg/ArgumentParser>
 #include <iostream>
-#include <osgDB/ConvertUTF>
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 #include <osgUtil/Optimizer>

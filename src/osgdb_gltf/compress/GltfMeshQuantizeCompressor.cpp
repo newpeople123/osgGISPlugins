@@ -2,8 +2,7 @@
 #include <meshoptimizer.h>
 #include <algorithm>
 using namespace osgGISPlugins;
-void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
-{
+void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMap& extensionMap, const tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy) const {
 	KHR_texture_transform texture_transform_extension;
 	const tinygltf::Value::Object::iterator& findResult = extensionMap.find(texture_transform_extension.name);
 	if (findResult != extensionMap.end()) {
@@ -13,15 +12,15 @@ void GltfMeshQuantizeCompressor::recomputeTextureTransform(tinygltf::ExtensionMa
 		offsets[1] += minTy;
 		texture_transform_extension.setOffset(offsets);
 		std::array<double, 2> scales = texture_transform_extension.getScale();
-		scales[0] *= scaleTx / float((1 << _compressionOptions.TexCoordQuantizationBits) - 1) * (accessor.normalized ? 65535.f : 1.f);
-		scales[1] *= scaleTy / float((1 << _compressionOptions.TexCoordQuantizationBits) - 1) * (accessor.normalized ? 65535.f : 1.f);
+		scales[0] *= scaleTx / static_cast<float>((1 << _compressionOptions.TexCoordQuantizationBits) - 1) * (accessor.normalized ? 65535.f : 1.f);
+		scales[1] *= scaleTy / static_cast<float>((1 << _compressionOptions.TexCoordQuantizationBits) - 1) * (accessor.normalized ? 65535.f : 1.f);
 		texture_transform_extension.setScale(scales);
 
 		findResult->second = texture_transform_extension.GetValue();
 	}
 }
 
-void GltfMeshQuantizeCompressor::processMaterial(const tinygltf::Primitive primitive, tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
+void GltfMeshQuantizeCompressor::processMaterial(const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor, const double minTx, const double minTy, const double scaleTx, const double scaleTy)
 {
 	if (std::count(_materialIndexes.begin(), _materialIndexes.end(), primitive.material))
 		return;
@@ -43,8 +42,7 @@ void GltfMeshQuantizeCompressor::processMaterial(const tinygltf::Primitive primi
 	}
 }
 
-std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getTexcoordBounds(const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor)
-{
+std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getTexcoordBounds(const tinygltf::Primitive& primitive, const tinygltf::Accessor& accessor) const {
 	std::vector<tinygltf::Accessor> texcoordAccessors;
 	for (const tinygltf::Mesh& mesh : _model.meshes) {
 		for (const tinygltf::Primitive& pri : mesh.primitives) {
@@ -73,8 +71,7 @@ std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getTexcoo
 	return std::make_tuple(minTx, minTy, scaleTx, scaleTy);
 }
 
-std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getPositionBounds()
-{
+std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getPositionBounds() const {
 	double minVX = FLT_MAX, minVY = FLT_MAX, minVZ = FLT_MAX, scaleV = -FLT_MAX, maxVX = -FLT_MAX, maxVY = -FLT_MAX, maxVZ = -FLT_MAX;
 	for (const tinygltf::Mesh& mesh : _model.meshes)
 	{
@@ -86,13 +83,13 @@ std::tuple<double, double, double, double> GltfMeshQuantizeCompressor::getPositi
 				const tinygltf::Accessor& accessor = _model.accessors[pair.second];
 				if (accessor.type == TINYGLTF_TYPE_VEC3 && pair.first == "POSITION")
 				{
-					minVX = std::min(double(accessor.minValues[0]), minVX);
-					minVY = std::min(double(accessor.minValues[1]), minVY);
-					minVZ = std::min(double(accessor.minValues[2]), minVZ);
+					minVX = std::min(static_cast<double>(accessor.minValues[0]), minVX);
+					minVY = std::min(static_cast<double>(accessor.minValues[1]), minVY);
+					minVZ = std::min(static_cast<double>(accessor.minValues[2]), minVZ);
 
-					maxVX = std::max(double(accessor.maxValues[0]), maxVX);
-					maxVY = std::max(double(accessor.maxValues[1]), maxVY);
-					maxVZ = std::max(double(accessor.maxValues[2]), maxVZ);
+					maxVX = std::max(static_cast<double>(accessor.maxValues[0]), maxVX);
+					maxVY = std::max(static_cast<double>(accessor.maxValues[1]), maxVY);
+					maxVZ = std::max(static_cast<double>(accessor.maxValues[2]), maxVZ);
 				}
 			}
 
@@ -108,7 +105,7 @@ void GltfMeshQuantizeCompressor::apply()
 	if (!_model.scenes.size()) return;
 	_materialIndexes.clear();
 
-	std::tuple<double, double, double, double> result = getPositionBounds();
+	const std::tuple<double, double, double, double> result = getPositionBounds();
 	const double minVX = std::get<0>(result);
 	const double minVY = std::get<1>(result);
 	const double minVZ = std::get<2>(result);
@@ -135,7 +132,7 @@ void GltfMeshQuantizeCompressor::apply()
 			_model.nodes[index].translation[1] = minVY;
 			_model.nodes[index].translation[2] = minVZ;
 
-			const float nodeScale = scaleV / float((1 << _compressionOptions.PositionQuantizationBits) - 1) * (_compressionOptions.PositionNormalized ? 65535.f : 1.f);
+			const float nodeScale = scaleV / static_cast<float>((1 << _compressionOptions.PositionQuantizationBits) - 1) * (_compressionOptions.PositionNormalized ? 65535.f : 1.f);
 			_model.nodes[index].scale.resize(3);
 			_model.nodes[index].scale[0] = nodeScale;
 			_model.nodes[index].scale[1] = nodeScale;
@@ -144,7 +141,7 @@ void GltfMeshQuantizeCompressor::apply()
 	}
 }
 
-bool GltfMeshQuantizeCompressor::valid(tinygltf::Model& model)
+bool GltfMeshQuantizeCompressor::valid(const tinygltf::Model& model)
 {
 	for (const tinygltf::Mesh& mesh : model.meshes)
 	{
@@ -172,7 +169,7 @@ bool GltfMeshQuantizeCompressor::valid(tinygltf::Model& model)
 	return true;
 }
 
-void GltfMeshQuantizeCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits)
+void GltfMeshQuantizeCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, const int bits)
 {
 	const float scaler = sqrtf(2.f);
 
@@ -181,7 +178,7 @@ void GltfMeshQuantizeCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits)
 	qc = fabsf(a[2]) > fabsf(a[qc]) ? 2 : qc;
 	qc = fabsf(a[3]) > fabsf(a[qc]) ? 3 : qc;
 
-	float sign = a[qc] < 0.f ? -1.f : 1.f;
+	const float sign = a[qc] < 0.f ? -1.f : 1.f;
 
 	v[0] = meshopt_quantizeSnorm(a[(qc + 1) & 3] * scaler * sign, bits);
 	v[1] = meshopt_quantizeSnorm(a[(qc + 2) & 3] * scaler * sign, bits);
@@ -189,22 +186,22 @@ void GltfMeshQuantizeCompressor::encodeQuat(osg::Vec4s v, osg::Vec4 a, int bits)
 	v[3] = (meshopt_quantizeSnorm(1.f, bits) & ~3) | qc;
 }
 
-void GltfMeshQuantizeCompressor::encodeOct(int& fu, int& fv, float nx, float ny, float nz, int bits)
+void GltfMeshQuantizeCompressor::encodeOct(int& fu, int& fv, float nx, float ny, const float nz, const int bits)
 {
-	float nl = fabsf(nx) + fabsf(ny) + fabsf(nz);
-	float ns = nl == 0.f ? 0.f : 1.f / nl;
+	const float nl = fabsf(nx) + fabsf(ny) + fabsf(nz);
+	const float ns = nl == 0.f ? 0.f : 1.f / nl;
 
 	nx *= ns;
 	ny *= ns;
 
-	float u = (nz >= 0.f) ? nx : (1 - fabsf(ny)) * (nx >= 0.f ? 1.f : -1.f);
-	float v = (nz >= 0.f) ? ny : (1 - fabsf(nx)) * (ny >= 0.f ? 1.f : -1.f);
+	const float u = (nz >= 0.f) ? nx : (1 - fabsf(ny)) * (nx >= 0.f ? 1.f : -1.f);
+	const float v = (nz >= 0.f) ? ny : (1 - fabsf(nx)) * (ny >= 0.f ? 1.f : -1.f);
 
 	fu = meshopt_quantizeSnorm(u, bits);
 	fv = meshopt_quantizeSnorm(v, bits);
 }
 
-void GltfMeshQuantizeCompressor::encodeExpShared(osg::Vec4ui v, osg::Vec4 a, int bits)
+void GltfMeshQuantizeCompressor::encodeExpShared(osg::Vec4ui v, osg::Vec4 a, const int bits)
 {
 	// get exponents from all components
 	int ex, ey, ez;
@@ -214,40 +211,40 @@ void GltfMeshQuantizeCompressor::encodeExpShared(osg::Vec4ui v, osg::Vec4 a, int
 
 	// use maximum exponent to encode values; this guarantees that mantissa is [-1, 1]
 	// note that we additionally scale the mantissa to make it a K-bit signed integer (K-1 bits for magnitude)
-	int exp = std::max(ex, std::max(ey, ez)) - (bits - 1);
+	const int exp = std::max(ex, std::max(ey, ez)) - (bits - 1);
 
 	// compute renormalized rounded mantissas for each component
-	int mx = int(ldexp(a[0], -exp) + (a[0] >= 0 ? 0.5f : -0.5f));
-	int my = int(ldexp(a[1], -exp) + (a[1] >= 0 ? 0.5f : -0.5f));
-	int mz = int(ldexp(a[2], -exp) + (a[2] >= 0 ? 0.5f : -0.5f));
+	const int mx = static_cast<int>(ldexp(a[0], -exp) + (a[0] >= 0 ? 0.5f : -0.5f));
+	const int my = static_cast<int>(ldexp(a[1], -exp) + (a[1] >= 0 ? 0.5f : -0.5f));
+	const int mz = static_cast<int>(ldexp(a[2], -exp) + (a[2] >= 0 ? 0.5f : -0.5f));
 
-	int mmask = (1 << 24) - 1;
+	const int mmask = (1 << 24) - 1;
 
 	// encode exponent & mantissa into each resulting value
-	v[0] = (mx & mmask) | (unsigned(exp) << 24);
-	v[1] = (my & mmask) | (unsigned(exp) << 24);
-	v[2] = (mz & mmask) | (unsigned(exp) << 24);
+	v[0] = (mx & mmask) | (static_cast<unsigned>(exp) << 24);
+	v[1] = (my & mmask) | (static_cast<unsigned>(exp) << 24);
+	v[2] = (mz & mmask) | (static_cast<unsigned>(exp) << 24);
 }
 
-unsigned int GltfMeshQuantizeCompressor::encodeExpOne(float v, int bits)
+unsigned int GltfMeshQuantizeCompressor::encodeExpOne(const float v, const int bits)
 {
 	// extract exponent
 	int e;
 	frexp(v, &e);
 
 	// scale the mantissa to make it a K-bit signed integer (K-1 bits for magnitude)
-	int exp = e - (bits - 1);
+	const int exp = e - (bits - 1);
 
 	// compute renormalized rounded mantissa
-	int m = int(ldexp(v, -exp) + (v >= 0 ? 0.5f : -0.5f));
+	const int m = static_cast<int>(ldexp(v, -exp) + (v >= 0 ? 0.5f : -0.5f));
 
-	int mmask = (1 << 24) - 1;
+	const int mmask = (1 << 24) - 1;
 
 	// encode exponent & mantissa
-	return (m & mmask) | (unsigned(exp) << 24);
+	return (m & mmask) | (static_cast<unsigned>(exp) << 24);
 }
 
-osg::ref_ptr<osg::Vec3uiArray> GltfMeshQuantizeCompressor::encodeExpParallel(std::vector<float> vertex, int bits)
+osg::ref_ptr<osg::Vec3uiArray> GltfMeshQuantizeCompressor::encodeExpParallel(const std::vector<float>& vertex, const int bits)
 {
 	const unsigned int size = vertex.size() / 3;
 	osg::ref_ptr<osg::Vec3uiArray> result = new osg::Vec3uiArray(size);
@@ -273,26 +270,26 @@ osg::ref_ptr<osg::Vec3uiArray> GltfMeshQuantizeCompressor::encodeExpParallel(std
 	{
 
 		// compute renormalized rounded mantissas
-		int mx = int(ldexp(vertex[3 * i + 0], -expx) + (vertex[3 * i + 0] >= 0 ? 0.5f : -0.5f));
-		int my = int(ldexp(vertex[3 * i + 1], -expy) + (vertex[3 * i + 1] >= 0 ? 0.5f : -0.5f));
-		int mz = int(ldexp(vertex[3 * i + 2], -expz) + (vertex[3 * i + 2] >= 0 ? 0.5f : -0.5f));
+		const int mx = static_cast<int>(ldexp(vertex[3 * i + 0], -expx) + (vertex[3 * i + 0] >= 0 ? 0.5f : -0.5f));
+		const int my = static_cast<int>(ldexp(vertex[3 * i + 1], -expy) + (vertex[3 * i + 1] >= 0 ? 0.5f : -0.5f));
+		const int mz = static_cast<int>(ldexp(vertex[3 * i + 2], -expz) + (vertex[3 * i + 2] >= 0 ? 0.5f : -0.5f));
 
-		int mmask = (1 << 24) - 1;
+		const int mmask = (1 << 24) - 1;
 
 		// encode exponent & mantissa
 		osg::Vec3ui v;
-		v[0] = (mx & mmask) | (unsigned(expx) << 24);
-		v[1] = (my & mmask) | (unsigned(expy) << 24);
-		v[2] = (mz & mmask) | (unsigned(expz) << 24);
+		v[0] = (mx & mmask) | (static_cast<unsigned>(expx) << 24);
+		v[1] = (my & mmask) | (static_cast<unsigned>(expy) << 24);
+		v[2] = (mz & mmask) | (static_cast<unsigned>(expz) << 24);
 		result->at(i) = v;
 	}
 
 	return result;
 }
 
-int GltfMeshQuantizeCompressor::quantizeColor(float v, int bytebits, int bits)
+int GltfMeshQuantizeCompressor::quantizeColor(const float v, const int bytebits, const int bits)
 {
-	int result = meshopt_quantizeUnorm(v, bytebits);
+	const int result = meshopt_quantizeUnorm(v, bytebits);
 
 	const int mask = (1 << (bytebits - bits)) - 1;
 

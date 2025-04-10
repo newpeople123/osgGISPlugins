@@ -2,7 +2,6 @@
 #define FBXMATERIALTOOSGSTATESET_H
 
 #include <map>
-#include <memory>
 #include <osg/Material>
 #include <osg/StateSet>
 #include <osgDB/Options>
@@ -30,7 +29,7 @@ struct TextureDetails : public osg::Referenced
 
     bool transparent() const;
 
-    void assignTextureIfRequired(osg::StateSet* stateSet, unsigned int unit);
+    void assignTextureIfRequired(osg::StateSet* stateSet, unsigned int unit) const;
     void assignTexMatIfRequired(osg::StateSet* stateSet, unsigned int unit);
 
     std::string                     channel;
@@ -86,7 +85,7 @@ public:
     StateSetContent convert(const FbxSurfaceMaterial* pFbxMat);
 
     //dir is the directory where fbx is stored (for relative path).
-    FbxMaterialToOsgStateSet(const std::string& dir, const osgDB::Options* options, bool lightmapTextures) :
+    FbxMaterialToOsgStateSet(const std::string& dir, const osgDB::Options* options, const bool lightmapTextures) :
         _options(options),
         _dir(dir),
         _lightmapTextures(lightmapTextures){}
@@ -97,7 +96,7 @@ private:
     //Convert a texture fbx to an osg texture.
     osg::ref_ptr<osg::Texture2D> fbxTextureToOsgTexture(const FbxFileTexture* pOsgTex);
 
-    FbxFileTexture* selectFbxFileTexture(const FbxProperty& lProperty);
+    static FbxFileTexture* selectFbxFileTexture(const FbxProperty& lProperty);
 
     TextureDetails* selectTextureDetails(const FbxProperty& lProperty);
 

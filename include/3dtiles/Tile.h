@@ -9,8 +9,6 @@
 #include "3dtiles/BoundingVolume.h"
 #include "utils/GltfOptimizer.h"
 #include <osgDB/WriteFile>
-#include <tbb/parallel_for.h>
-#include <tbb/blocked_range.h>
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
@@ -66,7 +64,7 @@ namespace osgGISPlugins
 
 				std::string ext = std::string(this->gltfTextureOptions.ext.begin(), this->gltfTextureOptions.ext.end());
 				std::transform(ext.begin(), ext.end(), ext.begin(),
-					[](unsigned char c) { return std::tolower(c); });
+					[](const unsigned char c) { return std::tolower(c); });
 				if (ext != ".jpg" && ext != ".png" && ext != ".webp" && ext != ".ktx2")
 				{
 					this->gltfTextureOptions.ext = ".jpg";
@@ -94,10 +92,11 @@ namespace osgGISPlugins
 		double volume = 0.0;
 
 		Tile() = default;
-		Tile(osg::ref_ptr<Tile> parent, const std::string& type)
-			: parent(parent), type(type) {}
+		Tile(const osg::ref_ptr<Tile>& parent, const std::string& type)
+			: type(type), parent(parent) {}
 		Tile(const Tile& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: osg::Object(other, copyop),
+			type(other.type),
 			parent(other.parent),
 			node(other.node),
 			boundingVolume(other.boundingVolume, copyop),
@@ -105,13 +104,12 @@ namespace osgGISPlugins
 			refine(other.refine),
 			contentUri(other.contentUri),
 			children(other.children),
-			transform(other.transform),
-			type(other.type) {}
-		Tile(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent, const std::string& type)
-			: parent(parent), node(node), type(type) {}
+			transform(other.transform) {}
+		Tile(const osg::ref_ptr<osg::Node>& node, const osg::ref_ptr<Tile>& parent, const std::string& type)
+			: type(type), parent(parent), node(node) {}
 
-		virtual const char* libraryName() const { return "osgGISPlugins"; }
-		virtual const char* className() const { return "Tile"; }
+		const char* libraryName() const override { return "osgGISPlugins"; }
+		const char* className() const override { return "Tile"; }
 
 		json toJson() const;
 
@@ -125,13 +123,13 @@ namespace osgGISPlugins
 
 		virtual void fromJson(const json& j);
 
-		static double getCesiumGeometricErrorByPixelSize(const float pixelSize, const float radius);
+		static double getCesiumGeometricErrorByPixelSize(float pixelSize, float radius);
 
-		static double getCesiumGeometricErrorByLodError(const float lodError, const double radius);
+		static double getCesiumGeometricErrorByLodError(float lodError, double radius);
 
-		static double getCesiumGeometricErrorByDistance(const float distance);
+		static double getCesiumGeometricErrorByDistance(float distance);
 
-		static double getDistanceByPixelSize(const float pixelSize, const float radius);
+		static double getDistanceByPixelSize(float pixelSize, float radius);
 	protected:
 		void cleanupEmptyNodes();
 
@@ -143,7 +141,7 @@ namespace osgGISPlugins
 
 		void computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& node);
 
-		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, unsigned int options);
+		static void optimizeNode(const osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, unsigned int options);
 
 		virtual void buildLOD();
 
@@ -159,16 +157,16 @@ namespace osgGISPlugins
 
 		virtual void writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy);
 
-		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> parent, int lodLevel);
+		osg::ref_ptr<Tile> createLODTile(const osg::ref_ptr<Tile>& parent, int lodLevel);
 
 		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) = 0;
 		virtual string getOutputPath() const = 0;
 		virtual string getFullPath() const = 0;
-		virtual string getTextureCachePath(const string textureCachePath) const = 0;
+		virtual string getTextureCachePath(string textureCachePath) const = 0;
 		virtual void setContentUri() = 0;
 		virtual void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) = 0;
 	private:
-		void applyLODStrategy(const float simplifyRatioFactor, const float textureFactor);
+		void applyLODStrategy(float simplifyRatioFactor, float textureFactor);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_TILE_H

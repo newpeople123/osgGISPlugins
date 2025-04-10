@@ -1,11 +1,9 @@
 #ifndef OSG_GIS_PLUGINS_OBB_VISITOR_H
 #define OSG_GIS_PLUGINS_OBB_VISITOR_H
 #include <osg/NodeVisitor>
-#include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/Matrix>
 #include <osg/Vec3>
-#include <osg/MatrixTransform>
 #include <osg/Node>
 #define ROTATE(a,i,j,k,l) g=a(i,j); h=a(k, l); a(i, j)=(float)(g-s*(h+g*tau)); a(k, l)=(float)(h+s*(g-h*tau));
 namespace osgGISPlugins
@@ -16,9 +14,9 @@ namespace osgGISPlugins
         OBBVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
 
         // 覆盖 apply 方法，处理 Geode 节点
-        virtual void apply(osg::Geode& geode) override;
+        void apply(osg::Geode& geode) override;
 
-        virtual void apply(osg::Group& group) override;
+        void apply(osg::Group& group) override;
 
         // 获取收集到的顶点数据
         osg::ref_ptr<osg::Vec3Array> getVertices() const { return _vertices; }
@@ -57,9 +55,9 @@ namespace osgGISPlugins
 
         void computeExtAxis();
 
-        static osg::Matrix getOBBOrientation(osg::ref_ptr<osg::Vec3Array> vertices);
+        static osg::Matrix getOBBOrientation(const osg::ref_ptr<osg::Vec3Array>& vertices);
 
-        static osg::Matrix getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array> vertices);
+        static osg::Matrix getConvarianceMatrix(const osg::ref_ptr<osg::Vec3Array>& vertices);
 
         static void getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix a);
 

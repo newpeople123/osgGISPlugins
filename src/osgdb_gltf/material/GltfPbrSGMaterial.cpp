@@ -4,8 +4,8 @@
 using namespace osgGISPlugins;
 osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::Image>& specularImage, const osg::ref_ptr<osg::Image>& glossinessImage)
 {
-    int width = specularImage->s();
-    int height = specularImage->t();
+    const int width = specularImage->s();
+    const int height = specularImage->t();
 
     osg::ref_ptr<osg::Image> specularGlossinessImage = new osg::Image;
     specularGlossinessImage->allocateImage(width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE);

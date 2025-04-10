@@ -1,5 +1,8 @@
 #include <osgdb_webp/ReaderWriterWebP.h>
 #include <osgDB/ConvertUTF>
+#include <osgDB/FileNameUtils>
+#include <decode.h>
+#include <osgDB/FileUtils>
 
 ReaderWriterWebP::ReaderWriterWebP()
 {
@@ -24,11 +27,11 @@ osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readObject(std::istream& fin, 
 
 osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readImage(const std::string& file, const osgDB::ReaderWriter::Options* options) const
 {
-    std::string ext = osgDB::getFileExtension(file);
+    const std::string ext = osgDB::getFileExtension(file);
     if (!acceptsExtension(ext))
         return ReadResult::FILE_NOT_HANDLED;
 
-    std::string fileName = osgDB::findDataFile(file, options);
+    const std::string fileName = osgDB::findDataFile(file, options);
     if (fileName.empty())
         return ReadResult::FILE_NOT_FOUND;
 
@@ -46,8 +49,6 @@ osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readImage(const std::string& f
 osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readImage(std::istream& fin, const Options* options) const
 {
     osg::Image* image = NULL;
-    unsigned long size_of_vp8_image_data = 0;
-    char* vp8_buffer = NULL;
 
     fin.seekg(0, std::ios::end);
     size_t stream_size = fin.tellg();
@@ -55,8 +56,10 @@ osgDB::ReaderWriter::ReadResult ReaderWriterWebP::readImage(std::istream& fin, c
 
     if (stream_size > 0)
     {
+	    char* vp8_buffer = NULL;
+	    unsigned long size_of_vp8_image_data = 0;
 
-        size_of_vp8_image_data = stream_size;
+	    size_of_vp8_image_data = stream_size;
         vp8_buffer = new char[stream_size];
 
         int version = WebPGetEncoderVersion();
@@ -150,7 +153,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
     return writeImage(img, f, options);
 }
 
-int ReaderWriterWebP::ostream_writer(const uint8_t* data, size_t data_size,
+int ReaderWriterWebP::ostream_writer(const uint8_t* data, const size_t data_size,
     const WebPPicture* const pic)
 {
 
@@ -243,7 +246,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
         break;
     default:
         return WriteResult::ERROR_IN_WRITING_FILE;
-        break;
     }
 
     switch (img.getPixelFormat())
@@ -291,7 +293,6 @@ osgDB::ReaderWriter::WriteResult ReaderWriterWebP::writeImage(const osg::Image& 
 
     default:
         return WriteResult::ERROR_IN_WRITING_FILE;
-        break;
     }
 
     WebPPictureFree(&picture);

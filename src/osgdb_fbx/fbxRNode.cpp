@@ -1,12 +1,9 @@
 #include <cassert>
 #include <memory>
-#include <sstream>
 
-#include <osg/io_utils>
 #include <osg/Notify>
 #include <osg/MatrixTransform>
 #include <osg/Material>
-#include <osg/Texture2D>
 #include <osgDB/FileNameUtils>
 #include <osgDB/ReadFile>
 #include <osgAnimation/AnimationManagerBase>
@@ -30,11 +27,11 @@
 #endif
 #include <osgdb_fbx/fbxReader.h>
 
-bool isAnimated(FbxProperty& prop, FbxScene& fbxScene)
+bool isAnimated(FbxProperty& prop, const FbxScene& fbxScene)
 {
     for (int i = 0; i < fbxScene.GetSrcObjectCount<FbxAnimStack>(); ++i)
     {
-        FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
+        const FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
 
         const int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
         for (int j = 0; j < nbAnimLayers; j++)
@@ -49,11 +46,11 @@ bool isAnimated(FbxProperty& prop, FbxScene& fbxScene)
     return false;
 }
 
-bool isAnimated(FbxProperty& prop, const char* channel, FbxScene& fbxScene)
+bool isAnimated(FbxProperty& prop, const char* channel, const FbxScene& fbxScene)
 {
     for (int i = 0; i < fbxScene.GetSrcObjectCount<FbxAnimStack>(); ++i)
     {
-        FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
+        const FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
 
         const int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
         for (int j = 0; j < nbAnimLayers; j++)
@@ -68,11 +65,11 @@ bool isAnimated(FbxProperty& prop, const char* channel, FbxScene& fbxScene)
     return false;
 }
 
-osg::Quat makeQuat(const FbxDouble3& degrees, EFbxRotationOrder fbxRotOrder)
+osg::Quat makeQuat(const FbxDouble3& degrees,const EFbxRotationOrder fbxRotOrder)
 {
-    double radiansX = osg::DegreesToRadians(degrees[0]);
-    double radiansY = osg::DegreesToRadians(degrees[1]);
-    double radiansZ = osg::DegreesToRadians(degrees[2]);
+    const double radiansX = osg::DegreesToRadians(degrees[0]);
+    const double radiansY = osg::DegreesToRadians(degrees[1]);
+    const double radiansZ = osg::DegreesToRadians(degrees[2]);
 
     switch (fbxRotOrder)
     {
@@ -142,16 +139,16 @@ void makeLocalMatrix(const FbxNode* pNode, osg::Matrix& m)
 
     // When this flag is set to false, the RotationOrder, the Pre/Post rotation
     // values and the rotation limits should be ignored.
-    bool rotationActive = pNode->RotationActive.Get();
+    const bool rotationActive = pNode->RotationActive.Get();
 
-    EFbxRotationOrder fbxRotOrder = rotationActive ? pNode->RotationOrder.Get() : eEulerXYZ;
+    const EFbxRotationOrder fbxRotOrder = rotationActive ? pNode->RotationOrder.Get() : eEulerXYZ;
 
     FbxDouble3 fbxLclPos = pNode->LclTranslation.Get();
     FbxDouble3 fbxRotOff = pNode->RotationOffset.Get();
     FbxDouble3 fbxRotPiv = pNode->RotationPivot.Get();
-    FbxDouble3 fbxPreRot = pNode->PreRotation.Get();
-    FbxDouble3 fbxLclRot = pNode->LclRotation.Get();
-    FbxDouble3 fbxPostRot = pNode->PostRotation.Get();
+    const FbxDouble3 fbxPreRot = pNode->PreRotation.Get();
+    const FbxDouble3 fbxLclRot = pNode->LclRotation.Get();
+    const FbxDouble3 fbxPostRot = pNode->PostRotation.Get();
     FbxDouble3 fbxSclOff = pNode->ScalingOffset.Get();
     FbxDouble3 fbxSclPiv = pNode->ScalingPivot.Get();
     FbxDouble3 fbxLclScl = pNode->LclScaling.Get();
@@ -185,10 +182,10 @@ void makeLocalMatrix(const FbxNode* pNode, osg::Matrix& m)
 void readTranslationElement(FbxPropertyT<FbxDouble3>& prop,
                             osgAnimation::UpdateMatrixTransform* pUpdate,
                             osg::Matrix& staticTransform,
-                            FbxScene& fbxScene)
+                            const FbxScene& fbxScene)
 {
     FbxDouble3 fbxPropValue = prop.Get();
-    osg::Vec3d val(
+    const osg::Vec3d val(
         fbxPropValue[0],
         fbxPropValue[1],
         fbxPropValue[2]);
@@ -208,7 +205,7 @@ void readTranslationElement(FbxPropertyT<FbxDouble3>& prop,
     }
 }
 
-void getRotationOrder(EFbxRotationOrder fbxRotOrder, int order[/*3*/])
+void getRotationOrder(const EFbxRotationOrder fbxRotOrder, int order[/*3*/])
 {
     switch (fbxRotOrder)
     {
@@ -233,11 +230,11 @@ void getRotationOrder(EFbxRotationOrder fbxRotOrder, int order[/*3*/])
 }
 
 void readRotationElement(FbxPropertyT<FbxDouble3>& prop,
-                         EFbxRotationOrder fbxRotOrder,
-                         bool quatInterpolate,
+                         const EFbxRotationOrder fbxRotOrder,
+                         const bool quatInterpolate,
                          osgAnimation::UpdateMatrixTransform* pUpdate,
                          osg::Matrix& staticTransform,
-                         FbxScene& fbxScene)
+                         const FbxScene& fbxScene)
 {
     if (isAnimated(prop, fbxScene))
     {
@@ -255,7 +252,7 @@ void readRotationElement(FbxPropertyT<FbxDouble3>& prop,
         else
         {
             const char* curveNames[3] = {FBXSDK_CURVENODE_COMPONENT_X, FBXSDK_CURVENODE_COMPONENT_Y, FBXSDK_CURVENODE_COMPONENT_Z};
-            osg::Vec3 axes[3] = {osg::Vec3(1,0,0), osg::Vec3(0,1,0), osg::Vec3(0,0,1)};
+            const osg::Vec3 axes[3] = {osg::Vec3(1,0,0), osg::Vec3(0,1,0), osg::Vec3(0,0,1)};
 
             FbxDouble3 fbxPropValue = prop.Get();
             fbxPropValue[0] = osg::DegreesToRadians(fbxPropValue[0]);
@@ -267,7 +264,7 @@ void readRotationElement(FbxPropertyT<FbxDouble3>& prop,
 
             for (int i = 0; i < 3; ++i)
             {
-                int j = order[2-i];
+                const int j = order[2-i];
                 if (isAnimated(prop, curveNames[j], fbxScene))
                 {
                     if (!staticTransform.isIdentity())
@@ -295,10 +292,10 @@ void readRotationElement(FbxPropertyT<FbxDouble3>& prop,
 void readScaleElement(FbxPropertyT<FbxDouble3>& prop,
                       osgAnimation::UpdateMatrixTransform* pUpdate,
                       osg::Matrix& staticTransform,
-                      FbxScene& fbxScene)
+                      const FbxScene& fbxScene)
 {
     FbxDouble3 fbxPropValue = prop.Get();
-    osg::Vec3d val(
+    const osg::Vec3d val(
         fbxPropValue[0],
         fbxPropValue[1],
         fbxPropValue[2]);
@@ -318,7 +315,7 @@ void readScaleElement(FbxPropertyT<FbxDouble3>& prop,
     }
 }
 
-void readUpdateMatrixTransform(osgAnimation::UpdateMatrixTransform* pUpdate, FbxNode* pNode, FbxScene& fbxScene)
+void readUpdateMatrixTransform(osgAnimation::UpdateMatrixTransform* pUpdate, FbxNode* pNode, const FbxScene& fbxScene)
 {
     osg::Matrix staticTransform;
 
@@ -333,9 +330,9 @@ void readUpdateMatrixTransform(osgAnimation::UpdateMatrixTransform* pUpdate, Fbx
 
     // When this flag is set to false, the RotationOrder, the Pre/Post rotation
     // values and the rotation limits should be ignored.
-    bool rotationActive = pNode->RotationActive.Get();
+    const bool rotationActive = pNode->RotationActive.Get();
 
-    EFbxRotationOrder fbxRotOrder = (rotationActive && pNode->RotationOrder.IsValid()) ?
+    const EFbxRotationOrder fbxRotOrder = (rotationActive && pNode->RotationOrder.IsValid()) ?
         pNode->RotationOrder.Get() : eEulerXYZ;
 
     if (rotationActive)
@@ -373,8 +370,8 @@ void readUpdateMatrixTransform(osgAnimation::UpdateMatrixTransform* pUpdate, Fbx
 }
 
 osg::Group* createGroupNode(FbxManager& pSdkManager, FbxNode* pNode,
-    const std::string& animName, const osg::Matrix& localMatrix, bool bNeedSkeleton,
-    std::map<FbxNode*, osg::Node*>& nodeMap, FbxScene& fbxScene)
+    const std::string& animName, const osg::Matrix& localMatrix, const bool bNeedSkeleton,
+    std::map<FbxNode*, osg::Node*>& nodeMap, const FbxScene& fbxScene)
 {
     if (bNeedSkeleton)
     {
@@ -390,7 +387,7 @@ osg::Group* createGroupNode(FbxManager& pSdkManager, FbxNode* pNode,
     }
     else
     {
-        bool bAnimated = !animName.empty();
+        const bool bAnimated = !animName.empty();
         if (!bAnimated && localMatrix.isIdentity())
         {
             osg::Group* pGroup = new osg::Group;
@@ -835,7 +832,7 @@ osgAnimation::Skeleton* getSkeleton(FbxNode* fbxNode,
         fbxNode = fbxNode->GetParent();
     }
 
-    std::map<FbxNode*, osgAnimation::Skeleton*>::const_iterator it = skeletonMap.find(fbxNode);
+    const std::map<FbxNode*, osgAnimation::Skeleton*>::const_iterator it = skeletonMap.find(fbxNode);
     if (it == skeletonMap.end())
     {
         osgAnimation::Skeleton* skel = new osgAnimation::Skeleton;

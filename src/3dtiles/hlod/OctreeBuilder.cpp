@@ -1,6 +1,6 @@
 #include "3dtiles/hlod/OcTreeBuilder.h"
 
-osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
+osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(const osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
@@ -43,7 +43,7 @@ osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 	return tile;
 }
 
-void OcTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile)
+void OcTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, const osg::ref_ptr<I3DMTile> tile)
 {
 	if (!tile.valid() || group.empty()) return;
 

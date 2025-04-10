@@ -1,7 +1,7 @@
 #include "osgdb_gltf/compress/GltfMeshOptCompressor.h"
 #include <meshoptimizer.h>
 using namespace osgGISPlugins;
-void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
+void GltfMeshOptCompressor::compressMesh(const tinygltf::Mesh& mesh)
 {
 	for (const tinygltf::Primitive& primitive : mesh.primitives)
 	{
@@ -85,8 +85,7 @@ void GltfMeshOptCompressor::compressMesh(tinygltf::Mesh& mesh)
 	}
 }
 
-std::vector<unsigned char> GltfMeshOptCompressor::encodeVertexBuffer(const tinygltf::Accessor& attributeAccessor, const unsigned int byteStride)
-{
+std::vector<unsigned char> GltfMeshOptCompressor::encodeVertexBuffer(const tinygltf::Accessor& attributeAccessor, const unsigned int byteStride) const {
 	const tinygltf::BufferView bufferView = _model.bufferViews[attributeAccessor.bufferView];
 	const tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
 	const size_t bufferSize = meshopt_encodeVertexBufferBound(attributeAccessor.count, byteStride);

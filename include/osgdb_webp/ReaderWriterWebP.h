@@ -17,26 +17,13 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#include <osg/Image>
-#include <osg/Notify>
 
-#include <osg/Geode>
-
-#include <osg/GL>
-
-#include <osgDB/FileNameUtils>
-#include <osgDB/FileUtils>
 #include <osgDB/Registry>
 
 #include <string>
-#include <sstream>
-#include <vector>
-#include <stdio.h>
-#include <stdlib.h>
 #include <iomanip>
 
 #include "webp/encode.h"
-#include "webp/decode.h"
 
 #if TARGET_OS_IPHONE
 #include "strings.h"
@@ -69,7 +56,7 @@ public:
     WriteResult writeImage(const osg::Image& img, const std::string& fileName, const osgDB::ReaderWriter::Options* options) const override;
 
     static int ostream_writer(const uint8_t* data, size_t data_size,
-        const WebPPicture* const pic);
+        const WebPPicture* pic);
 
     WriteResult writeImage(const osg::Image& img, std::ostream& fout, const Options* options) const override;
 };

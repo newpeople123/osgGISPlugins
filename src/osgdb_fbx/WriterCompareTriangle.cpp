@@ -1,5 +1,6 @@
 #include <osgdb_fbx/WriterCompareTriangle.h>
-WriterCompareTriangle::WriterCompareTriangle(const osg::Geode& in_geode, unsigned int in_nbVertices):
+#include <osg/Geode>
+WriterCompareTriangle::WriterCompareTriangle(const osg::Geode& in_geode, const unsigned int in_nbVertices):
         geode(geode)
 {
     cutscene(in_nbVertices, geode.getDrawable(0)->asGeometry()->getBoundingBox());
@@ -24,8 +25,8 @@ WriterCompareTriangle::operator()(const std::pair<Triangle, int>& t1,
     const osg::Vec3::value_type x2 = (*vecs)[t2.first.t1].x();
     const osg::Vec3::value_type y2 = (*vecs)[t2.first.t1].y();
     const osg::Vec3::value_type z2 = (*vecs)[t2.first.t1].z();
-    int val1 = inWhichBox(x1,y1,z1);
-    int val2 = inWhichBox(x2,y2,z2);
+    const int val1 = inWhichBox(x1,y1,z1);
+    const int val2 = inWhichBox(x2,y2,z2);
 
     return (val1 < val2);
 }
@@ -33,9 +34,8 @@ WriterCompareTriangle::operator()(const std::pair<Triangle, int>& t1,
 void
 WriterCompareTriangle::setMaxMin(unsigned int& nbVerticesX,
                                  unsigned int& nbVerticesY,
-                                 unsigned int& nbVerticesZ) const
-{
-    static const unsigned int min = 1;
+                                 unsigned int& nbVerticesZ) {
+    static constexpr unsigned int min = 1;
     if (nbVerticesX < min)
         nbVerticesX = min;
     if (nbVerticesY < min)
@@ -43,7 +43,7 @@ WriterCompareTriangle::setMaxMin(unsigned int& nbVerticesX,
     if (nbVerticesZ < min)
         nbVerticesZ = min;
 
-    static const unsigned int max = 20;
+    static constexpr unsigned int max = 20;
 
     if (nbVerticesX > max)
         nbVerticesX = max;
@@ -54,12 +54,12 @@ WriterCompareTriangle::setMaxMin(unsigned int& nbVerticesX,
 }
 
 void
-WriterCompareTriangle::cutscene(int                     nbVertices,
+WriterCompareTriangle::cutscene(const int                     nbVertices,
                                 const osg::BoundingBox& sceneBox)
 {
     osg::BoundingBox::vec_type length = sceneBox._max - sceneBox._min;
 
-    static const unsigned int k = 4;
+    static constexpr unsigned int k = 4;
 
     unsigned int nbVerticesX = (nbVertices * k) / (length.z() * length.y());
     unsigned int nbVerticesY = (nbVertices * k) / (length.z() * length.x());
@@ -71,9 +71,9 @@ WriterCompareTriangle::cutscene(int                     nbVertices,
         << "Cutting y by " << nbVerticesY << std::endl
         << "Cutting z by " << nbVerticesZ << std::endl;
 
-    osg::BoundingBox::value_type blocX = length.x() / nbVerticesX; //These 3 lines set the size of a box in x, y and z
-    osg::BoundingBox::value_type blocY = length.y() / nbVerticesY;
-    osg::BoundingBox::value_type blocZ = length.z() / nbVerticesZ;
+    const osg::BoundingBox::value_type blocX = length.x() / nbVerticesX; //These 3 lines set the size of a box in x, y and z
+    const osg::BoundingBox::value_type blocY = length.y() / nbVerticesY;
+    const osg::BoundingBox::value_type blocZ = length.z() / nbVerticesZ;
 
     boxList.reserve(nbVerticesX * nbVerticesY * nbVerticesZ);
     short yinc = 1;
@@ -82,9 +82,9 @@ WriterCompareTriangle::cutscene(int                     nbVertices,
     unsigned int x = 0;
     for (unsigned int z = 0; z < nbVerticesZ; ++z)
     {
-        while (x < nbVerticesX && x >= 0)
+        while (x < nbVerticesX)
         {
-            while (y < nbVerticesY && y >= 0)
+            while (y < nbVerticesY)
             {
                 osg::BoundingBox::value_type xMin = sceneBox.xMin() + x * blocX;
                 if (x == 0) //to prevent from mesh with no case

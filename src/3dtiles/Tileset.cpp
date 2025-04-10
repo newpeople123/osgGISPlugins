@@ -1,11 +1,9 @@
 #include "3dtiles/Tileset.h"
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
-#include <osgDB/ConvertUTF>
 using namespace osgGISPlugins;
 
-void Tileset::computeTransform(const double lng, const double lat, const double h)
-{
+void Tileset::computeTransform(const double lng, const double lat, const double h) const {
 	const osg::EllipsoidModel ellipsoidModel;
 	osg::Matrixd localToWorld;
 	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, localToWorld);

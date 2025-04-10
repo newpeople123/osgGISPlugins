@@ -27,8 +27,8 @@ namespace osgGISPlugins {
     class TexturePacker :public osg::Referenced
     {
     public:
-        TexturePacker(int maxW, int maxH) : _maxWidth(maxW), _maxHeight(maxH), _dictIndex(0) {}
-        void setMaxSize(int w, int h) { _maxWidth = w; _maxHeight = h; }
+        TexturePacker(const int maxW, const int maxH) : _maxWidth(maxW), _maxHeight(maxH), _dictIndex(0) {}
+        void setMaxSize(const int w, const int h) { _maxWidth = w; _maxHeight = h; }
         void clear();
 
         size_t addElement(osg::ref_ptr<osg::Image> image);
@@ -37,7 +37,7 @@ namespace osgGISPlugins {
 
         osg::Image* pack(size_t& numImages, bool generateResult, bool stopIfFailed = true);
         bool getPackingData(size_t id, double& x, double& y, int& w, int& h);
-        size_t getId(osg::Image* image) const;
+        size_t getId(const osg::Image* image) const;
         void setScales(const double scaleWidth, const double scaleHeight)
         {
             _scaleWidth = scaleWidth;

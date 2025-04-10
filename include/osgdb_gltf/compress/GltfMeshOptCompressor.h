@@ -5,9 +5,9 @@ namespace osgGISPlugins {
     class GltfMeshOptCompressor :public GltfCompressor {
     private:
         bool _compressmore = true;
-        void compressMesh(tinygltf::Mesh& mesh);
+        void compressMesh(const tinygltf::Mesh& mesh);
 
-        std::vector<unsigned char> encodeVertexBuffer(const tinygltf::Accessor& attributeAccessor, const unsigned int byteStride);
+        std::vector<unsigned char> encodeVertexBuffer(const tinygltf::Accessor& attributeAccessor, unsigned int byteStride) const;
     public:
         EXT_meshopt_compression meshOptExtension;
         GltfMeshOptCompressor(tinygltf::Model& model) :GltfCompressor(model, "EXT_meshopt_compression") {}

@@ -127,13 +127,14 @@ namespace osgGISPlugins
                 case tinygltf::Type::INT_TYPE:
                     if (v1.Get<int>() != v2.Get<int>()) return false;
                     break;
-                    // ... 其他类型的比较
+default: break;
+                // ... 其他类型的比较
                 }
             }
             return true;
         }
 
-        static bool compareTexture2D(osg::ref_ptr<osg::Texture2D> texture1, osg::ref_ptr<osg::Texture2D> texture2)
+        static bool compareTexture2D(const osg::ref_ptr<osg::Texture2D>& texture1, const osg::ref_ptr<osg::Texture2D>& texture2)
         {
             if (texture1 == texture2)
             {
@@ -174,8 +175,8 @@ namespace osgGISPlugins
                 return false;
             }
 
-            osg::ref_ptr<osg::Image> img1 = texture1->getImage();
-            osg::ref_ptr<osg::Image> img2 = texture2->getImage();
+            const osg::ref_ptr<osg::Image> img1 = texture1->getImage();
+            const osg::ref_ptr<osg::Image> img2 = texture2->getImage();
             if (img1->getFileName() != img2->getFileName())
             {
                 return false;
@@ -217,7 +218,7 @@ namespace osgGISPlugins
         template <typename T>
         T Get(const std::string& key) const
         {
-            tinygltf::Value::Object::const_iterator item = value.find(key);
+            const tinygltf::Value::Object::const_iterator item = value.find(key);
             if (item != value.end())
             {
                 return item->second.Get<T>();
@@ -244,7 +245,7 @@ namespace osgGISPlugins
         std::array<T, N> GetArray(const std::string& key) const
         {
             std::array<T, N> result = { 0.0 }; // 初始化为 0
-            tinygltf::Value::Object::const_iterator item = value.find(key);
+            const tinygltf::Value::Object::const_iterator item = value.find(key);
             if (item != value.end())
             {
                 tinygltf::Value::Array tinygltfArray = item->second.Get<tinygltf::Value::Array>();
@@ -284,7 +285,7 @@ namespace osgGISPlugins
             value[key] = std::move(tinygltfVal);
         }
 
-        tinygltf::Value::Object TextureInfo2Object(const tinygltf::TextureInfo& textureInfo)
+        static tinygltf::Value::Object TextureInfo2Object(const tinygltf::TextureInfo& textureInfo)
         {
             tinygltf::Value::Object obj;
 
@@ -307,26 +308,26 @@ namespace osgGISPlugins
             return obj;
         }
 
-        tinygltf::TextureInfo Object2TextureInfo(const tinygltf::Value::Object& obj)
+        static tinygltf::TextureInfo Object2TextureInfo(const tinygltf::Value::Object& obj)
         {
             tinygltf::TextureInfo textureInfo;
 
             // 提取 index 字段
-            auto indexIt = obj.find("index");
+            const auto indexIt = obj.find("index");
             if (indexIt != obj.end() && indexIt->second.IsInt())
             {
                 textureInfo.index = indexIt->second.Get<int>();
             }
 
             // 提取 texCoord 字段
-            auto texCoordIt = obj.find("texCoord");
+            const auto texCoordIt = obj.find("texCoord");
             if (texCoordIt != obj.end() && texCoordIt->second.IsInt())
             {
                 textureInfo.texCoord = texCoordIt->second.Get<int>();
             }
 
             // 提取 extensions 字段
-            auto extensionsIt = obj.find("extensions");
+            const auto extensionsIt = obj.find("extensions");
             if (extensionsIt != obj.end() && extensionsIt->second.IsObject())
             {
                 const tinygltf::Value::Object& extensionsObj = extensionsIt->second.Get<tinygltf::Value::Object>();
@@ -337,7 +338,7 @@ namespace osgGISPlugins
             }
 
             // 提取 extras 字段
-            auto extrasIt = obj.find("extras");
+            const auto extrasIt = obj.find("extras");
             if (extrasIt != obj.end())
             {
                 textureInfo.extras = extrasIt->second;
@@ -399,7 +400,7 @@ namespace osgGISPlugins
             return Get<double>("clearcoatFactor");
         }
 
-        void setClearcoatFactor(double val)
+        void setClearcoatFactor(const double val)
         {
             Set("clearcoatFactor", val);
         }
@@ -409,7 +410,7 @@ namespace osgGISPlugins
             return Get<double>("clearcoatRoughnessFactor");
         }
 
-        void setClearcoatRoughnessFactor(double val)
+        void setClearcoatRoughnessFactor(const double val)
         {
             Set("clearcoatRoughnessFactor", val);
         }
@@ -487,7 +488,7 @@ namespace osgGISPlugins
             return Get<double>("anisotropyStrength");
         }
 
-        void setAnisotropyStrength(double val)
+        void setAnisotropyStrength(const double val)
         {
             Set("anisotropyStrength", val);
         }
@@ -497,7 +498,7 @@ namespace osgGISPlugins
             return Get<double>("anisotropyRotation");
         }
 
-        void setAnisotropyRotation(double val)
+        void setAnisotropyRotation(const double val)
         {
             Set("anisotropyRotation", val);
         }
@@ -553,7 +554,7 @@ namespace osgGISPlugins
             return Get<double>("emissiveStrength");
         }
 
-        void setEmissiveStrength(double val)
+        void setEmissiveStrength(const double val)
         {
             Set("emissiveStrength", val);
         }
@@ -634,7 +635,7 @@ namespace osgGISPlugins
             return Get<double>("glossinessFactor");
         }
 
-        void setGlossinessFactor(double val)
+        void setGlossinessFactor(const double val)
         {
             Set("glossinessFactor", val);
         }
@@ -712,7 +713,7 @@ namespace osgGISPlugins
             return Get<double>("ior");
         }
 
-        void setIor(double val)
+        void setIor(const double val)
         {
             Set("ior", val);
         }
@@ -763,7 +764,7 @@ namespace osgGISPlugins
             return Get<double>("sheenRoughnessFactor");
         }
 
-        void setSheenRoughnessFactor(double val)
+        void setSheenRoughnessFactor(const double val)
         {
             Set("sheenRoughnessFactor", val);
         }
@@ -845,7 +846,7 @@ namespace osgGISPlugins
             return Get<double>("thicknessFactor");
         }
 
-        void setThicknessFactor(double val)
+        void setThicknessFactor(const double val)
         {
             Set("thicknessFactor", val);
         }
@@ -855,7 +856,7 @@ namespace osgGISPlugins
             return Get<double>("attenuationDistance");
         }
 
-        void setAttenuationDistance(double val)
+        void setAttenuationDistance(const double val)
         {
             Set("attenuationDistance", val);
         }
@@ -927,7 +928,7 @@ namespace osgGISPlugins
             return Get<double>("specularFactor");
         }
 
-        void setSpecularFactor(double val)
+        void setSpecularFactor(const double val)
         {
             Set("specularFactor", val);
         }
@@ -998,7 +999,7 @@ namespace osgGISPlugins
             return Get<double>("transmissionFactor");
         }
 
-        void setTransmissionFactor(double val)
+        void setTransmissionFactor(const double val)
         {
             Set("transmissionFactor", val);
         }
@@ -1061,7 +1062,7 @@ namespace osgGISPlugins
         {
             return Get<int>("POSITION");
         }
-        void setPosition(int val)
+        void setPosition(const int val)
         {
             Set("POSITION", val);
         }
@@ -1069,7 +1070,7 @@ namespace osgGISPlugins
         {
             return Get<int>("NORMAL");
         }
-        void setNormal(int val)
+        void setNormal(const int val)
         {
             Set("NORMAL", val);
         }
@@ -1077,7 +1078,7 @@ namespace osgGISPlugins
         {
             return Get<int>("TEXCOORD_0");
         }
-        void setTexCoord0(int val)
+        void setTexCoord0(const int val)
         {
             Set("TEXCOORD_0", val);
         }
@@ -1085,7 +1086,7 @@ namespace osgGISPlugins
         {
             return Get<int>("TEXCOORD_1");
         }
-        void setTexCoord1(int val)
+        void setTexCoord1(const int val)
         {
             Set("TEXCOORD_1", val);
         }
@@ -1093,7 +1094,7 @@ namespace osgGISPlugins
         {
             return Get<int>("WEIGHTS_0");
         }
-        void setWeights0(int val)
+        void setWeights0(const int val)
         {
             Set("WEIGHTS_0", val);
         }
@@ -1101,7 +1102,7 @@ namespace osgGISPlugins
         {
             return Get<int>("JOINTS_0");
         }
-        void setJoints0(int val)
+        void setJoints0(const int val)
         {
             Set("JOINTS_0", val);
         }
@@ -1109,7 +1110,7 @@ namespace osgGISPlugins
         {
             return Get<int>("_BATCHID");
         }
-        void setBatchId(int val)
+        void setBatchId(const int val)
         {
             Set("_BATCHID", val);
         }
@@ -1160,44 +1161,39 @@ namespace osgGISPlugins
             setCount(-1);
             setMode("");
         }
-        void setBuffer(int val)
+        void setBuffer(const int val)
         {
             Set("buffer", val);
         }
-        int getBuffer()
-        {
+        int getBuffer() const {
             return Get<int>("buffer");
         }
-        void setByteLength(int val)
+        void setByteLength(const int val)
         {
             Set("byteLength", val);
         }
-        int getByteLength()
-        {
+        int getByteLength() const {
             return Get<int>("byteLength");
         }
-        void setByteStride(int val)
+        void setByteStride(const int val)
         {
             Set("byteStride", val);
         }
-        int getByteStride()
-        {
+        int getByteStride() const {
             return Get<int>("byteStride");
         }
-        void setCount(int val)
+        void setCount(const int val)
         {
             Set("count", val);
         }
-        int getCount()
-        {
+        int getCount() const {
             return Get<int>("count");
         }
-        void setMode(std::string val)
+        void setMode(const std::string& val)
         {
             Set("mode", val);
         }
-        std::string getMode()
-        {
+        std::string getMode() const {
             return Get<std::string>("mode");
         }
 
@@ -1247,7 +1243,7 @@ namespace osgGISPlugins
         {
             return Get<int>("source");
         }
-        void setSource(int val)
+        void setSource(const int val)
         {
             Set("source", val);
         }
@@ -1301,7 +1297,7 @@ namespace osgGISPlugins
         {
             return Get<int>("texCoord");
         }
-        void setTexCoord(int val)
+        void setTexCoord(const int val)
         {
             Set("texCoord", val);
         }
@@ -1309,7 +1305,7 @@ namespace osgGISPlugins
         {
             return Get<double>("rotation");
         }
-        void setRotation(double val)
+        void setRotation(const double val)
         {
             Set("rotation", val);
         }
@@ -1347,7 +1343,7 @@ namespace osgGISPlugins
         {
             return Get<int>("source");
         }
-        void setSource(int val)
+        void setSource(const int val)
         {
             Set("source", val);
         }

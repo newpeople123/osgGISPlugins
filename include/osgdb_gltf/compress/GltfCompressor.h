@@ -13,7 +13,7 @@ namespace osgGISPlugins {
             int ColorQuantizationBits = 8;
         };
         GltfCompressor() = default;
-        GltfCompressor(tinygltf::Model& model, const std::string extensionName) :GltfProcessor(model) {
+        GltfCompressor(tinygltf::Model& model, const std::string& extensionName) :GltfProcessor(model) {
             model.extensionsRequired.push_back(extensionName);
             model.extensionsUsed.push_back(extensionName);
         }

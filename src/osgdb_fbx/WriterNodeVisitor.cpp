@@ -35,8 +35,8 @@ class PrimitiveIndexWriter : public osg::PrimitiveIndexFunctor
 public:
     PrimitiveIndexWriter(const osg::Geometry* geo,
                          ListTriangle&        listTriangles,
-                         const unsigned int         drawable_n,
-                         const unsigned int         material);
+                         unsigned int         drawable_n,
+                         unsigned int         material);
 
     void reset() { _curNormalIndex = 0; }
 
@@ -163,7 +163,7 @@ protected:
         case GL_TRIANGLE_FAN:
             {
                 IndexPointer iptr = indices;
-                unsigned int first = *iptr;
+                const unsigned int first = *iptr;
                 ++iptr;
                 for (GLsizei i = 2; i < count; ++i, ++iptr)
                 {
@@ -418,8 +418,7 @@ void addPolygon(FbxMesh * mesh, MapIndices & index_vert, const Triangle & tri, c
 
 
 void
-WriterNodeVisitor::setLayerTextureAndMaterial(FbxMesh* mesh)
-{
+WriterNodeVisitor::setLayerTextureAndMaterial(FbxMesh* mesh) const {
     FbxLayerElementTexture* lTextureDiffuseLayer = FbxLayerElementTexture::Create(mesh, "Diffuse");
     lTextureDiffuseLayer->SetMappingMode(FbxLayerElement::eByPolygon);
     lTextureDiffuseLayer->SetReferenceMode(FbxLayerElement::eIndexToDirect);
@@ -626,7 +625,7 @@ void WriterNodeVisitor::createListTriangle(const osg::Geometry* geo,
             const osg::Array * texvec = geo->getTexCoordArray(0);
             if (texvec)
             {
-                unsigned int nb = texvec->getNumElements();
+                const unsigned int nb = texvec->getNumElements();
                 if (nb == nbVertices) texcoords = true;
                 else
                 {
@@ -705,7 +704,7 @@ void WriterNodeVisitor::apply(osg::MatrixTransform& node)
 
     FbxAMatrix mat;
 
-    FbxQuaternion q(rot.x(), rot.y(), rot.z(), rot.w());
+    const FbxQuaternion q(rot.x(), rot.y(), rot.z(), rot.w());
     mat.SetQ(q);
     FbxVector4 vec4 = mat.GetR();
 

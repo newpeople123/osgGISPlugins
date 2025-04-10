@@ -15,8 +15,7 @@
 #include <osgDB/WriteFile>
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 using namespace osgGISPlugins;
-int Osg2Gltf::getCurrentMaterial(tinygltf::Material& gltfMaterial)
-{
+int Osg2Gltf::getCurrentMaterial(const tinygltf::Material& gltfMaterial) const {
 
 	for (int i = 0; i < _model.materials.size(); ++i)
 	{
@@ -129,7 +128,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 	{
 		if (geom->getNumPrimitiveSets() == 0)
 			return;
-		osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
+		const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 		if (positions->size() <= 0)
 			return;
 
@@ -152,7 +151,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 			getOrCreateBufferView(positions, GL_ARRAY_BUFFER_ARB);
 		}
 
-		osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
+		const osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray());
 		if (normals.valid())
 		{
 			getOrCreateBufferView(normals, GL_ARRAY_BUFFER_ARB);
@@ -186,7 +185,7 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 			{
 				if (colors->size())
 				{
-					osg::ref_ptr<osg::Vec4Array> colorsPerVertex = new osg::Vec4Array(positions->size());
+					const osg::ref_ptr<osg::Vec4Array> colorsPerVertex = new osg::Vec4Array(positions->size());
 					std::fill(colorsPerVertex->begin(), colorsPerVertex->end(), colors->at(0));
 					colors = colorsPerVertex;
 				}
@@ -321,10 +320,12 @@ void Osg2Gltf::apply(osg::Drawable& drawable)
 
 void Osg2Gltf::flipGltfTextureYAxis(KHR_texture_transform& texture_transform_extension)
 {
-	std::array<double, 2> offsets = texture_transform_extension.getOffset();
-	double offsetX = offsets[0], offsetY = offsets[1];
-	std::array<double, 2> scales = texture_transform_extension.getScale();
-	double scaleX = scales[0], scaleY = scales[1];
+	const std::array<double, 2> offsets = texture_transform_extension.getOffset();
+	const double offsetX = offsets[0];
+	double offsetY = offsets[1];
+	const std::array<double, 2> scales = texture_transform_extension.getScale();
+	const double scaleX = scales[0];
+	double scaleY = scales[1];
 
 	offsetY = 1 - offsetY;
 	scaleY = -scaleY;
@@ -425,7 +426,7 @@ int Osg2Gltf::getOrCreateBuffer(const osg::BufferData* data)
 	buffer.data.resize(data->getTotalDataSize());
 
 	//TODO: account for endianess
-	const unsigned char* ptr = reinterpret_cast<const unsigned char*>(data->getDataPointer());
+	const unsigned char* ptr = static_cast<const unsigned char*>(data->getDataPointer());
 	std::copy(ptr, ptr + data->getTotalDataSize(), buffer.data.begin());
 
 	return id;
@@ -510,7 +511,7 @@ void Osg2Gltf::setPositionAccessor(const osg::Array* data, osg::PrimitiveSet* ps
 		if (da)
 		{
 			const GLint first = da->getFirst();
-			unsigned int bytes = getBytesPerElement(data);
+			const unsigned int bytes = getBytesPerElement(data);
 			accessor.byteOffset = static_cast<unsigned int>(first) * static_cast<size_t>(bytes);
 
 			accessor.count = da->getCount();
@@ -606,7 +607,7 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	{
 		return -1;
 	}
-	if (osgTexture->getNumImages() < 0)
+	if (osgTexture->getNumImages() == 0)
 	{
 		return -1;
 	}
@@ -725,7 +726,6 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture>& osgTexture)
 	tinygltf::Sampler sampler;
 	osg::Texture::WrapMode wrapS = osgTexture->getWrap(osg::Texture::WRAP_S);
 	osg::Texture::WrapMode wrapT = osgTexture->getWrap(osg::Texture::WRAP_T);
-	osg::Texture::WrapMode wrapR = osgTexture->getWrap(osg::Texture::WRAP_R);
 
 	// Validate the clamp mode to be compatible with webgl
 	if ((wrapS == osg::Texture::CLAMP) || (wrapS == osg::Texture::CLAMP_TO_BORDER))

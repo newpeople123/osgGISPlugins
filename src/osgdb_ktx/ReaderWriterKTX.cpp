@@ -14,8 +14,8 @@ const char* ReaderWriterKTX::className() const
 
 osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& path, const Options* options) const
 {
-    std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
-    std::string ext = osgDB::getLowerCaseFileExtension(path);
+    const std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
+    const std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return ReadResult::FILE_NOT_HANDLED;
 
     const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx(fileName);
@@ -43,8 +43,8 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(std::istream& fin, co
 osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, const std::string& path,
     const Options* options) const
 {
-    std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
-    std::string ext = osgDB::getLowerCaseFileExtension(path);
+    const std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
+    const std::string ext = osgDB::getLowerCaseFileExtension(path);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
@@ -62,7 +62,7 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
 osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, std::ostream& fout,
     const Options* options) const
 {
-    osg::Image* imagePtr = const_cast<osg::Image*>(&image);
+    const osg::Image* imagePtr = const_cast<osg::Image*>(&image);
     const bool result = osg::saveKtx2(fout, imagePtr, true);
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }

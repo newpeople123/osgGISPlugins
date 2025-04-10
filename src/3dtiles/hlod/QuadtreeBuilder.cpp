@@ -1,9 +1,9 @@
 #include "3dtiles/hlod/QuadTreeBuilder.h"
 int QuadTreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 {
-	float xSpan = bounds._max.x() - bounds._min.x();
-	float ySpan = bounds._max.y() - bounds._min.y();
-	float zSpan = bounds._max.z() - bounds._min.z();
+	const float xSpan = bounds._max.x() - bounds._min.x();
+	const float ySpan = bounds._max.y() - bounds._min.y();
+	const float zSpan = bounds._max.z() - bounds._min.z();
 
 	// 返回跨度最小的轴
 	if (xSpan <= ySpan && xSpan <= zSpan) return 0;
@@ -11,7 +11,7 @@ int QuadTreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 	return 2;
 }
 
-osg::BoundingBox QuadTreeBuilder::computeChildBounds(const osg::BoundingBox& bounds, int axis, int a, int b)
+osg::BoundingBox QuadTreeBuilder::computeChildBounds(const osg::BoundingBox& bounds, const int axis, const int a, const int b)
 {
 	osg::BoundingBox childBound;
 
@@ -32,7 +32,7 @@ osg::BoundingBox QuadTreeBuilder::computeChildBounds(const osg::BoundingBox& bou
 	return childBound;
 }
 
-osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
+osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(const osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
 
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
@@ -61,7 +61,7 @@ osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 	return tile;
 }
 
-void QuadTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) {
+void QuadTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, const osg::ref_ptr<I3DMTile> tile) {
 
 	if (!tile.valid() || group.empty()) return;
 

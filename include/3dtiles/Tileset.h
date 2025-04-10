@@ -12,17 +12,11 @@
 #include "3dtiles/Tile.h"
 
 #include <nlohmann/json.hpp>
-#include <fstream>
 #include <vector>
 #include <string>
-#include <stdexcept>
 #include <osg/Node>
-#include <memory>
-#include <osgDB/Options>
-#include <osgDB/FileUtils>
 #include <osg/NodeVisitor>
 
-#include <algorithm>
 using json = nlohmann::json;
 using namespace std;
 using namespace osgGISPlugins;
@@ -30,7 +24,7 @@ namespace osgGISPlugins
 {
 	class Tileset :public osg::Object {
 	private:
-		void computeTransform(const double lng, const double lat, const double height);
+		void computeTransform(double lng, double lat, double height) const;
 
 		void computeGeometricError();
 
@@ -73,7 +67,7 @@ namespace osgGISPlugins
 
 		Tileset() = default;
 
-		Tileset(osg::ref_ptr<osg::Node> node, TreeBuilder& builder,Config iConfig) :geometricError(0.0), _node(node), config(iConfig){
+		Tileset(osg::ref_ptr<osg::Node> node, TreeBuilder& builder,Config iConfig) :_node(node), geometricError(0.0), config(iConfig){
 			config.validate();
 			osgUtil::Optimizer optimizer;
 			optimizer.optimize(_node, osgUtil::Optimizer::INDEX_MESH);
@@ -90,13 +84,13 @@ namespace osgGISPlugins
 			geometricError(other.geometricError),
 			root(static_cast<Tile*>(other.root->clone(copyop))) {}
 
-		virtual osg::Object* cloneType() const { return new Tileset(); }
+		osg::Object* cloneType() const override { return new Tileset(); }
 
-		virtual osg::Object* clone(const osg::CopyOp& copyop) const { return new Tileset(*this, copyop); }
+		osg::Object* clone(const osg::CopyOp& copyop) const override { return new Tileset(*this, copyop); }
 
-		virtual const char* libraryName() const { return "osgGISPlugins"; }
+		const char* libraryName() const override { return "osgGISPlugins"; }
 
-		virtual const char* className() const { return "Tileset"; }
+		const char* className() const override { return "Tileset"; }
 
 		bool valid() const;
 	};

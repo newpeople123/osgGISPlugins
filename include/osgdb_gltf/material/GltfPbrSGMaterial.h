@@ -5,10 +5,10 @@ namespace osgGISPlugins {
     class GltfPbrSGMaterial :public GltfMaterial {
     public:
         osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& specularImage, const osg::ref_ptr<osg::Image>& glossinessImage) override;
-        ~GltfPbrSGMaterial(){}
+        ~GltfPbrSGMaterial() override {}
         GltfPbrSGMaterial(const GltfPbrSGMaterial& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
             : GltfMaterial(other, copyop){}
-        GltfPbrSGMaterial() :GltfMaterial() {}
+        GltfPbrSGMaterial() {}
 
         META_Object(osg, GltfPbrSGMaterial);
     };

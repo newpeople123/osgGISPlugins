@@ -8,7 +8,7 @@
 #include <tinygltf/tiny_gltf.h>
 #include <cstdio>
 #include "osgdb_gltf/b3dm/ThreeDModelHeader.h"
-#include <osgDB/ConvertUTF>
+
 using namespace osgGISPlugins;
 int main(int argc, char** argv)
 {

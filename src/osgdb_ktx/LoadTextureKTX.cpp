@@ -12,7 +12,7 @@
 #include <osgdb_ktx/LoadTextureKTX.h>
 #include <thread>
 
-inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
+inline VkFormat glGetVkFormatFromInternalFormat(const GLint glFormat)
 {
     switch (glFormat)
     {
@@ -204,7 +204,7 @@ inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
     }
 }
 
-inline GLint convertUNorm2SRgb(GLint glFormat) {
+inline GLint convertUNorm2SRgb(const GLint glFormat) {
     switch (glFormat) {
     case GL_R8: return GL_SR8;
     case GL_RG8: return GL_SRG8;
@@ -217,8 +217,8 @@ inline GLint convertUNorm2SRgb(GLint glFormat) {
 
 namespace osg
 {
-    osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, int layer, int face,
-        ktx_size_t imgDataSize, bool noCompress = false)
+    osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, const int layer, const int face,
+        ktx_size_t imgDataSize, const bool noCompress = false)
     {
         bool transcoded = false, compressed = false;
         ktx_error_code_e result = KTX_SUCCESS;
@@ -245,19 +245,19 @@ namespace osg
             transcoded = (result == KTX_SUCCESS);
         }
 
-        ktx_uint32_t w = texture->baseWidth, h = texture->baseHeight, d = texture->baseDepth;
+        const ktx_uint32_t w = texture->baseWidth, h = texture->baseHeight, d = texture->baseDepth;
         ktx_size_t offset = 0; ktxTexture_GetImageOffset(texture, 0, layer, face, &offset);
-        ktx_uint8_t* imgData = ktxTexture_GetData(texture) + offset;
+        const ktx_uint8_t* imgData = ktxTexture_GetData(texture) + offset;
 
         osg::ref_ptr<osg::Image> image = new osg::Image;
         if (texture->classId == ktxTexture2_c)
         {
             ktxTexture2* tex = (ktxTexture2*)texture;
 
-            GLint glInternalformat = glGetInternalFormatFromVkFormat((VkFormat)tex->vkFormat);
-            GLenum glFormat = compressed ? glInternalformat  /* Use compressed format */
+            const GLint glInternalformat = glGetInternalFormatFromVkFormat((VkFormat)tex->vkFormat);
+            const GLenum glFormat = compressed ? glInternalformat  /* Use compressed format */
                 : glGetFormatFromInternalFormat(glInternalformat);
-            GLenum glType = glGetTypeFromInternalFormat(glInternalformat);
+            const GLenum glType = glGetTypeFromInternalFormat(glInternalformat);
             if (glFormat == GL_INVALID_VALUE || glType == GL_INVALID_VALUE)
             {
                 OSG_WARN << "Failed to get KTX2 file format: VkFormat = "
@@ -277,7 +277,7 @@ namespace osg
         }
         else
         {
-            ktxTexture1* tex = (ktxTexture1*)texture;
+            const ktxTexture1* tex = (ktxTexture1*)texture;
             image->allocateImage(w, h, d, tex->glFormat, tex->glType, 4);
             image->setInternalTextureFormat(tex->glInternalformat);
         }
@@ -292,7 +292,6 @@ namespace osg
     std::vector<osg::ref_ptr<osg::Image>> loadKtxFromObject(ktxTexture* texture)
     {
         std::vector<osg::ref_ptr<osg::Image>> resultArray;
-        ktx_uint32_t numLevels = texture->numLevels;
         ktx_size_t imgDataSize = 0;
         if (texture->classId == ktxTexture2_c)
             imgDataSize = ktxTexture_calcImageSize(texture, 0, KTX_FORMAT_VERSION_TWO);
@@ -320,7 +319,7 @@ namespace osg
         }
         else
         {
-            osg::ref_ptr<osg::Image> image = loadImageFromKtx(texture, 0, 0, imgDataSize);
+            const osg::ref_ptr<osg::Image> image = loadImageFromKtx(texture, 0, 0, imgDataSize);
             if (image.valid()) resultArray.push_back(image);
         }
         ktxTexture_Destroy(texture);
@@ -330,7 +329,7 @@ namespace osg
     std::vector<osg::ref_ptr<osg::Image>> loadKtx(const std::string& file)
     {
         ktxTexture* texture = nullptr;
-        ktx_error_code_e result = ktxTexture_CreateFromNamedFile(
+        const ktx_error_code_e result = ktxTexture_CreateFromNamedFile(
             file.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture);
         if (result != KTX_SUCCESS)
         {
@@ -342,12 +341,12 @@ namespace osg
 
     std::vector<osg::ref_ptr<osg::Image>> loadKtx2(std::istream& in)
     {
-        std::string data((std::istreambuf_iterator<char>(in)),
+        const std::string data((std::istreambuf_iterator<char>(in)),
             std::istreambuf_iterator<char>());
         if (data.empty()) return std::vector<osg::ref_ptr<osg::Image>>();
 
         ktxTexture* texture = nullptr;
-        ktx_error_code_e result = ktxTexture_CreateFromMemory(
+        const ktx_error_code_e result = ktxTexture_CreateFromMemory(
             (const ktx_uint8_t*)data.data(), data.size(),
             KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture);
         if (result != KTX_SUCCESS)
@@ -358,7 +357,7 @@ namespace osg
         return loadKtxFromObject(texture);
     }
 
-    ktxTexture* saveImageToKtx2(const osg::Image* image, bool compressed)
+    ktxTexture* saveImageToKtx2(const osg::Image* image, const bool compressed)
     {
         ktxTexture* texture = nullptr;
 
@@ -413,7 +412,7 @@ namespace osg
             }
         }
 
-        ktx_uint32_t w = texture->baseWidth, h = texture->baseHeight;
+        texture->baseHeight;
         if (compressed) {
             ktxBasisParams params = { 0 };
             params.structSize = sizeof(params);
@@ -489,23 +488,23 @@ namespace osg
         return texture;
     }
 
-    bool saveKtx2(const std::string& file, const osg::Image* image, bool compressed)
+    bool saveKtx2(const std::string& file, const osg::Image* image, const bool compressed)
     {
         ktxTexture* texture = saveImageToKtx2(image, compressed);
         if (texture == nullptr) return false;
 
-        KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
+        const KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
         ktxTexture_Destroy(texture);
         return result == KTX_SUCCESS;
     }
 
-    bool saveKtx2(std::ostream& out, const osg::Image* image, bool compressed)
+    bool saveKtx2(std::ostream& out, const osg::Image* image, const bool compressed)
     {
         ktxTexture* texture = saveImageToKtx2(image, compressed);
         if (texture == nullptr) return false;
 
         ktx_uint8_t* buffer = nullptr; ktx_size_t length = 0;
-        KTX_error_code result = ktxTexture_WriteToMemory(texture, &buffer, &length);
+        const KTX_error_code result = ktxTexture_WriteToMemory(texture, &buffer, &length);
         if (result == KTX_SUCCESS)
         {
             out.write((char*)buffer, length);
@@ -520,10 +519,9 @@ namespace osg
         ktxTexture* texture = saveImageToKtx1(image);
         if (texture == nullptr) return false;
 
-        KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
+        const KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
         ktxTexture_Destroy(texture);
         return result == KTX_SUCCESS;
-        return false;
     }
 
     bool saveKtx1(std::ostream& out, const osg::Image* image)
@@ -532,7 +530,7 @@ namespace osg
         if (texture == nullptr) return false;
 
         ktx_uint8_t* buffer = nullptr; ktx_size_t length = 0;
-        KTX_error_code result = ktxTexture_WriteToMemory(texture, &buffer, &length);
+        const KTX_error_code result = ktxTexture_WriteToMemory(texture, &buffer, &length);
         if (result == KTX_SUCCESS)
         {
             out.write((char*)buffer, length);

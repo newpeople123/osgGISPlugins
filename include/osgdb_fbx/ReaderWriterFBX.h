@@ -3,7 +3,6 @@
 
 #include <osgDB/ReaderWriter>
 #ifdef _WIN32
-#include <windows/fbxsdk/fbxsdk_def.h>
 #else
 #include <linux/fbxsdk/fbxsdk_def.h>
 #endif
@@ -30,10 +29,9 @@ public:
         supportsOption("TessellatePolygons", "(Read option) Tessellate mesh polygons. If the model contains concave polygons this may be necessary, however tessellating can be very slow and may erroneously produce triangle shards.");
     }
 
-    const char* className() const { return "FBX reader/writer"; }
+    const char* className() const override { return "FBX reader/writer"; }
 
-    virtual ReadResult readObject(const std::string& filename, const Options* options) const
-    {
+    ReadResult readObject(const std::string& filename, const Options* options) const override {
         return readNode(filename, options);
     }
 
@@ -42,10 +40,10 @@ public:
         return writeNode(node, filename, options);
     }
 
-    virtual ReadResult readNode(const std::string& filename, const Options*) const;
+    ReadResult readNode(const std::string& filename, const Options*) const override;
 
 
-    virtual WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const;
+    WriteResult writeNode(const osg::Node&, const std::string& filename, const Options*) const override;
 };
 
 ///////////////////////////////////////////////////////////////////////////

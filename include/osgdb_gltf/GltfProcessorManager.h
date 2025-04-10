@@ -27,8 +27,8 @@ namespace osgGISPlugins {
             }
 
             // 检查是否要添加的优化器是GltfDracoCompressor类型
-            GltfDracoCompressor* dracoCompressor = dynamic_cast<GltfDracoCompressor*>(processor);
-            GltfMeshOptCompressor* meshOptCompressor = dynamic_cast<GltfMeshOptCompressor*>(processor);
+            const GltfDracoCompressor* dracoCompressor = dynamic_cast<GltfDracoCompressor*>(processor);
+            const GltfMeshOptCompressor* meshOptCompressor = dynamic_cast<GltfMeshOptCompressor*>(processor);
             if (dracoCompressor)
             {
                 // 如果存在GltfMeshOptCompressor或GltfMeshQuantizeCompressor，拒绝添加GltfDracoCompressor
@@ -87,15 +87,14 @@ namespace osgGISPlugins {
                 });
         }
 
-        void process()
-        {
+        void process() const {
             for (GltfProcessor* processor : _processors)
             {
                 processor->apply();
             }
             if (_processors.size() > 0)
             {
-                GltfMerger* mergeProcessor = dynamic_cast<GltfMerger*>(_processors[0]);
+                const GltfMerger* mergeProcessor = dynamic_cast<GltfMerger*>(_processors[0]);
                 if (mergeProcessor)
                 {
                     mergeProcessor->mergeBuffers();
@@ -105,7 +104,7 @@ namespace osgGISPlugins {
 
         ~GltfProcessorManager()
         {
-            for (GltfProcessor* processor : _processors)
+            for (const GltfProcessor* processor : _processors)
             {
                 delete processor;
             }

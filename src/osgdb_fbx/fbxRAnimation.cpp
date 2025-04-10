@@ -18,9 +18,9 @@
 
 osg::Quat makeQuat(const FbxDouble3&, EFbxRotationOrder);
 
-osg::Quat makeQuat(const osg::Vec3& radians, EFbxRotationOrder fbxRotOrder)
+osg::Quat makeQuat(const osg::Vec3& radians,const EFbxRotationOrder fbxRotOrder)
 {
-    FbxDouble3 degrees(
+    const FbxDouble3 degrees(
         osg::RadiansToDegrees(radians.x()),
         osg::RadiansToDegrees(radians.y()),
         osg::RadiansToDegrees(radians.z()));
@@ -29,7 +29,7 @@ osg::Quat makeQuat(const osg::Vec3& radians, EFbxRotationOrder fbxRotOrder)
 
 void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
               const FbxDouble3& defaultValue,
-              osgAnimation::TemplateKeyframeContainer<osg::Vec3f>& keyFrameCntr, float scalar = 1.0f)
+              osgAnimation::TemplateKeyframeContainer<osg::Vec3f>& keyFrameCntr, const float scalar = 1.0f)
 {
     FbxAnimCurve* curves[3] = {curveX, curveY, curveZ};
 
@@ -40,9 +40,9 @@ void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
 
     for (int nCurve = 0; nCurve < 3; ++nCurve)
     {
-        FbxAnimCurve* pCurve = curves[nCurve];
+        const FbxAnimCurve* pCurve = curves[nCurve];
 
-        int nKeys = pCurve ? pCurve->KeyGetCount() : 0;
+        const int nKeys = pCurve ? pCurve->KeyGetCount() : 0;
 
         if (!nKeys)
         {
@@ -77,7 +77,7 @@ void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
 
 void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
               const FbxDouble3& defaultValue,
-              osgAnimation::TemplateKeyframeContainer<osgAnimation::TemplateCubicBezier<osg::Vec3f> >& keyFrameCntr, float scalar = 1.0f)
+              osgAnimation::TemplateKeyframeContainer<osgAnimation::TemplateCubicBezier<osg::Vec3f> >& keyFrameCntr, const float scalar = 1.0f)
 {
     FbxAnimCurve* curves[3] = {curveX, curveY, curveZ};
 
@@ -90,7 +90,7 @@ void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
     {
         FbxAnimCurve* pCurve = curves[nCurve];
 
-        int nKeys = pCurve ? pCurve->KeyGetCount() : 0;
+        const int nKeys = pCurve ? pCurve->KeyGetCount() : 0;
 
         if (!nKeys)
         {
@@ -101,7 +101,7 @@ void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
         for (int i = 0; i < nKeys; ++i)
         {
             double fTime = pCurve->KeyGetTime(i).GetSecondDouble();
-            float val = pCurve->KeyGetValue(i);
+            const float val = pCurve->KeyGetValue(i);
             times.insert(fTime);
             FbxAnimCurveTangentInfo leftTangent = pCurve->KeyGetLeftDerivativeInfo(i);
             FbxAnimCurveTangentInfo rightTangent = pCurve->KeyGetRightDerivativeInfo(i);
@@ -115,7 +115,7 @@ void readKeys(FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
                 rightTangent.mDerivative *= pCurve->KeyGetTime(i + 1).GetSecondDouble() - fTime;
             }
 
-            osgAnimation::FloatCubicBezier key(
+            const osgAnimation::FloatCubicBezier key(
                 val * scalar,
                 (val - leftTangent.mDerivative / 3.0) * scalar,
                 (val + rightTangent.mDerivative / 3.0) * scalar);
@@ -249,7 +249,7 @@ osgAnimation::Channel* readFbxChannels(
 osgAnimation::Channel* readFbxChannelsQuat(
     FbxAnimCurve* curveX, FbxAnimCurve* curveY, FbxAnimCurve* curveZ,
     const FbxDouble3& defaultValue,
-    const char* targetName, EFbxRotationOrder rotOrder)
+    const char* targetName,const EFbxRotationOrder rotOrder)
 {
     if (!(curveX && curveX->KeyGetCount()) &&
         !(curveY && curveY->KeyGetCount()) &&
@@ -334,7 +334,7 @@ void readFbxRotationAnimation(osgAnimation::Channel* channels[3],
         return;
     }
 
-    EFbxRotationOrder rotOrder = pNode->RotationOrder.IsValid() ? pNode->RotationOrder.Get() : eEulerXYZ;
+    const EFbxRotationOrder rotOrder = pNode->RotationOrder.IsValid() ? pNode->RotationOrder.Get() : eEulerXYZ;
 
     if (pNode->QuaternionInterpolate.IsValid() && pNode->QuaternionInterpolate.Get())
     {
@@ -371,8 +371,8 @@ void readFbxRotationAnimation(osgAnimation::Channel* channels[3],
 
                 for (int j = 0; j < curve->KeyGetCount(); ++j)
                 {
-                    double fTime = curve->KeyGetTime(j).GetSecondDouble();
-                    float angle = curve->KeyGetValue(j);
+                    const double fTime = curve->KeyGetTime(j).GetSecondDouble();
+                    const float angle = curve->KeyGetValue(j);
                     //FbxAnimCurveDef::EWeightedMode tangentWeightMode = curve->KeyGet(j).GetTangentWeightMode();
 
                     FbxAnimCurveTangentInfo leftTangent = curve->KeyGetLeftDerivativeInfo(j);
@@ -463,9 +463,9 @@ std::string OsgFbxReader::readFbxAnimation(FbxNode* pNode, const char* targetNam
     std::string result;
     for (int i = 0; i < fbxScene.GetSrcObjectCount<FbxAnimStack>(); ++i)
     {
-        FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
+        const FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
 
-        int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
+        const int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
 
         const char* pTakeName = pAnimStack->GetName();
 
@@ -475,7 +475,7 @@ std::string OsgFbxReader::readFbxAnimation(FbxNode* pNode, const char* targetNam
         for (int j = 0; j < nbAnimLayers; j++)
         {
             FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
-            osgAnimation::Animation* pAnimation = ::readFbxAnimation(pNode, pAnimLayer, pTakeName, targetName, pAnimationManager);
+            const osgAnimation::Animation* pAnimation = ::readFbxAnimation(pNode, pAnimLayer, pTakeName, targetName, pAnimationManager);
             if (pAnimation)
             {
                 result = targetName;

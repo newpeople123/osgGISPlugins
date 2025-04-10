@@ -22,12 +22,12 @@ namespace osgGISPlugins {
                 baseColorTexture = (osg::Texture2D*)other.baseColorTexture->clone(copyop);
             }
         }
-        GltfPbrMRMaterial() :GltfMaterial() {}
-        ~GltfPbrMRMaterial(){}
+        GltfPbrMRMaterial() {}
+        ~GltfPbrMRMaterial() override {}
 
         META_Object(osg, GltfPbrMRMaterial);
 
-        virtual bool compare(const GltfMaterial& other) const override
+        bool compare(const GltfMaterial& other) const override
         {
             const GltfPbrMRMaterial* pbrMR = dynamic_cast<const GltfPbrMRMaterial*>(&other);
             if (!pbrMR) return false;

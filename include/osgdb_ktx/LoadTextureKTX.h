@@ -20,11 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 #include <osg/Texture2D>
-#include <osg/Geode>
-#include <osg/MatrixTransform>
 #include <iterator>
-#include <fstream>
-#include <iostream>
 #include <ktx.h>
 
 namespace osg

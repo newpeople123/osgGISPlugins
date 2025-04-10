@@ -21,7 +21,6 @@
 #include <osg/Geometry>
 #include <osg/Material>
 #include <osg/NodeVisitor>
-#include <osg/PrimitiveSet>
 #include <osgDB/FileNameUtils>
 #include <osgDB/ReaderWriter>
 #include <osgDB/ExternalFileWriter>
@@ -49,7 +48,7 @@ struct Triangle
 
 struct VertexIndex
 {
-    VertexIndex(unsigned int in_vertexIndex, unsigned int in_drawableIndex, unsigned int in_normalIndex)
+    VertexIndex(const unsigned int in_vertexIndex, const unsigned int in_drawableIndex, const unsigned int in_normalIndex)
         : vertexIndex(in_vertexIndex), drawableIndex(in_drawableIndex), normalIndex(in_normalIndex)
     {}
     VertexIndex(const VertexIndex & v) : vertexIndex(v.vertexIndex), drawableIndex(v.drawableIndex), normalIndex(v.normalIndex) {}
@@ -82,6 +81,7 @@ class WriterNodeVisitor: public osg::NodeVisitor
                           const std::string& srcDirectory) :
             osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
             _pSdkManager(pSdkManager),
+            _firstNodeProcessed(false),
             _pScene(pScene),
             _curFbxNode(pScene->GetRootNode()),
             _currentStateSet(new osg::StateSet()),
@@ -90,8 +90,7 @@ class WriterNodeVisitor: public osg::NodeVisitor
             _options(options),
             _externalWriter(srcDirectory, osgDB::getFilePath(fileName), true, 0),
             _texcoords(false),
-            _drawableNum(0),
-            _firstNodeProcessed(false)
+            _drawableNum(0)
         {}
 
         void apply(osg::Geometry& node) override;
@@ -169,7 +168,7 @@ class WriterNodeVisitor: public osg::NodeVisitor
                 return _index;
             }
 
-            void setIndex(int index)
+            void setIndex(const int index)
             {
                 _index = index;
             }
@@ -207,10 +206,10 @@ class WriterNodeVisitor: public osg::NodeVisitor
                         bool                texcoords);
 
         /// Set the layer for texture and Material in layer 0.
-        void setLayerTextureAndMaterial(FbxMesh* mesh);
+        void setLayerTextureAndMaterial(FbxMesh* mesh) const;
 
         /// Set Vertices, normals, and UVs
-        void setControlPointAndNormalsAndUV(const GeometryList& geometryList,
+        static void setControlPointAndNormalsAndUV(const GeometryList& geometryList,
                                                    const MapIndices&       index_vert,
                                                    bool              texcoords,
                                                    FbxMesh*         fbxMesh);

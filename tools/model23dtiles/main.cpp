@@ -16,7 +16,6 @@
 #include "3dtiles/hlod/OcTreeBuilder.h"
 #include "3dtiles/hlod/KDTreeBuilder.h"
 #include <osg/CoordinateSystemNode>
-#include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
 class CoordinateTransformVisitor :public osg::NodeVisitor
 {
@@ -25,7 +24,7 @@ private:
 	osg::Matrixd _worldToLocal;
 	osg::Matrixd _currentMatrix; // 当前矩阵，用于继承和变换
 
-	osg::Vec3d transformVertex(const osg::Vec3d& vertex) {
+	osg::Vec3d transformVertex(const osg::Vec3d& vertex) const {
 		osg::Vec3d worldPosition = vertex * _currentMatrix;
 		PJ_COORD inputCoord = proj_coord(worldPosition.x(), -worldPosition.z(), worldPosition.y(), 0);
 		PJ_COORD outputCoord = proj_trans(_pj, PJ_FWD, inputCoord);
@@ -36,7 +35,7 @@ private:
 		return quat * localPosition;
 	}
 public:
-	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal) ,osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd& worldToLocal) :osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _pj(pj) ,_worldToLocal(worldToLocal) {
 
 
 	}
@@ -44,7 +43,7 @@ public:
 	void apply(osg::Transform& transform) override {
 		osg::Matrixd localMatrix;
 		transform.computeLocalToWorldMatrix(localMatrix, this);
-		osg::Matrixd savedMatrix = _currentMatrix;
+		const osg::Matrixd savedMatrix = _currentMatrix;
 		_currentMatrix *= localMatrix; // 更新当前矩阵
 		traverse(transform);
 		_currentMatrix = savedMatrix; // 恢复父节点矩阵
@@ -56,7 +55,7 @@ public:
 
 		osg::Geometry* geometry = drawable.asGeometry();
 		if (geometry) {
-			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
+			const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
 			if (positions) {
 				std::transform(positions->begin(), positions->end(), positions->begin(),
 					[this](const osg::Vec3d& vertex) {
@@ -108,13 +107,13 @@ osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
 }
 
 // 应用优化器
-void applyOptimizer(osg::ref_ptr<osg::Node>& node) {
+void applyOptimizer(const osg::ref_ptr<osg::Node>& node) {
 	osgUtil::Optimizer optimizer;
 	optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
 }
 
 // 重计算法线
-void recomputeNormals(osg::ref_ptr<osg::Node>& node) {
+void recomputeNormals(const osg::ref_ptr<osg::Node>& node) {
 	osgUtil::SmoothingVisitor smoothingVisitor;
 	node->accept(smoothingVisitor);
 }
@@ -144,10 +143,10 @@ PJ* createProjection(PJ_CONTEXT* ctx, const std::string& srcEpsg, const std::str
 }
 
 // 应用偏移量、朝向
-osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(osg::ref_ptr<osg::Node>& node, const double translationX, const double translationY, const double translationZ, const std::string upAxis,const std::string ext)
+osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(const osg::ref_ptr<osg::Node>& node, const double translationX, const double translationY, const double translationZ, const std::string& upAxis,const std::string& ext)
 {
 
-	osg::Vec3d datumPoint = osg::Vec3d(-translationX, -translationY, -translationY);
+	const osg::Vec3d datumPoint = osg::Vec3d(-translationX, -translationY, -translationZ);
 	osg::ref_ptr<osg::MatrixTransform> xtransform = new osg::MatrixTransform;
 	// FBX无论什么轴向上，读取后都会变成Y轴向上，这里就不用再特殊处理了
 	if (ext != "fbx")
@@ -176,7 +175,7 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(osg::ref_ptr<osg::N
 }
 
 // 将投影坐标的模型进行坐标转换
-void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& height)
+void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, double& latitude, double& longitude, double& height)
 {
 	if (!epsg.empty())
 	{

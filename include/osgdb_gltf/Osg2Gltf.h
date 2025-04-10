@@ -5,7 +5,7 @@
 #include "compress/GltfCompressor.h"
 #include <stack>
 #include <osg/PrimitiveSet>
-#include <iostream>
+
 namespace osgGISPlugins {
     class Osg2Gltf :public osg::NodeVisitor {
         typedef std::map<osg::ref_ptr<const osg::Node>, int> OsgNodeSequenceMap;
@@ -35,15 +35,15 @@ namespace osgGISPlugins {
 
         void popStateSet();
 
-        unsigned getBytesInDataType(const GLenum dataType);
+        static unsigned getBytesInDataType(GLenum dataType);
 
-        unsigned getBytesPerElement(const osg::Array* data);
+        static unsigned getBytesPerElement(const osg::Array* data);
 
-        unsigned getBytesPerElement(const osg::DrawElements* data);
+        static unsigned getBytesPerElement(const osg::DrawElements* data);
 
         int getOrCreateBuffer(const osg::BufferData* data);
 
-        int getOrCreateBufferView(const osg::BufferData* data, const GLenum target);
+        int getOrCreateBufferView(const osg::BufferData* data, GLenum target);
 
         int getOrCreateAccessor(const osg::Array* data, osg::PrimitiveSet* pset, tinygltf::Primitive& prim, const std::string& attr);
 
@@ -57,7 +57,7 @@ namespace osgGISPlugins {
 
         int getOsgMaterial2Material(tinygltf::Material& gltfMaterial, const osg::ref_ptr<GltfMaterial>& osgGltfMaterial);
 
-        int getCurrentMaterial(tinygltf::Material& gltfMaterial);
+        int getCurrentMaterial(const tinygltf::Material& gltfMaterial) const;
 
         void apply(osg::Node& node) override;
 
@@ -67,7 +67,7 @@ namespace osgGISPlugins {
 
         void apply(osg::Drawable& drawable) override;
 
-        void flipGltfTextureYAxis(KHR_texture_transform& texture_transform_extension);
+        static void flipGltfTextureYAxis(KHR_texture_transform& texture_transform_extension);
     public:
         META_NodeVisitor(osgGISPlugins, Osg2Gltf)
 
@@ -75,7 +75,7 @@ namespace osgGISPlugins {
 
         tinygltf::Model getGltfModel();
 
-        ~Osg2Gltf();
+        ~Osg2Gltf() override;
     };
 }
 

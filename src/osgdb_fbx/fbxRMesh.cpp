@@ -1,9 +1,7 @@
-#include <cassert>
 #include <sstream>
 
 #include <osg/BlendFunc>
 #include <osg/Geode>
-#include <osg/Image>
 #include <osg/MatrixTransform>
 #include <osg/TexMat>
 #include <osg/TexGen>
@@ -74,7 +72,7 @@ bool layerElementValid(const FbxLayerElementTemplate<T>* pLayerElement)
 template <typename T>
 int getVertexIndex(const FbxLayerElementTemplate<T>* pLayerElement,
     const FbxMesh* fbxMesh,
-    int nPolygon, int nPolyVertex, int nMeshVertex)
+    const int nPolygon, const int nPolyVertex, const int nMeshVertex)
 {
     int index = 0;
 
@@ -132,40 +130,40 @@ FbxT getElement(const FbxLayerElementTemplate<FbxT>* pLayerElement,
 
 typedef std::map<unsigned, osg::ref_ptr<osg::Geometry> > GeometryMap;
 
-osg::Array* createVec2Array(bool doublePrecision)
+osg::Array* createVec2Array(const bool doublePrecision)
 {
     if  (doublePrecision) return new osg::Vec2dArray;
     else return new osg::Vec2Array;
 }
-osg::Array* createVec3Array(bool doublePrecision)
+osg::Array* createVec3Array(const bool doublePrecision)
 {
     if  (doublePrecision) return new osg::Vec3dArray;
     else return new osg::Vec3Array;
 }
-osg::Array* createVec4Array(bool doublePrecision)
+osg::Array* createVec4Array(const bool doublePrecision)
 {
     if  (doublePrecision) return new osg::Vec4dArray;
     else return new osg::Vec4Array;
 }
 
 osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
-    std::vector<StateSetContent>& stateSetList,
-    unsigned int gt,
+    const std::vector<StateSetContent>& stateSetList,
+    const unsigned int gt,
     unsigned int mti,
-    bool bNormal,
-    bool useDiffuseMap,
-    bool useOpacityMap,
-    bool useEmissiveMap,
-    bool useAmbientMap,
-    bool useNormalMap,
-    bool useSpecularMap,
-    bool useShininessMap,
+    const bool bNormal,
+    const bool useDiffuseMap,
+    const bool useOpacityMap,
+    const bool useEmissiveMap,
+    const bool useAmbientMap,
+    const bool useNormalMap,
+    const bool useSpecularMap,
+    const bool useShininessMap,
     // more here...
-    bool bColor,
+    const bool bColor,
     const osgDB::Options& options,
-    bool lightmapTextures)
+    const bool lightmapTextures)
 {
-    GeometryMap::iterator it = geometryMap.find(mti);
+    const GeometryMap::iterator it = geometryMap.find(mti);
 
     if (it != geometryMap.end())
     {
@@ -182,7 +180,7 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
         pGeometry = new osg::Geometry;
     }
 
-    osgDB::Options::PrecisionHint precision = options.getPrecisionHint();
+    const osgDB::Options::PrecisionHint precision = options.getPrecisionHint();
 
     pGeometry->setVertexArray(createVec3Array((precision & osgDB::Options::DOUBLE_PRECISION_VERTEX) != 0));
     if (bNormal) pGeometry->setNormalArray(createVec3Array((precision & osgDB::Options::DOUBLE_PRECISION_NORMAL) != 0), osg::Array::BIND_PER_VERTEX);
@@ -227,8 +225,8 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
 
             if (lightmapTextures)
             {
-                double factor = ssc.diffuse->factor;
-                osg::ref_ptr<osg::TexEnvCombine> texenv = new osg::TexEnvCombine();
+                const double factor = ssc.diffuse->factor;
+                const osg::ref_ptr<osg::TexEnvCombine> texenv = new osg::TexEnvCombine();
                 texenv->setCombine_RGB(osg::TexEnvCombine::INTERPOLATE);
                 texenv->setSource0_RGB(osg::TexEnvCombine::TEXTURE);
                 texenv->setSource1_RGB(osg::TexEnvCombine::PREVIOUS);
@@ -246,7 +244,7 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
             ssc.opacity->assignTexMatIfRequired(stateSet, StateSetContent::OPACITY_TEXTURE_UNIT);
 
             // setup combiner to ignore RGB...
-            osg::ref_ptr<osg::TexEnvCombine> texenv = new osg::TexEnvCombine();
+            const osg::ref_ptr<osg::TexEnvCombine> texenv = new osg::TexEnvCombine();
             texenv->setCombine_RGB(osg::TexEnvCombine::REPLACE);
             texenv->setSource0_RGB(osg::TexEnvCombine::PREVIOUS);
             stateSet->setTextureAttributeAndModes(StateSetContent::OPACITY_TEXTURE_UNIT, texenv.get(), osg::StateAttribute::ON);
@@ -259,13 +257,13 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
             ssc.reflection->assignTextureIfRequired(stateSet, StateSetContent::REFLECTION_TEXTURE_UNIT);
 
             // setup spherical map...
-            osg::ref_ptr<osg::TexGen> texgen = new osg::TexGen();
+            const osg::ref_ptr<osg::TexGen> texgen = new osg::TexGen();
             texgen->setMode(osg::TexGen::SPHERE_MAP);
             stateSet->setTextureAttributeAndModes(StateSetContent::REFLECTION_TEXTURE_UNIT, texgen.get(), osg::StateAttribute::ON);
 
             // setup combiner for factor...
-            double factor = ssc.reflection->factor;
-            osg::ref_ptr<osg::TexEnvCombine> texenv = new osg::TexEnvCombine();
+            const double factor = ssc.reflection->factor;
+            const osg::ref_ptr<osg::TexEnvCombine> texenv = new osg::TexEnvCombine();
             texenv->setCombine_RGB(osg::TexEnvCombine::INTERPOLATE);
             texenv->setSource0_RGB(osg::TexEnvCombine::TEXTURE);
             texenv->setSource1_RGB(osg::TexEnvCombine::PREVIOUS);
@@ -364,15 +362,15 @@ void addChannel(
     pAnimation->addChannel(pChannel);
 }
 
-void readAnimation(FbxNode* pNode, FbxScene& fbxScene, const std::string& targetName,
+void readAnimation(FbxNode* pNode, const FbxScene& fbxScene, const std::string& targetName,
     osg::ref_ptr<osgAnimation::AnimationManagerBase>& pAnimationManager,
-    FbxMesh* pMesh, int nBlendShape, int nBlendShapeChannel, int nShape)
+    FbxMesh* pMesh, const int nBlendShape, const int nBlendShapeChannel, const int nShape)
 {
     for (int i = 0; i < fbxScene.GetSrcObjectCount<FbxAnimStack>(); ++i)
     {
-        FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
+        const FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
 
-        int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
+        const int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
 
         const char* pTakeName = pAnimStack->GetName();
 
@@ -383,14 +381,14 @@ void readAnimation(FbxNode* pNode, FbxScene& fbxScene, const std::string& target
         {
             FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
 
-            FbxAnimCurve* pCurve = pMesh->GetShapeChannel(nBlendShape, nBlendShapeChannel, pAnimLayer, false);
+            const FbxAnimCurve* pCurve = pMesh->GetShapeChannel(nBlendShape, nBlendShapeChannel, pAnimLayer, false);
 
             if (!pCurve)
             {
                 continue;
             }
 
-            int nKeys = pCurve->KeyGetCount();
+            const int nKeys = pCurve->KeyGetCount();
             if (!nKeys)
             {
                 continue;
@@ -402,7 +400,7 @@ void readAnimation(FbxNode* pNode, FbxScene& fbxScene, const std::string& target
             for (int k = 0; k < nKeys; ++k)
             {
                 FbxAnimCurveKey key = pCurve->KeyGet(k);
-                double fTime = key.GetTime().GetSecondDouble();
+                const double fTime = key.GetTime().GetSecondDouble();
                 float fValue = static_cast<float>(key.GetValue() * 0.01);
                 keyFrameCntr.push_back(osgAnimation::FloatKeyframe(fTime,fValue));
             }
@@ -471,7 +469,7 @@ void addColorArrayElement(osg::Array& a, const FbxColor& c)
 }
 
 // scans StateSetList looking for the (first) channel name for the specified map type...
-std::string getUVChannelForTextureMap(std::vector<StateSetContent>& stateSetList, const char* pName)
+std::string getUVChannelForTextureMap(const std::vector<StateSetContent>& stateSetList, const char* pName)
 {
     // will return the first occurrence in the state set list...
     // TODO: what if more than one channel for the same map type?
@@ -500,8 +498,8 @@ std::string getUVChannelForTextureMap(std::vector<StateSetContent>& stateSetList
 }
 
 // scans mesh layers looking for the UV element corresponding to the specified channel name...
-const FbxLayerElementUV* getUVElementForChannel(std::string uvChannelName,
-    FbxLayerElement::EType elementType, FbxMesh* pFbxMesh)
+const FbxLayerElementUV* getUVElementForChannel(const std::string& uvChannelName,
+    const FbxLayerElement::EType elementType, FbxMesh* pFbxMesh)
 {
     // scan layers for specified UV channel...
     for (int cLayerIndex = 0; cLayerIndex < pFbxMesh->GetLayerCount(); cLayerIndex++)
@@ -536,9 +534,9 @@ typedef std::pair<osg::Geometry*, int> GIPair;
 typedef std::multimap<int, GIPair> FbxToOsgVertexMap;
 typedef std::map<GIPair, int> OsgToFbxNormalMap;
 
-void readMeshTriangle(const FbxMesh * fbxMesh, int i /*polygonIndex*/,
-                      int posInPoly0, int posInPoly1, int posInPoly2,
-                      int meshVertex0, int meshVertex1, int meshVertex2,
+void readMeshTriangle(const FbxMesh * fbxMesh, const int i /*polygonIndex*/,
+                      const int posInPoly0, const int posInPoly1, const int posInPoly2,
+                      const int meshVertex0, const int meshVertex1, const int meshVertex2,
                       FbxToOsgVertexMap& fbxToOsgVertMap,
                       OsgToFbxNormalMap& osgToFbxNormMap,
                       const FbxVector4* pFbxVertices,
@@ -647,8 +645,8 @@ void readMeshTriangle(const FbxMesh * fbxMesh, int i /*polygonIndex*/,
 }
 
 /// Says if a quad should be split using vertices 02 (or else 13)
-bool quadSplit02(const FbxMesh * fbxMesh, int i /*polygonIndex*/,
-                 int posInPoly0, int posInPoly1, int posInPoly2, int posInPoly3,
+bool quadSplit02(const FbxMesh * fbxMesh, const int i /*polygonIndex*/,
+                 const int posInPoly0, const int posInPoly1, const int posInPoly2, const int posInPoly3,
                  const FbxVector4* pFbxVertices)
 {
     // Algorithm may be a bit dumb. If you got a faster one, feel free to change.
@@ -666,32 +664,32 @@ bool quadSplit02(const FbxMesh * fbxMesh, int i /*polygonIndex*/,
     //        if rb only <0, or r*<0 => return false
     //        else return true
 
-    int v0 = fbxMesh->GetPolygonVertex(i, posInPoly0);
-    int v1 = fbxMesh->GetPolygonVertex(i, posInPoly1);
-    int v2 = fbxMesh->GetPolygonVertex(i, posInPoly2);
-    int v3 = fbxMesh->GetPolygonVertex(i, posInPoly3);
+    const int v0 = fbxMesh->GetPolygonVertex(i, posInPoly0);
+    const int v1 = fbxMesh->GetPolygonVertex(i, posInPoly1);
+    const int v2 = fbxMesh->GetPolygonVertex(i, posInPoly2);
+    const int v3 = fbxMesh->GetPolygonVertex(i, posInPoly3);
 
-    osg::Vec3d p0(pFbxVertices[v0][0], pFbxVertices[v0][1], pFbxVertices[v0][2]);
-    osg::Vec3d p1(pFbxVertices[v1][0], pFbxVertices[v1][1], pFbxVertices[v1][2]);
-    osg::Vec3d p2(pFbxVertices[v2][0], pFbxVertices[v2][1], pFbxVertices[v2][2]);
-    osg::Vec3d p3(pFbxVertices[v3][0], pFbxVertices[v3][1], pFbxVertices[v3][2]);
+    const osg::Vec3d p0(pFbxVertices[v0][0], pFbxVertices[v0][1], pFbxVertices[v0][2]);
+    const osg::Vec3d p1(pFbxVertices[v1][0], pFbxVertices[v1][1], pFbxVertices[v1][2]);
+    const osg::Vec3d p2(pFbxVertices[v2][0], pFbxVertices[v2][1], pFbxVertices[v2][2]);
+    const osg::Vec3d p3(pFbxVertices[v3][0], pFbxVertices[v3][1], pFbxVertices[v3][2]);
 
-    osg::Vec3d na((p1 - p0) ^ (p2 - p1));
-    osg::Vec3d nb((p2 - p0) ^ (p3 - p2));
+    const osg::Vec3d na((p1 - p0) ^ (p2 - p1));
+    const osg::Vec3d nb((p2 - p0) ^ (p3 - p2));
 
-    double rb(na * nb);
+    const double rb(na * nb);
     if (rb >= 0) return true;        // Split at 02
 
-    osg::Vec3d nc((p1 - p0) ^ (p3 - p1));
-    osg::Vec3d nd((p2 - p1) ^ (p3 - p2));
-    double rc(na * nc);
-    double rd(na * nd);
+    const osg::Vec3d nc((p1 - p0) ^ (p3 - p1));
+    const osg::Vec3d nd((p2 - p1) ^ (p3 - p2));
+    const double rc(na * nc);
+    const double rd(na * nd);
     return (rc >= 0 || rd >= 0);
 }
 
 struct PolygonRef
 {
-    PolygonRef(osg::Geometry* in_pGeometry, int in_numPoly, int in_nVertex)
+    PolygonRef(osg::Geometry* in_pGeometry, const int in_numPoly, const int in_nVertex)
         : pGeometry(in_pGeometry), numPoly(in_numPoly), nVertex(in_nVertex)
     {}
     osg::Geometry* pGeometry;
@@ -709,7 +707,7 @@ void fbxProperty2OsgUserValue(const FbxNode* pNode, osg::Node& node) {
             {
                 if (prop.GetFlag(FbxPropertyFlags::eUserDefined)) {
                     FbxDataType dataType = prop.GetPropertyDataType();
-                    EFbxType eType = dataType.GetType();
+                    const EFbxType eType = dataType.GetType();
                     std::string key = prop.GetName().Buffer();
 
                     FbxDouble2 value2;

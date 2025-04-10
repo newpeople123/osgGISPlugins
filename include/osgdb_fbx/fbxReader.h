@@ -47,9 +47,9 @@ public:
         FbxMaterialToOsgStateSet& fbxMaterialToOsgStateSet1,
         const std::set<const FbxNode*>& fbxSkeletons1,
         const osgDB::Options& options1,
-        AuthoringTool authoringTool1,
-        bool lightmapTextures1,
-        bool tessellatePolygons1)
+        const AuthoringTool authoringTool1,
+        const bool lightmapTextures1,
+        const bool tessellatePolygons1)
         : pSdkManager(pSdkManager1),
         fbxScene(fbxScene1),
         fbxMaterialToOsgStateSet(fbxMaterialToOsgStateSet1),
@@ -64,15 +64,15 @@ public:
         FbxNode*, bool& bIsBone, int& nLightCount);
 
     osgDB::ReaderWriter::ReadResult readFbxNode(
-        FbxNode*, bool& bIsBone, int& nLightCount, FbxProgressCallback pCallback, const float perProgress = 1.0, float lastProgress = 0.0);
+        FbxNode*, bool& bIsBone, int& nLightCount, FbxProgressCallback pCallback, float perProgress = 1.0, float lastProgress = 0.0);
 
     std::string readFbxAnimation(
         FbxNode*, const char* targetName);
 
-    osgDB::ReaderWriter::ReadResult readFbxCamera(
+    static osgDB::ReaderWriter::ReadResult readFbxCamera(
         FbxNode* pNode);
 
-    osgDB::ReaderWriter::ReadResult readFbxLight(
+    static osgDB::ReaderWriter::ReadResult readFbxLight(
         FbxNode* pNode, int& nLightCount);
 
     osgDB::ReaderWriter::ReadResult readMesh(

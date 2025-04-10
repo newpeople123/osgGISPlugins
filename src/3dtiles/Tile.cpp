@@ -1,6 +1,7 @@
 #include "3dtiles/Tile.h"
 #include "utils/Simplifier.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
+#include <tbb/parallel_for.h>
 void Tile::fromJson(const json& j) {
 	if (j.contains("boundingVolume")) boundingVolume.fromJson(j.at("boundingVolume"));
 	if (j.contains("geometricError")) j.at("geometricError").get_to(geometricError);
@@ -58,7 +59,7 @@ int Tile::getMaxLevel() const
 
 void Tile::computeBoundingVolumeBox()
 {
-	osg::ref_ptr<osg::Group> group = getAllDescendantNodes();
+	const osg::ref_ptr<osg::Group> group = getAllDescendantNodes();
 	boundingVolume.computeBox(group);
 }
 
@@ -83,7 +84,7 @@ void Tile::computeGeometricError()
 
 	double totalWeightedError = 0.0;
 	double totalWeight = 0.0;
-	for (osg::ref_ptr<Tile> child : this->children) {
+	for (const osg::ref_ptr<Tile> child : this->children) {
 		if (child->node.valid())
 		{
 			double childGeometricError = 0.0;
@@ -137,7 +138,7 @@ osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 {
 	osg::ref_ptr<osg::Group> group = new osg::Group;
 	if (this->node.valid() && this->lod == 0) {
-		osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
+		const osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
 		for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
 		{
 			group->addChild(currentNodeAsGroup->getChild(i));
@@ -145,7 +146,7 @@ osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 	}
 	for (size_t i = 0; i < this->children.size(); ++i)
 	{
-		osg::ref_ptr<osg::Group> childGroup = this->children[i]->getAllDescendantNodes();
+		const osg::ref_ptr<osg::Group> childGroup = this->children[i]->getAllDescendantNodes();
 		for (size_t j = 0; j < childGroup->getNumChildren(); ++j)
 		{
 			group->addChild(childGroup->getChild(j));
@@ -175,15 +176,13 @@ bool Tile::valid() const
 		}
 		return isValid;
 	}
-	else
-		return this->geometricError == 0.0;
-	return true;
+	return this->geometricError == 0.0;
 }
 
 void Tile::cleanupEmptyNodes()
 {
 	for (size_t i = 0; i < this->children.size();) {
-		osg::ref_ptr<Tile> child = this->children[i];
+		const osg::ref_ptr<Tile> child = this->children[i];
 		child->cleanupEmptyNodes();  // 递归清理子节点
 
 		if (!child->node.valid() && child->children.size() == 0) {
@@ -246,7 +245,7 @@ void Tile::write()
 
 void Tile::writeChildren()
 {
-	for (auto& child : children) {
+	for (const auto& child : children) {
 		child->write();
 	}
 }
@@ -277,7 +276,7 @@ void Tile::writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy)
 void Tile::buildLOD()
 {
 	// 创建代理节点（LOD根节点）
-	osg::ref_ptr<Tile> rootProxy = this;
+	const osg::ref_ptr<Tile> rootProxy = this;
 	unsigned int size = rootProxy->children.size();
 
 	if (rootProxy->node.valid())
@@ -297,9 +296,9 @@ void Tile::buildLOD()
 		}
 
 		// 构建LOD层级
-		osg::ref_ptr<Tile> tileLOD2 = createLODTile(lodProxy, 2);
-		osg::ref_ptr<Tile> tileLOD1 = createLODTile(tileLOD2, 1);
-		osg::ref_ptr<Tile> tileLOD0 = createLODTile(tileLOD1, 0);
+		const osg::ref_ptr<Tile> tileLOD2 = createLODTile(lodProxy, 2);
+		const osg::ref_ptr<Tile> tileLOD1 = createLODTile(tileLOD2, 1);
+		const osg::ref_ptr<Tile> tileLOD0 = createLODTile(tileLOD1, 0);
 
 		// 设置属性和关系
 		tileLOD0->refine = Refinement::ADD;
@@ -321,7 +320,7 @@ void Tile::buildLOD()
 	// 递归处理子节点
 	for (size_t i = 0; i < size; ++i)
 	{
-		auto& child = rootProxy->children.at(i);
+		const auto& child = rootProxy->children.at(i);
 		child->config = config;
 		child->buildLOD();
 	}
@@ -362,7 +361,7 @@ void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
 		});
 }
 
-void Tile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, unsigned int options)
+void Tile::optimizeNode(const osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, const unsigned int options)
 {
 	GltfOptimizer gltfOptimizer;
 	gltfOptimizer.setGltfTextureOptimizationOptions(textureOptions);
@@ -372,16 +371,16 @@ void Tile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::
 	nodeCopy->accept(biv);
 }
 
-osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
+osg::ref_ptr<Tile> Tile::createLODTile(const osg::ref_ptr<Tile>& parent, const int lodLevel)
 {
-	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(parent->node.get(),
+	const osg::ref_ptr<osg::Node> nodeCopy = osg::clone(parent->node.get(),
 		osg::CopyOp::DEEP_COPY_NODES |
 		osg::CopyOp::DEEP_COPY_DRAWABLES |
 		osg::CopyOp::DEEP_COPY_ARRAYS |
 		osg::CopyOp::DEEP_COPY_PRIMITIVES |
 		osg::CopyOp::DEEP_COPY_USERDATA);
 	// 使用工厂方法创建对应类型的Tile
-	auto tile = createTileOfSameType(nodeCopy, parent);
+	const auto tile = createTileOfSameType(nodeCopy, parent);
 	tile->config = parent->config;
 	tile->level = parent->level;
 	tile->x = parent->x;
@@ -418,7 +417,7 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 		{
 			this->parent->children.push_back(this->children[0]);
 			this->children[0]->parent = this->parent;
-			auto it = std::find(this->parent->children.begin(), this->parent->children.end(), this);
+			const auto it = std::find(this->parent->children.begin(), this->parent->children.end(), this);
 			if (it != this->parent->children.end()) {
 				this->parent->children.erase(it);
 			}

@@ -69,7 +69,7 @@ namespace osgGISPlugins {
         }
 
         static std::pair<uint16_t, uint16_t> encodeNormalToOct32P(const osg::Vec3f& normal) {
-            float absSum = std::fabs(normal.x()) + std::fabs(normal.y()) + std::fabs(normal.z());
+            const float absSum = std::fabs(normal.x()) + std::fabs(normal.y()) + std::fabs(normal.z());
 
             osg::Vec2f octNormal = (absSum > 0.0f) ? osg::Vec2f(normal.x(), normal.y()) * (1.0f / absSum) : osg::Vec2f(0.0f, 0.0f);
 

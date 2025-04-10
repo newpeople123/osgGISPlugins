@@ -7,30 +7,23 @@
 #include <osg/StateSet>
 #include <osg/Material>
 #include <osg/Geode>
-#include <osg/Texture2D>
 #include <osg/Math>
 #include <osg/ComputeBoundsVisitor>
-#include <set>
-#include <osgDB/FileNameUtils>
 #include <osgDB/FileUtils>
 #include <osgDB/ConvertUTF>
-#include <iostream>
 #include <iomanip>  // 用于输出格式化的百分比
 #include <fstream>  // 用于获取文件大小
 #include <indicators/cursor_control.hpp>
 #include <indicators/progress_bar.hpp>
-#include "osgdb_gltf/material/GltfPbrMRMaterial.h"
-#include "osgdb_gltf/material/GltfPbrSGMaterial.h"
-#include <unordered_set>
 #include <unordered_map>
 using namespace indicators;
 namespace osgGISPlugins
 {
 	class Utils {
 	public:
-		static void pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets);
+		static void pushStateSet2UniqueStateSets(const osg::ref_ptr<osg::StateSet>& stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets);
 
-		static bool isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords);
+		static bool isRepeatTexCoords(const osg::ref_ptr<osg::Vec2Array>& texCoords);
 
 		static bool compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs);
 
@@ -52,7 +45,7 @@ namespace osgGISPlugins
 
 		static bool compareUniformValue(const osg::Uniform& u1, const osg::Uniform& u2);
 
-		template<typename T, typename DrawElementsType>
+		template<typename DrawElementsType>
 		static bool compareDrawElementsTemplate(const DrawElementsType* de1,
 			const DrawElementsType* de2)
 		{
@@ -137,9 +130,9 @@ namespace osgGISPlugins
 			MaxGeometryVisitor()
 				: osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
 
-			virtual void apply(osg::Transform& transform) override;
+			void apply(osg::Transform& transform) override;
 
-			virtual void apply(osg::Geode& geode) override;
+			void apply(osg::Geode& geode) override;
 
 			void pushMatrix(const osg::Matrix& matrix);
 
@@ -174,11 +167,11 @@ namespace osgGISPlugins
 				fin->seekg(0, std::ifstream::beg);
 
 			};
-			virtual ~CRenderingThread() {};
+			~CRenderingThread() override {};
 
 			void stop();
 
-			virtual void run();
+			void run() override;
 
 		protected:
 			osgDB::ifstream* _fin;
@@ -192,8 +185,7 @@ namespace osgGISPlugins
 			CRenderingThread* crt;
 			typedef osgDB::ReaderWriter::ReadResult ReadResult;
 			ProgressReportingFileReadCallback() {}
-			~ProgressReportingFileReadCallback()
-			{
+			~ProgressReportingFileReadCallback() override {
 				if (crt)
 				{
 					crt->join();
@@ -201,7 +193,8 @@ namespace osgGISPlugins
 					crt = nullptr;
 				}
 			}
-			virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option);
+
+			osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option) override;
 		};
 
 		class TriangleCounterVisitor : public osg::NodeVisitor
@@ -216,7 +209,7 @@ namespace osgGISPlugins
 			void apply(osg::Drawable& drawable) override;
 
 		private:
-			unsigned int calculateTriangleCount(const GLenum mode, const unsigned int count);
+			static unsigned int calculateTriangleCount(GLenum mode, unsigned int count);
 		};
 
 		class TextureCounterVisitor :public osg::NodeVisitor
@@ -242,16 +235,16 @@ namespace osgGISPlugins
 			double _minTexelDensity; // 用于记录最小纹素密度
 		public:
 			double diagonalLength = 0.0;
-			TextureMetricsVisitor(int resolution) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
+			TextureMetricsVisitor(const int resolution) : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
 			{
 				_minTexelDensity = FLT_MAX;
 				_resolution = resolution;
 				_currentMatrix.makeIdentity();
 			}
 
-			virtual void apply(osg::Transform& transform) override;
+			void apply(osg::Transform& transform) override;
 
-			virtual void apply(osg::Geode& geode) override;
+			void apply(osg::Geode& geode) override;
 
 		private:
 			void pushMatrix(const osg::Matrix& matrix);

@@ -16,7 +16,7 @@ namespace osgGISPlugins {
 		osg::MixinVector<GltfExtension*> materialExtensions;
 		osg::MixinVector<GltfExtension*> materialExtensionsByCesiumSupport;
 		virtual osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2) = 0;
-		virtual ~GltfMaterial() = default;
+		~GltfMaterial() override = default;
 		GltfMaterial(const GltfMaterial& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: osg::Material(other, copyop),
 			emissiveFactor(other.emissiveFactor) {
@@ -41,7 +41,7 @@ namespace osgGISPlugins {
 		GltfMaterial() {}
 		//META_Object(osg, GltfMaterial);
 
-		static bool compareTexture2D(osg::ref_ptr<osg::Texture2D> texture1, osg::ref_ptr<osg::Texture2D> texture2)
+		static bool compareTexture2D(const osg::ref_ptr<osg::Texture2D>& texture1, const osg::ref_ptr<osg::Texture2D>& texture2)
 		{
 			if (texture1 == texture2)
 			{
@@ -82,8 +82,8 @@ namespace osgGISPlugins {
 				return false;
 			}
 
-			osg::ref_ptr<osg::Image> img1 = texture1->getImage();
-			osg::ref_ptr<osg::Image> img2 = texture2->getImage();
+			const osg::ref_ptr<osg::Image> img1 = texture1->getImage();
+			const osg::ref_ptr<osg::Image> img2 = texture2->getImage();
 			if (img1->getFileName() != img2->getFileName())
 			{
 				return false;

@@ -15,24 +15,24 @@ size_t TexturePacker::addElement(osg::ref_ptr<osg::Image> image) {
     return _dictIndex;
 }
 
-size_t TexturePacker::addElement(int w, int h) {
+size_t TexturePacker::addElement(const int w, const int h) {
     _input[++_dictIndex] = InputPair(NULL, osg::Vec4(0, 0, w, h));
     return _dictIndex;
 }
 
-void TexturePacker::removeElement(size_t id) {
+void TexturePacker::removeElement(const size_t id) {
     if (_input.find(id) != _input.end())
         _input.erase(_input.find(id));
 }
 
-osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool stopIfFailed)
+osg::Image* TexturePacker::pack(size_t& numImages, const bool generateResult, const bool stopIfFailed)
 {
     //纹理打包上下文
     stbrp_context context;
     //初始化指针、总宽度和总高度
     int ptr = 0, totalW = 0, totalH = 0;
     //计算最大的尺寸，是_maxWidth和_maxHeight的两倍
-    int maxSize = osg::maximum(_maxWidth, _maxHeight) * 2;
+    const int maxSize = osg::maximum(_maxWidth, _maxHeight) * 2;
     //为存储节点分配内存
     stbrp_node* nodes = static_cast<stbrp_node*>(malloc(sizeof(stbrp_node) * maxSize));
     //初始化节点内存为零
@@ -74,7 +74,7 @@ osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool sto
     osg::observer_ptr<osg::Image> validChild;
     for (std::map<size_t, InputPair>::iterator itr = _input.begin(); itr != _input.end(); ++itr, ++ptr) {
         InputPair& pair = itr->second;
-        stbrp_rect& r = rects[ptr];
+        const stbrp_rect& r = rects[ptr];
         osg::Vec4 v(r.x, r.y, r.w, r.h);
 
         if (r.id != itr->first || !r.was_packed) {
@@ -119,7 +119,7 @@ osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool sto
     return total.release();
 }
 
-bool TexturePacker::getPackingData(size_t id, double& x, double& y, int& w, int& h)
+bool TexturePacker::getPackingData(const size_t id, double& x, double& y, int& w, int& h)
 {
     if (_result.find(id) != _result.end()) {
         const osg::Vec4& rect = _result[id].second;
@@ -132,7 +132,7 @@ bool TexturePacker::getPackingData(size_t id, double& x, double& y, int& w, int&
     return false;
 }
 
-size_t TexturePacker::getId(osg::Image* image) const
+size_t TexturePacker::getId(const osg::Image* image) const
 {
     for (const auto& entry : _input)
     {

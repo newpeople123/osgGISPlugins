@@ -5,14 +5,11 @@
 #include <osgUtil/MeshOptimizers>
 #include <osg/MatrixTransform>
 #include <osg/PositionAttitudeTransform>
-#include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
 #include <iomanip>
 #include <unordered_set>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
-#include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <numeric>
-#include <unordered_set>
 
 using namespace osgGISPlugins;
 
@@ -37,20 +34,16 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 		{
 			MergeTransformVisitor mtv;
 			node->accept(mtv);
-			osg::Group* group = node->asGroup();
 
-			if (group)
+			osg::Group* newGroup = mtv.getNode()->asGroup();
+			if (newGroup)
 			{
-				osg::Group* newGroup = mtv.getNode()->asGroup();
-				if (newGroup)
+				// 清除group中的所有子节点
+				group->removeChildren(0, group->getNumChildren());
+				// 将newGroup中的所有子节点添加到group中
+				for (unsigned int i = 0; i < newGroup->getNumChildren(); ++i)
 				{
-					// 清除group中的所有子节点
-					group->removeChildren(0, group->getNumChildren());
-					// 将newGroup中的所有子节点添加到group中
-					for (unsigned int i = 0; i < newGroup->getNumChildren(); ++i)
-					{
-						group->addChild(newGroup->getChild(i));
-					}
+					group->addChild(newGroup->getChild(i));
 				}
 			}
 
@@ -349,7 +342,7 @@ void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 		osg::Geometry* geometry = dynamic_cast<osg::Geometry*>(drawable.asGeometry());
 		if (geometry)
 		{
-			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
+			const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
 			if (positions)
 			{
 				std::transform(positions->begin(), positions->end(), positions->begin(),
@@ -399,12 +392,12 @@ void GltfOptimizer::ReindexMeshVisitor::apply(osg::Geometry& geometry)
 		osg::ref_ptr<osg::PrimitiveSet> pset = geometry.getPrimitiveSet(primIndex);
 		if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort))
 		{
-			osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+			const osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 			reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(geometry, drawElementsUShort, primIndex);
 		}
 		else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt))
 		{
-			osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+			const osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
 			reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(geometry, drawElementsUInt, primIndex);
 		}
 	}
@@ -438,7 +431,7 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 				else
 					meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
 
-				osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 			}
 			else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType)
@@ -452,7 +445,7 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 				else
 					meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
 
-				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 			}
 			else if (type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType)
@@ -466,7 +459,7 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 				else
 					meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
 
-				osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 			}
 		}
@@ -497,7 +490,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 				if (indices->empty()) continue;
 				meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
-				osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 			}
 			else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType)
@@ -506,7 +499,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUShort, osg::UShortArray>(pset.get(), *indices);
 				if (indices->empty()) continue;
-				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 
 			}
@@ -517,7 +510,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 				if (indices->empty()) continue;
 				meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
-				osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 
 			}
@@ -549,9 +542,9 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 				if (indices->empty()) continue;
 
 				osg::MixinVector<unsigned int> remap(vertexCount);
-				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
+				const size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
 				assert(uniqueVertices <= vertexCount);
-				osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
 				osg::ref_ptr<osg::UByteArray> optimizedIndices = GltfOptimizer::ReindexMeshVisitor::reindexMesh<osg::DrawElementsUByte, osg::UByteArray>(geometry, drawElements, primIndex, remap);
 				if (!optimizedIndices) continue;
 				drawElements->assign(optimizedIndices->begin(), optimizedIndices->end());
@@ -563,10 +556,10 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 				if (indices->empty()) continue;
 
 				osg::MixinVector<unsigned int> remap(vertexCount);
-				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
+				const size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
 
 				assert(uniqueVertices <= vertexCount);
-				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 				osg::ref_ptr<osg::UShortArray> optimizedIndices = GltfOptimizer::ReindexMeshVisitor::reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(geometry, drawElements, primIndex, remap);
 				if (!optimizedIndices) continue;
 				drawElements->assign(optimizedIndices->begin(), optimizedIndices->end());
@@ -578,9 +571,9 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 				if (indices->empty()) continue;
 
 				osg::MixinVector<unsigned int> remap(vertexCount);
-				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
+				const size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
 				assert(uniqueVertices <= vertexCount);
-				osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
+				const osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
 				osg::ref_ptr<osg::UIntArray> optimizedIndices = GltfOptimizer::ReindexMeshVisitor::reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(geometry, drawElements, primIndex, remap);
 				if (!optimizedIndices) continue;
 				drawElements->assign(optimizedIndices->begin(), optimizedIndices->end());
@@ -593,18 +586,18 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 {
 	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
-	osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
+	const osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
 	if (oldStateSet.valid())
 	{
 		const osg::Object::DataVariance dv = oldStateSet->getDataVariance();
 		if (dv == osg::Object::DataVariance::STATIC)
 			return;
-		osg::ref_ptr<osg::StateSet> stateSet = osg::clone(oldStateSet.get(), osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES | osg::CopyOp::DEEP_COPY_TEXTURES);
+		const osg::ref_ptr<osg::StateSet> stateSet = osg::clone(oldStateSet.get(), osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES | osg::CopyOp::DEEP_COPY_TEXTURES);
 		drawable.setStateSet(stateSet);
 		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 		if (osgMaterial.valid())
 		{
-			osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
+			const osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
 			if (gltfMaterial.valid())
 			{
 				if (gltfMaterialHasTexture(gltfMaterial))
@@ -630,11 +623,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packTextures()
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Geometry>& geom)
 {
-	osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-	osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+	const osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
+	const osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
 	if (texCoords.valid() && texture.valid())
 	{
-		osg::ref_ptr<osg::Image> image = texture->getImage();
+		const osg::ref_ptr<osg::Image> image = texture->getImage();
 		if (image.valid())
 		{
 			resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
@@ -657,7 +650,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 					if (image->s() <= _options.maxTextureWidth || image->t() <= _options.maxTextureHeight)
 					{
 						bool bAdd = true;
-						for (osg::ref_ptr<osg::Image> img : _images)
+						for (const osg::ref_ptr<osg::Image> img : _images)
 						{
 							if (img->getFileName() == image->getFileName())
 							{
@@ -683,13 +676,12 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_ptr<osg::Texture2D> texture)
-{
+void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(const osg::ref_ptr<osg::Texture2D>& texture) const {
 	if (texture.valid())
 	{
 		if (texture->getNumImages())
 		{
-			osg::ref_ptr<osg::Image> image = texture->getImage(0);
+			const osg::ref_ptr<osg::Image> image = texture->getImage(0);
 			if (image.valid())
 			{
 				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
@@ -698,13 +690,12 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture)
-{
+void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(const osg::ref_ptr<osg::Texture2D>& texture) const {
 	if (texture.valid())
 	{
 		if (texture->getNumImages())
 		{
-			osg::ref_ptr<osg::Image> image = texture->getImage();
+			const osg::ref_ptr<osg::Image> image = texture->getImage();
 			if (image.valid())
 			{
 				std::string name;
@@ -725,7 +716,7 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::gltfMaterialHasTexture(const osg
 	if (gltfMaterial->occlusionTexture.valid()) return true;
 	if (gltfMaterial->emissiveTexture.valid()) return true;
 
-	osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+	const osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 	if (gltfMRMaterial.valid())
 	{
 		if (gltfMRMaterial->metallicRoughnessTexture.valid()) return true;
@@ -736,7 +727,7 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::gltfMaterialHasTexture(const osg
 		GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
 		if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 		{
-			KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+			const KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 			if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) return true;
 			if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) return true;
 		}
@@ -748,13 +739,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 {
 	if (gltfMaterial.valid())
 	{
-		osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+		const osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
 		if (texCoords.valid())
 		{
 			optimizeOsgTextureSize(gltfMaterial->normalTexture);
 			optimizeOsgTextureSize(gltfMaterial->occlusionTexture);
 			optimizeOsgTextureSize(gltfMaterial->emissiveTexture);
-			osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+			const osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 			if (gltfMRMaterial.valid())
 			{
 				optimizeOsgTextureSize(gltfMRMaterial->metallicRoughnessTexture);
@@ -765,7 +756,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 				GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
 				if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 				{
-					KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+					const KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 					optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgDiffuseTexture);
 					optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
 				}
@@ -807,7 +798,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 					exportOsgTextureIfNeeded(gltfMaterial->normalTexture);
 					exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture);
 					exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture);
-					osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+					const osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 					if (localGltfMRMaterial.valid())
 					{
 						exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture);
@@ -818,7 +809,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 						GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
 						if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 						{
-							KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+							const KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture);
 							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
 						}
@@ -830,7 +821,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 				exportOsgTextureIfNeeded(gltfMaterial->normalTexture);
 				exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture);
 				exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture);
-				osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+				const osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 				if (localGltfMRMaterial.valid())
 				{
 					exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture);
@@ -841,7 +832,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 					GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
 					if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 					{
-						KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+						const KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture);
 						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
 					}
@@ -868,11 +859,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 			packer.setScales(scaleWidth, sclaeHeight);
 			const std::string fullPath = exportImage(packedImage);
-			for (auto& entry : _geometryImgMap)
+			for (const auto& entry : _geometryImgMap)
 			{
 				osg::Geometry* geometry = entry.first;
-				osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
-				osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
+				const osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+				const osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
 
 				osg::ref_ptr<osg::Image> image = entry.second;
 				int w, h;
@@ -881,13 +872,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 				if (packer.getPackingData(id, x, y, w, h))
 				{
 					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, true);
-					double offsetX = x / width;
+					const double offsetX = x / width;
 					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, osg::clampTo(offsetX, 0.0, 1.0));
-					double offsetY = y / height;
+					const double offsetY = y / height;
 					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_Y, osg::clampTo(offsetY, 0.0, 1.0));
-					double scaleX = static_cast<double>(w) / width;
+					const double scaleX = static_cast<double>(w) / width;
 					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_X, osg::clampTo(scaleX, 0.0, 1.0));
-					double scaleY = static_cast<double>(h) / height;
+					const double scaleY = static_cast<double>(h) / height;
 					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_Y, osg::clampTo(scaleY, 0.0, 1.0));
 					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXCOORD, 0);
 					texture->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
@@ -900,8 +891,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 	}
 }
 
-osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
-{
+osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs) const {
 	int area = _options.maxTextureAtlasWidth * _options.maxTextureAtlasHeight;
 	std::sort(imgs.begin(), imgs.end(), GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight);
 	std::vector<size_t> indexPacks;
@@ -950,7 +940,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::updateGltfMaterialUserValue(
 	const double offsetY,
 	const double scaleX,
 	const double scaleY,
-	const std::string fullPath,
+	const std::string& fullPath,
 	const GltfTextureType type)
 {
 
@@ -1069,14 +1059,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<o
 	imgs = std::move(uniqueImages);
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs)
-{
+void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs) const {
 	if (texture.valid())
 	{
 		if (texture->getNumImages())
 		{
 			bool bAdd = true;
-			osg::ref_ptr<osg::Image> image = texture->getImage(0);
+			const osg::ref_ptr<osg::Image> image = texture->getImage(0);
 			for (osg::ref_ptr<osg::Image> img : imgs)
 			{
 				if (img == image || (img->getFileName() == image->getFileName() && !img->getFileName().empty()))
@@ -1095,7 +1084,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::removePackedImages(std::vector<o
 {
 	for (osg::ref_ptr<osg::Image> img : deleteImgs)
 	{
-		auto it = std::remove(imgs.begin(), imgs.end(), img.get());
+		const auto it = std::remove(imgs.begin(), imgs.end(), img.get());
 		imgs.erase(it, imgs.end());
 	}
 }
@@ -1122,11 +1111,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processTextureImages(std::vector
 
 			for (auto it = _geometryGltfMaterialMap.begin(); it != _geometryGltfMaterialMap.end();) {
 				osg::Geometry* geometry = it->first;
-				osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+				const osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
 				osg::ref_ptr<GltfMaterial> currentMaterial = dynamic_cast<GltfMaterial*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 
 				if (currentMaterial) {
-					osg::ref_ptr<osg::Texture2D> texture = getTextureFunc(currentMaterial.get());
+					const osg::ref_ptr<osg::Texture2D> texture = getTextureFunc(currentMaterial.get());
 					if (texture && texture->getNumImages()) {
 						osg::ref_ptr<osg::Image> image = texture->getImage();
 						const size_t id = packer.getId(image);
@@ -1173,7 +1162,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfGeneralImages(std::ve
 void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrMRImages(std::vector<osg::ref_ptr<osg::Image>>& imageList, const GltfTextureType type)
 {
 	auto getTextureFunc = [type](GltfMaterial* material) -> osg::ref_ptr<osg::Texture2D> {
-		auto gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(material);
+		const auto gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(material);
 		if (gltfMRMaterial) {
 			switch (type) {
 			case GltfTextureType::METALLICROUGHNESS:
@@ -1196,7 +1185,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 		for (size_t j = 0; j < material->materialExtensionsByCesiumSupport.size(); ++j) {
 			GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(j);
 			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
-				auto pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+				const auto pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 				if (pbrSpecularGlossiness_extension) {
 					switch (type) {
 					case GltfTextureType::DIFFUSE:
@@ -1236,7 +1225,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgMaterials()
 			GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(i);
 			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 			{
-				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+				const KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 				addImageFromTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture, diffuseImgs);
 				addImageFromTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, sgImgs);
 			}
@@ -1275,8 +1264,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Ima
 	}
 }
 
-std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<osg::Image>& img)
-{
+std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<osg::Image>& img) const {
 	std::string ext = _options.ext;
 	std::string filename = computeImageHash(img);
 	const GLenum pixelFormat = img->getPixelFormat();
@@ -1347,7 +1335,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const osg::ref_ptr<osg::Image>& image)
 {
 	size_t hash = 0;
-	auto hash_combine = [&hash](size_t value)
+	auto hash_combine = [&hash](const size_t value)
 		{
 			hash ^= value + 0x9e3779b9 + (hash << 6) + (hash >> 2);
 		};
@@ -1359,7 +1347,7 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const os
 	hash_combine(std::hash<int>()(image->getDataType()));
 
 	const unsigned char* data = image->data();
-	size_t dataSize = image->getImageSizeInBytes();
+	const size_t dataSize = image->getImageSizeInBytes();
 
 	for (size_t i = 0; i < dataSize; ++i)
 	{
@@ -1371,7 +1359,7 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const os
 	return oss.str();
 }
 
-bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2)
+bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2)
 {
 	if (img1->t() == img2->t())
 	{
@@ -1383,7 +1371,7 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<
 /** MergeTransformVisitor */
 void GltfOptimizer::MergeTransformVisitor::apply(osg::MatrixTransform& xtransform)
 {
-	osg::Matrixd previousMatrix = _currentMatrix;
+	const osg::Matrixd previousMatrix = _currentMatrix;
 	osg::Matrixd localMatrix;
 	xtransform.computeLocalToWorldMatrix(localMatrix, this);
 	_currentMatrix.preMult(localMatrix);
@@ -1396,8 +1384,7 @@ void GltfOptimizer::MergeTransformVisitor::apply(osg::Geode& geode)
 	_matrixNodesMap[_currentMatrix].push_back(&geode);
 }
 
-osg::Node* GltfOptimizer::MergeTransformVisitor::getNode()
-{
+osg::Node* GltfOptimizer::MergeTransformVisitor::getNode() const {
 	osg::ref_ptr<osg::Group> group = new osg::Group;
 
 	for (auto& item : _matrixNodesMap)

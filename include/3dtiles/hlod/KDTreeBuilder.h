@@ -18,9 +18,9 @@ namespace osgGISPlugins
     public:
         META_NodeVisitor(osgGISPlugins, KDTreeBuilder)
 
-        KDTreeBuilder() :TreeBuilder() {}
+        KDTreeBuilder() {}
 
-        KDTreeBuilder(BuilderConfig config) :TreeBuilder(config) {}
+        KDTreeBuilder(const BuilderConfig config) :TreeBuilder(config) {}
     private:
         struct SAHBucket {
             osg::BoundingBox bounds;     // 桶的包围盒
@@ -32,20 +32,20 @@ namespace osgGISPlugins
         static constexpr float INTERSECTION_COST = 1.5f;  // 相交测试成本
 
         // 包围盒表面积
-        float computeSurfaceArea(const osg::BoundingBox& bounds) const;
-        float evaluateSAH(const osg::BoundingBox& bounds,
-            const osg::BoundingBox& leftBounds,
-            const osg::BoundingBox& rightBounds,
-            int leftCount, int rightCount) const;
+        static float computeSurfaceArea(const osg::BoundingBox& bounds);
+        static float evaluateSAH(const osg::BoundingBox& bounds,
+                                 const osg::BoundingBox& leftBounds,
+                                 const osg::BoundingBox& rightBounds,
+                                 int leftCount, int rightCount);
 
         // 使用SAH找到最佳分割
-        bool findBestSplit(const osg::ref_ptr<osg::Group>& group,
-            const osg::BoundingBox& bounds,
-            int& bestAxis,
-            float& bestPos,
-            float& bestCost);
+        static bool findBestSplit(const osg::ref_ptr<osg::Group>& group,
+                                  const osg::BoundingBox& bounds,
+                                  int& bestAxis,
+                                  float& bestPos,
+                                  float& bestCost);
 
-        osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0) override;
+        osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, int x = 0, int y = 0, int z = 0, int level = 0) override;
 
         void divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) override;
     };

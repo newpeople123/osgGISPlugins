@@ -34,7 +34,7 @@ namespace osgGISPlugins {
 
     };
     template<typename DrawElementsType, typename IndexArrayType>
-    inline void Simplifier::simplifyPrimitiveSet(osg::Geometry& geom, osg::ref_ptr<DrawElementsType> drawElements, unsigned int& psetIndex)
+    void Simplifier::simplifyPrimitiveSet(osg::Geometry& geom, osg::ref_ptr<DrawElementsType> drawElements, unsigned int& psetIndex)
     {
         const unsigned int options = _lockBorders ? meshopt_SimplifyLockBorder : 0;
 
@@ -59,7 +59,7 @@ namespace osgGISPlugins {
 
         osg::ref_ptr<IndexArrayType> destination = new IndexArrayType(indiceCount);
         const unsigned int targetIndexCount = static_cast<unsigned int>(indiceCount * _sampleRatio);
-        const size_t stride = sizeof(osg::Vec3);
+        constexpr size_t stride = sizeof(osg::Vec3);
         float resultError = 0.f;
         destination->resize(meshopt_simplify(&(*destination)[0], &(*indices)[0], indiceCount, vertices.data(), positionCount, stride, targetIndexCount, _targetError, options, &resultError));
         this->lodError = osg::maximum(this->lodError, resultError);
@@ -90,9 +90,9 @@ namespace osgGISPlugins {
         }
 
         // 创建新的顶点数组
-        osg::ref_ptr<osg::Vec3Array> newPositions = new osg::Vec3Array;
-        osg::ref_ptr<osg::Vec3Array> newNormals = new osg::Vec3Array;
-        osg::ref_ptr<osg::Vec2Array> newTexcoords = new osg::Vec2Array;
+        const osg::ref_ptr<osg::Vec3Array> newPositions = new osg::Vec3Array;
+        const osg::ref_ptr<osg::Vec3Array> newNormals = new osg::Vec3Array;
+        const osg::ref_ptr<osg::Vec2Array> newTexcoords = new osg::Vec2Array;
 
         for (size_t i = 0; i < positionCount; ++i) {
             if (remap[i] != -1) {

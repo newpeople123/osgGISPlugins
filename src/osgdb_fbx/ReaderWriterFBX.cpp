@@ -1,5 +1,4 @@
 #include <sstream>
-#include <memory>
 #ifndef WIN32
 #include <strings.h>//for strncasecmp
 #endif
@@ -18,7 +17,6 @@
 #include <osgAnimation/AnimationManagerBase>
 #include <osgAnimation/Bone>
 #include <osgAnimation/RigGeometry>
-#include <osgAnimation/Skeleton>
 #include <osgAnimation/VertexInfluence>
 
 #if defined(_MSC_VER)
@@ -87,7 +85,7 @@ bool isBasicRootNode(const osg::Node& node)
     // Test the presence of a non-empty stateset
     if (node.getStateSet())
     {
-        osg::ref_ptr<osg::StateSet> emptyStateSet = new osg::StateSet;
+        const osg::ref_ptr<osg::StateSet> emptyStateSet = new osg::StateSet;
         if (node.getStateSet()->compare(*emptyStateSet, true) != 0)
         {
             return false;
@@ -230,7 +228,7 @@ ProgressBar bar{
 };
 
 // 定义读取fbx模型进度回调函数
-bool readFbxFileProgressCallback(void* pArgs, float pPercentage, const char* pStatus) {
+bool readFbxFileProgressCallback(void* pArgs, const float pPercentage, const char* pStatus) {
     //pStatus是构件或材质名称
     //pPercentage是进度百分比
     bar.set_progress(pPercentage / 2);//全部读取完毕，进度是50%
@@ -238,7 +236,7 @@ bool readFbxFileProgressCallback(void* pArgs, float pPercentage, const char* pSt
 }
 
 // 定义转换fbxsdk数据结构到osg的数据结构的进度回调函数
-bool convertFbxStruct2OsgStructProgressCallback(void* pArgs, float pPercentage, const char* pStatus) {
+bool convertFbxStruct2OsgStructProgressCallback(void* pArgs, const float pPercentage, const char* pStatus) {
     //pPercentage是进度百分比
     if (bar.is_completed()) return true;
     bar.set_progress(50 + pPercentage / 2);//起始进度为50%，转换完毕则为100%
@@ -333,7 +331,6 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
             bool lightmapTextures = false;
             bool tessellatePolygons = false;
             bool zUp = false;
-            bool showProgress = false;
             if (options)
             {
                 std::istringstream iss(options->getOptionString());
@@ -355,10 +352,6 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
                     if (opt == "ZUp")
                     {
                         zUp = true;
-                    }
-                    if (opt == "ShowProgress")
-                    {
-                        showProgress = true;
                     }
                 }
             }
@@ -398,7 +391,7 @@ ReaderWriterFBX::readNode(const std::string& filenameInit,
 
                 FbxString appName = pDocInfo->LastSaved_ApplicationName.Get();
 
-                for (unsigned int i = 0; i < sizeof(authoringTools) / sizeof(authoringTools[0]); ++i)
+                for (unsigned int i = 0; i < std::size(authoringTools); ++i)
                 {
                     if (0 ==
 #ifdef WIN32

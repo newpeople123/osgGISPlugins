@@ -1,5 +1,4 @@
 #include "3dtiles/I3DMTile.h"
-#include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 
 void I3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
@@ -30,13 +29,13 @@ void I3DMTile::setContentUri()
 		contentUri = "InstanceTiles/Tile_L" + to_string(lod) + "_" + to_string(z) + "." + type;
 }
 
-I3DMTile* I3DMTile::createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent)
+I3DMTile* I3DMTile::createTileOfSameType(const osg::ref_ptr<osg::Node> node, const osg::ref_ptr<Tile> parent)
 {
 	return new I3DMTile(node, dynamic_cast<I3DMTile*>(parent.get()));
 }
 
 void I3DMTile::computeDiagonalLengthAndVolume()
 {
-	osg::ref_ptr<osg::Node> instanceNode = this->node->asGroup()->getChild(0);
+	const osg::ref_ptr<osg::Node> instanceNode = this->node->asGroup()->getChild(0);
 	Tile::computeDiagonalLengthAndVolume(instanceNode);
 }
