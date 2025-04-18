@@ -1,5 +1,5 @@
 {
-  "builtin-baseline": "c43dbaeca0f96d90da29a151eb2ee14cad5f0aeb",
+  "builtin-baseline": "f5ec6f30ff70f04f841436a0f36600bdbabfcfbf",
   "dependencies": [
     {
       "name": "osg",
@@ -23,7 +23,7 @@
     },
     {
       "name": "meshoptimizer",
-      "version>=": "0.19#1"
+      "version>=": "0.23#0"
     },
     {
       "name": "stb"
@@ -77,5 +77,5 @@
       "version": "2.3#0"
     }
   ],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
