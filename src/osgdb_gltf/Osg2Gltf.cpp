@@ -138,6 +138,8 @@ void Osg2Gltf::apply(osg::Drawable &drawable)
 				pushedStateSet = pushStateSet(ss.get());
 			}
 		}
+		else
+			return;
 
 		_model.meshes.emplace_back();
 		tinygltf::Mesh &mesh = _model.meshes.back();

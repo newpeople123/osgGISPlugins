@@ -28,3 +28,7 @@ CMakeFiles/
 # Visual Studio 编译生成的文件
 Release/**
 Debug/**
+
+# ReSharper 相关
+*.ReSharper.user
+*.DotSettings.user
