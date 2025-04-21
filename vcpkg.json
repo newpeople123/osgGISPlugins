@@ -41,6 +41,10 @@
   "name": "osg-gis-plugins",
   "overrides": [
     {
+      "name": "ktx",
+      "version": "4.1.0#0"
+    },
+    {
       "name": "libpq",
       "version": "15.3"
     },
