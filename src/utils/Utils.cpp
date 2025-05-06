@@ -404,6 +404,25 @@ bool Utils::compareUniformValue(const osg::Uniform& u1, const osg::Uniform& u2)
 	}
 }
 
+void Utils::initConsole()
+{
+#ifdef _WIN32
+	SetConsoleOutputCP(CP_UTF8);
+#else
+	setlocale(LC_ALL, "en_US.UTF-8");
+#endif // _WIN32
+}
+
+void Utils::registerFileAliases()
+{
+	osgDB::Registry* instance = osgDB::Registry::instance();
+	instance->addFileExtensionAlias("glb", "gltf");
+	instance->addFileExtensionAlias("b3dm", "gltf");
+	instance->addFileExtensionAlias("i3dm", "gltf");
+	instance->addFileExtensionAlias("ktx2", "ktx");
+	instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
+}
+
 void Utils::CRenderingThread::stop()
 {
 	show_console_cursor(true);

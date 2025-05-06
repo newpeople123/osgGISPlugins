@@ -13,11 +13,7 @@ using namespace osgGISPlugins;
 
 int main(int argc, char** argv)
 {
-#ifdef _WIN32
-    SetConsoleOutputCP(CP_UTF8);
-#else
-    setlocale(LC_ALL, "en_US.UTF-8");
-#endif // _WIN32
+    Utils::initConsole();
     osg::ArgumentParser arguments(&argc, argv);
     osg::ApplicationUsage* usage = arguments.getApplicationUsage();
     usage->setDescription(arguments.getApplicationName() + ",that is used to convert and simplify 3D model.");

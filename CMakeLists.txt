@@ -61,6 +61,9 @@ project(osgGISPlugins)
 
 add_subdirectory(src)
 add_subdirectory(tools)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_subdirectory(tests)
+endif()
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")

@@ -36,7 +36,7 @@ private:
 		return quat * localPosition;
 	}
 public:
-	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal) ,osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
 
 
 	}
@@ -68,26 +68,6 @@ public:
 		}
 	}
 };
-
-// 设置控台编码
-void initConsole()
-{
-#ifdef _WIN32
-	SetConsoleOutputCP(CP_UTF8);
-#else
-	setlocale(LC_ALL, "en_US.UTF-8");
-#endif // _WIN32
-}
-
-// 注册文件扩展名别名
-void registerFileAliases() {
-	osgDB::Registry* instance = osgDB::Registry::instance();
-	instance->addFileExtensionAlias("glb", "gltf");
-	instance->addFileExtensionAlias("b3dm", "gltf");
-	instance->addFileExtensionAlias("i3dm", "gltf");
-	instance->addFileExtensionAlias("ktx2", "ktx");
-	instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
-}
 
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
@@ -227,9 +207,9 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 
 int main(int argc, char** argv)
 {
-	initConsole();
+	Utils::initConsole();
 
-	registerFileAliases();
+	Utils::registerFileAliases();
 
 	// use an ArgumentParser object to manage the program arguments.
 	osg::ArgumentParser arguments(&argc, argv);

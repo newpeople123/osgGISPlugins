@@ -281,6 +281,12 @@ namespace osgGISPlugins
 			osg::Matrix _currentMatrix;
 			std::vector<osg::Matrix> _matrixStack;
 		};
+
+		// 设置控台编码
+		static void initConsole();
+
+		// 注册文件扩展名别名
+		static void registerFileAliases();
 	};
 }
 #endif // !OSG_GIS_PLUGINS_UTILS_H
