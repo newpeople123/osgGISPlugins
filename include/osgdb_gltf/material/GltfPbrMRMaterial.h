@@ -7,7 +7,7 @@ namespace osgGISPlugins {
         osg::ref_ptr<osg::Texture2D> metallicRoughnessTexture;//G is roughtness，B is metallic
         osg::ref_ptr<osg::Texture2D> baseColorTexture;
         std::array<double, 4> baseColorFactor{ 1.0,1.0 ,1.0 ,1.0 };
-        double metallicFactor = 1.0;
+        double metallicFactor = 0.0;
         double roughnessFactor = 1.0;
         osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& metalnessImage, const osg::ref_ptr<osg::Image>& roughnessImage) override;
         GltfPbrMRMaterial(const GltfPbrMRMaterial& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)

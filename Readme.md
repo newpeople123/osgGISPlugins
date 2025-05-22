@@ -153,9 +153,9 @@ osg的gis插件，能够读取、显示3dmax导出的具有PBR材质的fbx文件
 
 #### 命令行格式
 
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc/kd> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit -maxTriangleCount 300000 -maxDrawcallCommandCount 25`
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc/kd> -ratio <Number> -o <DIR> -lat <Number> -lng <Number> -height <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit -maxTriangleCount 300000 -maxDrawcallCommandCount 25 -scaleX <Number> -scaleY <Number> -scaleZ <Number>`
 或
-`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc/kd> -ratio <Number> -o <DIR> -epsg <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit -maxTriangleCount 300000 -maxDrawcallCommandCount 25`
+`model23dtiles -i <path> -tf <jpg/png/webp/ktx2> -vf <draco/meshopt/quantize/quantize_meshopt> -t <quad/oc/kd> -ratio <Number> -o <DIR> -epsg <Number> -comporessLevel <low/medium/high> -translationX <Number> -translationY <Number> -translationZ <Number> -upAxis <X/Y/Z> -maxTextureWidth <Number> -maxTextureHeight <Number> -maxTextureAtlasWidth <Number> -maxTextureAtlasHeight <Number> -recomputeNormal -unlit -maxTriangleCount 300000 -maxDrawcallCommandCount 25 -scaleX <Number> -scaleY <Number> -scaleZ <Number>`
 
 #### 示例命令
 

@@ -485,9 +485,12 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 			// 几何误差:0.1~0.01m
 			targetError = 0.01 / this->diagonalLength;
 		}
-		Simplifier simplifier(sampleRatio, false, false, targetError);
-		node->accept(simplifier);
-		lodError = simplifier.lodError * this->diagonalLength;
+		if (this->lod != 0)
+		{
+			Simplifier simplifier(sampleRatio, false, false, targetError);
+			node->accept(simplifier);
+			lodError = simplifier.lodError * this->diagonalLength;
+		}
 	}
 
 	config.gltfTextureOptions.maxTextureWidth *= textureFactor;
