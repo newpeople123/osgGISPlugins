@@ -45,8 +45,12 @@ public:
 		osg::Matrixd localMatrix;
 		transform.computeLocalToWorldMatrix(localMatrix, this);
 		osg::Matrixd savedMatrix = _currentMatrix;
-		_currentMatrix *= localMatrix; // 更新当前矩阵
+		_currentMatrix.preMult(localMatrix); // 更新当前矩阵
 		traverse(transform);
+		if (osg::MatrixTransform* matrixTransform = transform.asMatrixTransform())
+		{
+			matrixTransform->setMatrix(osg::Matrix::identity());
+		}
 		_currentMatrix = savedMatrix; // 恢复父节点矩阵
 	}
 
@@ -124,36 +128,64 @@ PJ* createProjection(PJ_CONTEXT* ctx, const std::string& srcEpsg, const std::str
 }
 
 // 应用偏移量、朝向
-osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(osg::ref_ptr<osg::Node>& node, const double translationX, const double translationY, const double translationZ, const std::string upAxis,const std::string ext)
+osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
+	osg::ref_ptr<osg::Node>& node,
+	const double translationX, const double translationY, const double translationZ,
+	const double scaleX, const double scaleY, const double scaleZ,
+	const std::string upAxis,
+	const std::string ext)
 {
+	// datumPoint 是 Z轴向上的坐标
+	osg::Vec3d datumPointZUp(translationX, translationY, translationZ);
+	osg::Vec3d datumPointYUp;
 
-	osg::Vec3d datumPoint = osg::Vec3d(-translationX, -translationY, -translationY);
-	osg::ref_ptr<osg::MatrixTransform> xtransform = new osg::MatrixTransform;
-	// FBX无论什么轴向上，读取后都会变成Y轴向上，这里就不用再特殊处理了
+	// 将 datumPoint 从 Z 向上转换为 Y 向上坐标系
+	datumPointYUp.set(
+		datumPointZUp.x(),
+		datumPointZUp.z(),  // Z -> Y
+		-datumPointZUp.y()  // Y -> -Z
+	);
+
+	osg::Vec3d scaleZUp(scaleX, scaleY, scaleZ);
+	osg::Vec3d scaleYUp;
+	scaleYUp.set(
+		scaleZUp.x(),
+		scaleZUp.z(),  // Z -> Y
+		scaleZUp.y()  // Y -> Z//缩放是无方向性的正数比例因子，不需要为了坐标系切换而改变符号
+	);
+
+	osg::Matrixd matrix;
+	osg::Quat rotation = osg::Quat();
+
+	// FBX 始终是 Y 向上，不需要转换
 	if (ext != "fbx")
 	{
-		osg::Matrixd matrix;
-		if (upAxis == "X")
+		if (upAxis == "Z")
 		{
-			const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
-			matrix.makeRotate(quat);
-			matrix.setTrans(quat * datumPoint);
+			// Z 向上 -> Y 向上（绕 X 轴 -90 度）
+			rotation = osg::Quat(-osg::PI_2, osg::Vec3d(1.0, 0.0, 0.0));
 		}
-		else if (upAxis == "Z")
+		else if (upAxis == "X")
 		{
-			const osg::Quat quat = osg::Quat(-osg::PI_2, osg::Vec3(1.0, 0.0, 0.0));
-			matrix.makeRotate(quat);
-			matrix.setTrans(quat * datumPoint);
+			// X 向上 -> Y 向上（绕 Z 轴 +90 度）
+			rotation = osg::Quat(-osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
 		}
-		else if (upAxis == "Y")
-		{
-			matrix.setTrans(datumPoint);
-		}
-		xtransform->setMatrix(matrix);
+		matrix.makeRotate(rotation);
+		matrix.setTrans(datumPointYUp);  // 注意：平移不受旋转影响，已经转换好了
 	}
+	else
+	{
+		// FBX 默认是 Y 向上，直接平移
+		matrix.setTrans(datumPointYUp);
+	}
+	matrix.preMultScale(scaleYUp);
+
+	osg::ref_ptr<osg::MatrixTransform> xtransform = new osg::MatrixTransform;
+	xtransform->setMatrix(matrix);
 	xtransform->addChild(node);
 	return xtransform;
 }
+
 
 // 将投影坐标的模型进行坐标转换
 void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& height)
@@ -259,6 +291,9 @@ int main(int argc, char** argv)
 	const double translationX = parseArgument(arguments, "-translationX", 0.0);
 	const double translationY = parseArgument(arguments, "-translationY", 0.0);
 	const double translationZ = parseArgument(arguments, "-translationZ", 0.0);
+	const double scaleX = parseArgument(arguments, "-scaleX", 1.0);
+	const double scaleY = parseArgument(arguments, "-scaleY", 1.0);
+	const double scaleZ = parseArgument(arguments, "-scaleZ", 1.0);
 	const double ratio = parseArgument(arguments, "-ratio", 0.5);
 
 	double latitude = parseArgument(arguments, "-lat", 30.0);
@@ -306,7 +341,7 @@ int main(int argc, char** argv)
 		}
 
 		const std::string ext = osgDB::getLowerCaseFileExtension(input);
-		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, upAxis, ext);
+		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, scaleX, scaleY, scaleZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
 		applyProjection(tNode, epsg, latitude, longitude, height);
 

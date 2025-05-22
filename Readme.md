@@ -167,6 +167,8 @@ model23dtiles.exe -i D:\test.fbx -tf ktx2 -vf draco -o D:\output -lat 30 -lng 11
 model23dtiles.exe -i D:\test.fbx -ratio 0.6 -o D:\output -lat 30 -lng 116 -height 100
 # 设置3dtiles的树结构为四叉树，顶点坐标为4549投影坐标系
 model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
+# 设置3dtiles的树结构为四叉树，顶点坐标为4549投影坐标系，并将原始模型单位从厘米转换为米
+model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549 -scaleX 0.01 -scaleY 0.01 -scaleZ 0.01
 ```
 
 #### 参数说明
@@ -182,6 +184,9 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549
 `-translationX` 重设模型原点位置的x坐标，默认值为0。
 `-translationY` 重设模型原点位置的y坐标，默认值为0。
 `-translationZ` 重设模型原点位置的z坐标，默认值为0。
+`-scaleX` 在x方向上缩放模型(变换x方向上模型的单位)，默认值为1。
+`-scaleY` 在y方向上缩放模型(变换y方向上模型的单位)，默认值为1。
+`-scaleZ` 在z方向上缩放模型(变换z方向上模型的单位)，默认值为1。
 `-upAxis` 模型向上方向，可选的只有：X、Y、Z，需大写，默认值为：Y(fbx模型不需设定该参数，无论fbx模型是哪个轴朝上，默认都会将fbx模型转换为Y轴向上)。
 `-maxTextureWidth` 单个纹理的最大宽度，默认值为256，需为2的幂次。
 `-maxTextureHeight` 单个纹理的最大高度，默认值为256，需为2的幂次。
