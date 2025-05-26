@@ -4,7 +4,10 @@ using namespace osgGISPlugins;
 
 void B3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
-	Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::MERGE_TRANSFORMS);
+	if(!this->config.noApplyTransformToVertices)
+		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS);
+	else
+		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 }
 
 string B3DMTile::getOutputPath() const

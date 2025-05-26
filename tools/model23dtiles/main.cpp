@@ -98,9 +98,11 @@ void applyOptimizer(osg::ref_ptr<osg::Node>& node) {
 }
 
 // 重计算法线
-void recomputeNormals(osg::ref_ptr<osg::Node>& node) {
-	osgUtil::SmoothingVisitor smoothingVisitor;
-	node->accept(smoothingVisitor);
+void recomputeNormals(osg::ref_ptr<osg::Node>& node, const bool faceModel) {
+	osgUtil::SmoothingVisitor sv;
+	if (faceModel)
+		sv.setCreaseAngle(0.0);
+	node->accept(sv);
 }
 
 // 解析单个命令行参数
@@ -188,7 +190,7 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
 
 
 // 将投影坐标的模型进行坐标转换
-void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& height)
+void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& altitude)
 {
 	if (!epsg.empty())
 	{
@@ -223,11 +225,11 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 			PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
 			latitude = outputCoord.xyz.y;
 			longitude = outputCoord.xyz.x;
-			height = outputCoord.xyz.z;
+			altitude = outputCoord.xyz.z;
 
 			const osg::EllipsoidModel ellipsoidModel;
 			osg::Matrixd localToWorld;
-			ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), height, localToWorld);
+			ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), altitude, localToWorld);
 			PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
 			CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
 			node->accept(ctv);
@@ -246,67 +248,89 @@ int main(int argc, char** argv)
 	// use an ArgumentParser object to manage the program arguments.
 	osg::ArgumentParser arguments(&argc, argv);
 	osg::ApplicationUsage* usage = arguments.getApplicationUsage();
-	usage->setDescription(arguments.getApplicationName() + ",that is used to convert 3D model to 3dtiles.");
-	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 116.0 -lng 39.0 -height 300.0 -tf ktx2");
-	usage->addCommandLineOption("-i <file>", "input 3D model file full path,must be a file.");
-	usage->addCommandLineOption("-o <folder>", "output 3dtiles path,must be a directory.");
-	usage->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "texture format,option values are png、jpg、webp、ktx2，default value is jpg.");
-	usage->addCommandLineOption("-vf <draco/meshopt/quantize/quantize_meshopt>", "vertex format,option values are draco、meshopt、quantize、quantize_meshopt,default is none.");
-	usage->addCommandLineOption("-t <quad/oc/kd>", " tree format,option values are quad、oc、kd,default is quad.");
-	usage->addCommandLineOption("-ratio <number>", "Simplified ratio of intermediate nodes.default is 0.5.");
-	usage->addCommandLineOption("-lat <number>", "datum point's latitude.");
-	usage->addCommandLineOption("-lng <number>", "datum point's longitude.");
-	usage->addCommandLineOption("-height <number>", "datum point's height.");
-	usage->addCommandLineOption("-translationX <number>", "The x-coordinate of the model datum point,default is 0, must be a power of 2.");
-	usage->addCommandLineOption("-translationY <number>", "The y-coordinate of the model datum point,default is 0, must be a power of 2.");
-	usage->addCommandLineOption("-translationZ <number>", "The z-coordinate of the model datum point,default is 0, must be a power of 2.");
-	usage->addCommandLineOption("-upAxis <X/Y/Z>", "Indicate which axis of the model is facing upwards,default is Y");
-	usage->addCommandLineOption("-maxTextureWidth <number>", "single texture's max width,default is 256.");
-	usage->addCommandLineOption("-maxTextureHeight <number>", "single texture's max height,default is 256.");
-	usage->addCommandLineOption("-maxTextureAtlasWidth <number>", "textrueAtlas's max width,default is 2048.");
-	usage->addCommandLineOption("-maxTextureAtlasHeight <number>", "textrueAtlas's max height,default is 2048.");
-	usage->addCommandLineOption("-comporessLevel <low/medium/high>", "draco/quantize/quantize_meshopt compression level,default is medium.");
-	usage->addCommandLineOption("-recomputeNormal", "Recalculate normals.");
-	usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit, the model is not affected by lighting.");
-	usage->addCommandLineOption("-epsg", "Specify the projection coordinate system, which is mutually exclusive with -lat、-lng、height.");
-	usage->addCommandLineOption("-maxTriangleCount <number>", "Triangle limit per tile, default is 200000; larger values result in larger tiles which may load slower and cause lag; smaller values result in smaller tiles but increase tile requests, which can also cause lag.");
-	usage->addCommandLineOption("-maxDrawcallCommandCount <number>", "Drawcall command limit per tile, default is 20; this limit actually restricts the number of materials and meshes per tile; larger values result in larger tiles which may cause lag; smaller values result in smaller tiles but increase tile requests, which can also cause lag.");
+	usage->setDescription(arguments.getApplicationName() + ", a tool to convert 3D models into 3D Tiles.");
+	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 39.0 -lng 116.0 -h 300.0 -tf ktx2");
 
-	usage->addCommandLineOption("-h or --help", "Display command line parameters.");
+	// =================== General ===================
+	usage->addCommandLineOption("-h/--help", "Display help information.");
+	usage->addCommandLineOption("-i <file>", "Input 3D model file path (must be a file).");
+	usage->addCommandLineOption("-o <folder>", "Output directory for 3D Tiles (must be a directory).");
 
-	// if user request help write it out to cout.
-	if (arguments.read("-h") || arguments.read("--help"))
-	{
+	// =================== Coordinate ===================
+	usage->addCommandLineOption("-lat <number>", "Datum point latitude. Default is 30.0.");
+	usage->addCommandLineOption("-lng <number>", "Datum point longitude. Default is 116.0.");
+	usage->addCommandLineOption("-alt <number>", "Datum point altitude in meters. Default is 300.0.");
+	usage->addCommandLineOption("-epsg <code>", "Projection coordinate system (mutually exclusive with -lat/-lng/-h).");
+
+	// =================== Model transform ===================
+	usage->addCommandLineOption("-tx <number>", "Translation offset on X-axis. Default is 0.");
+	usage->addCommandLineOption("-ty <number>", "Translation offset on Y-axis. Default is 0.");
+	usage->addCommandLineOption("-tz <number>", "Translation offset on Z-axis. Default is 0.");
+	usage->addCommandLineOption("-sx <number>", "Scaling factor along X-axis. Default is 1.0.");
+	usage->addCommandLineOption("-sy <number>", "Scaling factor along Y-axis. Default is 1.0.");
+	usage->addCommandLineOption("-sz <number>", "Scaling factor along Z-axis. Default is 1.0.");
+	usage->addCommandLineOption("-up <X/Y/Z>", "Which axis is upward in the model. Default is Y.");
+
+	// =================== Conversion settings ===================
+	usage->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "Texture format. Default is jpg.");
+	usage->addCommandLineOption("-vf <draco/meshopt/quantize/quantize_meshopt>", "Vertex compression method. Default is none.");
+	usage->addCommandLineOption("-t <quad/oc/kd>", "Tile tree structure. Default is quad.");
+	usage->addCommandLineOption("-sr <number>", "Simplification ratio for intermediate nodes. Default is 0.5.");
+	usage->addCommandLineOption("-nrm", "Recalculate normals. When enabled, -nm controls normal calculation mode: 'v' for vertex normals, 'f' for face normals (default).");
+	usage->addCommandLineOption("-nm <v/f>", "Normal mode used with -nrm: v = vertex normals, f = face normals (default).");
+	usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit (model is not affected by lighting).");
+	usage->addCommandLineOption("-cl <low/medium/high>", "Compression level for draco/quantize. Default is medium.");
+
+	// =================== Texture limits ===================
+	usage->addCommandLineOption("-tw <number>", "Max texture width (power of 2). Default is 256.");
+	usage->addCommandLineOption("-th <number>", "Max texture height (power of 2). Default is 256.");
+	usage->addCommandLineOption("-aw <number>", "Max texture atlas width (power of 2). Default is 2048.");
+	usage->addCommandLineOption("-ah <number>", "Max texture atlas height (power of 2). Default is 2048.");
+
+	// =================== Tile optimization ===================
+	usage->addCommandLineOption("-tri <number>", "Max triangle count per tile. Default is 200000.");
+	usage->addCommandLineOption("-dc <number>", "Max draw call commands per tile. Default is 20.");
+	usage->addCommandLineOption("-nft",
+		"Do NOT apply the transformation matrix to vertices. "
+		"Applying (expanding) the transform matrix improves rendering performance by pre-transforming vertices, "
+		"but may introduce precision loss in vertex positions. "
+		"Default is to apply the transform matrix."
+	);
+
+	// Display help if requested
+	if (arguments.read("-h") || arguments.read("--help")) {
 		usage->write(std::cout);
 		return 100;
 	}
 
+	// Parse arguments
 	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("jpg"));
 	const std::string vertexFormat = parseArgument(arguments, "-vf", std::string("none"));
 	const std::string treeFormat = parseArgument(arguments, "-t", std::string("quad"));
-	const std::string comporessLevel = parseArgument(arguments, "-comporessLevel", std::string("medium"));
+	const std::string compressLevel = parseArgument(arguments, "-cl", std::string("medium"));
 	const std::string epsg = parseArgument(arguments, "-epsg", std::string());
-	const std::string upAxis = parseArgument(arguments, "-upAxis", std::string("Y"));
+	const std::string upAxis = parseArgument(arguments, "-up", std::string("Y"));
 
-	const double translationX = parseArgument(arguments, "-translationX", 0.0);
-	const double translationY = parseArgument(arguments, "-translationY", 0.0);
-	const double translationZ = parseArgument(arguments, "-translationZ", 0.0);
-	const double scaleX = parseArgument(arguments, "-scaleX", 1.0);
-	const double scaleY = parseArgument(arguments, "-scaleY", 1.0);
-	const double scaleZ = parseArgument(arguments, "-scaleZ", 1.0);
-	const double ratio = parseArgument(arguments, "-ratio", 0.5);
+	const double translationX = parseArgument(arguments, "-tx", 0.0);
+	const double translationY = parseArgument(arguments, "-ty", 0.0);
+	const double translationZ = parseArgument(arguments, "-tz", 0.0);
+	const double scaleX = parseArgument(arguments, "-sx", 1.0);
+	const double scaleY = parseArgument(arguments, "-sy", 1.0);
+	const double scaleZ = parseArgument(arguments, "-sz", 1.0);
+	const double ratio = parseArgument(arguments, "-sr", 0.5);
 
 	double latitude = parseArgument(arguments, "-lat", 30.0);
 	double longitude = parseArgument(arguments, "-lng", 116.0);
-	double height = parseArgument(arguments, "-height", 300.0);
+	double altitude = parseArgument(arguments, "-alt", 300.0);
 
-	const int maxTextureHeight = parseArgument(arguments, "-maxTextureHeight", 256);
-	const int maxTextureWidth = parseArgument(arguments, "-maxTextureWidth", 256);
-	const int maxTextureAtlasHeight = parseArgument(arguments, "-maxTextureAtlasHeight", 2048);
-	const int maxTextureAtlasWidth = parseArgument(arguments, "-maxTextureAtlasWidth", 2048);
+	const int maxTextureWidth = parseArgument(arguments, "-tw", 256);
+	const int maxTextureHeight = parseArgument(arguments, "-th", 256);
+	const int maxTextureAtlasWidth = parseArgument(arguments, "-aw", 2048);
+	const int maxTextureAtlasHeight = parseArgument(arguments, "-ah", 2048);
 
-	const unsigned int maxTriangleCount = parseArgument(arguments, "-maxTriangleCount", 2.0e5);
-	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-maxDrawcallCommandCount", 20);
+	const unsigned int maxTriangleCount = parseArgument(arguments, "-tri", 200000);
+	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-dc", 20);
+
 
 	std::string input = parseArgument(arguments, "-i", std::string());
 	std::string output = parseArgument(arguments, "-o", std::string());
@@ -335,25 +359,20 @@ int main(int argc, char** argv)
 	{
 		applyOptimizer(node);
 
-		if (arguments.find("-recomputeNormal") > 0)
-		{
-			recomputeNormals(node);
-		}
-
 		const std::string ext = osgDB::getLowerCaseFileExtension(input);
 		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, scaleX, scaleY, scaleZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
-		applyProjection(tNode, epsg, latitude, longitude, height);
+		applyProjection(tNode, epsg, latitude, longitude, altitude);
 
 		std::string optionsStr = "";
 		if (vertexFormat == "draco")
 		{
 			optionsStr += " ct=draco";
-			if (comporessLevel == "low")
+			if (compressLevel == "low")
 			{
 				optionsStr += " vp=16 vt=14 vc=10 vn=12 vg=18";
 			}
-			else if (comporessLevel == "high")
+			else if (compressLevel == "high")
 			{
 				optionsStr += " vp=12 vt=12 vc=8 vn=8 vg=14";
 			}
@@ -365,11 +384,11 @@ int main(int argc, char** argv)
 		else if (vertexFormat == "quantize")
 		{
 			optionsStr += " quantize";
-			if (comporessLevel == "low")
+			if (compressLevel == "low")
 			{
 				optionsStr += " vp=16 vt=14 vn=12 vc=12 ";
 			}
-			else if (comporessLevel == "high")
+			else if (compressLevel == "high")
 			{
 				optionsStr += " vp=10 vt=8 vn=4 vc=4 ";
 			}
@@ -377,11 +396,11 @@ int main(int argc, char** argv)
 		else if (vertexFormat == "quantize_meshopt")
 		{
 			optionsStr += " ct=meshopt quantize";
-			if (comporessLevel == "low")
+			if (compressLevel == "low")
 			{
 				optionsStr += " quantize vp=16 vt=14 vn=12 vc=12 ";
 			}
-			else if (comporessLevel == "high")
+			else if (compressLevel == "high")
 			{
 				optionsStr += " quantize vp=10 vt=8 vn=4 vc=4 ";
 			}
@@ -391,10 +410,20 @@ int main(int argc, char** argv)
 			optionsStr += " unlit";
 		}
 
+		// 变换完成后再计算法线
+		if (arguments.find("-nrm") > 0)
+		{
+			const std::string normalMode = parseArgument(arguments, "-nm", std::string("f"));
+			if (normalMode == "v")
+				recomputeNormals(node, false);
+			else if (normalMode == "f")
+				recomputeNormals(node, true);
+		}
+
 		Tileset::Config config;
 		config.latitude = latitude;
 		config.longitude = longitude;
-		config.height = height;
+		config.altitude = altitude;
 		config.tileConfig.simplifyRatio = ratio;
 		config.tileConfig.path = output;
 		config.tileConfig.gltfTextureOptions.maxTextureWidth = maxTextureWidth;
@@ -402,6 +431,8 @@ int main(int argc, char** argv)
 		config.tileConfig.gltfTextureOptions.maxTextureAtlasWidth = maxTextureAtlasWidth;
 		config.tileConfig.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
 		config.tileConfig.gltfTextureOptions.ext = "." + textureFormat;
+		if (arguments.find("-nft") > 0)
+			config.tileConfig.noApplyTransformToVertices = true;
 #ifdef _WIN32
 		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "\\textures";
 #else

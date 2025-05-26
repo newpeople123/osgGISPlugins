@@ -51,6 +51,8 @@ namespace osgGISPlugins
 			//b3dm、i3dm瓦片导出设置
 			osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 
+			bool noApplyTransformToVertices = false;
+
 			void validate() {
 				osg::clampTo(this->simplifyRatio, 0.f, 0.9f);
 

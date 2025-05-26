@@ -154,6 +154,11 @@ void Osg2Gltf::apply(osg::Drawable &drawable)
 		osg::ref_ptr<osg::Vec3Array> normals = dynamic_cast<osg::Vec3Array *>(geom->getNormalArray());
 		if (normals.valid())
 		{
+			std::transform(normals->begin(), normals->end(), normals->begin(),
+				[](osg::Vec3& normal) {
+					normal.normalize();
+					return normal;
+				});
 			getOrCreateBufferView(normals, GL_ARRAY_BUFFER_ARB);
 		}
 

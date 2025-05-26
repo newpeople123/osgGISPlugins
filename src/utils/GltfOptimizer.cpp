@@ -339,37 +339,19 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 /** FlattenTransformsVisitor */
 void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 {
-	//if (drawable.getDataVariance() == osg::Object::DataVariance::STATIC)
-	//	return;
-
-	const osg::MatrixList matrixList = drawable.getWorldMatrices();
-	if (matrixList.size() == 0) return;
-	const osg::Matrixd matrix = matrixList[0];
-	if (matrix != osg::Matrixd::identity()) {
-		osg::Geometry* geometry = dynamic_cast<osg::Geometry*>(drawable.asGeometry());
-		if (geometry)
-		{
-			osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
-			if (positions)
-			{
-				std::transform(positions->begin(), positions->end(), positions->begin(),
-					[&matrix](const osg::Vec3& vertex) {
-						return vertex * matrix;
-					});
-				drawable.dirtyBound();
-				drawable.computeBound();
-			}
-		}
-	}
+	osgUtil::TransformAttributeFunctor tf(_currentMatrix);
+	drawable.accept(tf);
+	drawable.dirtyBound();
+	drawable.dirtyGLObjects();
 }
 
 void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Transform& transform)
 {
+	osg::Matrixd previousMatrix = _currentMatrix;
+	osg::Matrixd localMatrix;
+	transform.computeLocalToWorldMatrix(localMatrix, this);
+	_currentMatrix.preMult(localMatrix);
 	traverse(transform);
-
-	if (transform.getDataVariance() == osg::Object::DataVariance::STATIC)
-		return;
-
 	if (osg::MatrixTransform* matrixTransform = transform.asMatrixTransform())
 	{
 		matrixTransform->setMatrix(osg::Matrixd::identity());
@@ -385,13 +367,12 @@ void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Transform& transform)
 		transform.dirtyBound();
 		transform.computeBound();
 	}
+	_currentMatrix = previousMatrix;
 }
 
 /** ReindexMeshVisitor */
 void GltfOptimizer::ReindexMeshVisitor::apply(osg::Geometry& geometry)
 {
-	if (geometry.getDataVariance() == osg::Object::DataVariance::STATIC)
-		return;
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
@@ -413,8 +394,6 @@ void GltfOptimizer::ReindexMeshVisitor::apply(osg::Geometry& geometry)
 /** VertexCacheVisitor */
 void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 {
-	if (geometry.getDataVariance() == osg::Object::DataVariance::STATIC)
-		return;
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
@@ -476,8 +455,6 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 /** OverDrawVisitor */
 void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 {
-	if (geometry.getDataVariance() == osg::Object::DataVariance::STATIC)
-		return;
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
@@ -528,8 +505,6 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 /** VertexFetchVisitor */
 void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 {
-	if (geometry.getDataVariance() == osg::Object::DataVariance::STATIC)
-		return;
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	if (!positions) return;
 	const size_t vertexCount = positions->size();
@@ -596,9 +571,6 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 	osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
 	if (oldStateSet.valid())
 	{
-		const osg::Object::DataVariance dv = oldStateSet->getDataVariance();
-		if (dv == osg::Object::DataVariance::STATIC)
-			return;
 		osg::ref_ptr<osg::StateSet> stateSet = osg::clone(oldStateSet.get(), osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES | osg::CopyOp::DEEP_COPY_TEXTURES);
 		drawable.setStateSet(stateSet);
 		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));

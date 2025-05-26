@@ -30,7 +30,7 @@ namespace osgGISPlugins
 {
 	class Tileset :public osg::Object {
 	private:
-		void computeTransform(const double lng, const double lat, const double height);
+		void computeTransform(const double lng, const double lat, const double altitude);
 
 		void computeGeometricError();
 
@@ -43,7 +43,7 @@ namespace osgGISPlugins
 			//经度，角度制
 			double longitude = 116.0;
 			//高度，单位米
-			double height = 100.0;
+			double altitude = 100.0;
 
 			Tile::Config tileConfig;
 

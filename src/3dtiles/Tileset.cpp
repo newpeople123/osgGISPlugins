@@ -4,11 +4,11 @@
 #include <osgDB/ConvertUTF>
 using namespace osgGISPlugins;
 
-void Tileset::computeTransform(const double lng, const double lat, const double h)
+void Tileset::computeTransform(const double lng, const double lat, const double alt)
 {
 	const osg::EllipsoidModel ellipsoidModel;
 	osg::Matrixd localToWorld;
-	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), h, localToWorld);
+	ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(lat), osg::DegreesToRadians(lng), alt, localToWorld);
 
 	const double* ptr = localToWorld.ptr();
 	for (unsigned i = 0; i < 16; ++i)
@@ -65,7 +65,7 @@ bool Tileset::write() {
 		return false;
 
 	this->root->write();
-	this->computeTransform(config.longitude, config.latitude, config.height);
+	this->computeTransform(config.longitude, config.latitude, config.altitude);
 	const string filePath = config.tileConfig.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
 	std::setlocale(LC_ALL, "zh_CN.UTF-8");
 	ofstream file(filePath);

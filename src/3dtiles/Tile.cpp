@@ -323,10 +323,6 @@ void Tile::buildLOD()
 		tileLOD2->children.push_back(tileLOD1);
 		tileLOD1->children.push_back(tileLOD0);
 
-		GltfOptimizer optimizer;
-		optimizer.optimize(tileLOD0->node.get(), GltfOptimizer::INDEX_MESH_BY_MESHOPTIMIZER);
-		optimizer.optimize(tileLOD1->node.get(), GltfOptimizer::INDEX_MESH_BY_MESHOPTIMIZER);
-		optimizer.optimize(tileLOD2->node.get(), GltfOptimizer::INDEX_MESH_BY_MESHOPTIMIZER);
 		tileLOD0->applyLODStrategy();
 		tileLOD1->applyLODStrategy();
 		tileLOD2->applyLODStrategy();

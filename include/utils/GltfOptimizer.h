@@ -140,6 +140,8 @@ namespace osgGISPlugins
             void apply(osg::Drawable& drawable) override;
 
             void apply(osg::Transform& transform) override;
+        private:
+            osg::Matrixd _currentMatrix;
         };
 
 
