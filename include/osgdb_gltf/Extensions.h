@@ -10,7 +10,13 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tinygltf/tiny_gltf.h>
 #include <type_traits>
-#define BASECOLOR_TEXTURE_FILENAME "osgGisPlugins-filename"
+#define BASECOLOR_TEXTURE_FILENAME "osgGisPlugins-basecolor-filename"
+#define NORMAL_TEXTURE_FILENAME "osgGisPlugins-normal-filename"
+#define OCCLUSION_TEXTURE_FILENAME "osgGisPlugins-occlusion-filename"
+#define EMISSIVE_TEXTURE_FILENAME "osgGisPlugins-emissive-filename"
+#define MR_TEXTURE_FILENAME "osgGisPlugins-MR-filename"
+#define DIFFUSE_TEXTURE_FILENAME "osgGisPlugins-diffuse-filename"
+#define SG_TEXTURE_FILENAME "osgGisPlugins-SG-filename"
 
 #define ORIGIN_WIDTH "origin-width"
 #define ORIGIN_HEIGHT "origin-height"

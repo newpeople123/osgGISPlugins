@@ -80,6 +80,7 @@ namespace osgGISPlugins
             TEXTURE_ATLAS_BUILDER_BY_STB = (1 << 26),
             FLATTEN_TRANSFORMS = (1 << 27),
             MERGE_TRANSFORMS = (1 << 28),
+            GENERATE_NORMAL_TEXTURE = (1 << 29),
 
 
             REDUCE_DRAWCALL_OPTIMIZATIONS = 
@@ -212,7 +213,7 @@ namespace osgGISPlugins
 
             void optimizeOsgTextureSize(osg::ref_ptr<osg::Texture2D> texture);
 
-            void exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture);
+            void exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture, const std::string fileFieldName = BASECOLOR_TEXTURE_FILENAME);
 
             void optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>& gltfMaterial, const osg::ref_ptr<osg::Geometry>& geom);
 
@@ -253,6 +254,7 @@ namespace osgGISPlugins
 
             void processTextureImages(
                 std::vector<osg::ref_ptr<osg::Image>>& images,
+                std::unordered_map<osg::Geometry*, osg::ref_ptr<GltfMaterial>> geometryGltfMaterialMap,
                 const GltfTextureType type,
                 const std::function<osg::ref_ptr<osg::Texture2D>(GltfMaterial*)>& getTextureFunc);
 
@@ -302,6 +304,25 @@ namespace osgGISPlugins
             void apply(osg::Geode& geode) override;
 
             osg::Node* getNode();
+        };
+
+        class GenerateNormalTextureVisitor :public osgUtil::BaseOptimizerVisitor
+        {
+        private:
+            std::map<std::string, osg::ref_ptr<osg::Image>> _nameImgaes;
+
+            void generateTangent(osg::Geometry& geometry);
+
+            osg::ref_ptr<osg::Image> convertToGrayscale(osg::Image* input);
+
+            osg::ref_ptr<osg::Image> generateNormalMapFromHeightMap(osg::Image* heightMap);
+        public:
+            GenerateNormalTextureVisitor(osgUtil::Optimizer* optimizer = 0) :
+                BaseOptimizerVisitor(optimizer, GENERATE_NORMAL_TEXTURE)
+            {
+            }
+
+            void apply(osg::Geometry& geometry) override;
         };
 
     private:

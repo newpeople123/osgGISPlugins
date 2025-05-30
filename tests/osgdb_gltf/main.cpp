@@ -117,7 +117,7 @@ void testGltfOptimizer(const std::string& filename)
 	osgDB::writeNodeFile(*node.get(), OUTPUT_BASE_PATH + filename + R"(.gltf)", options2.get());
 }
 
-int main() {
+int main1() {
 	osgDB::Registry* instance = osgDB::Registry::instance();
 	instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
 	instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
@@ -163,4 +163,45 @@ int main() {
 	//_CrtSetBreakAlloc(1172754);
 	//_CrtDumpMemoryLeaks();
 	return 1;
+}
+
+osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
+	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
+#ifndef NDEBUG
+	readOptions->setOptionString("ShowProgress");
+#else
+	readOptions->setOptionString("TessellatePolygons");
+#endif // !NDEBUG
+
+	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
+
+	if (!node) {
+		OSG_NOTICE << "Error: Cannot read 3D model file!" << '\n';
+	}
+
+	return node;
+}
+
+int main() {
+	osgDB::Registry* instance = osgDB::Registry::instance();
+	instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
+	instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
+	instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
+
+	osg::ref_ptr<osg::Node> node = readModelFile(R"(E:\Code\2023\Other\data\芜湖水厂总装.fbx)");
+	osgUtil::Optimizer optimizer;
+	optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
+	GltfOptimizer gltfOptimzier;
+	GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
+	gltfTextureOptions.cachePath = R"(D:\nginx-1.22.1\html\3dtiles\textures)";
+	gltfTextureOptions.maxTextureWidth = 4096;
+	gltfTextureOptions.maxTextureHeight = 4096;
+	gltfTextureOptions.ext = ".jpg";
+	gltfOptimzier.setGltfTextureOptimizationOptions(gltfTextureOptions);
+	osgDB::makeDirectory(gltfTextureOptions.cachePath);
+	//osg::setNotifyLevel(osg::INFO);
+	//GltfOptimizer::GENERATE_NORMAL_TEXTURE | 
+	gltfOptimzier.optimize(node.get(), GltfOptimizer::GENERATE_NORMAL_TEXTURE | GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS);
+	osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\test1.gltf)");
+	return 0;
 }

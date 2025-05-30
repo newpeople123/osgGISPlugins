@@ -565,10 +565,16 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				double shininess = shininessProperty.Get<FbxDouble>();
 				shininess = (64.0 * log(shininess)) / (5.0 * log(2.0));
 				pOsgMat->setShininess(osg::Material::FRONT_AND_BACK, shininess);
-				pbrSpecularGlossiness_extension->setGlossinessFactor(shininess);
+				pbrSpecularGlossiness_extension->setGlossinessFactor(osg::clampBetween(shininess / 128.0, 0.0, 1.0));
 			}
 			FbxProperty diffuseProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse);
 			if (diffuseProperty.IsValid()) {
+				FbxFileTexture* diffuseTexture = selectFbxFileTexture(diffuseProperty);
+				if (diffuseTexture)
+				{
+					pbrSpecularGlossiness_extension->osgDiffuseTexture = fbxTextureToOsgTexture(diffuseTexture);
+				}
+
 				FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
 				FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
 				FbxDouble diffuseFactor = 1.0;

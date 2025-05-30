@@ -5,7 +5,7 @@ using namespace osgGISPlugins;
 void B3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
 	if(!this->config.noApplyTransformToVertices)
-		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS);
+		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::GENERATE_NORMAL_TEXTURE | GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS);
 	else
 		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 }

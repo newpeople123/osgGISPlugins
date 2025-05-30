@@ -4,7 +4,7 @@ using namespace osgGISPlugins;
 
 void I3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
 {
-	Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
+	Tile::optimizeNode(nodeCopy, options, GltfOptimizer::GENERATE_NORMAL_TEXTURE | GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
 }
 
 string I3DMTile::getOutputPath() const

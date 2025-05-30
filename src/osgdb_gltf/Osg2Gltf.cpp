@@ -307,6 +307,13 @@ void Osg2Gltf::apply(osg::Drawable &drawable)
 						getOrCreateAccessor(batchIds, pset, primitive, "_BATCHID");
 					}
 				}
+
+				const osg::ref_ptr<osg::Vec4Array> tangents = dynamic_cast<osg::Vec4Array*>(geom->getVertexAttribArray(1));
+				if (tangents.valid())
+				{
+					getOrCreateBufferView(tangents, GL_ARRAY_BUFFER_ARB);
+					getOrCreateAccessor(tangents, pset, primitive, "TANGENT");
+				}
 			}
 		}
 
@@ -610,7 +617,31 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture> &osgTexture)
 	osgTexture->getUserValue(BASECOLOR_TEXTURE_FILENAME, filename);
 	if (filename.empty())
 	{
-		filename = osgImage->getFileName();
+		osgTexture->getUserValue(DIFFUSE_TEXTURE_FILENAME, filename);
+		if (filename.empty())
+		{
+			osgTexture->getUserValue(NORMAL_TEXTURE_FILENAME, filename);
+			if (filename.empty())
+			{
+				osgTexture->getUserValue(OCCLUSION_TEXTURE_FILENAME, filename);
+				if (filename.empty())
+				{
+					osgTexture->getUserValue(EMISSIVE_TEXTURE_FILENAME, filename);
+					if (filename.empty())
+					{
+						osgTexture->getUserValue(MR_TEXTURE_FILENAME, filename);
+						if (filename.empty())
+						{
+							osgTexture->getUserValue(SG_TEXTURE_FILENAME, filename);
+							if (filename.empty())
+							{
+								filename = osgImage->getFileName();
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if (!osgDB::fileExists(filename))

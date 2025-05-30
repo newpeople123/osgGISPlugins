@@ -332,8 +332,8 @@ int main(int argc, char** argv)
 	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-dc", 20);
 
 
-	std::string input = parseArgument(arguments, "-i", std::string());
-	std::string output = parseArgument(arguments, "-o", std::string());
+	std::string input = parseArgument(arguments, "-i", std::string(R"(E:\Code\2023\Other\data\龙翔桥站.fbx)"));
+	std::string output = parseArgument(arguments, "-o", std::string(R"(D:\nginx-1.22.1\html\3dtiles\龙翔桥站2)"));
 #ifndef NDEBUG
 #else
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());

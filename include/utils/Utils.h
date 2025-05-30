@@ -191,15 +191,15 @@ namespace osgGISPlugins
 		public:
 			CRenderingThread* crt;
 			typedef osgDB::ReaderWriter::ReadResult ReadResult;
-			ProgressReportingFileReadCallback() {}
+			ProgressReportingFileReadCallback() : crt(nullptr) {}
 			~ProgressReportingFileReadCallback()
 			{
-				if (crt)
-				{
-					crt->join();
-					delete crt;
-					crt = nullptr;
-				}
+				//if (crt != nullptr)
+				//{
+				//	crt->join();
+				//	delete crt;
+				//	crt = nullptr;
+				//}
 			}
 			virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option);
 		};
