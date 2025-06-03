@@ -213,7 +213,7 @@ namespace osgGISPlugins
 
             void optimizeOsgTextureSize(osg::ref_ptr<osg::Texture2D> texture);
 
-            void exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture, const std::string fileFieldName = BASECOLOR_TEXTURE_FILENAME);
+            void exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture, const GltfTextureType type = GltfTextureType::BASECOLOR);
 
             void optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>& gltfMaterial, const osg::ref_ptr<osg::Geometry>& geom);
 
@@ -223,7 +223,7 @@ namespace osgGISPlugins
 
             void packOsgMaterials();
 
-            std::string exportImage(const osg::ref_ptr<osg::Image>& img);
+            std::string exportImage(const osg::ref_ptr<osg::Image>& img, const GltfTextureType type);
 
             static void packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer);
 
@@ -273,9 +273,7 @@ namespace osgGISPlugins
             TextureAtlasBuilderVisitor(const GltfTextureOptimizationOptions options, osgUtil::Optimizer* optimizer = 0) :BaseOptimizerVisitor(optimizer, VERTEX_FETCH_BY_MESHOPTIMIZER), _options(options)
             {
             }
-            
-            static std::string computeImageHash(const osg::ref_ptr<osg::Image>& img);
-
+           
             void apply(osg::Drawable& drawable) override;
 
             void packTextures();
@@ -311,13 +309,25 @@ namespace osgGISPlugins
         private:
             std::map<std::string, osg::ref_ptr<osg::Image>> _nameImgaes;
 
-            void generateTangent(osg::Geometry& geometry);
-
             osg::ref_ptr<osg::Image> convertToGrayscale(osg::Image* input);
 
             osg::ref_ptr<osg::Image> generateNormalMapFromHeightMap(osg::Image* heightMap);
         public:
             GenerateNormalTextureVisitor(osgUtil::Optimizer* optimizer = 0) :
+                BaseOptimizerVisitor(optimizer, GENERATE_NORMAL_TEXTURE)
+            {
+            }
+
+            void apply(osg::Geometry& geometry) override;
+        };
+
+
+        class GenerateTangentVisitor :public osgUtil::BaseOptimizerVisitor
+        {
+        private:
+            void generateTangent(osg::Geometry& geometry);
+        public:
+            GenerateTangentVisitor(osgUtil::Optimizer* optimizer = 0) :
                 BaseOptimizerVisitor(optimizer, GENERATE_NORMAL_TEXTURE)
             {
             }

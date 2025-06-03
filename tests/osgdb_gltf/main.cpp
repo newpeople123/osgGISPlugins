@@ -188,12 +188,12 @@ int main() {
 	instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
 	instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
 
-	osg::ref_ptr<osg::Node> node = readModelFile(R"(E:\Code\2023\Other\data\芜湖水厂总装.fbx)");
+	osg::ref_ptr<osg::Node> node = readModelFile(R"(C:\baidunetdiskdownload\芜湖水厂总装.fbx)");
 	osgUtil::Optimizer optimizer;
 	optimizer.optimize(node.get(), osgUtil::Optimizer::INDEX_MESH);
 	GltfOptimizer gltfOptimzier;
 	GltfOptimizer::GltfTextureOptimizationOptions gltfTextureOptions;
-	gltfTextureOptions.cachePath = R"(D:\nginx-1.22.1\html\3dtiles\textures)";
+	gltfTextureOptions.cachePath = R"(C:\Users\Administrator\Desktop\nginx-1.26.3\html\3dtiles\textures)";
 	gltfTextureOptions.maxTextureWidth = 4096;
 	gltfTextureOptions.maxTextureHeight = 4096;
 	gltfTextureOptions.ext = ".jpg";
@@ -202,6 +202,6 @@ int main() {
 	//osg::setNotifyLevel(osg::INFO);
 	//GltfOptimizer::GENERATE_NORMAL_TEXTURE | 
 	gltfOptimzier.optimize(node.get(), GltfOptimizer::GENERATE_NORMAL_TEXTURE | GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS);
-	osgDB::writeNodeFile(*node.get(), R"(D:\nginx-1.22.1\html\3dtiles\test1.gltf)");
+	osgDB::writeNodeFile(*node.get(), R"(C:\Users\Administrator\Desktop\nginx-1.26.3\html\3dtiles\test1.gltf)");
 	return 0;
 }

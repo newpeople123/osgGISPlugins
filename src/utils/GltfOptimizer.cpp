@@ -12,7 +12,6 @@
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <numeric>
-#include <unordered_set>
 
 using namespace osgGISPlugins;
 
@@ -59,11 +58,6 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 
 	if ((options & GENERATE_NORMAL_TEXTURE)) {
 		OSG_INFO << "Optimizer::optimize() doing GENERATE_NORMAL_TEXTURE" << std::endl;
-
-		bool combineDynamicState = false;
-		bool combineStaticState = true;
-		bool combineUnspecifiedState = true;
-
 		GenerateNormalTextureVisitor gntv(this);
 		node->accept(gntv);
 	}
@@ -339,6 +333,12 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 		node->accept(vfv);
 	}
 
+	if ((options & GENERATE_NORMAL_TEXTURE)) {
+		OSG_INFO << "Optimizer::optimize() doing GENERATE_NORMAL_TEXTURE" << std::endl;
+		GenerateTangentVisitor gtv(this);
+		node->accept(gtv);
+	}
+
 	if (osg::getNotifyLevel() >= osg::INFO)
 	{
 		stats.reset();
@@ -349,80 +349,6 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 	}
 }
 /** GenerateNormalTextureVisitor */
-void GltfOptimizer::GenerateNormalTextureVisitor::generateTangent(osg::Geometry& geometry)
-{
-	auto* vertices = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
-	auto* texcoords = dynamic_cast<osg::Vec2Array*>(geometry.getTexCoordArray(0));
-
-	if (!vertices || !texcoords || texcoords->size() != vertices->size()) return;
-	if (geometry.getNumPrimitiveSets() == 0) return;
-
-	osg::DrawElements* indices = nullptr;
-	for (unsigned int i = 0; i < geometry.getNumPrimitiveSets(); ++i) {
-		indices = dynamic_cast<osg::DrawElements*>(geometry.getPrimitiveSet(i));
-		if (indices) break;
-	}
-	if (!indices) return;
-
-	osg::ref_ptr<osg::Vec4Array> tangents = new osg::Vec4Array(vertices->size());
-	std::vector<osg::Vec3> tan1(vertices->size(), osg::Vec3(0.0f, 0.0f, 0.0f));
-	std::vector<osg::Vec3> tan2(vertices->size(), osg::Vec3(0.0f, 0.0f, 0.0f));
-
-	for (unsigned int i = 0; i < indices->getNumIndices(); i += 3) {
-		unsigned int i1 = indices->getElement(i);
-		unsigned int i2 = indices->getElement(i + 1);
-		unsigned int i3 = indices->getElement(i + 2);
-
-		const osg::Vec3& v1 = (*vertices)[i1];
-		const osg::Vec3& v2 = (*vertices)[i2];
-		const osg::Vec3& v3 = (*vertices)[i3];
-
-		const osg::Vec2& w1 = (*texcoords)[i1];
-		const osg::Vec2& w2 = (*texcoords)[i2];
-		const osg::Vec2& w3 = (*texcoords)[i3];
-
-		osg::Vec3 edge1 = v2 - v1;
-		osg::Vec3 edge2 = v3 - v1;
-
-		float x1 = w2.x() - w1.x();
-		float x2 = w3.x() - w1.x();
-		float y1 = w2.y() - w1.y();
-		float y2 = w3.y() - w1.y();
-
-		float denom = x1 * y2 - x2 * y1;
-		if (osg::absolute(denom) < 1e-6f) { // 阈值避免浮点误差
-			continue; // 跳过退化三角形
-		}
-
-		float r = 1.0f / denom;
-		osg::Vec3 sdir((y2 * edge1.x() - y1 * edge2.x()) * r,
-			(y2 * edge1.y() - y1 * edge2.y()) * r,
-			(y2 * edge1.z() - y1 * edge2.z()) * r);
-		osg::Vec3 tdir((x1 * edge2.x() - x2 * edge1.x()) * r,
-			(x1 * edge2.y() - x2 * edge1.y()) * r,
-			(x1 * edge2.z() - x2 * edge1.z()) * r);
-
-		tan1[i1] += sdir; tan1[i2] += sdir; tan1[i3] += sdir;
-		tan2[i1] += tdir; tan2[i2] += tdir; tan2[i3] += tdir;
-	}
-
-	osg::Vec3Array* normals = dynamic_cast<osg::Vec3Array*>(geometry.getNormalArray());
-
-	for (unsigned int i = 0; i < vertices->size(); ++i) {
-		const osg::Vec3& n = normals ? (*normals)[i] : osg::Vec3(0, 0, 1);
-		const osg::Vec3& t = tan1[i];
-
-		osg::Vec3 tangent = (t - n * (n * t));
-		tangent.normalize();
-
-		float handedness = ((n ^ t) * tan2[i]) < 0.0f ? -1.0f : 1.0f;
-		(*tangents)[i] = osg::Vec4(tangent, handedness);
-	}
-
-	tangents->setName("TANGENT");
-	geometry.setVertexAttribArray(1, tangents, osg::Array::BIND_PER_VERTEX);
-}
-
 osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::convertToGrayscale(osg::Image* input) {
 	if (!input) return nullptr;
 
@@ -511,7 +437,6 @@ void GltfOptimizer::GenerateNormalTextureVisitor::apply(osg::Geometry& geometry)
 							normalMap = item->second;
 						}
 						if (normalMap.valid()) {
-							generateTangent(geometry);
 							gltfMRMaterial->normalTexture = new osg::Texture2D;
 							gltfMRMaterial->normalTexture->setImage(normalMap);
 							gltfMRMaterial->normalTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
@@ -544,18 +469,13 @@ void GltfOptimizer::GenerateNormalTextureVisitor::apply(osg::Geometry& geometry)
 									normalMap = item->second;
 								}
 								if (normalMap.valid()) {
-									generateTangent(geometry);
 									gltfSGMaterial->normalTexture = new osg::Texture2D;
 									gltfSGMaterial->normalTexture->setImage(normalMap);
 									gltfSGMaterial->normalTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
 									gltfSGMaterial->normalTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
 									gltfSGMaterial->normalTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
 									gltfSGMaterial->normalTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
-									OSG_NOTICE << "ok\n";
 
-								}
-								else {
-									OSG_NOTICE << "error\n";
 								}
 							}
 						}
@@ -573,7 +493,107 @@ void GltfOptimizer::GenerateNormalTextureVisitor::apply(osg::Geometry& geometry)
 		}
 	}
 }
+/** GenerateTangentVisitor */
+void GltfOptimizer::GenerateTangentVisitor::generateTangent(osg::Geometry& geometry)
+{
+	auto* vertices = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
+	auto* texcoords = dynamic_cast<osg::Vec2Array*>(geometry.getTexCoordArray(0));
 
+	if (!vertices || !texcoords || texcoords->size() != vertices->size()) return;
+	if (geometry.getNumPrimitiveSets() == 0) return;
+
+	osg::DrawElements* indices = nullptr;
+	for (unsigned int i = 0; i < geometry.getNumPrimitiveSets(); ++i) {
+		indices = dynamic_cast<osg::DrawElements*>(geometry.getPrimitiveSet(i));
+		if (indices) break;
+	}
+	if (!indices) return;
+
+	osg::ref_ptr<osg::Vec4Array> tangents = new osg::Vec4Array(vertices->size());
+	std::vector<osg::Vec3> tan1(vertices->size(), osg::Vec3(0.0f, 0.0f, 0.0f));
+	std::vector<osg::Vec3> tan2(vertices->size(), osg::Vec3(0.0f, 0.0f, 0.0f));
+
+	for (unsigned int i = 0; i < indices->getNumIndices(); i += 3) {
+		unsigned int i1 = indices->getElement(i);
+		unsigned int i2 = indices->getElement(i + 1);
+		unsigned int i3 = indices->getElement(i + 2);
+
+		const osg::Vec3& v1 = (*vertices)[i1];
+		const osg::Vec3& v2 = (*vertices)[i2];
+		const osg::Vec3& v3 = (*vertices)[i3];
+
+		const osg::Vec2& w1 = (*texcoords)[i1];
+		const osg::Vec2& w2 = (*texcoords)[i2];
+		const osg::Vec2& w3 = (*texcoords)[i3];
+
+		osg::Vec3 edge1 = v2 - v1;
+		osg::Vec3 edge2 = v3 - v1;
+
+		float x1 = w2.x() - w1.x();
+		float x2 = w3.x() - w1.x();
+		float y1 = w2.y() - w1.y();
+		float y2 = w3.y() - w1.y();
+
+		float denom = x1 * y2 - x2 * y1;
+		if (osg::absolute(denom) < 1e-6f) { // 阈值避免浮点误差
+			continue; // 跳过退化三角形
+		}
+
+		float r = 1.0f / denom;
+		osg::Vec3 sdir((y2 * edge1.x() - y1 * edge2.x()) * r,
+			(y2 * edge1.y() - y1 * edge2.y()) * r,
+			(y2 * edge1.z() - y1 * edge2.z()) * r);
+		osg::Vec3 tdir((x1 * edge2.x() - x2 * edge1.x()) * r,
+			(x1 * edge2.y() - x2 * edge1.y()) * r,
+			(x1 * edge2.z() - x2 * edge1.z()) * r);
+
+		tan1[i1] += sdir; tan1[i2] += sdir; tan1[i3] += sdir;
+		tan2[i1] += tdir; tan2[i2] += tdir; tan2[i3] += tdir;
+	}
+
+	osg::Vec3Array* normals = dynamic_cast<osg::Vec3Array*>(geometry.getNormalArray());
+
+	for (unsigned int i = 0; i < vertices->size(); ++i) {
+		const osg::Vec3& n = normals ? (*normals)[i] : osg::Vec3(0, 0, 1);
+		const osg::Vec3& t = tan1[i];
+
+		osg::Vec3 tangent = (t - n * (n * t));
+		tangent.normalize();
+
+		float handedness = ((n ^ t) * tan2[i]) < 0.0f ? -1.0f : 1.0f;
+		(*tangents)[i] = osg::Vec4(tangent, handedness);
+	}
+
+	tangents->setName("TANGENT");
+	geometry.setVertexAttribArray(1, tangents, osg::Array::BIND_PER_VERTEX);
+}
+
+void GltfOptimizer::GenerateTangentVisitor::apply(osg::Geometry& geometry) {
+
+	osg::ref_ptr<osg::StateSet> stateSet = geometry.getStateSet();
+	if (stateSet.valid())
+	{
+		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+		if (osgMaterial.valid())
+		{
+			osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
+			if (gltfMaterial.valid())
+			{
+				if (gltfMaterial->normalTexture.valid()) {
+					generateTangent(geometry);
+				}
+			}
+			else
+			{
+				//optimizeOsgTexture(stateSet, geom);
+			}
+		}
+		else
+		{
+			//optimizeOsgTexture(stateSet, geom);
+		}
+	}
+}
 /** FlattenTransformsVisitor */
 void GltfOptimizer::FlattenTransformsVisitor::apply(osg::Drawable& drawable)
 {
@@ -908,7 +928,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture, const std::string fileFieldName)
+void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture, const GltfTextureType type)
 {
 	if (texture.valid())
 	{
@@ -917,11 +937,40 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(osg::re
 			osg::ref_ptr<osg::Image> image = texture->getImage();
 			if (image.valid())
 			{
+				std::string fileFieldName;
+				switch (type)
+				{
+				case GltfTextureType::NORMAL:
+					fileFieldName = NORMAL_TEXTURE_FILENAME;
+					break;
+				case GltfTextureType::OCCLUSION:
+					fileFieldName = OCCLUSION_TEXTURE_FILENAME;
+					break;
+				case GltfTextureType::EMISSIVE:
+					fileFieldName = EMISSIVE_TEXTURE_FILENAME;
+					break;
+				case GltfTextureType::METALLICROUGHNESS:
+					fileFieldName = MR_TEXTURE_FILENAME;
+					break;
+				case GltfTextureType::BASECOLOR:
+					fileFieldName = BASECOLOR_TEXTURE_FILENAME;
+					break;
+				case GltfTextureType::DIFFUSE:
+					fileFieldName = DIFFUSE_TEXTURE_FILENAME;
+					break;
+				case GltfTextureType::SPECULARGLOSSINESS:
+					fileFieldName = SG_TEXTURE_FILENAME;
+					break;
+				default:
+					break;
+				}
+
+
 				std::string name;
 				texture->getUserValue(fileFieldName, name);
 				if (name.empty())
 				{
-					const std::string fullPath = exportImage(image);
+					const std::string fullPath = exportImage(image, type);
 					texture->setUserValue(fileFieldName, fullPath);
 				}
 			}
@@ -1016,13 +1065,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 				}
 				else
 				{
-					exportOsgTextureIfNeeded(gltfMaterial->normalTexture, NORMAL_TEXTURE_FILENAME);
-					exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture, OCCLUSION_TEXTURE_FILENAME);
-					exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture, EMISSIVE_TEXTURE_FILENAME);
+					exportOsgTextureIfNeeded(gltfMaterial->normalTexture, GltfTextureType::NORMAL);
+					exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture, GltfTextureType::OCCLUSION);
+					exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture, GltfTextureType::EMISSIVE);
 					osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 					if (localGltfMRMaterial.valid())
 					{
-						exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture, MR_TEXTURE_FILENAME);
+						exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture, GltfTextureType::METALLICROUGHNESS);
 						exportOsgTextureIfNeeded(localGltfMRMaterial->baseColorTexture);
 					}
 					for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
@@ -1031,21 +1080,21 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 						if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 						{
 							KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, DIFFUSE_TEXTURE_FILENAME);
-							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, SG_TEXTURE_FILENAME);
+							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, GltfTextureType::DIFFUSE);
+							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, GltfTextureType::SPECULARGLOSSINESS);
 						}
 					}
 				}
 			}
 			else
 			{
-				exportOsgTextureIfNeeded(gltfMaterial->normalTexture, NORMAL_TEXTURE_FILENAME);
-				exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture, OCCLUSION_TEXTURE_FILENAME);
-				exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture, EMISSIVE_TEXTURE_FILENAME);
+				exportOsgTextureIfNeeded(gltfMaterial->normalTexture, GltfTextureType::NORMAL);
+				exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture, GltfTextureType::OCCLUSION);
+				exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture, GltfTextureType::EMISSIVE);
 				osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 				if (localGltfMRMaterial.valid())
 				{
-					exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture, MR_TEXTURE_FILENAME);
+					exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture, GltfTextureType::METALLICROUGHNESS);
 					exportOsgTextureIfNeeded(localGltfMRMaterial->baseColorTexture);
 				}
 				for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
@@ -1054,8 +1103,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 					if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 					{
 						KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, DIFFUSE_TEXTURE_FILENAME);
-						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, SG_TEXTURE_FILENAME);
+						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, GltfTextureType::DIFFUSE);
+						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, GltfTextureType::SPECULARGLOSSINESS);
 					}
 				}
 			}
@@ -1079,7 +1128,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 			const int width = packedImage->s(), height = packedImage->t();
 			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 			packer.setScales(scaleWidth, sclaeHeight);
-			const std::string fullPath = exportImage(packedImage);
+			const std::string fullPath = exportImage(packedImage, GltfTextureType::BASECOLOR);
 			for (auto& entry : _geometryImgMap)
 			{
 				osg::Geometry* geometry = entry.first;
@@ -1266,7 +1315,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<o
 
 	for (const auto& img : filenameEmptyImgs)
 	{
-		std::string hash = computeImageHash(img);
+		std::string hash = TexturePacker::computeImageHash(img);
 		if (hashSet.find(hash) == hashSet.end()) // 如果哈希值不重复
 		{
 			hashSet.insert(hash);
@@ -1337,7 +1386,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processTextureImages(std::vector
 			const double scaleWidth = width / oldWidth;
 			const double scaleHeight = height / oldHeight;
 			packer.setScales(scaleWidth, scaleHeight);
-			const std::string fullPath = exportImage(packedImage);
+			const std::string fullPath = exportImage(packedImage, type);
+
 
 			for (auto it = geometryGltfMaterialMap.begin(); it != geometryGltfMaterialMap.end();) {
 				osg::Geometry* geometry = it->first;
@@ -1494,10 +1544,37 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Ima
 	}
 }
 
-std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<osg::Image>& img)
+std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<osg::Image>& img, const GltfTextureType type)
 {
 	std::string ext = _options.ext;
-	std::string filename = computeImageHash(img);
+	std::string filename = TexturePacker::computeImageHash(img);
+	switch (type)
+	{
+	case GltfTextureType::NORMAL:
+		filename += "-normal";
+		break;
+	case GltfTextureType::OCCLUSION:
+		filename += "-occlusion";
+		break;
+	case GltfTextureType::EMISSIVE:
+		filename += "-emissive";
+		break;
+	case GltfTextureType::METALLICROUGHNESS:
+		filename += "-metallicroughness";
+		break;
+	case GltfTextureType::BASECOLOR:
+		filename += "-basecolor";
+		break;
+	case GltfTextureType::DIFFUSE:
+		filename += "-diffuse";
+		break;
+	case GltfTextureType::SPECULARGLOSSINESS:
+		filename += "-specularglossiness";
+		break;
+	default:
+		break;
+	}
+
 	const GLenum pixelFormat = img->getPixelFormat();
 	if (_options.ext == ".jpg" && pixelFormat != GL_ALPHA && pixelFormat != GL_RGB)
 	{
@@ -1536,6 +1613,8 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::re
 		if (fileExistedJpg.good())
 			fileExistedJpg.close();
 	}
+	if (img->getFileName().empty())
+		img->setFileName(fullPath);
 	return fullPath;
 }
 
@@ -1561,33 +1640,6 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 	{
 		img->scaleImage(newWidth, newHeight, img->r());
 	}
-}
-
-std::string GltfOptimizer::TextureAtlasBuilderVisitor::computeImageHash(const osg::ref_ptr<osg::Image>& image)
-{
-	size_t hash = 0;
-	auto hash_combine = [&hash](size_t value)
-		{
-			hash ^= value + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		};
-
-	hash_combine(std::hash<int>()(image->s()));
-	hash_combine(std::hash<int>()(image->t()));
-	hash_combine(std::hash<int>()(image->r()));
-	hash_combine(std::hash<int>()(image->getPixelFormat()));
-	hash_combine(std::hash<int>()(image->getDataType()));
-
-	const unsigned char* data = image->data();
-	size_t dataSize = image->getImageSizeInBytes();
-
-	for (size_t i = 0; i < dataSize; ++i)
-	{
-		hash_combine(std::hash<unsigned char>()(data[i]));
-	}
-	std::ostringstream oss;
-	oss << std::hex << std::setw(16) << std::setfill('0') << hash;
-	oss.clear();
-	return oss.str();
 }
 
 bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2)

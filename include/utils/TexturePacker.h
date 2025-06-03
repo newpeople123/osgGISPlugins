@@ -43,6 +43,8 @@ namespace osgGISPlugins {
             _scaleWidth = scaleWidth;
             _scaleHeight = scaleHeight;
         }
+
+        static std::string computeImageHash(const osg::ref_ptr<osg::Image>& img);
     protected:
         typedef std::pair<osg::observer_ptr<osg::Image>, osg::Vec4> InputPair;
         std::map<size_t, InputPair> _input, _result;
