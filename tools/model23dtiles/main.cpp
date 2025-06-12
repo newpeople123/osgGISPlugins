@@ -239,6 +239,80 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 	}
 }
 
+void printUsage()
+{
+	// =================== Input / Output ===================
+	osg::notify(osg::NOTICE) << "input / output:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -i <file>           - Input file" << std::endl;
+	osg::notify(osg::NOTICE) << "    -o <folder>         - Output folder" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Coordinate Parameters ===================
+	osg::notify(osg::NOTICE) << "coordinate parameters:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -lat <number>       - Latitude. Default is 30.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -lng <number>       - Longitude. Default is 116.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -alt <number>       - Altitude in meters. Default is 300" << std::endl;
+	osg::notify(osg::NOTICE) << "    -epsg <code>        - Use EPSG code when model is in projected coordinate system" << std::endl;
+	osg::notify(osg::NOTICE) << "                          Mutually exclusive with -lat/-lng/-alt, but can be used with -tx/-ty/-tz" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Transform Parameters ===================
+	osg::notify(osg::NOTICE) << "transform parameters:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -tx <number>        - X offset of model origin. Default is 0.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -ty <number>        - Y offset of model origin. Default is 0.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -tz <number>        - Z offset of model origin. Default is 0.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -sx <number>        - Scale on X axis. Default is 1.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -sy <number>        - Scale on Y axis. Default is 1.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -sz <number>        - Scale on Z axis. Default is 1.0" << std::endl;
+	osg::notify(osg::NOTICE) << "    -up <X/Y/Z>         - Model up direction. Options: X, Y, Z. Default is Y" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Tile Structure ===================
+	osg::notify(osg::NOTICE) << "tile structure:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -t <quad/oc/kd>     - Tile structure type. Default is quad" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Compression & Simplification ===================
+	osg::notify(osg::NOTICE) << "compression & simplification:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -r <number>                                   - Simplification ratio for intermediate nodes. Default is 0.5" << std::endl;
+	osg::notify(osg::NOTICE) << "    -tf <png/jpg/webp/ktx2>                       - Texture format. Default is ktx2" << std::endl;
+	osg::notify(osg::NOTICE) << "    -vf <draco/meshopt/quantize/quantize_meshopt> - Vertex compression format. No default" << std::endl;
+	osg::notify(osg::NOTICE) << "    -cl <low/medium/high>                         - Compression level. Default is medium" << std::endl;
+	osg::notify(osg::NOTICE) << "                                                  Only valid with quantize, quantize_meshopt, or draco" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Performance Limits ===================
+	osg::notify(osg::NOTICE) << "performance limits:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -tri <number>       - Max triangles per tile. Default is 200000" << std::endl;
+	osg::notify(osg::NOTICE) << "    -dc <number>        - Max draw calls per tile. Default is 20" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Texture Size ===================
+	osg::notify(osg::NOTICE) << "texture size:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -tw <number>        - Max texture width (power of 2). Default is 256" << std::endl;
+	osg::notify(osg::NOTICE) << "    -th <number>        - Max texture height (power of 2). Default is 256" << std::endl;
+	osg::notify(osg::NOTICE) << "    -aw <number>        - Max texture atlas width. Default is 2048" << std::endl;
+	osg::notify(osg::NOTICE) << "                          Must be power of 2 and >= tw, otherwise no atlas is created" << std::endl;
+	osg::notify(osg::NOTICE) << "    -ah <number>        - Max texture atlas height. Default is 2048" << std::endl;
+	osg::notify(osg::NOTICE) << "                          Must be power of 2 and >= th, otherwise no atlas is created" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Transformation Mode ===================
+	osg::notify(osg::NOTICE) << "transformation mode:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -nft                - Do not apply transform matrix to vertices" << std::endl;
+	osg::notify(osg::NOTICE) << "                          Default: applied (faster rendering but possible vertex precision loss)" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Other ===================
+	osg::notify(osg::NOTICE) << "other options:" << std::endl;
+	osg::notify(osg::NOTICE) << "    -nrm                - Recalculate normals" << std::endl;
+	osg::notify(osg::NOTICE) << "    -nm <v/f>           - Used with -nrm. Normal mode: v = vertex (for smooth), f = face (default, for hard edges)" << std::endl;
+	osg::notify(osg::NOTICE) << "    -unlit              - Enable KHR_materials_unlit extension (for baked models)" << std::endl;
+	osg::notify(osg::NOTICE) << "    -gn                 - Generate normal map (Sobel) and tangents" << std::endl;
+	osg::notify(osg::NOTICE) << "                          Improves visuals but increases processing time and file size" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+}
+
 int main(int argc, char** argv)
 {
 	Utils::initConsole();
@@ -250,61 +324,18 @@ int main(int argc, char** argv)
 	osg::ApplicationUsage* usage = arguments.getApplicationUsage();
 	usage->setDescription(arguments.getApplicationName() + ", a tool to convert 3D models into 3D Tiles.");
 	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 39.0 -lng 116.0 -h 300.0 -tf ktx2");
-
-	// =================== General ===================
-	usage->addCommandLineOption("-h/--help", "Display help information.");
-	usage->addCommandLineOption("-i <file>", "Input 3D model file path (must be a file).");
-	usage->addCommandLineOption("-o <folder>", "Output directory for 3D Tiles (must be a directory).");
-
-	// =================== Coordinate ===================
-	usage->addCommandLineOption("-lat <number>", "Datum point latitude. Default is 30.0.");
-	usage->addCommandLineOption("-lng <number>", "Datum point longitude. Default is 116.0.");
-	usage->addCommandLineOption("-alt <number>", "Datum point altitude in meters. Default is 300.0.");
-	usage->addCommandLineOption("-epsg <code>", "Projection coordinate system (mutually exclusive with -lat/-lng/-h).");
-
-	// =================== Model transform ===================
-	usage->addCommandLineOption("-tx <number>", "Translation offset on X-axis. Default is 0.");
-	usage->addCommandLineOption("-ty <number>", "Translation offset on Y-axis. Default is 0.");
-	usage->addCommandLineOption("-tz <number>", "Translation offset on Z-axis. Default is 0.");
-	usage->addCommandLineOption("-sx <number>", "Scaling factor along X-axis. Default is 1.0.");
-	usage->addCommandLineOption("-sy <number>", "Scaling factor along Y-axis. Default is 1.0.");
-	usage->addCommandLineOption("-sz <number>", "Scaling factor along Z-axis. Default is 1.0.");
-	usage->addCommandLineOption("-up <X/Y/Z>", "Which axis is upward in the model. Default is Y.");
-
-	// =================== Conversion settings ===================
-	usage->addCommandLineOption("-tf <png/jpg/webp/ktx2>", "Texture format. Default is jpg.");
-	usage->addCommandLineOption("-vf <draco/meshopt/quantize/quantize_meshopt>", "Vertex compression method. Default is none.");
-	usage->addCommandLineOption("-t <quad/oc/kd>", "Tile tree structure. Default is quad.");
-	usage->addCommandLineOption("-sr <number>", "Simplification ratio for intermediate nodes. Default is 0.5.");
-	usage->addCommandLineOption("-nrm", "Recalculate normals. When enabled, -nm controls normal calculation mode: 'v' for vertex normals, 'f' for face normals (default).");
-	usage->addCommandLineOption("-nm <v/f>", "Normal mode used with -nrm: v = vertex normals, f = face normals (default).");
-	usage->addCommandLineOption("-unlit", "Enable KHR_materials_unlit (model is not affected by lighting).");
-	usage->addCommandLineOption("-cl <low/medium/high>", "Compression level for draco/quantize. Default is medium.");
-
-	// =================== Texture limits ===================
-	usage->addCommandLineOption("-tw <number>", "Max texture width (power of 2). Default is 256.");
-	usage->addCommandLineOption("-th <number>", "Max texture height (power of 2). Default is 256.");
-	usage->addCommandLineOption("-aw <number>", "Max texture atlas width (power of 2). Default is 2048.");
-	usage->addCommandLineOption("-ah <number>", "Max texture atlas height (power of 2). Default is 2048.");
-
-	// =================== Tile optimization ===================
-	usage->addCommandLineOption("-tri <number>", "Max triangle count per tile. Default is 200000.");
-	usage->addCommandLineOption("-dc <number>", "Max draw call commands per tile. Default is 20.");
-	usage->addCommandLineOption("-nft",
-		"Do NOT apply the transformation matrix to vertices. "
-		"Applying (expanding) the transform matrix improves rendering performance by pre-transforming vertices, "
-		"but may introduce precision loss in vertex positions. "
-		"Default is to apply the transform matrix."
-	);
-
+	usage->addCommandLineOption("-h/--help", "Display help information");
+	
+	
 	// Display help if requested
 	if (arguments.read("-h") || arguments.read("--help")) {
-		usage->write(std::cout);
+		osg::setNotifyLevel(osg::NOTICE);
+		printUsage();
 		return 100;
 	}
 
 	// Parse arguments
-	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("jpg"));
+	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("ktx2"));
 	const std::string vertexFormat = parseArgument(arguments, "-vf", std::string("none"));
 	const std::string treeFormat = parseArgument(arguments, "-t", std::string("quad"));
 	const std::string compressLevel = parseArgument(arguments, "-cl", std::string("medium"));
@@ -432,7 +463,10 @@ int main(int argc, char** argv)
 		config.tileConfig.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
 		config.tileConfig.gltfTextureOptions.ext = "." + textureFormat;
 		if (arguments.find("-nft") > 0)
-			config.tileConfig.noApplyTransformToVertices = true;
+			config.tileConfig.gltfOptimizerOptions &= ~GltfOptimizer::FLATTEN_TRANSFORMS;
+		if (arguments.find("-gn") > 0)
+			config.tileConfig.gltfOptimizerOptions |= GltfOptimizer::GENERATE_NORMAL_TEXTURE;
+
 #ifdef _WIN32
 		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "\\textures";
 #else

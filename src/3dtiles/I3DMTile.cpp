@@ -2,9 +2,14 @@
 #include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 
-void I3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
+void I3DMTile::optimizeNode()
 {
-	Tile::optimizeNode(nodeCopy, options, GltfOptimizer::GENERATE_NORMAL_TEXTURE | GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
+	unsigned int options = config.gltfOptimizerOptions & ~GltfOptimizer::FLATTEN_STATIC_TRANSFORMS;
+	options &= ~GltfOptimizer::FLATTEN_STATIC_TRANSFORMS_DUPLICATING_SHARED_SUBGRAPHS;
+	options &= ~GltfOptimizer::FLATTEN_TRANSFORMS;
+	options &= ~GltfOptimizer::MERGE_TRANSFORMS;
+
+	Tile::optimizeNode(options);
 }
 
 string I3DMTile::getOutputPath() const

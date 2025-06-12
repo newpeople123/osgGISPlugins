@@ -22,3 +22,8 @@ osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::
     return specularGlossinessImage;
 }
 
+osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::Image>& occlusionImage, const osg::ref_ptr<osg::Image>& specularImage, const osg::ref_ptr<osg::Image>& glossinessImage)
+{
+    return osg::ref_ptr<osg::Image>();
+}
+

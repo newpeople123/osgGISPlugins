@@ -51,7 +51,7 @@ namespace osgGISPlugins
 			//b3dm、i3dm瓦片导出设置
 			osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 
-			bool noApplyTransformToVertices = false;
+			unsigned int gltfOptimizerOptions = GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS;
 
 			void validate() {
 				osg::clampTo(this->simplifyRatio, 0.f, 0.9f);
@@ -71,7 +71,7 @@ namespace osgGISPlugins
 					[](unsigned char c) { return std::tolower(c); });
 				if (ext != ".jpg" && ext != ".png" && ext != ".webp" && ext != ".ktx2")
 				{
-					this->gltfTextureOptions.ext = ".jpg";
+					this->gltfTextureOptions.ext = ".ktx2";
 				}
 			}
 		};
@@ -145,7 +145,9 @@ namespace osgGISPlugins
 
 		void computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& node);
 
-		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& textureOptions, unsigned int options);
+		void optimizeNode(const unsigned int options);
+
+		virtual void optimizeNode();
 
 		virtual void buildLOD();
 
@@ -159,7 +161,7 @@ namespace osgGISPlugins
 
 		virtual bool writeNode();
 
-		virtual void writeToFile(const osg::ref_ptr<osg::Node>& nodeCopy);
+		virtual void writeToFile();
 
 		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> parent, int lodLevel);
 
@@ -168,7 +170,6 @@ namespace osgGISPlugins
 		virtual string getFullPath() const = 0;
 		virtual string getTextureCachePath(const string textureCachePath) const = 0;
 		virtual void setContentUri() = 0;
-		virtual void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) = 0;
 	private:
 		void applyLODStrategy(const float simplifyRatioFactor, const float textureFactor);
 	};

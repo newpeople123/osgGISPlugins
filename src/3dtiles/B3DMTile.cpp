@@ -2,14 +2,6 @@
 #include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 
-void B3DMTile::optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options)
-{
-	if(!this->config.noApplyTransformToVertices)
-		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::GENERATE_NORMAL_TEXTURE | GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS | GltfOptimizer::FLATTEN_TRANSFORMS);
-	else
-		Tile::optimizeNode(nodeCopy, options, GltfOptimizer::EXPORT_GLTF_OPTIMIZATIONS);
-}
-
 string B3DMTile::getOutputPath() const
 {
 	return config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(level);

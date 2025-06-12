@@ -273,20 +273,20 @@ bool Tile::writeNode()
 	if (tcv.count == 0)
 		return false;
 
-	optimizeNode(node, config.gltfTextureOptions);
+	optimizeNode();
 
-	writeToFile(node);
+	writeToFile();
 
 	node = nullptr;
 	return true;
 }
 
-void Tile::writeToFile(const osg::ref_ptr<osg::Node> &nodeCopy)
+void Tile::writeToFile()
 {
 
 	const string outputPath = getOutputPath();
 	if (osgDB::makeDirectory(outputPath))
-		osgDB::writeNodeFile(*nodeCopy.get(), getFullPath(), config.options);
+		osgDB::writeNodeFile(*this->node.get(), getFullPath(), config.options);
 }
 
 void Tile::buildLOD()
@@ -407,14 +407,19 @@ void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node> &gnode)
 					  });
 }
 
-void Tile::optimizeNode(osg::ref_ptr<osg::Node> &nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions &textureOptions, unsigned int options)
+void Tile::optimizeNode(const unsigned int options)
 {
 	GltfOptimizer gltfOptimizer;
-	gltfOptimizer.setGltfTextureOptimizationOptions(textureOptions);
-	gltfOptimizer.optimize(nodeCopy.get(), options);
+	gltfOptimizer.setGltfTextureOptimizationOptions(this->config.gltfTextureOptions);
+	gltfOptimizer.optimize(this->node.get(), options);
 
 	BatchIdVisitor biv;
-	nodeCopy->accept(biv);
+	this->node->accept(biv);
+}
+
+void Tile::optimizeNode()
+{
+	optimizeNode(config.gltfOptimizerOptions);
 }
 
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
@@ -466,7 +471,7 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 			// targetError范围:0.2~0.5
 			// 几何误差:1.0~5.0m
 			targetError = 5.0 / this->diagonalLength;
-			targetError = targetError > 0.35 ? 0.35 : targetError;
+			targetError = targetError > 0.3 ? 0.3 : targetError;
 		}
 		else if (this->lod == 1)
 		{
@@ -485,8 +490,13 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 		{
 			Simplifier simplifier(sampleRatio, false, false, targetError);
 			node->accept(simplifier);
-			lodError = simplifier.lodError * this->diagonalLength;
+			this->lodError = simplifier.lodError * this->diagonalLength;
 		}
+	}
+
+	if (x == 39 && y == 26 && z == 0)
+	{
+		osgDB::writeNodeFile(*this->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\test\6\)" + std::to_string(lod) + ".fbx");
 	}
 
 	config.gltfTextureOptions.maxTextureWidth *= textureFactor;

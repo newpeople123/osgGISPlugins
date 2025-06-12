@@ -18,6 +18,7 @@ ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfMaterial.cpp
 )
 # 编译当前程序时会先编译这些项目
 add_dependencies(${TOOL_NAME} osgdb_gltf)

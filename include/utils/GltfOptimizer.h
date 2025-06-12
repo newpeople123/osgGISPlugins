@@ -4,6 +4,8 @@
 #include <meshoptimizer.h>
 #include <osgdb_gltf/material/GltfMaterial.h>
 #include <unordered_map>
+#include <tbb/parallel_for.h>
+#include <tbb/concurrent_unordered_map.h>
 #include "TexturePacker.h"
 #include "Utils.h"
 namespace osgGISPlugins
@@ -307,18 +309,22 @@ namespace osgGISPlugins
         class GenerateNormalTextureVisitor :public osgUtil::BaseOptimizerVisitor
         {
         private:
-            std::map<std::string, osg::ref_ptr<osg::Image>> _nameImgaes;
+            tbb::concurrent_unordered_map<std::string, osg::ref_ptr<osg::Image>> _imageCache;
+            tbb::concurrent_unordered_map<std::string, osg::ref_ptr<osg::Image>> _imageCache2;
 
-            osg::ref_ptr<osg::Image> convertToGrayscale(osg::Image* input);
 
-            osg::ref_ptr<osg::Image> generateNormalMapFromHeightMap(osg::Image* heightMap);
+            osg::ref_ptr<osg::Image> getOrGenerateNormalMap(osg::Image* image);
+
+            osg::ref_ptr<osg::Image> getOrGenerateMetallicRoughnessMap(osg::Image* image);
+
+            void processGeometry(osg::Geometry* geometry);
         public:
             GenerateNormalTextureVisitor(osgUtil::Optimizer* optimizer = 0) :
                 BaseOptimizerVisitor(optimizer, GENERATE_NORMAL_TEXTURE)
             {
             }
 
-            void apply(osg::Geometry& geometry) override;
+            void apply(osg::Geode& geode) override;
         };
 
 

@@ -29,8 +29,6 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "B3DMTile"; }
 
-		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) override;
-
 		string getOutputPath() const override;
 
 		string getFullPath() const override;

@@ -28,7 +28,7 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "I3DMTile"; }
 
-		void optimizeNode(osg::ref_ptr<osg::Node>& nodeCopy, const GltfOptimizer::GltfTextureOptimizationOptions& options) override;
+		void optimizeNode() override;
 
 		string getOutputPath() const override;
 

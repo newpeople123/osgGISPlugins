@@ -175,8 +175,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549 -sx 0.01 -sy 0.
 ```
 
 #### 参数说明
-
-- 通用
+- **输入输出**
 
   - `-i` 输入文件
   - `-o` 输出文件夹
@@ -201,7 +200,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549 -sx 0.01 -sy 0.
 - **压缩与简化参数**
 
   - `-r` 3dtiles中间节点简化比例，默认0.5
-  - `-tf` 纹理压缩格式，可选：png、jpg、webp、ktx2，默认jpg
+  - `-tf` 纹理压缩格式，可选：png、jpg、webp、ktx2，默认ktx2
   - `-vf` 顶点压缩格式，可选：draco、meshopt、quantize、quantize_meshopt，无默认值
   - `-cl` draco压缩级别/顶点量化级别，选项：low、medium、high，默认medium，仅对quantize、quantize_meshopt和draco有效；压缩级别越高，模型精度损失越大
 - **性能限制参数**
@@ -220,6 +219,7 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549 -sx 0.01 -sy 0.
   - `-nrm` 重新计算法线
   - `-nm` 配合 `-nrm`参数使用，指定法线模式：`v`表示顶点法线，`f`表示面法线（默认），可选：v、f（顶点法线适用于平滑曲面，面法线适用于棱角分明的物体）
   - `-unlit` 启用 `KHR_materials_unlit` 扩展，适用于烘焙模型
+  - `-gn` 生成法线贴图（使用Sobel算子）和切线，瓦片会有更好的渲染效果（提升有限）但瓦片的体积也会变大并且处理时间也更长
 
 ## simplifier
 

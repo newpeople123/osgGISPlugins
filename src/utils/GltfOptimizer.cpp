@@ -349,149 +349,97 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 	}
 }
 /** GenerateNormalTextureVisitor */
-osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::convertToGrayscale(osg::Image* input) {
-	if (!input) return nullptr;
+osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::getOrGenerateNormalMap(osg::Image* image) {
+	if (!image) return nullptr;
+	std::string filename = image->getFileName();
 
-	int width = input->s();
-	int height = input->t();
-	osg::ref_ptr<osg::Image> gray = new osg::Image;
-	gray->allocateImage(width, height, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE);
+	auto found = _imageCache.find(filename);
+	if (found != _imageCache.end()) return found->second;
 
-	for (int y = 0; y < height; ++y) {
-		for (int x = 0; x < width; ++x) {
-			unsigned char* pixel = input->data(x, y);
-			unsigned char grayValue = static_cast<unsigned char>(
-				0.3f * pixel[0] + 0.59f * pixel[1] + 0.11f * pixel[2]);
-			*gray->data(x, y) = grayValue;
-		}
+	osg::ref_ptr<osg::Image> gray = GltfMaterial::convertToGrayscale(image);
+	osg::ref_ptr<osg::Image> normalMap = GltfMaterial::generateNormalMap(gray);
+	if (normalMap.valid()) {
+		_imageCache.insert({ filename, normalMap });
 	}
-
-	return gray;
-}
-
-osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::generateNormalMapFromHeightMap(osg::Image* heightMap) {
-	if (!heightMap || heightMap->getPixelFormat() != GL_LUMINANCE) return nullptr;
-
-	int width = heightMap->s();
-	int height = heightMap->t();
-	osg::ref_ptr<osg::Image> normalMap = new osg::Image;
-	normalMap->allocateImage(width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE);
-
-	auto sample = [&](int x, int y) -> float {
-		x = osg::clampBetween(x, 0, width - 1);
-		y = osg::clampBetween(y, 0, height - 1);
-		return heightMap->data(x, y)[0] / 255.0f;
-		};
-
-	for (int y = 0; y < height; ++y) {
-		for (int x = 0; x < width; ++x) {
-			float hL = sample(x - 1, y);
-			float hR = sample(x + 1, y);
-			float hD = sample(x, y - 1);
-			float hU = sample(x, y + 1);
-
-			float dx = hR - hL;
-			float dy = hU - hD;
-			osg::Vec3 n(-dx, -dy, 1.0f);
-			n.normalize();
-
-			unsigned char r = static_cast<unsigned char>((n.x() * 0.5f + 0.5f) * 255.0f);
-			unsigned char g = static_cast<unsigned char>((n.y() * 0.5f + 0.5f) * 255.0f);
-			unsigned char b = static_cast<unsigned char>((n.z() * 0.5f + 0.5f) * 255.0f);
-			normalMap->data(x, y)[0] = r;
-			normalMap->data(x, y)[1] = g;
-			normalMap->data(x, y)[2] = b;
-			normalMap->data(x, y)[3] = 255;
-		}
-	}
-
 	return normalMap;
 }
 
-void GltfOptimizer::GenerateNormalTextureVisitor::apply(osg::Geometry& geometry) {
+osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::getOrGenerateMetallicRoughnessMap(osg::Image* image)
+{
+	if (!image) return nullptr;
+	std::string filename = image->getFileName();
 
-	osg::ref_ptr<osg::StateSet> stateSet = geometry .getStateSet();
-	if (stateSet.valid())
-	{
-		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-		if (osgMaterial.valid())
-		{
-			osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
-			if (gltfMaterial.valid())
-			{
-				osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
-				if (gltfMRMaterial.valid())
-				{
-					if (gltfMRMaterial->baseColorTexture.valid()) {
-						osg::Image* baseImage = gltfMRMaterial->baseColorTexture->getImage();
-						const std::string filename = baseImage->getFileName();
-						auto item = _nameImgaes.find(filename);
-						osg::ref_ptr<osg::Image> normalMap;
-						if (item == _nameImgaes.end())
-						{
-							osg::ref_ptr<osg::Image> grayImage = convertToGrayscale(baseImage);
-							normalMap = generateNormalMapFromHeightMap(grayImage);
-							_nameImgaes.insert(std::make_pair(filename, normalMap));
-						}
-						else {
-							normalMap = item->second;
-						}
-						if (normalMap.valid()) {
-							gltfMRMaterial->normalTexture = new osg::Texture2D;
-							gltfMRMaterial->normalTexture->setImage(normalMap);
-							gltfMRMaterial->normalTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
-							gltfMRMaterial->normalTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-							gltfMRMaterial->normalTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
-							gltfMRMaterial->normalTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
-						}
-					}
-				}
-				else {
-					osg::ref_ptr<GltfPbrSGMaterial> gltfSGMaterial = dynamic_cast<GltfPbrSGMaterial*>(gltfMaterial.get());
-					for (size_t i = 0; i < gltfSGMaterial->materialExtensionsByCesiumSupport.size(); ++i)
-					{
-						GltfExtension* extension = gltfSGMaterial->materialExtensionsByCesiumSupport.at(i);
-						if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
-						{
-							KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-							if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) {
-								osg::Image* baseImage = pbrSpecularGlossiness_extension->osgDiffuseTexture->getImage();
-								const std::string filename = baseImage->getFileName();
-								auto item = _nameImgaes.find(filename);
-								osg::ref_ptr<osg::Image> normalMap;
-								if (item == _nameImgaes.end())
-								{
-									osg::ref_ptr<osg::Image> grayImage = convertToGrayscale(baseImage);
-									normalMap = generateNormalMapFromHeightMap(grayImage);
-									_nameImgaes.insert(std::make_pair(filename, normalMap));
-								}
-								else {
-									normalMap = item->second;
-								}
-								if (normalMap.valid()) {
-									gltfSGMaterial->normalTexture = new osg::Texture2D;
-									gltfSGMaterial->normalTexture->setImage(normalMap);
-									gltfSGMaterial->normalTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
-									gltfSGMaterial->normalTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-									gltfSGMaterial->normalTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
-									gltfSGMaterial->normalTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+	auto found = _imageCache2.find(filename);
+	if (found != _imageCache2.end()) return found->second;
 
-								}
-							}
-						}
-					}
-				}
+	osg::ref_ptr<osg::Image> metallicRoughnessMap = GltfPbrMRMaterial::generateMetallicRoughnessMap(image);
+	if (metallicRoughnessMap.valid()) {
+		_imageCache2.insert({ filename, metallicRoughnessMap });
+	}
+	return metallicRoughnessMap;
+}
+
+void GltfOptimizer::GenerateNormalTextureVisitor::processGeometry(osg::Geometry* geometry) {
+	osg::StateSet* stateSet = geometry->getStateSet();
+	if (!stateSet) return;
+
+	osg::Material* material = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+	if (!material) return;
+
+	GltfMaterial* gltfMaterial = dynamic_cast<GltfMaterial*>(material);
+	if (!gltfMaterial) return;
+
+	osg::Image* baseImage = nullptr;
+
+	if (auto* gltfMR = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial)) {
+		if (gltfMR->baseColorTexture.valid()) {
+			baseImage = gltfMR->baseColorTexture->getImage();
+			if (auto normalMap = getOrGenerateNormalMap(baseImage)) {
+				auto tex = new osg::Texture2D(normalMap);
+				tex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
+				tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
+				tex->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+				tex->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+				gltfMR->normalTexture = tex;
 			}
-			else
-			{
-				//optimizeOsgTexture(stateSet, geom);
-			}
-		}
-		else
-		{
-			//optimizeOsgTexture(stateSet, geom);
 		}
 	}
+	else if (auto* gltfSG = dynamic_cast<GltfPbrSGMaterial*>(gltfMaterial)) {
+		for (auto* ext : gltfSG->materialExtensionsByCesiumSupport) {
+			if (auto* specGloss = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(ext)) {
+				if (specGloss->osgDiffuseTexture.valid()) {
+					baseImage = specGloss->osgDiffuseTexture->getImage();
+					if (auto normalMap = getOrGenerateNormalMap(baseImage)) {
+						auto tex = new osg::Texture2D(normalMap);
+						tex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
+						tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
+						tex->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+						tex->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
+						gltfSG->normalTexture = tex;
+					}
+				}
+			}
+		}
+	}
+}
+
+void GltfOptimizer::GenerateNormalTextureVisitor::apply(osg::Geode& geode) {
+	std::vector<osg::ref_ptr<osg::Geometry>> geometries;
+	for (unsigned int i = 0; i < geode.getNumDrawables(); ++i) {
+		osg::Geometry* geom = dynamic_cast<osg::Geometry*>(geode.getDrawable(i));
+		if (geom) geometries.emplace_back(geom);
+	}
+
+	tbb::parallel_for(
+		tbb::blocked_range<size_t>(0, geometries.size()),
+		[&](const tbb::blocked_range<size_t>& range) {
+			for (size_t i = range.begin(); i < range.end(); ++i) {
+				processGeometry(geometries[i].get());
+			}
+		}
+	);
+
+	traverse(geode);
 }
 /** GenerateTangentVisitor */
 void GltfOptimizer::GenerateTangentVisitor::generateTangent(osg::Geometry& geometry)
