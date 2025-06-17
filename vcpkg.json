@@ -1,5 +1,5 @@
 {
-  "builtin-baseline": "f5ec6f30ff70f04f841436a0f36600bdbabfcfbf",
+  "builtin-baseline": "ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0",
   "dependencies": [
     {
       "name": "osg",
@@ -41,10 +41,6 @@
   "name": "osg-gis-plugins",
   "overrides": [
     {
-      "name": "ktx",
-      "version": "4.1.0#0"
-    },
-    {
       "name": "libpq",
       "version": "15.3"
     },
@@ -79,7 +75,59 @@
     {
       "name": "indicators",
       "version": "2.3#0"
+    },
+    {
+      "name": "openssl",
+      "version": "3.2.0#1"
+    },
+    {
+      "name": "pkgconf",
+      "version": "2.2.0#0"
+    },
+    {
+      "name": "geos",
+      "version": "3.13.0#0"
+    },
+    {
+      "name": "boost-cmake",
+      "version": "1.86.0#0"
+    },
+    {
+      "name": "boost-throw-exception",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "boost-assert",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "boost-static-assert",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "boost-core",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "boost-smart-ptr",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "boost-type-traits",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "boost-move",
+      "version": "1.84.0#0"
+    },
+    {
+      "name": "json-c",
+      "version": "2023-08-12#0"
+    },
+    {
+      "name": "gdal",
+      "version": "3.8.5#0"
     }
   ],
-  "version": "1.0.1"
+  "version": "1.0.2"
 }

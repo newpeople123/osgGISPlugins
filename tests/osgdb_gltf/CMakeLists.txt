@@ -1,13 +1,24 @@
 set(TOOL_TEST_NAME "test_osgdb_gltf")
 aux_source_directory(. DIR_SRCS)
 
-set(B3DM_HADER_FILE ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
-set(B3DM_SOURCE_FILE ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
+set(B3DM_HADER_FILE 
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
+${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
+
+set(B3DM_SOURCE_FILE 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfMaterial.cpp
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
+
 file(GLOB UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
 file(GLOB UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
 
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
+find_package(TBB CONFIG REQUIRED)
 
 ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS} 
 ${B3DM_HADER_FILE} ${B3DM_SOURCE_FILE} 
@@ -24,6 +35,7 @@ add_dependencies(${TOOL_TEST_NAME} osgdb_webp)
 # 链接库
 target_link_libraries(${TOOL_TEST_NAME} 
     meshoptimizer::meshoptimizer 
+    TBB::tbb TBB::tbbmalloc TBB::tbbmalloc_proxy
 )
 
 source_group("include" FILES ${B3DM_HADER_FILE}) 
