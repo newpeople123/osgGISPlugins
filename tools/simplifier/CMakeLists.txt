@@ -34,10 +34,12 @@ add_dependencies(${TOOL_NAME} osgdb_webp)
 
 # 查找 meshoptimizer 包
 find_package(meshoptimizer CONFIG REQUIRED)
+find_package(TBB CONFIG REQUIRED)
 
 # 链接库
 target_link_libraries(${TOOL_NAME} 
     meshoptimizer::meshoptimizer
+    TBB::tbb TBB::tbbmalloc TBB::tbbmalloc_proxy
 )
 # 如果是 Linux 系统，链接 pthread 库
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
