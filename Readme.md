@@ -311,7 +311,12 @@ texturepacker.exe -i C:\input -o C:\output\atlas.png -width 2048 -height 2048
 
 # 后续计划
 
-1、model23dtiles支持倾斜摄影数据转换
+这个项目陆陆续续已经开发了两年了，占用精力较多，数据转换这里也就搞成这样了，接下来学习重点将会是着色器，后续不会投入太多精力在这个项目了。
+1、bug修复
+2、代码重构
+3、增加GUI界面
+4、支持3dtiles 1.1
+5、model23dtiles支持倾斜摄影数据转换
 ...
 
 # 关于作者

@@ -433,22 +433,26 @@ void Utils::CRenderingThread::run()
 {
 	if (!_bStop)
 	{
-		int pos = _fin->tellg();
-		while (pos < _length && !_bStop && !bar.is_completed())
+		while (!_bStop && !bar.is_completed())
 		{
-			pos = _fin->tellg();
-			double percent = 100.0 * pos / _length;
+			int pos = _fin->tellg();
+			float percent = 100.0 * pos / _length;
 
-			// 当百分比大于等于 1% 时打印
+			if (_fin->eof())
+				percent = 100.0;
+
+			// 当进度大于等于 1% 时更新进度条
 			if (percent >= 1)
 			{
 				bar.set_progress(percent);  // 设置当前进度
-				OpenThreads::Thread::microSleep(100);
 			}
+
 		}
 		show_console_cursor(true);
 	}
 }
+
+
 
 osgDB::ReaderWriter::ReadResult Utils::ProgressReportingFileReadCallback::readNode(const std::string& file, const osgDB::Options* option)
 {
@@ -459,10 +463,10 @@ osgDB::ReaderWriter::ReadResult Utils::ProgressReportingFileReadCallback::readNo
 	if (rw)
 	{
 		osgDB::ifstream istream(file.c_str(), std::ios::in | std::ios::binary);
-		crt = new CRenderingThread(&istream);
-		crt->startThread();
 		if (istream)
 		{
+			crt = std::make_unique<CRenderingThread>(&istream);
+			crt->startThread();
 
 			rr = rw->readNode(istream, option);
 			if (rr.status() != osgDB::ReaderWriter::ReadResult::ReadStatus::FILE_LOADED)
