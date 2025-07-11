@@ -13,6 +13,7 @@ ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
 
 source_group("src" FILES ${DIR_SRCS} 
 ${UTILS_SOURCE_FILES} 
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfMaterial.cpp
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
 )
@@ -23,6 +24,7 @@ ${UTILS_HEADER_FILES} ${UTILS_SOURCE_FILES}
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
 ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
+${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfMaterial.cpp
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
 ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
 )
