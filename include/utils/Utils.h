@@ -189,7 +189,7 @@ namespace osgGISPlugins
 		class ProgressReportingFileReadCallback : public osgDB::Registry::ReadFileCallback
 		{
 		public:
-			std::unique_ptr<CRenderingThread> crt;
+			CRenderingThread* crt;
 			typedef osgDB::ReaderWriter::ReadResult ReadResult;
 			ProgressReportingFileReadCallback() : crt(nullptr) {}
 			~ProgressReportingFileReadCallback()
@@ -197,6 +197,7 @@ namespace osgGISPlugins
 				if (crt)
 				{
 					crt->join();
+					delete crt;
 				}
 			}
 			virtual osgDB::ReaderWriter::ReadResult readNode(const std::string& file, const osgDB::Options* option);

@@ -465,7 +465,7 @@ osgDB::ReaderWriter::ReadResult Utils::ProgressReportingFileReadCallback::readNo
 		osgDB::ifstream istream(file.c_str(), std::ios::in | std::ios::binary);
 		if (istream)
 		{
-			crt = std::make_unique<CRenderingThread>(&istream);
+			crt = new CRenderingThread(&istream);
 			crt->startThread();
 
 			rr = rw->readNode(istream, option);
