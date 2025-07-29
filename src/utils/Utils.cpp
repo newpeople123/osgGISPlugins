@@ -413,14 +413,14 @@ void Utils::initConsole()
 #endif // _WIN32
 }
 
-void Utils::registerFileAliases()
+osgDB::Registry* Utils::registerFileAliases()
 {
 	osgDB::Registry* instance = osgDB::Registry::instance();
 	instance->addFileExtensionAlias("glb", "gltf");
 	instance->addFileExtensionAlias("b3dm", "gltf");
 	instance->addFileExtensionAlias("i3dm", "gltf");
 	instance->addFileExtensionAlias("ktx2", "ktx");
-	instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
+	return instance;
 }
 
 void Utils::CRenderingThread::stop()
@@ -451,8 +451,6 @@ void Utils::CRenderingThread::run()
 		show_console_cursor(true);
 	}
 }
-
-
 
 osgDB::ReaderWriter::ReadResult Utils::ProgressReportingFileReadCallback::readNode(const std::string& file, const osgDB::Options* option)
 {

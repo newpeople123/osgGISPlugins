@@ -285,7 +285,7 @@ namespace osgGISPlugins
 		static void initConsole();
 
 		// 注册文件扩展名别名
-		static void registerFileAliases();
+		static osgDB::Registry* registerFileAliases();
 	};
 }
 #endif // !OSG_GIS_PLUGINS_UTILS_H

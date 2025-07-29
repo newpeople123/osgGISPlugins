@@ -74,10 +74,11 @@ public:
 };
 
 // 读取模型文件
-osg::ref_ptr<osg::Node> readModelFile(const std::string& input) {
+osg::ref_ptr<osg::Node> readModelFile(const std::string& input, const bool bSP) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
 #ifndef NDEBUG
-	readOptions->setOptionString("ShowProgress");
+	if(bSP)
+		readOptions->setOptionString("ShowProgress");
 #else
 	readOptions->setOptionString("TessellatePolygons");
 #endif // !NDEBUG
@@ -317,7 +318,7 @@ int main(int argc, char** argv)
 {
 	Utils::initConsole();
 
-	Utils::registerFileAliases();
+	osgDB::Registry* instance = Utils::registerFileAliases();
 
 	// use an ArgumentParser object to manage the program arguments.
 	osg::ArgumentParser arguments(&argc, argv);
@@ -380,7 +381,13 @@ int main(int argc, char** argv)
 	OSG_NOTICE << "Resolving parameters..." << std::endl;
 
 	OSG_NOTICE << "Reading model file..." << std::endl;
-	osg::ref_ptr<osg::Node> node = readModelFile(input);
+
+	bool showProgress = true;
+	if (arguments.find("-sp") > 0)
+		showProgress = false;
+	if(showProgress)
+		instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
+	osg::ref_ptr<osg::Node> node = readModelFile(input, showProgress);
 	if (!node.valid())
 	{
 		OSG_NOTICE << "Error:can not read 3d model file!" << '\n';

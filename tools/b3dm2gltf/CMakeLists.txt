@@ -1,6 +1,6 @@
 set(TOOL_NAME "b3dm2gltf")
 aux_source_directory(. DIR_SRCS)
-ADD_EXECUTABLE(${TOOL_NAME} ${DIR_SRCS})
+add_executable(${TOOL_NAME} ${DIR_SRCS})
 source_group("src" FILES ${DIR_SRCS})
 
 if (OPENSCENEGRAPH_FOUND)

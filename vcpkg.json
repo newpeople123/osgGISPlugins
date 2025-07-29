@@ -36,6 +36,14 @@
     },
     {
       "name": "indicators"
+    },
+    {
+      "name": "imgui",
+      "features": [
+        "opengl3-binding",
+        "glfw-binding",
+        "glut-binding"
+      ]
     }
   ],
   "name": "osg-gis-plugins",
@@ -127,7 +135,11 @@
     {
       "name": "gdal",
       "version": "3.8.5#0"
+    },
+    {
+      "name": "imgui",
+      "version": "1.91.9#0"
     }
   ],
-  "version": "1.0.2"
+  "version": "1.1.0"
 }

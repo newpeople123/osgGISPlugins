@@ -1,12 +1,14 @@
 set(TOOL_TEST_NAME "test_osgdb_fbx")
 aux_source_directory(. DIR_SRCS)
-ADD_EXECUTABLE(${TOOL_TEST_NAME} ${DIR_SRCS})
+add_executable(${TOOL_TEST_NAME} ${DIR_SRCS})
 
-# 编译当前程序时会先编译这些项目
-add_dependencies(${TOOL_TEST_NAME} osgdb_gltf)
-add_dependencies(${TOOL_TEST_NAME} osgdb_fbx)
-add_dependencies(${TOOL_TEST_NAME} osgdb_ktx)
-add_dependencies(${TOOL_TEST_NAME} osgdb_webp)
+# 构建依赖，确保 osgdb 插件先编译
+add_dependencies(${TOOL_TEST_NAME}
+    osgdb_gltf
+    osgdb_fbx
+    osgdb_ktx
+    osgdb_webp
+)
 
 source_group("src" FILES ${DIR_SRCS})
 

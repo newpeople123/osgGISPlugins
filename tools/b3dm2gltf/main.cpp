@@ -10,6 +10,44 @@
 #include "osgdb_gltf/b3dm/ThreeDModelHeader.h"
 #include <osgDB/ConvertUTF>
 using namespace osgGISPlugins;
+
+#ifdef _WIN32
+#include <windows.h>
+#include <string>
+
+std::wstring utf8ToWstring(const std::string& str)
+{
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, NULL, 0);
+    if (size_needed <= 0) return L"";
+
+    std::wstring wstr(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size_needed);
+    wstr.pop_back(); // 去掉 null terminator
+    return wstr;
+}
+#endif
+
+
+std::ifstream openInputFile(const std::string& path)
+{
+#ifdef _WIN32
+    return std::ifstream(utf8ToWstring(path), std::ios::binary);
+#else
+    return std::ifstream(path.c_str(), std::ios::binary);
+#endif
+}
+
+std::ofstream openOutputFile(const std::string& path)
+{
+#ifdef _WIN32
+    return std::ofstream(utf8ToWstring(path), std::ios::binary);
+#else
+    return std::ofstream(path.c_str(), std::ios::binary);
+#endif
+}
+
+
+
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
@@ -61,7 +99,7 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    std::ifstream b3dmFile(input, std::ios::binary);
+    std::ifstream b3dmFile = openInputFile(input);
     if (!b3dmFile) {
         std::cerr << "can not open this b3dm file:" << input << '\n';
         return 3;
@@ -109,13 +147,13 @@ int main(int argc, char** argv)
     b3dm.glbData.resize(glbLength);
     b3dmFile.read(&b3dm.glbData[0], glbLength);
 
-    std::ofstream gltfFile(output, std::ios::binary);
+    std::ofstream gltfFile = openOutputFile(output);
     if (!gltfFile) {
         std::cerr << "create gltf/glb file failed:" << output << '\n';
         return 6;
     }
 
-    gltfFile.write(b3dm.glbData.c_str(), glbLength);
+    gltfFile.write(&b3dm.glbData[0], glbLength);
     gltfFile.close();
 
     if (osgDB::convertToLowerCase(osgDB::getFileExtension(output)) != "glb") {
