@@ -13,11 +13,11 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo '$TZ' > /etc/timezone
     && cp /etc/apt/sources.list /etc/apt/sources.list.bak \
     && sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list \ 
     && apt-get update \ 
-    && apt-get -y install git curl zip unzip tar build-essential pkg-config freeglut3-dev mesa-utils libx11-dev libxi-dev libxrandr-dev autoconf python3 libtool bison wget vim zlib1g-dev libffi-dev software-properties-common cmake \
+    && apt-get -y install git curl zip unzip tar build-essential pkg-config freeglut3-dev mesa-utils libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev libx11-dev libxi-dev libxrandr-dev autoconf python3 libtool bison wget vim zlib1g-dev libffi-dev software-properties-common cmake \
     && git clone https://ghfast.top/https://github.com/microsoft/vcpkg.git \
     && sed -i 's#https://github.com/#https://ghfast.top/https://github.com/#g' /app/vcpkg/scripts/bootstrap.sh \
     && sed -i 's#https://github.com/#https://ghfast.top/https://github.com/#g' /app/vcpkg/scripts/vcpkg-tools.json \
-    && sed -z -i 's|    vcpkg_list(SET params "x-download" "${arg_FILENAME}")\n    foreach(url IN LISTS arg_URLS)\n        vcpkg_list(APPEND params "--url=${url}")\n    endforeach()\n|    vcpkg_list(SET params "x-download" "${arg_FILENAME}")\n    vcpkg_list(SET arg_URLS_Real)\n    foreach(url IN LISTS arg_URLS)\n        string(REPLACE "http://download.savannah.nongnu.org/releases/gta/" "https://marlam.de/gta/releases/" url "${url}")\n        string(REPLACE "https://github.com/" "https://ghfast.top/https://github.com/" url "${url}")\n        string(REPLACE "https://ftp.gnu.org/" "https://mirrors.aliyun.com/" url "${url}")\n        string(REPLACE "https://raw.githubusercontent.com/" "https://ghfast.top/https://raw.githubusercontent.com/" url "${url}")\n        string(REPLACE "http://ftp.gnu.org/pub/gnu/" "https://mirrors.aliyun.com/gnu/" url "${url}")\n        string(REPLACE "https://ftp.postgresql.org/pub/" "https://mirrors.tuna.tsinghua.edu.cn/postgresql/" url "${url}")\n        string(REPLACE "https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/" "https://distfiles.macports.org/szip/" url "${url}")\n        vcpkg_list(APPEND params "--url=${url}")\n        vcpkg_list(APPEND arg_URLS_Real "${url}")\n    endforeach()\n    if(NOT vcpkg_download_distfile_QUIET)\n        message(STATUS "Downloading ${arg_URLS_Real} -> ${arg_FILENAME}...")\n    endif()|g' /app/vcpkg/scripts/cmake/vcpkg_download_distfile.cmake \
+    && sed -z -i 's|    vcpkg_list(SET params "x-download" "${arg_FILENAME}")\n    foreach(url IN LISTS arg_URLS)\n        vcpkg_list(APPEND params "--url=${url}")\n    endforeach()\n|    vcpkg_list(SET params "x-download" "${arg_FILENAME}")\n    vcpkg_list(SET arg_URLS_Real)\n    foreach(url IN LISTS arg_URLS)\n        string(REPLACE "http://download.savannah.nongnu.org/releases/gta/" "https://marlam.de/gta/releases/" url "${url}")\n        string(REPLACE "https://github.com/" "https://ghfast.top/https://github.com/" url "${url}")\n        string(REPLACE "https://ftp.gnu.org/" "https://mirrors.aliyun.com/" url "${url}")\n        string(REPLACE "https://raw.githubusercontent.com/" "https://ghfast.top/https://raw.githubusercontent.com/" url "${url}")\n        string(REPLACE "http://ftp.gnu.org/pub/gnu/" "https://mirrors.aliyun.com/gnu/" url "${url}")\n        string(REPLACE "https://ftp.postgresql.org/pub/" "https://mirrors.cloud.tencent.com/postgresql/" url "${url}")\n        string(REPLACE "https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/" "https://distfiles.macports.org/szip/" url "${url}")\n        vcpkg_list(APPEND params "--url=${url}")\n        vcpkg_list(APPEND arg_URLS_Real "${url}")\n    endforeach()\n    if(NOT vcpkg_download_distfile_QUIET)\n        message(STATUS "Downloading ${arg_URLS_Real} -> ${arg_FILENAME}...")\n    endif()|g' /app/vcpkg/scripts/cmake/vcpkg_download_distfile.cmake \
     && /app/vcpkg/bootstrap-vcpkg.sh \
     && ln -s /app/vcpkg/vcpkg /usr/bin/vcpkg \
     && add-apt-repository -y ppa:deadsnakes/ppa \
@@ -76,13 +76,13 @@ ENV LC_ALL zh_CN.UTF-8
 #定义时区参数
 ENV TZ=Asia/Shanghai
 #设置时区
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo '$TZ' > /etc/timezone \ 
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo '$TZ' > /etc/timezone \
     && cp /etc/apt/sources.list /etc/apt/sources.list.bak \
-    && sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list \ 
+    && sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list \
     && apt-get update \
-    && apt-get -y install libgl1-mesa-glx locales fonts-wqy-zenhei fonts-wqy-microhei ttf-dejavu language-pack-zh-hans libxrandr-dev \ 
+    && apt-get -y install libgl1-mesa-glx locales fonts-wqy-zenhei fonts-wqy-microhei ttf-dejavu language-pack-zh-hans libxrandr-dev \
     && apt-get clean \
-    && locale-gen zh_CN.UTF-8 \ 
+    && locale-gen zh_CN.UTF-8 \
     && update-locale LANG=zh_CN.UTF-8 \
     && ln -s /app/model23dtiles /usr/bin/model23dtiles \
     && ln -s /app/b3dm2gltf /usr/bin/b3dm2gltf \

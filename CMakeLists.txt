@@ -11,16 +11,13 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # 设置平台相关参数
-if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     add_compile_options("/utf-8")
     set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "Vcpkg target triplet")
     set(DEFAULT_TOOLCHAIN_PATH "E:/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake")
 else()
     set(VCPKG_TARGET_TRIPLET "x64-linux-dynamic" CACHE STRING "Vcpkg target triplet")
     set(DEFAULT_TOOLCHAIN_PATH "/home/vcpkg/scripts/buildsystems/vcpkg.cmake")
-    # 以下两行仅用于开发环境，Docker 中应注释
-    # set(CMAKE_C_COMPILER /opt/rh/devtoolset-11/root/usr/bin/gcc)
-    # set(CMAKE_CXX_COMPILER /opt/rh/devtoolset-11/root/usr/bin/g++)
 endif()
 
 # 设置 toolchain
@@ -71,8 +68,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_subdirectory(tests)
 endif()
 
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
 # 拷贝插件和资源文件（仅 Windows）
-if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     set(VCPKG_INSTALL_DIR "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows")
     set(PLUGINS_DIR "${VCPKG_INSTALL_DIR}")
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -87,10 +84,14 @@ if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     file(COPY ${VCPKG_INSTALL_DIR}/bin/jpeg62.dll DESTINATION ${OUT_DIR})
     file(COPY ${PROJECT_ROOT_DIR}/assets/favicon.png DESTINATION ${OUT_DIR})
     file(COPY ${PROJECT_ROOT_DIR}/assets/msyh.ttc DESTINATION ${OUT_DIR})
+elseif(UNIX)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
 endif()
 
 # 打印关键路径
-message(STATUS "CMAKE_HOST_SYSTEM_NAME: ${CMAKE_HOST_SYSTEM_NAME}")
-message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
-message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
-message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "本机操作系统(current system name): ${CMAKE_HOST_SYSTEM_NAME}")
+message(STATUS "目标操作系统(target system name): ${CMAKE_SYSTEM_NAME}")
+message(STATUS "查找依赖包路径(cmake prefix path): ${CMAKE_PREFIX_PATH}")
+message(STATUS "自定义模块路径(camke module path): ${CMAKE_MODULE_PATH}")
+message(STATUS "程序安装路径(install directory): ${CMAKE_INSTALL_PREFIX}")

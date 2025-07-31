@@ -60,5 +60,10 @@ else()
     message(FATAL_ERROR "${TOOL_NAME}: osg not found!")
 endif()
 
+# Linux 平台添加 pthread、dl
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(${TOOL_NAME} pthread dl)
+endif()
+
 # 安装配置
 install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})

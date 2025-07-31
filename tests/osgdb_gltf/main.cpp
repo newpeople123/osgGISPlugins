@@ -16,11 +16,11 @@
 #include <future>
 #include "utils/Simplifier.h"
 #include <utils/GltfOptimizer.h>
-
+#ifdef _WIN32
 #define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
 #include <crtdbg.h>
-
+#endif
 using namespace std;
 using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
@@ -146,11 +146,15 @@ int main1() {
 	//options->setOptionString("eb quantize ct=meshopt");
 	//exportGltfWithOptions(R"(龙翔桥站厅)", "b3dm", options, "jpg", 0.5, true);
 	//OSG_NOTICE << R"(龙翔桥站厅处理完毕)" << std::endl;
+#ifdef _WIN32
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
 	options->setOptionString("eb pp ct=meshopt");
 	exportGltfWithOptions(R"(芜湖水厂总装单位M)", "gltf", options, "jpg", 0.5, false);
 	OSG_NOTICE << R"(芜湖水厂总装单位M处理完毕)" << std::endl;
+#ifdef _WIN32
 	_CrtDumpMemoryLeaks();
+#endif
 	//testSimplifier(R"(芜湖水厂总装单位M)");
 
 	//testGltfOptimizer(R"(02-输水洞)");

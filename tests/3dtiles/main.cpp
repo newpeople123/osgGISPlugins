@@ -11,7 +11,7 @@
 #include <osg/ComputeBoundsVisitor>
 #include <osg/LineWidth>
 #include <3dtiles/Tileset.h>
-#include <3dtiles/hlod/QuadtreeBuilder.h>
+#include <3dtiles/hlod/QuadTreeBuilder.h>
 #include <osg/MatrixTransform>
 using namespace std;
 using namespace osgGISPlugins;

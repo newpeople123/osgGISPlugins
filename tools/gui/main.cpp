@@ -66,7 +66,9 @@ static std::atomic<bool> isConverting = false;
 static std::atomic<bool> scrollToBottom = false;
 static std::mutex logMutex;
 static std::string currentToolName = "";
+#ifdef _WIN32
 static std::vector<PROCESS_INFORMATION> pis = {};
+#endif // _WIN32
 static Model23dtilesParams modelParams;
 
 #ifdef _WIN32
@@ -105,6 +107,12 @@ void onWindowClose(GLFWwindow* window) {
 }
 void openURL(const char* url) {
     ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+}
+#else
+void openURL(const char* url) {
+    std::string cmd = "xdg-open ";
+    cmd += url;
+    system(cmd.c_str());
 }
 #endif // _WIN32
 
