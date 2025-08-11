@@ -9,7 +9,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # 设置项目根目录变量
 set(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-
+message(STATUS "目标操作系统(target system name): ${CMAKE_SYSTEM_NAME}")
 # 设置平台相关参数
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     add_compile_options("/utf-8")

@@ -399,6 +399,21 @@ std::vector<tinygltf::Mesh> GltfMerger::mergePrimitives(const std::pair<int, std
 	// mode模式不是triangles的，不合并
 	for (tinygltf::Primitive& primitive : otherModePrimitives)
 	{
+		if (primitive.indices != -1)
+		{
+			tinygltf::Accessor oldIndicesAccessor = _model.accessors[primitive.indices];
+			tinygltf::BufferView oldIndicesBufferView = _model.bufferViews[oldIndicesAccessor.bufferView];
+			tinygltf::Buffer oldIndicesBuffer = _model.buffers[oldIndicesBufferView.buffer];
+
+			oldIndicesBufferView.buffer = newBuffers.size();
+			newBuffers.push_back(oldIndicesBuffer);
+
+			oldIndicesAccessor.bufferView = newBufferViews.size();
+			newBufferViews.push_back(oldIndicesBufferView);
+
+			primitive.indices = newAccessors.size();
+			newAccessors.push_back(oldIndicesAccessor);
+		}
 		for (const auto& item : primitive.attributes)
 		{
 			const std::string& name = item.first;

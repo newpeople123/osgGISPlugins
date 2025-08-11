@@ -3,26 +3,32 @@ FROM ubuntu:20.04 as builder1
 LABEL author="wang tian yu"
 LABEL website="https://gitee.com/wtyhz/osg-gis-plugins"
 
+ARG GHPROXY=https://hk.gh-proxy.com/
+ENV GHPROXY=${GHPROXY}
+
 # 设置工作目录
 WORKDIR /app
 COPY 3rdparty/lib/linux/* /app/3rdparty/lib/linux/
+
 #定义时区参数
 ENV TZ=Asia/Shanghai
-#设置时区
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo '$TZ' > /etc/timezone \ 
+
+#设置时区并安装依赖
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo '$TZ' > /etc/timezone \
     && cp /etc/apt/sources.list /etc/apt/sources.list.bak \
-    && sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list \ 
-    && apt-get update \ 
+    && sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
+    && sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
+    && apt-get update \
     && apt-get -y install git curl zip unzip tar build-essential pkg-config freeglut3-dev mesa-utils libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev libx11-dev libxi-dev libxrandr-dev autoconf python3 libtool bison wget vim zlib1g-dev libffi-dev software-properties-common cmake \
-    && git clone https://ghfast.top/https://github.com/microsoft/vcpkg.git \
-    && sed -i 's#https://github.com/#https://ghfast.top/https://github.com/#g' /app/vcpkg/scripts/bootstrap.sh \
-    && sed -i 's#https://github.com/#https://ghfast.top/https://github.com/#g' /app/vcpkg/scripts/vcpkg-tools.json \
-    && sed -z -i 's|    vcpkg_list(SET params "x-download" "${arg_FILENAME}")\n    foreach(url IN LISTS arg_URLS)\n        vcpkg_list(APPEND params "--url=${url}")\n    endforeach()\n|    vcpkg_list(SET params "x-download" "${arg_FILENAME}")\n    vcpkg_list(SET arg_URLS_Real)\n    foreach(url IN LISTS arg_URLS)\n        string(REPLACE "http://download.savannah.nongnu.org/releases/gta/" "https://marlam.de/gta/releases/" url "${url}")\n        string(REPLACE "https://github.com/" "https://ghfast.top/https://github.com/" url "${url}")\n        string(REPLACE "https://ftp.gnu.org/" "https://mirrors.aliyun.com/" url "${url}")\n        string(REPLACE "https://raw.githubusercontent.com/" "https://ghfast.top/https://raw.githubusercontent.com/" url "${url}")\n        string(REPLACE "http://ftp.gnu.org/pub/gnu/" "https://mirrors.aliyun.com/gnu/" url "${url}")\n        string(REPLACE "https://ftp.postgresql.org/pub/" "https://mirrors.cloud.tencent.com/postgresql/" url "${url}")\n        string(REPLACE "https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/" "https://distfiles.macports.org/szip/" url "${url}")\n        vcpkg_list(APPEND params "--url=${url}")\n        vcpkg_list(APPEND arg_URLS_Real "${url}")\n    endforeach()\n    if(NOT vcpkg_download_distfile_QUIET)\n        message(STATUS "Downloading ${arg_URLS_Real} -> ${arg_FILENAME}...")\n    endif()|g' /app/vcpkg/scripts/cmake/vcpkg_download_distfile.cmake \
+    && git clone ${GHPROXY}github.com/microsoft/vcpkg.git \
+    && sed -i "s#https://github.com/#${GHPROXY}github.com/#g" /app/vcpkg/scripts/bootstrap.sh \
+    && sed -i "s#https://github.com/#${GHPROXY}github.com/#g" /app/vcpkg/scripts/vcpkg-tools.json \
+    && sed -z -i "s|    vcpkg_list(SET params \"x-download\" \"\${arg_FILENAME}\")\n    foreach(url IN LISTS arg_URLS)\n        vcpkg_list(APPEND params \"--url=\${url}\")\n    endforeach()\n|    vcpkg_list(SET params \"x-download\" \"\${arg_FILENAME}\")\n    vcpkg_list(SET arg_URLS_Real)\n    foreach(url IN LISTS arg_URLS)\n        string(REPLACE \"http://download.savannah.nongnu.org/releases/gta/\" \"https://marlam.de/gta/releases/\" url \"\${url}\")\n        string(REPLACE \"https://github.com/\" \"${GHPROXY}github.com/\" url \"\${url}\")\n        string(REPLACE \"https://ftp.gnu.org/\" \"https://mirrors.aliyun.com/\" url \"\${url}\")\n        string(REPLACE \"https://raw.githubusercontent.com/\" \"${GHPROXY}https://raw.githubusercontent.com/\" url \"\${url}\")\n        string(REPLACE \"http://ftp.gnu.org/pub/gnu/\" \"https://mirrors.aliyun.com/gnu/\" url \"\${url}\")\n        string(REPLACE \"https://ftp.postgresql.org/pub/\" \"https://mirrors.cloud.tencent.com/postgresql/\" url \"\${url}\")\n        string(REPLACE \"https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/\" \"https://distfiles.macports.org/szip/\" url \"\${url}\")\n        vcpkg_list(APPEND params \"--url=\${url}\")\n        vcpkg_list(APPEND arg_URLS_Real \"\${url}\")\n    endforeach()\n    if(NOT vcpkg_download_distfile_QUIET)\n        message(STATUS \"Downloading \${arg_URLS_Real} -> \${arg_FILENAME}...\")\n    endif()|g" /app/vcpkg/scripts/cmake/vcpkg_download_distfile.cmake \
     && /app/vcpkg/bootstrap-vcpkg.sh \
     && ln -s /app/vcpkg/vcpkg /usr/bin/vcpkg \
     && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update  \
-    && apt-get -y install python3.7 python3.7-dev python3.7-distutils  \
+    && apt-get update \
+    && apt-get -y install python3.7 python3.7-dev python3.7-distutils \
     && apt-get clean \
     && chmod ugo+x /app/3rdparty/lib/linux/fbx20180_fbxsdk_linux \
     && yes yes | /app/3rdparty/lib/linux/fbx20180_fbxsdk_linux /usr/local

@@ -77,7 +77,7 @@ public:
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input, const bool bSP) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
 #ifndef NDEBUG
-	if(bSP)
+	if (bSP)
 		readOptions->setOptionString("ShowProgress");
 #else
 	readOptions->setOptionString("TessellatePolygons");
@@ -168,14 +168,31 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
 			// Z 向上 -> Y 向上（绕 X 轴 -90 度）
 			rotation = osg::Quat(-osg::PI_2, osg::Vec3d(1.0, 0.0, 0.0));
 		}
+		else if (upAxis == "-Z")
+		{
+			// -Z 向上 -> Y 向上（绕 X 轴 +90 度）
+			rotation = osg::Quat(osg::PI_2, osg::Vec3d(1.0, 0.0, 0.0));
+		}
 		else if (upAxis == "X")
 		{
-			// X 向上 -> Y 向上（绕 Z 轴 +90 度）
+			// X 向上 -> Y 向上（绕 Z 轴 -90 度）
 			rotation = osg::Quat(-osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
 		}
+		else if (upAxis == "-X")
+		{
+			// -X 向上 -> Y 向上（绕 Z 轴 +90 度）
+			rotation = osg::Quat(osg::PI_2, osg::Vec3d(0.0, 0.0, 1.0));
+		}
+		else if (upAxis == "-Y")
+		{
+			// -Y 向上 -> Y 向上（绕 X 轴 180 度）
+			rotation = osg::Quat(osg::PI, osg::Vec3d(1.0, 0.0, 0.0));
+		}
+
 		matrix.makeRotate(rotation);
-		matrix.setTrans(datumPointYUp);  // 注意：平移不受旋转影响，已经转换好了
+		matrix.setTrans(datumPointYUp);
 	}
+
 	else
 	{
 		// FBX 默认是 Y 向上，直接平移
@@ -195,48 +212,48 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 {
 	if (!epsg.empty())
 	{
-			node->computeBound();
-			const osg::BoundingSphere bs = node->getBound();
-			if (!bs.valid())
-			{
-				OSG_NOTICE << "Error:Invalid model bounding box!" << std::endl;
-				exit(0);
-			}
-			const osg::Vec3d center = bs.center();
-			const string dstEpsg = "EPSG:4326";
-			const string srcEpsg = "EPSG:" + epsg;
-			PJ_CONTEXT* ctx = proj_context_create();
-			if (!ctx)
-			{
-				OSG_NOTICE << "Error creating projection context!" << std::endl;
-				exit(0);
-			}
-			const char* searchPath[] = { "./share/proj" };
-			proj_context_set_search_paths(ctx, 1, searchPath);
-			const char* dbPath = proj_context_get_database_path(ctx);
-			if (!dbPath) {
-				OSG_NOTICE << "Proj database not found. Please check your search path." << std::endl;
-				proj_context_destroy(ctx);
-				exit(0);
-			}
-
-			PJ* projTo4326 = createProjection(ctx, srcEpsg, dstEpsg);
-
-			PJ_COORD inputCoord = proj_coord(center.x(), -center.z(), center.y(), 0);
-			PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
-			latitude = outputCoord.xyz.y;
-			longitude = outputCoord.xyz.x;
-			altitude = outputCoord.xyz.z;
-
-			const osg::EllipsoidModel ellipsoidModel;
-			osg::Matrixd localToWorld;
-			ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), altitude, localToWorld);
-			PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
-			CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
-			node->accept(ctv);
-			proj_destroy(projTo4326);
-			proj_destroy(projTo4978);
+		node->computeBound();
+		const osg::BoundingSphere bs = node->getBound();
+		if (!bs.valid())
+		{
+			OSG_NOTICE << "Error:Invalid model bounding box!" << std::endl;
+			exit(0);
+		}
+		const osg::Vec3d center = bs.center();
+		const string dstEpsg = "EPSG:4326";
+		const string srcEpsg = "EPSG:" + epsg;
+		PJ_CONTEXT* ctx = proj_context_create();
+		if (!ctx)
+		{
+			OSG_NOTICE << "Error creating projection context!" << std::endl;
+			exit(0);
+		}
+		const char* searchPath[] = { "./share/proj" };
+		proj_context_set_search_paths(ctx, 1, searchPath);
+		const char* dbPath = proj_context_get_database_path(ctx);
+		if (!dbPath) {
+			OSG_NOTICE << "Proj database not found. Please check your search path." << std::endl;
 			proj_context_destroy(ctx);
+			exit(0);
+		}
+
+		PJ* projTo4326 = createProjection(ctx, srcEpsg, dstEpsg);
+
+		PJ_COORD inputCoord = proj_coord(center.x(), -center.z(), center.y(), 0);
+		PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
+		latitude = outputCoord.xyz.y;
+		longitude = outputCoord.xyz.x;
+		altitude = outputCoord.xyz.z;
+
+		const osg::EllipsoidModel ellipsoidModel;
+		osg::Matrixd localToWorld;
+		ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), altitude, localToWorld);
+		PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
+		CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
+		node->accept(ctv);
+		proj_destroy(projTo4326);
+		proj_destroy(projTo4978);
+		proj_context_destroy(ctx);
 	}
 }
 
@@ -326,8 +343,8 @@ int main(int argc, char** argv)
 	usage->setDescription(arguments.getApplicationName() + ", a tool to convert 3D models into 3D Tiles.");
 	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 39.0 -lng 116.0 -h 300.0 -tf ktx2");
 	usage->addCommandLineOption("-h/--help", "Display help information");
-	
-	
+
+
 	// Display help if requested
 	if (arguments.read("-h") || arguments.read("--help")) {
 		osg::setNotifyLevel(osg::NOTICE);
@@ -385,8 +402,11 @@ int main(int argc, char** argv)
 	bool showProgress = true;
 	if (arguments.find("-sp") > 0)
 		showProgress = false;
-	if(showProgress)
+	if (showProgress)
 		instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
+	const std::string inputPath = osgDB::getFilePath(input);
+	const std::string currentWorkingPath = osgDB::getCurrentWorkingDirectory();
+	osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
 	osg::ref_ptr<osg::Node> node = readModelFile(input, showProgress);
 	if (!node.valid())
 	{
@@ -400,7 +420,9 @@ int main(int argc, char** argv)
 		const std::string ext = osgDB::getLowerCaseFileExtension(input);
 		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, scaleX, scaleY, scaleZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
+		osgDB::setCurrentWorkingDirectory(currentWorkingPath);//因为坐标是投影坐标系时要设置proj.db的搜索路径
 		applyProjection(tNode, epsg, latitude, longitude, altitude);
+		osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
 
 		std::string optionsStr = "";
 		if (vertexFormat == "draco")
@@ -492,7 +514,7 @@ int main(int argc, char** argv)
 		else if (treeFormat == "kd")
 			treeBuilder = new KDTreeBuilder(treeConfig);
 		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
-		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder,config);
+		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder, config);
 
 		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
 		const bool result = tileset->write();
