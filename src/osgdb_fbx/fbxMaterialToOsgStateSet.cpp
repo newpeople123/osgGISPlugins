@@ -50,6 +50,34 @@ T getValue(const FbxProperty& props, std::string propName, const T& def) {
 	return prop.IsValid() ? prop.Get<T>() : def;
 }
 
+// Helpers to reduce duplication while preserving behavior
+static void assignTextureDetails(osg::ref_ptr<TextureDetails>& dst,
+	const osg::ref_ptr<osg::Texture2D>& texture,
+	const FbxFileTexture* fileTexture)
+{
+	if (!texture) return;
+	if (!dst) dst = new TextureDetails;
+	dst->texture = texture;
+	if (fileTexture) {
+		dst->channel = fileTexture->UVSet.Get();
+		dst->scale.set(fileTexture->GetScaleU(), fileTexture->GetScaleV());
+	}
+}
+
+static void applyLightmapEmissionOverride(osg::Material* material,
+	const osg::ref_ptr<TextureDetails>& emissive,
+	bool lightmapTextures)
+{
+	if (!material || !lightmapTextures) return;
+	if (emissive.valid())
+	{
+		osg::Vec4 diffuse = material->getDiffuse(osg::Material::FRONT_AND_BACK);
+		material->setEmission(osg::Material::FRONT_AND_BACK, diffuse);
+		material->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0, 0, 0, diffuse.a()));
+		material->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4(0, 0, 0, diffuse.a()));
+	}
+}
+
 StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbxMat)
 {
 	FbxMaterialMap::const_iterator it = _fbxMaterialMap.find(pFbxMat);
@@ -105,8 +133,9 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 	osg::ref_ptr<osg::Material> pOsgMat = new GltfPbrMRMaterial;
 	result.material = pOsgMat;
 	const FbxProperty topProp = pFbxMat->FindProperty("3dsMax", false);
-	if (topProp.GetPropertyDataType() == FbxCompoundDT) {
+	if (topProp.IsValid() && topProp.GetPropertyDataType() == FbxCompoundDT) {
 		const FbxProperty physicalProps = topProp.Find("Parameters", false);
+		const FbxProperty pbrProps = topProp.Find("main", false);
 		if (physicalProps.IsValid()) {
 			OSG_INFO << "3dsMax Physical Material." << std::endl;
 			pOsgMat->setName(pFbxMat->GetName());
@@ -171,11 +200,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			const FbxFileTexture* baseColorFileTexture = getFbxFileTextureTex("base_color");
 			if (baseColorFileTexture) {
 				mat->baseColorTexture = fbxTextureToOsgTexture(baseColorFileTexture);
-				osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-				result.diffuse = result.diffuse ? result.diffuse : temp;
-				result.diffuse->texture = mat->baseColorTexture;
-				result.diffuse->channel = baseColorFileTexture->UVSet.Get();
-				result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
+				assignTextureDetails(result.diffuse, mat->baseColorTexture, baseColorFileTexture);
 			}
 			mat->baseColorFactor = { baseColor[0],baseColor[1],baseColor[2],baseColor[3] };
 
@@ -232,11 +257,10 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			FbxDouble3 specularColorFactor = specularProperty.Get<FbxDouble3>();
 			KHR_materials_specular* specular_extension = new KHR_materials_specular;
 			specular_extension->setSpecularColorFactor({ specularColorFactor[0],specularColorFactor[1],specularColorFactor[2] });
-			specular_extension->osgSpecularTexture = result.ambient ? result.specular->texture : NULL;
+			specular_extension->osgSpecularTexture = result.specular ? result.specular->texture : NULL;
 			mat->materialExtensions.push_back(specular_extension);
 		}
-		const FbxProperty pbrProps = topProp.Find("main", false);
-		if (pbrProps.IsValid()) {
+		else if (pbrProps.IsValid()) {
 			const FbxProperty metalnessProps = pbrProps.Find("metalness");
 			if (metalnessProps.IsValid()) {
 				OSG_INFO << "3dsMax Metalness/Roughness Material." << std::endl;
@@ -259,31 +283,19 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* normalFileTexture = getTex("norm");
 				if (normalFileTexture) {
 					mat->normalTexture = fbxTextureToOsgTexture(normalFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.normalMap = result.normalMap ? result.normalMap : temp;
-					result.normalMap->texture = mat->normalTexture;
-					result.normalMap->channel = normalFileTexture->UVSet.Get();
-					result.normalMap->scale.set(normalFileTexture->GetScaleU(), normalFileTexture->GetScaleV());
+					assignTextureDetails(result.normalMap, mat->normalTexture, normalFileTexture);
 				}
 
 				const FbxFileTexture* aoFileTexture = getTex("ao");
 				if (aoFileTexture) {
 					mat->occlusionTexture = fbxTextureToOsgTexture(aoFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.ambient = result.ambient ? result.ambient : temp;
-					result.ambient->texture = mat->occlusionTexture;
-					result.ambient->channel = aoFileTexture->UVSet.Get();
-					result.ambient->scale.set(aoFileTexture->GetScaleU(), aoFileTexture->GetScaleV());
+					assignTextureDetails(result.ambient, mat->occlusionTexture, aoFileTexture);
 				}
 
 				const FbxFileTexture* emissiveFileTexture = getTex("emit_color");
 				if (emissiveFileTexture) {
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.emissive = result.emissive ? result.emissive : temp;
-					result.emissive->texture = mat->emissiveTexture;
-					result.emissive->channel = emissiveFileTexture->UVSet.Get();
-					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
+					assignTextureDetails(result.emissive, mat->emissiveTexture, emissiveFileTexture);
 				}
 				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
 				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
@@ -291,11 +303,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
 				if (baseColorFileTexture) {
 					mat->baseColorTexture = fbxTextureToOsgTexture(baseColorFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.diffuse = result.diffuse ? result.diffuse : temp;
-					result.diffuse->texture = mat->baseColorTexture;
-					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
-					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
+					assignTextureDetails(result.diffuse, mat->baseColorTexture, baseColorFileTexture);
 				}
 				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
 				mat->baseColorFactor = { baseColor[0],baseColor[1],baseColor[2],baseColor[3] };
@@ -373,7 +381,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
 					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
 					result.emissive = result.emissive ? result.emissive : temp;
-					result.emissive->texture = mat->occlusionTexture;
+					result.emissive->texture = mat->emissiveTexture;
 					result.emissive->channel = emissiveFileTexture->UVSet.Get();
 					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
 				}
@@ -398,8 +406,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
 				pbrSpecularGlossiness_extension->setDiffuseFactor({ baseColor[0],baseColor[1],baseColor[2],baseColor[3] });
 
-				const FbxFileTexture* glossinessFileTexture = getTex("specular");
-				const FbxFileTexture* specularFileTexture = getTex("glossiness");
+				const FbxFileTexture* glossinessFileTexture = getTex("glossiness");
+				const FbxFileTexture* specularFileTexture = getTex("specular");
 				osg::ref_ptr<osg::Texture2D> specularMap = specularFileTexture ? fbxTextureToOsgTexture(specularFileTexture) : NULL;
 				osg::ref_ptr<osg::Texture2D> glossinessMap = glossinessFileTexture ? fbxTextureToOsgTexture(glossinessFileTexture) : NULL;
 				if (specularMap && glossinessMap) {
@@ -443,251 +451,251 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 		}
 
 	}
-
-	if (pFbxLambert)
-	{
-		FbxDouble3 color = pFbxLambert->Diffuse.Get();
-		double factor = pFbxLambert->DiffuseFactor.Get();
-		double transparencyFactor = useTransparencyColorFactor ? transparencyColorFactor : pFbxLambert->TransparencyFactor.Get();
-		const osg::Vec4 baseColor = osg::Vec4(
-			static_cast<float>(color[0] * factor),
-			static_cast<float>(color[1] * factor),
-			static_cast<float>(color[2] * factor),
-			static_cast<float>(1.0 - transparencyFactor));
-		pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, baseColor);
-
-		color = pFbxLambert->Ambient.Get();
-		factor = pFbxLambert->AmbientFactor.Get();
-		pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4(
-			static_cast<float>(color[0] * factor),
-			static_cast<float>(color[1] * factor),
-			static_cast<float>(color[2] * factor),
-			1.0f));
-
-		color = pFbxLambert->Emissive.Get();
-		factor = pFbxLambert->EmissiveFactor.Get();
-		pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4(
-			static_cast<float>(color[0] * factor),
-			static_cast<float>(color[1] * factor),
-			static_cast<float>(color[2] * factor),
-			1.0f));
-
-		// get maps factors...
-		if (result.diffuse.valid()) result.diffuse->factor = pFbxLambert->DiffuseFactor.Get();
-		if (result.emissive.valid()) result.emissive->factor = pFbxLambert->EmissiveFactor.Get();
-		if (result.ambient.valid()) result.ambient->factor = pFbxLambert->AmbientFactor.Get();
-		if (result.normalMap.valid()) result.normalMap->factor = pFbxLambert->BumpFactor.Get();
-
-		if (const FbxSurfacePhong* pFbxPhong = FbxCast<FbxSurfacePhong>(pFbxLambert))
+	else {
+		if (pFbxLambert)
 		{
-			color = pFbxPhong->Specular.Get();
-			factor = pFbxPhong->SpecularFactor.Get();
-			pOsgMat->setSpecular(osg::Material::FRONT_AND_BACK, osg::Vec4(
+			FbxDouble3 color = pFbxLambert->Diffuse.Get();
+			double factor = pFbxLambert->DiffuseFactor.Get();
+			double transparencyFactor = useTransparencyColorFactor ? transparencyColorFactor : pFbxLambert->TransparencyFactor.Get();
+			const osg::Vec4 baseColor = osg::Vec4(
+				static_cast<float>(color[0] * factor),
+				static_cast<float>(color[1] * factor),
+				static_cast<float>(color[2] * factor),
+				static_cast<float>(1.0 - transparencyFactor));
+			pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, baseColor);
+
+			color = pFbxLambert->Ambient.Get();
+			factor = pFbxLambert->AmbientFactor.Get();
+			pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4(
 				static_cast<float>(color[0] * factor),
 				static_cast<float>(color[1] * factor),
 				static_cast<float>(color[2] * factor),
 				1.0f));
-			// Since Maya and 3D studio Max stores their glossiness values in exponential format (2^(log2(x))
-			// We need to linearize to values between 0-100 and then scale to values between 0-128.
-			// Glossiness values above 100 will result in shininess larger than 128.0 and will be clamped
-			double shininess = (64.0 * log(pFbxPhong->Shininess.Get())) / (5.0 * log(2.0));
-			pOsgMat->setShininess(osg::Material::FRONT_AND_BACK,
-				static_cast<float>(shininess));
+
+			color = pFbxLambert->Emissive.Get();
+			factor = pFbxLambert->EmissiveFactor.Get();
+			pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4(
+				static_cast<float>(color[0] * factor),
+				static_cast<float>(color[1] * factor),
+				static_cast<float>(color[2] * factor),
+				1.0f));
 
 			// get maps factors...
-			if (result.reflection.valid()) result.reflection->factor = pFbxPhong->ReflectionFactor.Get();
-			if (result.specular.valid()) result.specular->factor = pFbxPhong->SpecularFactor.Get();
-			// get more factors here...
-		}
+			if (result.diffuse.valid()) result.diffuse->factor = pFbxLambert->DiffuseFactor.Get();
+			if (result.emissive.valid()) result.emissive->factor = pFbxLambert->EmissiveFactor.Get();
+			if (result.ambient.valid()) result.ambient->factor = pFbxLambert->AmbientFactor.Get();
+			if (result.normalMap.valid()) result.normalMap->factor = pFbxLambert->BumpFactor.Get();
 
-		OSG_INFO << "3dsMax Traditional Material." << std::endl;
-		osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
-		mat->baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
-		FbxFileTexture* diffuseTexture = selectFbxFileTexture(pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse));
-		if (diffuseTexture)
-		{
-			mat->baseColorTexture = fbxTextureToOsgTexture(diffuseTexture);
-		}
-		KHR_materials_emissive_strength* emissive_strength_extension = new KHR_materials_emissive_strength;
-		emissive_strength_extension->setEmissiveStrength(1.0);
-		mat->materialExtensions.push_back(emissive_strength_extension);
+			if (const FbxSurfacePhong* pFbxPhong = FbxCast<FbxSurfacePhong>(pFbxLambert))
+			{
+				color = pFbxPhong->Specular.Get();
+				factor = pFbxPhong->SpecularFactor.Get();
+				pOsgMat->setSpecular(osg::Material::FRONT_AND_BACK, osg::Vec4(
+					static_cast<float>(color[0] * factor),
+					static_cast<float>(color[1] * factor),
+					static_cast<float>(color[2] * factor),
+					1.0f));
+				// Since Maya and 3D studio Max stores their glossiness values in exponential format (2^(log2(x))
+				// We need to linearize to values between 0-100 and then scale to values between 0-128.
+				// Glossiness values above 100 will result in shininess larger than 128.0 and will be clamped
+				double shininess = (64.0 * log(pFbxPhong->Shininess.Get())) / (5.0 * log(2.0));
+				pOsgMat->setShininess(osg::Material::FRONT_AND_BACK,
+					static_cast<float>(shininess));
 
-		FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
-		mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
-		if (shadingModel.Lower() == "blinn" || shadingModel.Lower() == "phong") {
-			pOsgMat->setName(pFbxMat->GetName());
-
-			auto getRoughness = [&](float shininess) { return sqrtf(2.0f / (2.0f + shininess)); };
-			mat->metallicFactor = 0.4;
-			const FbxProperty shininessProp = pFbxMat->FindProperty("Shininess");
-			if (shininessProp.IsValid()) {
-				FbxDouble roughness = shininessProp.Get<FbxDouble>();
-				mat->roughnessFactor = getRoughness(roughness);
+				// get maps factors...
+				if (result.reflection.valid()) result.reflection->factor = pFbxPhong->ReflectionFactor.Get();
+				if (result.specular.valid()) result.specular->factor = pFbxPhong->SpecularFactor.Get();
+				// get more factors here...
 			}
-			else {
-				const FbxProperty shininessExponentProp = pFbxMat->FindProperty("ShininessExponent");
-				if (shininessExponentProp.IsValid()) {
-					FbxDouble roughness = shininessExponentProp.Get<FbxDouble>();
+
+			OSG_INFO << "3dsMax Traditional Material." << std::endl;
+			osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
+			mat->baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
+			FbxFileTexture* diffuseTexture = selectFbxFileTexture(pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse));
+			if (diffuseTexture)
+			{
+				mat->baseColorTexture = fbxTextureToOsgTexture(diffuseTexture);
+			}
+			KHR_materials_emissive_strength* emissive_strength_extension = new KHR_materials_emissive_strength;
+			emissive_strength_extension->setEmissiveStrength(1.0);
+			mat->materialExtensions.push_back(emissive_strength_extension);
+
+			FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
+			mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
+			if (shadingModel.Lower() == "blinn" || shadingModel.Lower() == "phong") {
+				pOsgMat->setName(pFbxMat->GetName());
+
+				auto getRoughness = [&](float shininess) { return sqrtf(2.0f / (2.0f + shininess)); };
+				mat->metallicFactor = 0.4;
+				const FbxProperty shininessProp = pFbxMat->FindProperty("Shininess");
+				if (shininessProp.IsValid()) {
+					FbxDouble roughness = shininessProp.Get<FbxDouble>();
 					mat->roughnessFactor = getRoughness(roughness);
 				}
+				else {
+					const FbxProperty shininessExponentProp = pFbxMat->FindProperty("ShininessExponent");
+					if (shininessExponentProp.IsValid()) {
+						FbxDouble roughness = shininessExponentProp.Get<FbxDouble>();
+						mat->roughnessFactor = getRoughness(roughness);
+					}
+				}
 			}
 		}
-	}
-	else
-	{
-		FbxProperty specularProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecular);
-		FbxProperty shininessProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sShininess);
-		if (specularProperty.IsValid() || shininessProperty.IsValid())
+		else
 		{
-			pOsgMat = new GltfPbrSGMaterial;
-			pOsgMat->setName(pFbxMat->GetName());
-			result.material = pOsgMat;
-			osg::ref_ptr<GltfPbrSGMaterial> mat = dynamic_cast<GltfPbrSGMaterial*>(pOsgMat.get());
-			KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = new KHR_materials_pbrSpecularGlossiness;
-			if (specularProperty.IsValid()) {
-				FbxDouble3 specularColor = specularProperty.Get<FbxDouble3>();
-				FbxProperty specularFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecularFactor);
-				FbxDouble specularFactor = 1.0;
-				if (specularFactorProperty.IsValid())
-				{
-					specularFactor = specularFactorProperty.Get<FbxDouble>();
-				}
-				osg::Vec4 color(
-					static_cast<float>(specularColor[0] * specularFactor),
-					static_cast<float>(specularColor[1] * specularFactor),
-					static_cast<float>(specularColor[2] * specularFactor),
-					1.0f);
-				pOsgMat->setSpecular(osg::Material::FRONT_AND_BACK, color);
-				pbrSpecularGlossiness_extension->setSpecularFactor({ color.x(), color.y(), color.z() });
-			}
-
-			if (shininessProperty.IsValid()) {
-				double shininess = shininessProperty.Get<FbxDouble>();
-				shininess = (64.0 * log(shininess)) / (5.0 * log(2.0));
-				pOsgMat->setShininess(osg::Material::FRONT_AND_BACK, shininess);
-				pbrSpecularGlossiness_extension->setGlossinessFactor(osg::clampBetween(shininess / 128.0, 0.0, 1.0));
-			}
-			FbxProperty diffuseProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse);
-			if (diffuseProperty.IsValid()) {
-				FbxFileTexture* diffuseTexture = selectFbxFileTexture(diffuseProperty);
-				if (diffuseTexture)
-				{
-					pbrSpecularGlossiness_extension->osgDiffuseTexture = fbxTextureToOsgTexture(diffuseTexture);
+			FbxProperty specularProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecular);
+			FbxProperty shininessProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sShininess);
+			if (specularProperty.IsValid() || shininessProperty.IsValid())
+			{
+				pOsgMat = new GltfPbrSGMaterial;
+				pOsgMat->setName(pFbxMat->GetName());
+				result.material = pOsgMat;
+				osg::ref_ptr<GltfPbrSGMaterial> mat = dynamic_cast<GltfPbrSGMaterial*>(pOsgMat.get());
+				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = new KHR_materials_pbrSpecularGlossiness;
+				if (specularProperty.IsValid()) {
+					FbxDouble3 specularColor = specularProperty.Get<FbxDouble3>();
+					FbxProperty specularFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sSpecularFactor);
+					FbxDouble specularFactor = 1.0;
+					if (specularFactorProperty.IsValid())
+					{
+						specularFactor = specularFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 color(
+						static_cast<float>(specularColor[0] * specularFactor),
+						static_cast<float>(specularColor[1] * specularFactor),
+						static_cast<float>(specularColor[2] * specularFactor),
+						1.0f);
+					pOsgMat->setSpecular(osg::Material::FRONT_AND_BACK, color);
+					pbrSpecularGlossiness_extension->setSpecularFactor({ color.x(), color.y(), color.z() });
 				}
 
-				FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
-				FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
-				FbxDouble diffuseFactor = 1.0;
-				if (diffuseFactorProperty.IsValid())
-				{
-					diffuseFactor = diffuseFactorProperty.Get<FbxDouble>();
+				if (shininessProperty.IsValid()) {
+					double shininess = shininessProperty.Get<FbxDouble>();
+					shininess = (64.0 * log(shininess)) / (5.0 * log(2.0));
+					pOsgMat->setShininess(osg::Material::FRONT_AND_BACK, shininess);
+					pbrSpecularGlossiness_extension->setGlossinessFactor(osg::clampBetween(shininess / 128.0, 0.0, 1.0));
 				}
-				osg::Vec4 baseColor(
-					static_cast<float>(diffuseColor[0] * diffuseFactor),
-					static_cast<float>(diffuseColor[1] * diffuseFactor),
-					static_cast<float>(diffuseColor[2] * diffuseFactor),
-					1.0f);
-				pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, baseColor);
-				pbrSpecularGlossiness_extension->setDiffuseFactor({ baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() });
+				FbxProperty diffuseProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse);
+				if (diffuseProperty.IsValid()) {
+					FbxFileTexture* diffuseTexture = selectFbxFileTexture(diffuseProperty);
+					if (diffuseTexture)
+					{
+						pbrSpecularGlossiness_extension->osgDiffuseTexture = fbxTextureToOsgTexture(diffuseTexture);
+					}
+
+					FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
+					FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
+					FbxDouble diffuseFactor = 1.0;
+					if (diffuseFactorProperty.IsValid())
+					{
+						diffuseFactor = diffuseFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 baseColor(
+						static_cast<float>(diffuseColor[0] * diffuseFactor),
+						static_cast<float>(diffuseColor[1] * diffuseFactor),
+						static_cast<float>(diffuseColor[2] * diffuseFactor),
+						1.0f);
+					pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, baseColor);
+					pbrSpecularGlossiness_extension->setDiffuseFactor({ baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() });
+				}
+
+				mat->materialExtensionsByCesiumSupport.push_back(pbrSpecularGlossiness_extension);
+
+				FbxProperty ambientProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbient);
+				if (ambientProperty.IsValid()) {
+					FbxDouble3 ambientColor = ambientProperty.Get<FbxDouble3>();
+					FbxProperty ambientFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbientFactor);
+					FbxDouble ambientFactor = 1.0;
+					if (ambientFactorProperty.IsValid())
+					{
+						ambientFactor = ambientFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 color(
+						static_cast<float>(ambientColor[0] * ambientFactor),
+						static_cast<float>(ambientColor[1] * ambientFactor),
+						static_cast<float>(ambientColor[2] * ambientFactor),
+						1.0f);
+					pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, color);
+				}
+
+				FbxProperty emissionProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissive);
+				if (emissionProperty.IsValid()) {
+					FbxDouble3 emissionColor = emissionProperty.Get<FbxDouble3>();
+					FbxProperty emissionFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissiveFactor);
+					FbxDouble emissionFactor = 1.0;
+					if (emissionFactorProperty.IsValid())
+					{
+						emissionFactor = emissionFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 color(
+						static_cast<float>(emissionColor[0] * emissionFactor),
+						static_cast<float>(emissionColor[1] * emissionFactor),
+						static_cast<float>(emissionColor[2] * emissionFactor),
+						1.0f);
+					pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, color);
+					mat->emissiveFactor = { color.x(),color.y(),color.z() };
+				}
+			}
+			else {
+
+				osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
+				FbxProperty diffuseProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse);
+				if (diffuseProperty.IsValid()) {
+					FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
+					FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
+					FbxDouble diffuseFactor = 1.0;
+					if (diffuseFactorProperty.IsValid())
+					{
+						diffuseFactor = diffuseFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 baseColor(
+						static_cast<float>(diffuseColor[0] * diffuseFactor),
+						static_cast<float>(diffuseColor[1] * diffuseFactor),
+						static_cast<float>(diffuseColor[2] * diffuseFactor),
+						1.0f);
+					pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, baseColor);
+					mat->baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
+				}
+
+				FbxProperty ambientProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbient);
+				if (ambientProperty.IsValid()) {
+					FbxDouble3 ambientColor = ambientProperty.Get<FbxDouble3>();
+					FbxProperty ambientFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbientFactor);
+					FbxDouble ambientFactor = 1.0;
+					if (ambientFactorProperty.IsValid())
+					{
+						ambientFactor = ambientFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 color(
+						static_cast<float>(ambientColor[0] * ambientFactor),
+						static_cast<float>(ambientColor[1] * ambientFactor),
+						static_cast<float>(ambientColor[2] * ambientFactor),
+						1.0f);
+					pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, color);
+				}
+
+				FbxProperty emissionProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissive);
+				if (emissionProperty.IsValid()) {
+					FbxDouble3 emissionColor = emissionProperty.Get<FbxDouble3>();
+					FbxProperty emissionFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissiveFactor);
+					FbxDouble emissionFactor = 1.0;
+					if (emissionFactorProperty.IsValid())
+					{
+						emissionFactor = emissionFactorProperty.Get<FbxDouble>();
+					}
+					osg::Vec4 color(
+						static_cast<float>(emissionColor[0] * emissionFactor),
+						static_cast<float>(emissionColor[1] * emissionFactor),
+						static_cast<float>(emissionColor[2] * emissionFactor),
+						1.0f);
+					pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, color);
+					mat->emissiveFactor = { color.x(),color.y(),color.z() };
+				}
 			}
 
-			mat->materialExtensionsByCesiumSupport.push_back(pbrSpecularGlossiness_extension);
 
-			FbxProperty ambientProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbient);
-			if (ambientProperty.IsValid()) {
-				FbxDouble3 ambientColor = ambientProperty.Get<FbxDouble3>();
-				FbxProperty ambientFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbientFactor);
-				FbxDouble ambientFactor = 1.0;
-				if (ambientFactorProperty.IsValid())
-				{
-					ambientFactor = ambientFactorProperty.Get<FbxDouble>();
-				}
-				osg::Vec4 color(
-					static_cast<float>(ambientColor[0] * ambientFactor),
-					static_cast<float>(ambientColor[1] * ambientFactor),
-					static_cast<float>(ambientColor[2] * ambientFactor),
-					1.0f);
-				pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, color);
-			}
-
-			FbxProperty emissionProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissive);
-			if (emissionProperty.IsValid()) {
-				FbxDouble3 emissionColor = emissionProperty.Get<FbxDouble3>();
-				FbxProperty emissionFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissiveFactor);
-				FbxDouble emissionFactor = 1.0;
-				if (emissionFactorProperty.IsValid())
-				{
-					emissionFactor = emissionFactorProperty.Get<FbxDouble>();
-				}
-				osg::Vec4 color(
-					static_cast<float>(emissionColor[0] * emissionFactor),
-					static_cast<float>(emissionColor[1] * emissionFactor),
-					static_cast<float>(emissionColor[2] * emissionFactor),
-					1.0f);
-				pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, color);
-				mat->emissiveFactor = { color.x(),color.y(),color.z() };
-			}
 		}
-		else {
-
-			osg::ref_ptr<GltfPbrMRMaterial> mat = dynamic_cast<GltfPbrMRMaterial*>(pOsgMat.get());
-			FbxProperty diffuseProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuse);
-			if (diffuseProperty.IsValid()) {
-				FbxDouble3 diffuseColor = diffuseProperty.Get<FbxDouble3>();
-				FbxProperty diffuseFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sDiffuseFactor);
-				FbxDouble diffuseFactor = 1.0;
-				if (diffuseFactorProperty.IsValid())
-				{
-					diffuseFactor = diffuseFactorProperty.Get<FbxDouble>();
-				}
-				osg::Vec4 baseColor(
-					static_cast<float>(diffuseColor[0] * diffuseFactor),
-					static_cast<float>(diffuseColor[1] * diffuseFactor),
-					static_cast<float>(diffuseColor[2] * diffuseFactor),
-					1.0f);
-				pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, baseColor);
-				mat->baseColorFactor = { baseColor.x(),baseColor.y(),baseColor.z(),baseColor.w() };
-			}
-
-			FbxProperty ambientProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbient);
-			if (ambientProperty.IsValid()) {
-				FbxDouble3 ambientColor = ambientProperty.Get<FbxDouble3>();
-				FbxProperty ambientFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sAmbientFactor);
-				FbxDouble ambientFactor = 1.0;
-				if (ambientFactorProperty.IsValid())
-				{
-					ambientFactor = ambientFactorProperty.Get<FbxDouble>();
-				}
-				osg::Vec4 color(
-					static_cast<float>(ambientColor[0] * ambientFactor),
-					static_cast<float>(ambientColor[1] * ambientFactor),
-					static_cast<float>(ambientColor[2] * ambientFactor),
-					1.0f);
-				pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, color);
-			}
-
-			FbxProperty emissionProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissive);
-			if (emissionProperty.IsValid()) {
-				FbxDouble3 emissionColor = emissionProperty.Get<FbxDouble3>();
-				FbxProperty emissionFactorProperty = pFbxMat->FindProperty(FbxSurfaceMaterial::sEmissiveFactor);
-				FbxDouble emissionFactor = 1.0;
-				if (emissionFactorProperty.IsValid())
-				{
-					emissionFactor = emissionFactorProperty.Get<FbxDouble>();
-				}
-				osg::Vec4 color(
-					static_cast<float>(emissionColor[0] * emissionFactor),
-					static_cast<float>(emissionColor[1] * emissionFactor),
-					static_cast<float>(emissionColor[2] * emissionFactor),
-					1.0f);
-				pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, color);
-				mat->emissiveFactor = { color.x(),color.y(),color.z() };
-			}
-		}
-
-
 	}
-
 	if (_lightmapTextures)
 	{
 		// if using an emission map then adjust material properties accordingly...
