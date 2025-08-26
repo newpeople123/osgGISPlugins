@@ -11,6 +11,8 @@
 #include <ktx/gl_format.h>
 #include <osgdb_ktx/LoadTextureKTX.h>
 #include <thread>
+#include <algorithm>
+#include <cmath>
 
 inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
 {
@@ -122,7 +124,9 @@ inline VkFormat glGetVkFormatFromInternalFormat(GLint glFormat)
     case GL_COMPRESSED_SIGNED_RED_RGTC1: return VK_FORMAT_BC4_SNORM_BLOCK;                   // line through 1D space, 4x4 blocks, signed normalized
     case GL_COMPRESSED_SIGNED_RG_RGTC2: return VK_FORMAT_BC5_SNORM_BLOCK;                    // two lines through 1D space, 4x4 blocks, signed normalized
     case GL_LUMINANCE: return VK_FORMAT_R8_UNORM;                   // line through 1D space, 4x4 blocks, signed normalized
+    case GL_LUMINANCE16: return VK_FORMAT_R16_UNORM;
     case GL_LUMINANCE_ALPHA: return VK_FORMAT_R8G8_UNORM;                    // two lines through 1D space, 4x4 blocks, signed normalized
+    case GL_LUMINANCE16_ALPHA16: return VK_FORMAT_R16G16_UNORM;
 
     case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT: return VK_FORMAT_BC6H_UFLOAT_BLOCK;            // 3-component, 4x4 blocks, unsigned floating-point
     case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT: return VK_FORMAT_BC6H_SFLOAT_BLOCK;              // 3-component, 4x4 blocks, signed floating-point
@@ -217,6 +221,186 @@ inline GLint convertUNorm2SRgb(GLint glFormat) {
 
 namespace osg
 {
+    // 获取像素格式的通道数
+    int getNumComponentsForPixelFormat(GLenum pixelFormat)
+    {
+        switch (pixelFormat)
+        {
+        case GL_RGB:
+        case GL_RGB8:
+        case GL_SRGB:
+        case GL_SRGB8:
+            return 3; // RGB 格式
+        case GL_RGBA:
+        case GL_RGBA8:
+            return 4; // RGBA 格式
+        case GL_LUMINANCE:
+        case GL_LUMINANCE8:
+            return 1; // 单通道亮度格式
+        case GL_ALPHA:
+        case GL_ALPHA8:
+            return 1; // Alpha 通道
+        case GL_RG:
+        case GL_RG8:
+            return 2; // RG 格式
+            // 更多格式可以在这里添加...
+        default:
+            return 1; // 默认返回 1
+        }
+    }
+
+    // 转换图像数据类型为 GL_UNSIGNED_BYTE
+    osg::ref_ptr<osg::Image> convertImageToUnsignedByte(const osg::Image* image)
+    {
+        if (!image) return nullptr;
+
+        if (image->getDataType() == GL_UNSIGNED_BYTE)
+        {
+            return dynamic_cast<osg::Image*>(image->clone(osg::CopyOp::DEEP_COPY_ALL));
+        }
+
+
+        // 获取像素格式的通道数
+        int numComponents = getNumComponentsForPixelFormat(image->getPixelFormat());
+
+        // 创建新的图像，分配内存
+        osg::ref_ptr<osg::Image> result = new osg::Image;
+        result->allocateImage(image->s(), image->t(), image->r(),
+            image->getPixelFormat(), GL_UNSIGNED_BYTE, numComponents);
+
+        if (result->getTotalDataSize() == 0) return nullptr;
+
+        // 获取源数据和目标数据指针
+        const unsigned char* srcData = static_cast<const unsigned char*>(image->data());
+        unsigned char* dstData = static_cast<unsigned char*>(result->data());
+
+        GLenum srcDataType = image->getDataType();
+        size_t totalPixels = image->s() * image->t() * image->r();
+
+        // 根据源数据类型进行转换
+        switch (srcDataType)
+        {
+        case GL_UNSIGNED_SHORT:
+        {
+            const unsigned short* src = reinterpret_cast<const unsigned short*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将 16 位值映射到 8 位 (0-65535 -> 0-255)
+                dstData[i] = static_cast<unsigned char>((src[i] * 255) / 65535);
+            }
+            break;
+        }
+
+        case GL_SHORT:
+        {
+            const short* src = reinterpret_cast<const short*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将有符号 16 位值映射到 8 位 (-32768-32767 -> 0-255)
+                int value = src[i] + 32768; // 转换为无符号
+                dstData[i] = static_cast<unsigned char>((value * 255) / 65535);
+            }
+            break;
+        }
+
+        case GL_UNSIGNED_INT:
+        {
+            const unsigned int* src = reinterpret_cast<const unsigned int*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将 32 位值映射到 8 位 (0-4294967295 -> 0-255)
+                dstData[i] = static_cast<unsigned char>((src[i] * 255) / 4294967295ULL);
+            }
+            break;
+        }
+
+        case GL_INT:
+        {
+            const int* src = reinterpret_cast<const int*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将有符号 32 位值映射到 8 位 (-2147483648-2147483647 -> 0-255)
+                unsigned long long value = static_cast<unsigned long long>(src[i] + 2147483648ULL);
+                dstData[i] = static_cast<unsigned char>((value * 255) / 4294967295ULL);
+            }
+            break;
+        }
+
+        case GL_FLOAT:
+        {
+            const float* src = reinterpret_cast<const float*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将浮点值映射到 8 位 (0.0-1.0 -> 0-255)
+                float clamped = std::max(0.0f, std::min(1.0f, src[i]));
+                dstData[i] = static_cast<unsigned char>(clamped * 255.0f + 0.5f);
+            }
+            break;
+        }
+
+        case GL_DOUBLE:
+        {
+            const double* src = reinterpret_cast<const double*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将双精度浮点值映射到 8 位 (0.0-1.0 -> 0-255)
+                double clamped = std::max(0.0, std::min(1.0, src[i]));
+                dstData[i] = static_cast<unsigned char>(clamped * 255.0 + 0.5);
+            }
+            break;
+        }
+
+        case GL_HALF_FLOAT:
+        {
+            const unsigned short* src = reinterpret_cast<const unsigned short*>(srcData);
+            for (size_t i = 0; i < totalPixels * numComponents; ++i)
+            {
+                // 将半精度浮点值转换为 8 位
+                unsigned short half = src[i];
+                float value = 0.0f;
+
+                // 简化的半精度浮点解码
+                if (half == 0) {
+                    value = 0.0f;
+                }
+                else {
+                    int exp = (half >> 10) & 0x1F;
+                    int mantissa = half & 0x3FF;
+
+                    if (exp == 0) {
+                        // 非规格化数
+                        value = mantissa / 1024.0f;
+                    }
+                    else if (exp == 31) {
+                        // 无穷大或 NaN
+                        value = (mantissa == 0) ? 1.0f : 0.0f;
+                    }
+                    else {
+                        // 规格化数
+                        value = (1.0f + mantissa / 1024.0f) * std::pow(2.0f, exp - 15);
+                    }
+                }
+
+                float clamped = std::max(0.0f, std::min(1.0f, value));
+                dstData[i] = static_cast<unsigned char>(clamped * 255.0f + 0.5f);
+            }
+            break;
+        }
+
+        default:
+            OSG_WARN << "Unsupported data type for conversion to GL_UNSIGNED_BYTE: "
+                << std::hex << srcDataType << std::dec << std::endl;
+            return nullptr;
+        }
+
+        // 复制图像属性
+        result->setInternalTextureFormat(image->getInternalTextureFormat());
+        result->setFileName(image->getFileName());
+        result->setWriteHint(image->getWriteHint());
+
+        return result;
+    }
+
     osg::ref_ptr<osg::Image> loadImageFromKtx(ktxTexture* texture, int layer, int face,
         ktx_size_t imgDataSize, bool noCompress = false)
     {
@@ -283,6 +467,7 @@ namespace osg
         }
         if (image->getTotalDataSize() == 0) {
             OSG_WARN << "Failed to allocateImage" << std::dec << std::endl;
+            // 修复：清理已分配的image对象
             return nullptr;
         }
         memcpy(image->data(), imgData, imgDataSize);
@@ -364,16 +549,14 @@ namespace osg
 
         ktxTextureCreateInfo createInfo;
 
-        int max_dim = image->s() > image->t() ?
-            image->s() : image->t();
-        max_dim = floor(log2(max_dim));
-        createInfo.glInternalformat = convertUNorm2SRgb(image->getInternalTextureFormat());
+        GLint originalFormat = image->getInternalTextureFormat();
+        createInfo.glInternalformat = convertUNorm2SRgb(originalFormat);
         createInfo.vkFormat = glGetVkFormatFromInternalFormat(createInfo.glInternalformat);
         createInfo.baseWidth = image->s();
         createInfo.baseHeight = image->t();
         createInfo.baseDepth = image->r();
         createInfo.numDimensions = (image->r() > 1) ? 3 : ((image->t() > 1) ? 2 : 1);
-        createInfo.numLevels = max_dim;
+        createInfo.numLevels = osg::Image::computeNumberOfMipmapLevels(image->s(), image->t(), image->r());;
         createInfo.numLayers = 1;
         createInfo.numFaces = 1;
         createInfo.isArray = KTX_FALSE;
@@ -392,33 +575,58 @@ namespace osg
             return nullptr;
         }
 
-        osg::Image* imgCopy = dynamic_cast<osg::Image*>(image->clone(osg::CopyOp::DEEP_COPY_ALL));
-        for (size_t i = 0; i < max_dim; ++i)
+        const int layer = 0, face = 0;
+        osg::ref_ptr<osg::Image> imgCopy = convertImageToUnsignedByte(image);
+        for (size_t level = 0; level < createInfo.numLevels; ++level)
         {
-            int width = image->s() / pow(2, i);
-            int height = image->t() / pow(2, i);
-            width = width > 0 ? width : 1;
-            height = height > 0 ? height : 1;
-            imgCopy->scaleImage(width, height, imgCopy->r());
+            // 使用位移操作替代pow
+            auto levelWidth = osg::maximum<uint32_t>(1, image->s() >> level);
+            auto levelHeight = osg::maximum<uint32_t>(1, image->t() >> level);
+
+            
+            imgCopy->scaleImage(levelWidth, levelHeight, imgCopy->r());
             const ktx_uint8_t* src = (ktx_uint8_t*)imgCopy->data();
-            const unsigned int level = i;
-            result = ktxTexture_SetImageFromMemory(
-                ktxTexture(texture), level, 0, 0,
-                src, imgCopy->getTotalSizeInBytes());
+
+            ktx_size_t imageSize = imgCopy->getTotalSizeInBytes();
+            ktx_size_t expectedSize = ktxTexture_GetImageSize(texture, level, layer, face);
+            if (imageSize != expectedSize) {
+                OSG_WARN << "Image data size does not match the expected size" << std::endl;
+                ktxTexture_Destroy(texture);
+                return nullptr;
+            }
+            result = ktxTexture_SetImageFromMemory(texture, level, layer, face, src, expectedSize);
             if (result != KTX_SUCCESS)
             {
-                OSG_WARN << "Unable to save image " << i
+                OSG_WARN << "Unable to save image " << level
                     << " to KTX texture: " << ktxErrorString(result) << std::endl;
-                ktxTexture_Destroy(texture); return nullptr;
+                ktxTexture_Destroy(texture); 
+                return nullptr;
             }
         }
 
-        ktx_uint32_t w = texture->baseWidth, h = texture->baseHeight;
+        // 移除未使用的变量
         if (compressed) {
+            switch (createInfo.vkFormat) {
+            case VK_FORMAT_R8_UNORM:
+            case VK_FORMAT_R8_SRGB:
+            case VK_FORMAT_R8G8_UNORM:
+            case VK_FORMAT_R8G8_SRGB:
+            case VK_FORMAT_R8G8B8_UNORM:
+            case VK_FORMAT_R8G8B8_SRGB:
+            case VK_FORMAT_R8G8B8A8_UNORM:
+            case VK_FORMAT_R8G8B8A8_SRGB:
+                // Allowed formats
+                break;
+            default:
+                OSG_WARN << "Only the R8, RG8, RGB8, RGBA8 UNORM, and SRGB formats can be encoded in KTX2 compression, "
+                    "but format is " << std::to_string(VkFormat(createInfo.vkFormat)) << "." << std::endl;
+                return texture;
+            }
             ktxBasisParams params = { 0 };
             params.structSize = sizeof(params);
             params.compressionLevel = KTX_ETC1S_DEFAULT_COMPRESSION_LEVEL;
             params.uastc = KTX_FALSE;
+
             unsigned int numThreads = std::thread::hardware_concurrency();
             if (numThreads == 0) {
                 numThreads = 2;
@@ -429,6 +637,9 @@ namespace osg
             {
                 OSG_WARN << "Failed to compress ktxTexture2: "
                     << ktxErrorString(result) << std::endl;
+                // 修复：压缩失败时清理资源
+                ktxTexture_Destroy(texture);
+                return nullptr;
             }
         }
         return texture;
@@ -439,16 +650,17 @@ namespace osg
 
         ktxTextureCreateInfo createInfo;
 
-        int max_dim = image->s() > image->t() ?
-            image->s() : image->t();
-        max_dim = floor(log2(max_dim));
+        // 修复：防止整数溢出，使用更安全的计算方式
+        int max_dim = std::max(image->s(), image->t());
+
+        int numLevels = static_cast<int>(floor(log2(static_cast<double>(max_dim)))) + 1;
         createInfo.glInternalformat = convertUNorm2SRgb(image->getInternalTextureFormat());
         createInfo.vkFormat = glGetVkFormatFromInternalFormat(createInfo.glInternalformat);
         createInfo.baseWidth = image->s();
         createInfo.baseHeight = image->t();
         createInfo.baseDepth = image->r();
         createInfo.numDimensions = (image->r() > 1) ? 3 : ((image->t() > 1) ? 2 : 1);
-        createInfo.numLevels = max_dim;
+        createInfo.numLevels = numLevels;
         createInfo.numLayers = 1;
         createInfo.numFaces = 1;
         createInfo.isArray = KTX_FALSE;
@@ -466,24 +678,29 @@ namespace osg
             OSG_WARN << "Unable to create KTX for saving" << std::endl;
             return nullptr;
         }
-        osg::Image* imgCopy = dynamic_cast<osg::Image*>(image->clone(osg::CopyOp::DEEP_COPY_ALL));
-        for (size_t i = 0; i < max_dim; ++i)
+        // 修复：使用智能指针管理内存
+        osg::ref_ptr<osg::Image> imgCopy = convertImageToUnsignedByte(image);
+        for (size_t i = 0; i < numLevels; ++i)
         {
-            int width = image->s() / pow(2, i);
-            int height = image->t() / pow(2, i);
+            // 修复：使用位移操作替代pow
+            int width = image->s() >> i;
+            int height = image->t() >> i;
             width = width > 0 ? width : 1;
             height = height > 0 ? height : 1;
             imgCopy->scaleImage(width, height, imgCopy->r());
             const ktx_uint8_t* src = (ktx_uint8_t*)imgCopy->data();
             const unsigned int level = i;
+            // 修复：使用当前缩放后图像的实际大小
+            ktx_size_t imageSize = imgCopy->getTotalSizeInBytes();
             result = ktxTexture_SetImageFromMemory(
-                ktxTexture(texture), level, 0, 0,
-                src, imgCopy->getTotalSizeInBytes());
+                static_cast<ktxTexture*>(texture), level, 0, 0,
+                src, imageSize);
             if (result != KTX_SUCCESS)
             {
                 OSG_WARN << "Unable to save image " << i
                     << " to KTX texture: " << ktxErrorString(result) << std::endl;
-                ktxTexture_Destroy(texture); return nullptr;
+                ktxTexture_Destroy(texture); 
+                return nullptr;
             }
         }
         return texture;
@@ -523,7 +740,6 @@ namespace osg
         KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
         ktxTexture_Destroy(texture);
         return result == KTX_SUCCESS;
-        return false;
     }
 
     bool saveKtx1(std::ostream& out, const osg::Image* image)

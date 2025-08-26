@@ -359,31 +359,19 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				const FbxFileTexture* normalFileTexture = getTex("norm");
 				if (normalFileTexture) {
 					mat->normalTexture = fbxTextureToOsgTexture(normalFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.normalMap = result.normalMap ? result.normalMap : temp;
-					result.normalMap->texture = mat->normalTexture;
-					result.normalMap->channel = normalFileTexture->UVSet.Get();
-					result.normalMap->scale.set(normalFileTexture->GetScaleU(), normalFileTexture->GetScaleV());
+					assignTextureDetails(result.normalMap, mat->normalTexture, normalFileTexture);
 				}
 
 				const FbxFileTexture* aoFileTexture = getTex("ao");
 				if (aoFileTexture) {
 					mat->occlusionTexture = fbxTextureToOsgTexture(aoFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.ambient = result.ambient ? result.ambient : temp;
-					result.ambient->texture = mat->occlusionTexture;
-					result.ambient->channel = aoFileTexture->UVSet.Get();
-					result.ambient->scale.set(aoFileTexture->GetScaleU(), aoFileTexture->GetScaleV());
+					assignTextureDetails(result.ambient, mat->occlusionTexture, aoFileTexture);
 				}
 
 				const FbxFileTexture* emissiveFileTexture = getTex("emit_color");
 				if (emissiveFileTexture) {
 					mat->emissiveTexture = fbxTextureToOsgTexture(emissiveFileTexture);
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.emissive = result.emissive ? result.emissive : temp;
-					result.emissive->texture = mat->emissiveTexture;
-					result.emissive->channel = emissiveFileTexture->UVSet.Get();
-					result.emissive->scale.set(emissiveFileTexture->GetScaleU(), emissiveFileTexture->GetScaleV());
+					assignTextureDetails(result.emissive, mat->emissiveTexture, emissiveFileTexture);
 				}
 				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
 				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
@@ -397,11 +385,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				if (baseColorFileTexture) {
 					osg::ref_ptr<osg::Texture2D> baseColorMap = fbxTextureToOsgTexture(baseColorFileTexture);
 					pbrSpecularGlossiness_extension->osgDiffuseTexture = baseColorMap;
-					osg::ref_ptr<TextureDetails> temp = new TextureDetails;
-					result.diffuse = result.diffuse ? result.diffuse : temp;
-					result.diffuse->texture = baseColorMap;
-					result.diffuse->channel = baseColorFileTexture->UVSet.Get();
-					result.diffuse->scale.set(baseColorFileTexture->GetScaleU(), baseColorFileTexture->GetScaleV());
+					assignTextureDetails(result.diffuse, baseColorMap, baseColorFileTexture);
 				}
 				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
 				pbrSpecularGlossiness_extension->setDiffuseFactor({ baseColor[0],baseColor[1],baseColor[2],baseColor[3] });
@@ -696,17 +680,7 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 
 		}
 	}
-	if (_lightmapTextures)
-	{
-		// if using an emission map then adjust material properties accordingly...
-		if (result.emissive.valid())
-		{
-			osg::Vec4 diffuse = pOsgMat->getDiffuse(osg::Material::FRONT_AND_BACK);
-			pOsgMat->setEmission(osg::Material::FRONT_AND_BACK, diffuse);
-			pOsgMat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4(0, 0, 0, diffuse.a()));
-			pOsgMat->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4(0, 0, 0, diffuse.a()));
-		}
-	}
+	applyLightmapEmissionOverride(pOsgMat.get(), result.emissive, _lightmapTextures);
 
 
 
