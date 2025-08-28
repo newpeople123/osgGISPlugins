@@ -425,11 +425,7 @@ void Tile::optimizeNode()
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 {
 	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(parent->node.get(),
-												  osg::CopyOp::DEEP_COPY_NODES |
-													  osg::CopyOp::DEEP_COPY_DRAWABLES |
-													  osg::CopyOp::DEEP_COPY_ARRAYS |
-													  osg::CopyOp::DEEP_COPY_PRIMITIVES |
-													  osg::CopyOp::DEEP_COPY_USERDATA);
+												  osg::CopyOp::DEEP_COPY_ALL);
 	// 使用工厂方法创建对应类型的Tile
 	auto tile = createTileOfSameType(nodeCopy, parent);
 	tile->config = parent->config;

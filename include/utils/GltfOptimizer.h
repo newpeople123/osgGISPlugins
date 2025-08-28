@@ -85,16 +85,11 @@ namespace osgGISPlugins
             GENERATE_NORMAL_TEXTURE = (1 << 29),
 
 
-            //REDUCE_DRAWCALL_OPTIMIZATIONS = 
-            //TEXTURE_ATLAS_BUILDER_BY_STB |
-            //VERTEX_CACHE_BY_MESHOPTIMIZER |
-            //OVER_DRAW_BY_MESHOPTIMIZER |
-            //VERTEX_FETCH_BY_MESHOPTIMIZER,
-
-            REDUCE_DRAWCALL_OPTIMIZATIONS =
+            REDUCE_DRAWCALL_OPTIMIZATIONS = 
             TEXTURE_ATLAS_BUILDER_BY_STB |
-            VERTEX_POSTTRANSFORM |
-            VERTEX_PRETRANSFORM,
+            VERTEX_CACHE_BY_MESHOPTIMIZER |
+            OVER_DRAW_BY_MESHOPTIMIZER |
+            VERTEX_FETCH_BY_MESHOPTIMIZER,
 
             EXPORT_GLTF_OPTIMIZATIONS =
             INDEX_MESH |
@@ -174,7 +169,7 @@ namespace osgGISPlugins
         class VertexCacheVisitor :public osgUtil::BaseOptimizerVisitor
         {
         private:
-            bool _compressmore = true;
+            bool _compressmore = false;
         public:
             bool getCompressmore() const { return _compressmore; }
 

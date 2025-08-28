@@ -361,7 +361,7 @@ int main(int argc, char** argv)
 	}
 
 	// Parse arguments
-	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("png"));
+	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("ktx2"));
 	const std::string vertexFormat = parseArgument(arguments, "-vf", std::string("none"));
 	const std::string treeFormat = parseArgument(arguments, "-t", std::string("quad"));
 	const std::string compressLevel = parseArgument(arguments, "-cl", std::string("medium"));
@@ -428,9 +428,6 @@ int main(int argc, char** argv)
 		const std::string ext = osgDB::getLowerCaseFileExtension(input);
 		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, scaleX, scaleY, scaleZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
-		osg::ref_ptr<osgDB::Options> opt = new osgDB::Options;
-		opt->setOptionString("eb");
-		osgDB::writeNodeFile(*tNode, R"(E:\nginx-1.28.0\html\3dtiles\pbr3\root\root.b3dm)", opt);
 		osgDB::setCurrentWorkingDirectory(currentWorkingPath);//因为坐标是投影坐标系时要设置proj.db的搜索路径
 		applyProjection(tNode, epsg, latitude, longitude, altitude);
 		osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件

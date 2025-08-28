@@ -531,14 +531,6 @@ void GltfOptimizer::GenerateTangentVisitor::apply(osg::Geometry& geometry) {
 					generateTangent(geometry);
 				}
 			}
-			else
-			{
-				//optimizeOsgTexture(stateSet, geom);
-			}
-		}
-		else
-		{
-			//optimizeOsgTexture(stateSet, geom);
 		}
 	}
 }
@@ -733,9 +725,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
 				assert(uniqueVertices <= vertexCount);
 				osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
-				osg::ref_ptr<osg::UByteArray> optimizedIndices = GltfOptimizer::ReindexMeshVisitor::reindexMesh<osg::DrawElementsUByte, osg::UByteArray>(geometry, drawElements, primIndex, remap);
-				if (!optimizedIndices) continue;
-				drawElements->assign(optimizedIndices->begin(), optimizedIndices->end());
+				drawElements->assign(indices->begin(), indices->end());
 			}
 			else if (type == osg::PrimitiveSet::DrawElementsUShortPrimitiveType)
 			{
@@ -748,9 +738,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 
 				assert(uniqueVertices <= vertexCount);
 				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-				osg::ref_ptr<osg::UShortArray> optimizedIndices = GltfOptimizer::ReindexMeshVisitor::reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(geometry, drawElements, primIndex, remap);
-				if (!optimizedIndices) continue;
-				drawElements->assign(optimizedIndices->begin(), optimizedIndices->end());
+				drawElements->assign(indices->begin(), indices->end());
 			}
 			else if (type == osg::PrimitiveSet::DrawElementsUIntPrimitiveType)
 			{
@@ -762,9 +750,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
 				assert(uniqueVertices <= vertexCount);
 				osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-				osg::ref_ptr<osg::UIntArray> optimizedIndices = GltfOptimizer::ReindexMeshVisitor::reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(geometry, drawElements, primIndex, remap);
-				if (!optimizedIndices) continue;
-				drawElements->assign(optimizedIndices->begin(), optimizedIndices->end());
+				drawElements->assign(indices->begin(), indices->end());
 			}
 		}
 	}

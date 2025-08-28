@@ -74,8 +74,6 @@ namespace osgGISPlugins
 
 		Tileset(osg::ref_ptr<osg::Node> node, TreeBuilder& builder,Config iConfig) :geometricError(0.0), _node(node), config(iConfig){
 			config.validate();
-			using namespace std::chrono_literals; 
-			std::this_thread::sleep_for(12s);
 			_node->accept(builder);
 			root = builder.build();
 			root->config = config.tileConfig;
