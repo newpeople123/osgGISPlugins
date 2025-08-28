@@ -83,7 +83,8 @@ void Osg2Gltf::apply(osg::MatrixTransform &xform)
 
 	osg::Matrix matrix;
 	xform.computeLocalToWorldMatrix(matrix, this);
-	if (matrix != osg::Matrix::identity())
+
+	if (!matrix.isIdentity())
 	{
 		// 向gltf中写入translation、rotation、scale，与matrix互斥
 		{
@@ -351,6 +352,7 @@ tinygltf::Model Osg2Gltf::getGltfModel()
 	_model.extensionsRequired.erase(std::unique(_model.extensionsRequired.begin(), _model.extensionsRequired.end()), _model.extensionsRequired.end());
 	std::sort(_model.extensionsUsed.begin(), _model.extensionsUsed.end());
 	_model.extensionsUsed.erase(std::unique(_model.extensionsUsed.begin(), _model.extensionsUsed.end()), _model.extensionsUsed.end());
+
 	if (!_model.meshes.size())
 	{
 		tinygltf::Model model;
@@ -542,10 +544,6 @@ void Osg2Gltf::setPositionAccessor(const osg::Array *data, osg::PrimitiveSet *ps
 
 			idxAccessor.bufferView = idxBV;
 		}
-	}
-	else
-	{
-		OSG_FATAL << "primitiveSet type is " << type << ",that is not supported!Please optimize the Geometry using osgUtil::Optimizer::INDEX_MESH." << std::endl;
 	}
 }
 
@@ -834,6 +832,8 @@ int Osg2Gltf::getOsgTexture2Material(tinygltf::Material &gltfMaterial, const osg
 		_model.extensionsRequired.emplace_back(texture_transform_extension.name);
 		_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 		gltfMaterial.pbrMetallicRoughness.baseColorTexture.extensions[texture_transform_extension.name] = texture_transform_extension.GetValue();
+		gltfMaterial.pbrMetallicRoughness.metallicFactor = 0.0;
+		gltfMaterial.pbrMetallicRoughness.roughnessFactor = 0.5;
 	}
 
 	index = getCurrentMaterial(gltfMaterial);
@@ -965,6 +965,8 @@ int Osg2Gltf::getOsgMaterial2Material(tinygltf::Material &gltfMaterial, const os
 			_model.extensionsRequired.emplace_back(texture_transform_extension.name);
 			_model.extensionsUsed.emplace_back(texture_transform_extension.name);
 			gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.extensions[texture_transform_extension.name] = texture_transform_extension.GetValue();
+			gltfMaterial.pbrMetallicRoughness.metallicFactor = osgGltfMRMaterial->metallicFactor;
+			gltfMaterial.pbrMetallicRoughness.roughnessFactor = osgGltfMRMaterial->roughnessFactor;
 		}
 		if (osgGltfMRMaterial->baseColorTexture.valid())
 		{

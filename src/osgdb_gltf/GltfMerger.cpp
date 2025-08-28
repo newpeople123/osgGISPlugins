@@ -69,7 +69,7 @@ void GltfMerger::mergeMeshes()
 			_model.meshes.push_back(it->second[0]);
 
 			const osg::Matrixd matrix = it->first;
-			if (matrix != osg::Matrix::identity()) {
+			if (!matrix.isIdentity()) {
 				decomposeMatrix(matrix, node);
 			}
 		}
@@ -87,7 +87,7 @@ void GltfMerger::mergeMeshes()
 				_model.meshes.push_back(mesh);
 
 				const osg::Matrixd matrix = it->first;
-				if (matrix != osg::Matrix::identity()) {
+				if (!matrix.isIdentity()) {
 					decomposeMatrix(matrix, node);
 				}
 			}
@@ -168,212 +168,44 @@ void GltfMerger::mergeBuffers()
 
 void GltfMerger::mergeMaterials()
 {
-	const std::string transformExtensionName = "KHR_texture_transform";
 	std::vector<tinygltf::Material> newMaterials;
-
-	std::vector<tinygltf::Material> materials;
-	std::set<int> uniqueNoMergeMaterialIndex, uniqueMergeMaterialIndex;
-	for (const tinygltf::Mesh& mesh : _model.meshes)
-	{
-		for (const tinygltf::Primitive& primitive : mesh.primitives)
-		{
-			if (primitive.material == -1) continue;
-			tinygltf::Material material = _model.materials[primitive.material];
-			//如果含有emissive、normal、occlusion贴图则不合并
-			if (!(material.emissiveTexture.index == -1 &&
-				material.normalTexture.index == -1 &&
-				material.occlusionTexture.index == -1))
-
-			{
-				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				continue;
-			}
-			//如果含有其他纹理扩展或者metallicRoughness贴图不为空则不合并
-			if (!(material.extensions.size() == 0 && material.pbrMetallicRoughness.metallicRoughnessTexture.index == -1))
-			{
-				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				continue;
-			}
-
-			tinygltf::TextureInfo& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
-			//如果没有baseColor贴图则不合并
-			if (baseColorTexture.index == -1)
-			{
-				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				continue;
-			}
-			//如果没有纹理坐标则不合并
-			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
-			if (findTexcoordIndex == primitive.attributes.end())
-			{
-				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				tinygltf::Material& localMaterial = _model.materials[primitive.material];
-				tinygltf::TextureInfo& localBaseColorTexture = localMaterial.pbrMetallicRoughness.baseColorTexture;
-				localBaseColorTexture.extensions.erase(transformExtensionName);
-				continue;
-			}
-			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
-			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
-			if (extensionItem == baseColorTexture.extensions.end())
-			{
-				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				continue;
-			}
-
-			const int texcoordIndex = findTexcoordIndex->second;
-			const tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
-			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
-
-			if (oldTexcoords.size() != texcoordAccessor.count * 2)
-			{
-				uniqueNoMergeMaterialIndex.insert(primitive.material);
-				continue;
-			}
-
-			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
-			for (size_t j = 0; j < texcoordAccessor.count; ++j)
-			{
-				const float x = oldTexcoords[2 * j + 0];
-				const float y = oldTexcoords[2 * j + 1];
-				if (osg::absolute(x) > 1 || osg::absolute(y) > 1)
-				{
-					uniqueNoMergeMaterialIndex.insert(primitive.material);
-					continue;
-				}
-			}
-		}
-
-	}
-
-	for (const tinygltf::Mesh& mesh : _model.meshes)
-	{
-		for (const tinygltf::Primitive& primitive : mesh.primitives)
-		{
-			if (primitive.material == -1) continue;
-			if (uniqueNoMergeMaterialIndex.find(primitive.material) == uniqueNoMergeMaterialIndex.end())
-			{
-				tinygltf::Material material = _model.materials[primitive.material];
-				materials.push_back(material);
-				uniqueMergeMaterialIndex.insert(primitive.material);
-			}
-		}
-	}
-
-	for (size_t i = 0; i < materials.size(); i++)
-	{
-		tinygltf::Material& oldMaterial = materials.at(i);
-		oldMaterial.pbrMetallicRoughness.baseColorTexture.extensions.clear();
-
-		bool found = false;
-		for (size_t j = 0; j < newMaterials.size(); j++)
-		{
-			const tinygltf::Material& newMaterial = newMaterials.at(j);
-			if (newMaterial == oldMaterial)
-			{
-				found = true;
-				break;
-			}
-		}
-
-		if (!found)
-		{
-			newMaterials.push_back(oldMaterial);
-		}
-	}
-
-
-	if (newMaterials.size() + uniqueNoMergeMaterialIndex.size() == _model.materials.size())
-		return;
-
-	newMaterials.clear();
 	std::map<int, int> materialRemap;
 
-
-	for (const tinygltf::Mesh& mesh : _model.meshes)
+	for (size_t i = 0; i < _model.materials.size(); ++i)
 	{
-		for (const tinygltf::Primitive& primitive : mesh.primitives)
+		const auto& mat = _model.materials[i];
+
+		// 查找 newMaterials 中是否已有相同材质
+		auto it = std::find_if(newMaterials.begin(), newMaterials.end(),
+			[&mat](const tinygltf::Material& m) { return m == mat; });
+
+		if (it != newMaterials.end())
 		{
-			if (primitive.material == -1) continue;
-			if (uniqueMergeMaterialIndex.find(primitive.material) == uniqueMergeMaterialIndex.end()) continue;
-
-			tinygltf::Material& material = _model.materials[primitive.material];
-
-			tinygltf::TextureInfo& baseColorTexture = material.pbrMetallicRoughness.baseColorTexture;
-			//如果没有纹理坐标则不合并
-			const auto findTexcoordIndex = primitive.attributes.find("TEXCOORD_0");
-			//如果baseColor贴图没有启用KHR_texture_transform扩展则不合并
-			const auto& extensionItem = baseColorTexture.extensions.find(transformExtensionName);
-			const tinygltf::Value extensionVal = extensionItem->second;
-			const tinygltf::Value::Array offset = extensionVal.Get("offset").Get<tinygltf::Value::Array>();
-			const tinygltf::Value::Array scale = extensionVal.Get("scale").Get<tinygltf::Value::Array>();
-			const double offsetX = offset[0].GetNumberAsDouble();
-			const double offsetY = offset[1].GetNumberAsDouble();
-			const double scaleX = scale[0].GetNumberAsDouble();
-			const double scaleY = scale[1].GetNumberAsDouble();
-
-			const int texcoordIndex = findTexcoordIndex->second;
-			tinygltf::Accessor& texcoordAccessor = _model.accessors[texcoordIndex];
-			texcoordAccessor.maxValues[0] = -FLT_MAX;
-			texcoordAccessor.maxValues[1] = -FLT_MAX;
-			texcoordAccessor.minValues[0] = FLT_MAX;
-			texcoordAccessor.minValues[1] = FLT_MAX;
-
-			std::vector<float> oldTexcoords = getBufferData<float>(texcoordAccessor);
-
-			osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array(texcoordAccessor.count);
-			for (size_t j = 0; j < texcoordAccessor.count; ++j)
-			{
-				const float x = oldTexcoords[2 * j + 0] * scaleX + offsetX;
-				const float y = oldTexcoords[2 * j + 1] * scaleY + offsetY;
-				if (texcoordAccessor.maxValues.size())
-				{
-					texcoordAccessor.maxValues[0] = osg::maximum(texcoordAccessor.maxValues[0], (double)x);
-					texcoordAccessor.maxValues[1] = osg::maximum(texcoordAccessor.maxValues[1], (double)y);
-
-					texcoordAccessor.minValues[0] = osg::minimum(texcoordAccessor.minValues[0], (double)x);
-					texcoordAccessor.minValues[1] = osg::minimum(texcoordAccessor.minValues[1], (double)y);
-				}
-				// 提取结果
-				const osg::Vec2 resultUv(x, y);
-				texcoords->at(j) = (resultUv);
-			}
-			tinygltf::BufferView& texcoordBufferView = _model.bufferViews[texcoordAccessor.bufferView];
-			tinygltf::Buffer& buffer = _model.buffers[texcoordBufferView.buffer];
-			restoreBuffer(buffer, texcoordBufferView, texcoords);
+			// 已存在，记录映射
+			int newIndex = std::distance(newMaterials.begin(), it);
+			materialRemap[i] = newIndex;
+		}
+		else
+		{
+			// 不存在，加入新材质
+			int newIndex = (int)newMaterials.size();
+			newMaterials.push_back(mat);
+			materialRemap[i] = newIndex;
 		}
 	}
 
-	for (const int index : uniqueMergeMaterialIndex)
-	{
-		_model.materials[index].pbrMetallicRoughness.baseColorTexture.extensions.clear();
-	}
-
-	for (size_t i = 0; i < _model.materials.size(); i++)
-	{
-		tinygltf::Material& oldMaterial = _model.materials.at(i);
-
-		int index = -1;
-		for (size_t j = 0; j < newMaterials.size(); j++)
-		{
-			const tinygltf::Material& newMateiral = newMaterials.at(j);
-			if (newMateiral == oldMaterial)
-				index = j;
-		}
-		if (index == -1)
-		{
-			index = newMaterials.size();
-			newMaterials.push_back(oldMaterial);
-		}
-		materialRemap[i] = index;
-	}
-
+	// 替换 _model.materials
 	_model.materials = newMaterials;
-	for (tinygltf::Mesh& mesh : _model.meshes)
+
+	// 更新每个 primitive 的材质索引
+	for (auto& mesh : _model.meshes)
 	{
-		for (tinygltf::Primitive& primitive : mesh.primitives)
+		for (auto& primitive : mesh.primitives)
 		{
 			if (primitive.material != -1)
+			{
 				primitive.material = materialRemap[primitive.material];
+			}
 		}
 	}
 }

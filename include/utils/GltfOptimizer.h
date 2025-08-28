@@ -85,13 +85,18 @@ namespace osgGISPlugins
             GENERATE_NORMAL_TEXTURE = (1 << 29),
 
 
-            REDUCE_DRAWCALL_OPTIMIZATIONS = 
-            TEXTURE_ATLAS_BUILDER_BY_STB |
-            VERTEX_CACHE_BY_MESHOPTIMIZER |
-            OVER_DRAW_BY_MESHOPTIMIZER |
-            VERTEX_FETCH_BY_MESHOPTIMIZER,
+            //REDUCE_DRAWCALL_OPTIMIZATIONS = 
+            //TEXTURE_ATLAS_BUILDER_BY_STB |
+            //VERTEX_CACHE_BY_MESHOPTIMIZER |
+            //OVER_DRAW_BY_MESHOPTIMIZER |
+            //VERTEX_FETCH_BY_MESHOPTIMIZER,
 
-            EXPORT_GLTF_OPTIMIZATIONS=
+            REDUCE_DRAWCALL_OPTIMIZATIONS =
+            TEXTURE_ATLAS_BUILDER_BY_STB |
+            VERTEX_POSTTRANSFORM |
+            VERTEX_PRETRANSFORM,
+
+            EXPORT_GLTF_OPTIMIZATIONS =
             INDEX_MESH |
             REDUCE_DRAWCALL_OPTIMIZATIONS,
 
@@ -326,7 +331,6 @@ namespace osgGISPlugins
 
             void apply(osg::Geode& geode) override;
         };
-
 
         class GenerateTangentVisitor :public osgUtil::BaseOptimizerVisitor
         {

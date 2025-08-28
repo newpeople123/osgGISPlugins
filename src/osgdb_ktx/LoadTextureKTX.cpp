@@ -588,7 +588,7 @@ namespace osg
             const ktx_uint8_t* src = (ktx_uint8_t*)imgCopy->data();
 
             ktx_size_t imageSize = imgCopy->getTotalSizeInBytes();
-            ktx_size_t expectedSize = ktxTexture_GetImageSize(texture, level, layer, face);
+            ktx_size_t expectedSize = ktxTexture_GetImageSize(texture, level);
             if (imageSize != expectedSize) {
                 OSG_WARN << "Image data size does not match the expected size" << std::endl;
                 ktxTexture_Destroy(texture);

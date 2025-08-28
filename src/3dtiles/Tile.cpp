@@ -494,11 +494,6 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 		}
 	}
 
-	if (x == 39 && y == 26 && z == 0)
-	{
-		osgDB::writeNodeFile(*this->node.get(), R"(D:\nginx-1.22.1\html\3dtiles\test\6\)" + std::to_string(lod) + ".fbx");
-	}
-
 	config.gltfTextureOptions.maxTextureWidth *= textureFactor;
 	config.gltfTextureOptions.maxTextureHeight *= textureFactor;
 	config.gltfTextureOptions.maxTextureAtlasWidth *= textureFactor;

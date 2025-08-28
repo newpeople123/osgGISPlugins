@@ -308,8 +308,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				FbxDouble4 baseColor = getValue(pbrProps, "basecolor", FbxDouble4(1.0, 1.0, 1.0, 1.0));
 				mat->baseColorFactor = { baseColor[0],baseColor[1],baseColor[2],baseColor[3] };
 
-				mat->metallicFactor = getValue(pbrProps, "metalness", 1.0);
-				mat->roughnessFactor = getValue(pbrProps, "roughness", 1.0);
+				mat->metallicFactor = getValue(pbrProps, "metalness", 0.0);
+				mat->roughnessFactor = getValue(pbrProps, "roughness", 0.5);
 
 				const FbxFileTexture* roughnessFileTexture = getTex("roughness");
 				const FbxFileTexture* metalnessFileTexture = getTex("metalness");

@@ -3,6 +3,8 @@ using namespace osgGISPlugins;
 void Simplifier::simplifyMesh(osg::Geometry& geometry)
 {
     const unsigned int psetCount = geometry.getNumPrimitiveSets();
+    if (psetCount > 1)
+        return;
     for (unsigned int primIndex = 0; primIndex < psetCount; ++primIndex) {
         osg::ref_ptr<osg::PrimitiveSet> pset = geometry.getPrimitiveSet(primIndex);
         if (pset->getMode() == osg::PrimitiveSet::Mode::TRIANGLES) {

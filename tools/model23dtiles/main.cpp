@@ -18,6 +18,7 @@
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
+
 class CoordinateTransformVisitor :public osg::NodeVisitor
 {
 private:
@@ -76,13 +77,21 @@ public:
 // 读取模型文件
 osg::ref_ptr<osg::Node> readModelFile(const std::string& input, const bool bSP) {
 	osg::ref_ptr<osgDB::Options> readOptions = new osgDB::Options;
+	const std::string ext = osgDB::getLowerCaseFileExtension(input);
+	std::string optionStr = "";
+	if (ext == "obj")
+	{
+		optionStr += "noReverseFaces ";
+	}
 #ifndef NDEBUG
 	if (bSP)
-		readOptions->setOptionString("ShowProgress");
+		optionStr += "ShowProgress ";
 #else
-	readOptions->setOptionString("TessellatePolygons");
+	if (ext == "fbx")
+		optionStr += "TessellatePolygons ";
 #endif // !NDEBUG
 
+	readOptions->setOptionString(optionStr);
 	osg::ref_ptr<osg::Node> node = osgDB::readNodeFile(input, readOptions.get());
 
 	if (!node) {
@@ -205,7 +214,6 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
 	xtransform->addChild(node);
 	return xtransform;
 }
-
 
 // 将投影坐标的模型进行坐标转换
 void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& altitude)
@@ -334,6 +342,7 @@ void printUsage()
 int main(int argc, char** argv)
 {
 	Utils::initConsole();
+	osg::setNotifyLevel(osg::NotifySeverity::NOTICE);
 
 	osgDB::Registry* instance = Utils::registerFileAliases();
 
@@ -344,7 +353,6 @@ int main(int argc, char** argv)
 	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 39.0 -lng 116.0 -h 300.0 -tf ktx2");
 	usage->addCommandLineOption("-h/--help", "Display help information");
 
-
 	// Display help if requested
 	if (arguments.read("-h") || arguments.read("--help")) {
 		osg::setNotifyLevel(osg::NOTICE);
@@ -353,7 +361,7 @@ int main(int argc, char** argv)
 	}
 
 	// Parse arguments
-	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("ktx2"));
+	const std::string textureFormat = parseArgument(arguments, "-tf", std::string("png"));
 	const std::string vertexFormat = parseArgument(arguments, "-vf", std::string("none"));
 	const std::string treeFormat = parseArgument(arguments, "-t", std::string("quad"));
 	const std::string compressLevel = parseArgument(arguments, "-cl", std::string("medium"));
@@ -372,8 +380,8 @@ int main(int argc, char** argv)
 	double longitude = parseArgument(arguments, "-lng", 116.0);
 	double altitude = parseArgument(arguments, "-alt", 300.0);
 
-	const int maxTextureWidth = parseArgument(arguments, "-tw", 256);
-	const int maxTextureHeight = parseArgument(arguments, "-th", 256);
+	const int maxTextureWidth = parseArgument(arguments, "-tw", 2048);
+	const int maxTextureHeight = parseArgument(arguments, "-th", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-aw", 2048);
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-ah", 2048);
 
@@ -420,6 +428,9 @@ int main(int argc, char** argv)
 		const std::string ext = osgDB::getLowerCaseFileExtension(input);
 		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, scaleX, scaleY, scaleZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
+		osg::ref_ptr<osgDB::Options> opt = new osgDB::Options;
+		opt->setOptionString("eb");
+		osgDB::writeNodeFile(*tNode, R"(E:\nginx-1.28.0\html\3dtiles\pbr3\root\root.b3dm)", opt);
 		osgDB::setCurrentWorkingDirectory(currentWorkingPath);//因为坐标是投影坐标系时要设置proj.db的搜索路径
 		applyProjection(tNode, epsg, latitude, longitude, altitude);
 		osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
