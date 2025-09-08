@@ -52,34 +52,34 @@ void OcTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const
 
 	const osg::Vec3d mid = bounds.center();
 
-		for (size_t i = 0; i < tile->children.size(); ++i)
-		{
-			for (int a = 0; a < 2; ++a) {
-				for (int b = 0; b < 2; ++b) {
-					for (int c = 0; c < 2; ++c) {
-						if (group.size() > 0)
-						{
-							osg::BoundingBox childBound;
+	for (size_t i = 0; i < tile->children.size(); ++i)
+	{
+		for (int a = 0; a < 2; ++a) {
+			for (int b = 0; b < 2; ++b) {
+				for (int c = 0; c < 2; ++c) {
+					if (group.size() > 0)
+					{
+						osg::BoundingBox childBound;
 
-							// 计算子空间的包围盒
-							childBound._min.set(
-								a ? mid.x() : bounds._min.x(),
-								b ? mid.y() : bounds._min.y(),
-								c ? mid.z() : bounds._min.z()
-							);
-							childBound._max.set(
-								a ? bounds._max.x() : mid.x(),
-								b ? bounds._max.y() : mid.y(),
-								c ? bounds._max.z() : mid.z()
-							);
+						// 计算子空间的包围盒
+						childBound._min.set(
+							a ? mid.x() : bounds._min.x(),
+							b ? mid.y() : bounds._min.y(),
+							c ? mid.z() : bounds._min.z()
+						);
+						childBound._max.set(
+							a ? bounds._max.x() : mid.x(),
+							b ? bounds._max.y() : mid.y(),
+							c ? bounds._max.z() : mid.z()
+						);
 
-							divideI3DM(group, childBound, dynamic_cast<I3DMTile*>(tile->children.at(i).get()));
-						}
-						else
-							return;
+						divideI3DM(group, childBound, dynamic_cast<I3DMTile*>(tile->children.at(i).get()));
 					}
+					else
+						return;
 				}
 			}
 		}
+	}
 }
 

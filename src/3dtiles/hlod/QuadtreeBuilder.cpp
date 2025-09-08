@@ -50,14 +50,14 @@ osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 			{
 				const osg::BoundingBox childTileNodeBound = computeChildBounds(bounds, axis, a, b);
 				osg::ref_ptr<B3DMTile> childB3DMTile = divideB3DM(group, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, 0, level + 1);
-				if(childB3DMTile->node.valid())
+				if (childB3DMTile->node.valid())
 					tile->children.push_back(childB3DMTile);
 			}
 			else
 				return tile;
 		}
 	}
-	
+
 	return tile;
 }
 

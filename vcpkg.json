@@ -5,8 +5,7 @@
       "name": "osg",
       "version>=": "3.6.5#20",
       "features": [
-        "plugins",
-        "tools"
+        "plugins"
       ]
     },
     {

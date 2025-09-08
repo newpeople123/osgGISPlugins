@@ -7,11 +7,11 @@
 using namespace osgGISPlugins;
 osg::ref_ptr<B3DMTile> TreeBuilder::build()
 {
-	for (size_t i=0;i<_geodes.size();++i)
+	for (size_t i = 0; i < _geodes.size(); ++i)
 	{
 		osg::MatrixList matrixs = _matrixs.at(i);
 		osg::ref_ptr<osg::Geode> gnode = _geodes.at(i);
-		if (matrixs.size() > 1)
+		if (matrixs.size() > 49)
 		{
 			_instanceGeodes.push_back(gnode);
 			_instanceMatrixs.push_back(matrixs);
@@ -26,10 +26,13 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::DEEP_COPY_NODES | osg::CopyOp::DEEP_COPY_USERDATA);
 				geodeCopy->removeChild(0, num);
 				geodeCopy->addChild(gnode->getChild(j));
-				osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(matrixs[0]);
-				transform->addChild(geodeCopy);
-				transform->computeBound();
-				_groupsToDivideList->addChild(transform);
+				for (size_t k = 0; k < matrixs.size(); ++k)
+				{
+					osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(matrixs[k]);
+					transform->addChild(geodeCopy);
+					transform->computeBound();
+					_groupsToDivideList->addChild(transform);
+				}
 			}
 		}
 	}
@@ -38,11 +41,22 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 	_matrixs.clear();
 	_dataContainers.clear();
 
+	osg::ref_ptr<B3DMTile> rootTile = new B3DMTile;
 	osg::ref_ptr<B3DMTile> b3dmTile = generateB3DMTile();
+	b3dmTile->parent = rootTile;
+	rootTile->children.push_back(b3dmTile);
 	osg::ref_ptr<I3DMTile> i3dmTile = generateI3DMTile();
 	regroupI3DMTile(b3dmTile, i3dmTile);
-
-	return b3dmTile;
+	if (i3dmTile->children.size())
+	{
+		for (auto it = i3dmTile->children.begin(); it != i3dmTile->children.end();)
+		{
+			it->get()->parent = rootTile;
+			rootTile->children.push_back(it->get());
+			++it;
+		}
+	}
+	return rootTile;
 }
 
 void TreeBuilder::pushMatrix(const osg::Matrix& matrix)
@@ -190,12 +204,12 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 
 	std::vector<osg::Node*> children;
 	const unsigned int num = _groupsToDivideList->getNumChildren();
-	for (unsigned int i = 0; i < num; ++i) {
+	for (size_t i = 0; i < num; ++i) {
 		children.push_back(_groupsToDivideList->getChild(i));
 	}
 	std::sort(children.begin(), children.end(), sortNodeByRadius);
 	osg::ref_ptr<osg::Group> tempGroup = new osg::Group;
-	for (unsigned int i = 0; i < num; ++i) {
+	for (size_t i = 0; i < num; ++i) {
 		tempGroup->addChild(children[i]);
 	}
 	_groupsToDivideList = tempGroup;
@@ -226,7 +240,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	_config.setMaxLevel(std::log2(max / min));
 	osg::ref_ptr<B3DMTile> result = divideB3DM(_groupsToDivideList, rootBox);
 	if (_groupsToDivideList->getNumChildren())
-		OSG_NOTICE << "_groupsToDivideList's length > 0!" << std::endl;
+		OSG_NOTICE << "b3dmTiles' length > 0!" << std::endl;
 	return result.release();
 }
 
@@ -235,7 +249,7 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 	std::vector<osg::ref_ptr<I3DMTile>> i3dmTiles;
 	osg::ref_ptr<osg::Group> i3dmTileGroup = new osg::Group;
 
-	for (size_t i=0;i<_instanceGeodes.size();i++)
+	for (size_t i = 0; i < _instanceGeodes.size(); i++)
 	{
 		osg::ref_ptr<I3DMTile> childI3dmTile = new I3DMTile;
 		childI3dmTile->node = new osg::Group;
@@ -265,7 +279,7 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 	std::sort(i3dmTiles.begin(), i3dmTiles.end(), sortTileNodeByRadius);
 	divideI3DM(i3dmTiles, computeBoundingBox(i3dmTileGroup), rootI3dmTile);
 	if (i3dmTiles.size())
-		OSG_NOTICE << "i3dmTiles's length > 0!" << std::endl;
+		OSG_NOTICE << "i3dmTiles' length > 0!" << std::endl;
 	return rootI3dmTile;
 }
 
@@ -282,11 +296,6 @@ void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<
 			const osg::BoundingBox i3dmTileBB = computeBoundingBox(it->get()->node);
 			if (intersect(b3dmTileBB, i3dmTileBB))
 			{
-				//osg::ref_ptr<I3DMTile> i3dmTileProxy = new I3DMTile(b3dmTile);
-				//b3dmTile->children.push_back(i3dmTileProxy);
-				//i3dmTileProxy->children.push_back(it->get());
-				//it->get()->parent = i3dmTileProxy;
-
 				b3dmTile->children.push_back(it->get());
 				it->get()->parent = b3dmTile;
 
@@ -331,7 +340,7 @@ bool TreeBuilder::intersect(const osg::BoundingBox& tileBBox, const osg::Boundin
 {
 	if (!tileBBox.valid() || !nodeBBox.valid())
 		return false;
-	
+
 	if (tileBBox.contains(nodeBBox._min) && tileBBox.contains(nodeBBox._max))
 		return true;
 
