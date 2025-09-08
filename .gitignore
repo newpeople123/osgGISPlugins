@@ -1,3 +1,4 @@
+*.docx
 # vcpkg 安装目录
 vcpkg_installed/
 
