@@ -51,13 +51,22 @@ namespace osgGISPlugins {
 
         static osg::Matrixd convertGltfNodeToOsgMatrix(const tinygltf::Node& node);
         static void decomposeMatrix(const osg::Matrixd& matrix, tinygltf::Node& node);
+
+        // helpers (micro-refactor)
+        static int calcAlignPadding(int offset, int align = 4);
+        static void appendPadding(tinygltf::Buffer& buffer, int& offset, int align = 4);
+        bool tryGetAccessor(int index, tinygltf::Accessor& out) const;
+        bool tryGetBufferView(int index, tinygltf::BufferView& out) const;
+        bool tryGetBuffer(int index, tinygltf::Buffer& out) const;
+        static void updateMinMax(tinygltf::Accessor& target, const tinygltf::Accessor& src);
+        static bool checkAttributesCompatible(const tinygltf::Primitive& ref, const tinygltf::Primitive& cur, const std::vector<std::string>& names, const tinygltf::Model& model);
     };
 
     template<typename TNew, typename TOld, typename TIndexArray>
     inline void GltfMerger::mergeIndices(tinygltf::Accessor& newAccessor, tinygltf::Buffer& newBuffer, const tinygltf::Accessor& oldIndiceAccessor, osg::ref_ptr<TIndexArray>& indices, unsigned int positionCount)
     {
         // 获取新旧索引
-        auto newIndices = getBufferData<TNew>(newBuffer, 0, newAccessor.count, calculateNumComponents(newAccessor.type));
+        auto newIndices = getBufferData<TNew>(newBuffer, 0, calculateNumComponents(newAccessor.type), newAccessor.count);
         auto oldIndices = getBufferData<TOld>(oldIndiceAccessor);
 
         // 预分配内存，提升性能

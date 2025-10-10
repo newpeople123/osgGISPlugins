@@ -5,11 +5,85 @@
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
 
 using namespace osgGISPlugins;
+
+// --- helpers implementation ---
+int GltfMerger::calcAlignPadding(int offset, int align)
+{
+	const int rem = offset % align;
+	return (align - rem) % align;
+}
+
+void GltfMerger::appendPadding(tinygltf::Buffer& buffer, int& offset, int align)
+{
+	const int needAdd = calcAlignPadding(offset, align);
+	for (int i = 0; i < needAdd; ++i) {
+		buffer.data.push_back(0);
+		++offset;
+	}
+}
+
+bool GltfMerger::tryGetAccessor(int index, tinygltf::Accessor& out) const
+{
+	if (index < 0 || static_cast<size_t>(index) >= _model.accessors.size()) return false;
+	out = _model.accessors[index];
+	return true;
+}
+
+bool GltfMerger::tryGetBufferView(int index, tinygltf::BufferView& out) const
+{
+	if (index < 0 || static_cast<size_t>(index) >= _model.bufferViews.size()) return false;
+	out = _model.bufferViews[index];
+	return true;
+}
+
+bool GltfMerger::tryGetBuffer(int index, tinygltf::Buffer& out) const
+{
+	if (index < 0 || static_cast<size_t>(index) >= _model.buffers.size()) return false;
+	out = _model.buffers[index];
+	return true;
+}
+
+void GltfMerger::updateMinMax(tinygltf::Accessor& target, const tinygltf::Accessor& src)
+{
+	if (src.minValues.empty()) return;
+	if (target.minValues.size() == src.minValues.size()) {
+		for (int k = 0; k < static_cast<int>(target.minValues.size()); ++k) {
+			target.minValues[k] = osg::minimum(target.minValues[k], src.minValues[k]);
+			target.maxValues[k] = osg::maximum(target.maxValues[k], src.maxValues[k]);
+		}
+	}
+	else {
+		target.minValues = src.minValues;
+		target.maxValues = src.maxValues;
+	}
+}
+
+bool GltfMerger::checkAttributesCompatible(const tinygltf::Primitive& ref, const tinygltf::Primitive& cur, const std::vector<std::string>& names, const tinygltf::Model& model)
+{
+	for (const std::string& n : names) {
+		const int refIdx = ref.attributes.at(n);
+		const int curIdx = cur.attributes.at(n);
+		if (refIdx < 0 || curIdx < 0) return false;
+		if (static_cast<size_t>(refIdx) >= model.accessors.size() || static_cast<size_t>(curIdx) >= model.accessors.size()) return false;
+		const tinygltf::Accessor& refAcc = model.accessors[refIdx];
+		const tinygltf::Accessor& curAcc = model.accessors[curIdx];
+		if (refAcc.bufferView < 0 || curAcc.bufferView < 0) return false;
+		if (static_cast<size_t>(refAcc.bufferView) >= model.bufferViews.size() || static_cast<size_t>(curAcc.bufferView) >= model.bufferViews.size()) return false;
+		const tinygltf::BufferView& refBv = model.bufferViews[refAcc.bufferView];
+		const tinygltf::BufferView& curBv = model.bufferViews[curAcc.bufferView];
+		if (refAcc.componentType != curAcc.componentType) return false;
+		if (refAcc.type != curAcc.type) return false;
+		if (refBv.byteStride != curBv.byteStride) return false;
+	}
+	return true;
+}
 void GltfMerger::mergeMeshes()
 {
 	if (!_model.scenes.size()) return;
 	// 矩阵对应的primitive
 	std::unordered_map<osg::Matrixd, std::vector<tinygltf::Primitive>, Utils::MatrixHash, Utils::MatrixEqual> matrixPrimitiveMap;
+	assert(_model.scenes.size() > 0);
+	assert(_model.scenes[0].nodes.size() > 0);
 	collectMeshNodes(_model.scenes[0].nodes[0], matrixPrimitiveMap);
 	//if (matrixPrimitiveMap.size() <= 1)
 	//	return;
@@ -21,11 +95,15 @@ void GltfMerger::mergeMeshes()
 
 	//复制图像相关的bufferView和buffer
 	for (tinygltf::Image& image : _model.images) {
+		if (image.bufferView < 0 || static_cast<size_t>(image.bufferView) >= _model.bufferViews.size())
+			continue;
 		tinygltf::BufferView& bufferView = _model.bufferViews[image.bufferView];
+		if (bufferView.buffer < 0 || static_cast<size_t>(bufferView.buffer) >= _model.buffers.size())
+			continue;
 		tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
 
-		bufferView.buffer = newBuffers.size();
-		image.bufferView = newBufferViews.size();
+		bufferView.buffer = static_cast<int>(newBuffers.size());
+		image.bufferView = static_cast<int>(newBufferViews.size());
 		newBufferViews.push_back(bufferView);
 		newBuffers.push_back(buffer);
 	}
@@ -105,7 +183,9 @@ void GltfMerger::mergeBuffers()
 		const auto& meshoptExtension = bufferView.extensions.find("EXT_meshopt_compression");
 		if (meshoptExtension != bufferView.extensions.end()) {
 			const tinygltf::Value& bufferIndex = meshoptExtension->second.Get("buffer");
-			tinygltf::Buffer& buffer = _model.buffers[bufferIndex.GetNumberAsInt()];
+			const int bufIdx = bufferIndex.GetNumberAsInt();
+			if (bufIdx < 0 || static_cast<size_t>(bufIdx) >= _model.buffers.size()) continue;
+			tinygltf::Buffer& buffer = _model.buffers[bufIdx];
 			totalBuffer.data.insert(totalBuffer.data.end(), buffer.data.begin(), buffer.data.end());
 
 			tinygltf::Value::Object newMeshoptExtension;
@@ -119,26 +199,16 @@ void GltfMerger::mergeBuffers()
 			bufferView.extensions.clear();
 			bufferView.extensions.insert(std::make_pair("EXT_meshopt_compression", newMeshoptExtension));
 			//4-byte aligned 
-			const int needAdd = 4 - byteOffset % 4;
-			if (needAdd % 4 != 0) {
-				for (int i = 0; i < needAdd; ++i) {
-					totalBuffer.data.push_back(0);
-					byteOffset++;
-				}
-			}
+			appendPadding(totalBuffer, byteOffset, 4);
 
 			bufferView.buffer = 1;
 			bufferView.byteOffset = fallbackByteOffset;
 			fallbackByteOffset += bufferView.byteLength;
 			//4-byte aligned 
-			const int fallbackNeedAdd = (4 - (fallbackByteOffset % 4)) % 4;
-			if (fallbackNeedAdd != 0) {
-				for (int i = 0; i < fallbackNeedAdd; ++i) {
-					fallbackByteOffset++;
-				}
-			}
+			appendPadding(fallbackBuffer, fallbackByteOffset, 4);
 		}
 		else {
+			if (bufferView.buffer < 0 || static_cast<size_t>(bufferView.buffer) >= _model.buffers.size()) continue;
 			tinygltf::Buffer& buffer = _model.buffers[bufferView.buffer];
 			totalBuffer.data.insert(totalBuffer.data.end(), buffer.data.begin(), buffer.data.end());
 			bufferView.buffer = 0;
@@ -146,13 +216,7 @@ void GltfMerger::mergeBuffers()
 			byteOffset += bufferView.byteLength;
 
 			//4-byte aligned 
-			const int needAdd = 4 - byteOffset % 4;
-			if (needAdd % 4 != 0) {
-				for (int i = 0; i < needAdd; ++i) {
-					totalBuffer.data.push_back(0);
-					byteOffset++;
-				}
-			}
+			appendPadding(totalBuffer, byteOffset, 4);
 		}
 	}
 	_model.buffers.clear();
@@ -204,7 +268,9 @@ void GltfMerger::mergeMaterials()
 		{
 			if (primitive.material != -1)
 			{
-				primitive.material = materialRemap[primitive.material];
+				auto it = materialRemap.find(primitive.material);
+				if (it != materialRemap.end())
+					primitive.material = it->second;
 			}
 		}
 	}
@@ -233,33 +299,43 @@ std::vector<tinygltf::Mesh> GltfMerger::mergePrimitives(const std::pair<int, std
 	{
 		if (primitive.indices != -1)
 		{
-			tinygltf::Accessor oldIndicesAccessor = _model.accessors[primitive.indices];
-			tinygltf::BufferView oldIndicesBufferView = _model.bufferViews[oldIndicesAccessor.bufferView];
-			tinygltf::Buffer oldIndicesBuffer = _model.buffers[oldIndicesBufferView.buffer];
+			if (primitive.indices >= 0 && static_cast<size_t>(primitive.indices) < _model.accessors.size()) {
+				tinygltf::Accessor oldIndicesAccessor = _model.accessors[primitive.indices];
+				if (oldIndicesAccessor.bufferView >= 0 && static_cast<size_t>(oldIndicesAccessor.bufferView) < _model.bufferViews.size()) {
+					tinygltf::BufferView oldIndicesBufferView = _model.bufferViews[oldIndicesAccessor.bufferView];
+					if (oldIndicesBufferView.buffer >= 0 && static_cast<size_t>(oldIndicesBufferView.buffer) < _model.buffers.size()) {
+						tinygltf::Buffer oldIndicesBuffer = _model.buffers[oldIndicesBufferView.buffer];
 
-			oldIndicesBufferView.buffer = newBuffers.size();
-			newBuffers.push_back(oldIndicesBuffer);
+						oldIndicesBufferView.buffer = static_cast<int>(newBuffers.size());
+						newBuffers.push_back(oldIndicesBuffer);
 
-			oldIndicesAccessor.bufferView = newBufferViews.size();
-			newBufferViews.push_back(oldIndicesBufferView);
+						oldIndicesAccessor.bufferView = static_cast<int>(newBufferViews.size());
+						newBufferViews.push_back(oldIndicesBufferView);
 
-			primitive.indices = newAccessors.size();
-			newAccessors.push_back(oldIndicesAccessor);
+						primitive.indices = static_cast<int>(newAccessors.size());
+						newAccessors.push_back(oldIndicesAccessor);
+					}
+				}
+			}
 		}
 		for (const auto& item : primitive.attributes)
 		{
 			const std::string& name = item.first;
-			tinygltf::Accessor oldAccessor = _model.accessors[primitive.attributes.at(name)];
+			const int accIndex = primitive.attributes.at(name);
+			if (accIndex < 0 || static_cast<size_t>(accIndex) >= _model.accessors.size()) continue;
+			tinygltf::Accessor oldAccessor = _model.accessors[accIndex];
+			if (oldAccessor.bufferView < 0 || static_cast<size_t>(oldAccessor.bufferView) >= _model.bufferViews.size()) continue;
 			tinygltf::BufferView oldBufferView = _model.bufferViews[oldAccessor.bufferView];
+			if (oldBufferView.buffer < 0 || static_cast<size_t>(oldBufferView.buffer) >= _model.buffers.size()) continue;
 			tinygltf::Buffer oldBuffer = _model.buffers[oldBufferView.buffer];
 
-			oldBufferView.buffer = newBuffers.size();
+			oldBufferView.buffer = static_cast<int>(newBuffers.size());
 			newBuffers.push_back(oldBuffer);
 
-			oldAccessor.bufferView = newBufferViews.size();
+			oldAccessor.bufferView = static_cast<int>(newBufferViews.size());
 			newBufferViews.push_back(oldBufferView);
 
-			primitive.attributes.at(name) = newAccessors.size();
+			primitive.attributes.at(name) = static_cast<int>(newAccessors.size());
 			newAccessors.push_back(oldAccessor);
 
 		}
@@ -292,6 +368,35 @@ std::vector<tinygltf::Mesh> GltfMerger::mergePrimitives(const std::pair<int, std
 		const std::vector<std::string>& attributeNames = group.first; // 属性名列表
 		const std::vector<tinygltf::Primitive>& primitives = group.second; // 相同属性的 primitive
 
+		// 校验分组内属性兼容性与 POSITION 存在性
+		bool canMerge = true;
+		for (const tinygltf::Primitive& primitive : primitives) {
+			// 必须包含 POSITION
+			if (primitive.attributes.find("POSITION") == primitive.attributes.end()) { canMerge = false; break; }
+			for (const std::string& name : attributeNames) {
+				const int accIdx = primitive.attributes.at(name);
+				if (accIdx < 0 || static_cast<size_t>(accIdx) >= _model.accessors.size()) { canMerge = false; break; }
+				const tinygltf::Accessor& acc = _model.accessors[accIdx];
+				if (acc.bufferView < 0 || static_cast<size_t>(acc.bufferView) >= _model.bufferViews.size()) { canMerge = false; break; }
+				const tinygltf::BufferView& bv = _model.bufferViews[acc.bufferView];
+				// 简单一致性：componentType 和 type、byteStride 相同
+				if (&primitive != &primitives.front()) {
+					const int refIdx = primitives.front().attributes.at(name);
+					const tinygltf::Accessor& refAcc = _model.accessors[refIdx];
+					const tinygltf::BufferView& refBv = _model.bufferViews[refAcc.bufferView];
+					if (acc.componentType != refAcc.componentType || acc.type != refAcc.type || bv.byteStride != refBv.byteStride) { canMerge = false; break; }
+				}
+			}
+			if (!canMerge) break;
+		}
+		if (!canMerge) {
+			// 回退：不合并，逐个输出
+			for (const tinygltf::Primitive& p : primitives) {
+				tinygltf::Mesh m; m.primitives = { p }; combinedMeshes.push_back(m);
+			}
+			continue;
+		}
+
 		tinygltf::Primitive combinedPrimitive;
 
 		for (const std::string& name : attributeNames)
@@ -317,12 +422,12 @@ std::vector<tinygltf::Mesh> GltfMerger::mergePrimitives(const std::pair<int, std
 		tinygltf::BufferView combinedIndiceBV;
 		tinygltf::Buffer combinedIndiceBuffer;
 
-		unsigned int positionCount = 0;
+		size_t positionCount = 0;
 		for (const tinygltf::Primitive& primitive : primitives) {
 			combinedPrimitive.material = primitive.material;
 			const tinygltf::Accessor oldAccessor = _model.accessors[primitive.indices];
 			const tinygltf::Accessor& positionAccessor = _model.accessors[primitive.attributes.at("POSITION")];
-			mergeIndice(combinedIndiceAccessor, combinedIndiceBV, combinedIndiceBuffer, oldAccessor, positionCount);
+			mergeIndice(combinedIndiceAccessor, combinedIndiceBV, combinedIndiceBuffer, oldAccessor, static_cast<unsigned int>(positionCount));
 			positionCount += positionAccessor.count;
 		}
 		combinedIndiceBV.buffer = newBuffers.size();

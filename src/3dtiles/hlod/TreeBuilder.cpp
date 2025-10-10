@@ -11,7 +11,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 	{
 		osg::MatrixList matrixs = _matrixs.at(i);
 		osg::ref_ptr<osg::Geode> gnode = _geodes.at(i);
-		if (matrixs.size() > 49)
+		if (matrixs.size() > 1)
 		{
 			_instanceGeodes.push_back(gnode);
 			_instanceMatrixs.push_back(matrixs);
