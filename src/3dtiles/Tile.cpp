@@ -93,7 +93,7 @@ void Tile::computeGeometricError()
 							  this->children[i]->computeGeometricError();
 						  }
 					  });
-
+	
 	double totalWeightedError = 0.0;
 	double totalWeight = 0.0;
 	for (osg::ref_ptr<Tile> child : this->children)
@@ -108,7 +108,7 @@ void Tile::computeGeometricError()
 			}
 			else
 			{
-				childGeometricError = getCesiumGeometricErrorByPixelSize(InitPixelSize, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
+				childGeometricError = getCesiumGeometricErrorByPixelSize(this->level > -1 ? InitPixelSize * std::pow(2, this->level) : InitPixelSize, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
 			}
 
 			totalWeightedError += childGeometricError * child->volume;
@@ -119,6 +119,7 @@ void Tile::computeGeometricError()
 	{
 		this->geometricError = totalWeightedError / totalWeight;
 	}
+	
 	// 确保父节点误差大于所有子节点
 	double maxChildError = 0.0;
 	for (const auto &child : this->children)
@@ -149,11 +150,11 @@ osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 	if (this->node.valid() && this->lod == 0)
 	{
 		osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
-		for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
-		{
-			group->addChild(currentNodeAsGroup->getChild(i));
+			for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
+			{
+				group->addChild(currentNodeAsGroup->getChild(i));
+			}
 		}
-	}
 	for (size_t i = 0; i < this->children.size(); ++i)
 	{
 		osg::ref_ptr<osg::Group> childGroup = this->children[i]->getAllDescendantNodes();
@@ -424,20 +425,30 @@ void Tile::optimizeNode()
 
 osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
 {
-	osg::ref_ptr<osg::Node> nodeCopy = osg::clone(parent->node.get(),
-												  osg::CopyOp::DEEP_COPY_ALL);
-	// 使用工厂方法创建对应类型的Tile
-	auto tile = createTileOfSameType(nodeCopy, parent);
-	tile->config = parent->config;
-	tile->level = parent->level;
-	tile->x = parent->x;
-	tile->y = parent->y;
-	tile->z = parent->z;
-	tile->lod = lodLevel;
-	tile->diagonalLength = parent->diagonalLength;
-	tile->volume = parent->volume;
-	tile->refine = Refinement::REPLACE;
-	return tile;
+	try
+	{
+		osg::ref_ptr<osg::Node> nodeCopy = osg::clone(
+			parent->node.get(),
+			osg::CopyOp::DEEP_COPY_ALL);
+
+		auto tile = createTileOfSameType(nodeCopy, parent);
+		tile->config = parent->config;
+		tile->level = parent->level;
+		tile->x = parent->x;
+		tile->y = parent->y;
+		tile->z = parent->z;
+		tile->lod = lodLevel;
+		tile->diagonalLength = parent->diagonalLength;
+		tile->volume = parent->volume;
+		tile->refine = Refinement::REPLACE;
+
+		return tile;
+	}
+	catch (const std::bad_alloc& e)
+	{
+		osg::notify(osg::FATAL) << "Error: Memory allocation failed. The model is too large or the available memory is insufficient. Please split the model or increase the available memory and try again!" << e.what() << std::endl;
+		return nullptr;
+	}
 }
 
 void Tile::applyLODStrategy()
