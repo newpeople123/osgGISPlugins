@@ -711,7 +711,7 @@ namespace osg
         ktxTexture* texture = saveImageToKtx2(image, compressed);
         if (texture == nullptr) return false;
 
-        KTX_error_code result = ktxTexture_WriteToNamedFile(texture, file.c_str());
+        KTX_error_code result = ktxTexture_WriteToNamedFile(texture, osgDB::convertStringFromCurrentCodePageToUTF8(file.c_str()).c_str());
         ktxTexture_Destroy(texture);
         return result == KTX_SUCCESS;
     }
