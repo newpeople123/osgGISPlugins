@@ -9,16 +9,22 @@ namespace osgGISPlugins
 	public:
 		I3DMTile() {
 			type = "i3dm";
+			this->level = 0;
 		}
 
 		I3DMTile(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent)
-			: Tile(node, parent, "i3dm") {}
+			: Tile(node, parent, "i3dm") {
+			this->level =0;
+		}
 
 		I3DMTile(osg::ref_ptr<Tile> parent)
-			: Tile(parent, "i3dm") {}
-
-		I3DMTile(const I3DMTile& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
-			: Tile(other, copyop) {}
+			: Tile(parent, "i3dm") {
+			this->level = 0;
+		}
+		I3DMTile(const I3DMTile & other, const osg::CopyOp & copyop = osg::CopyOp::SHALLOW_COPY)
+			: Tile(other, copyop) {
+			this->level = 0;
+		}
 
 		virtual osg::Object* cloneType() const { return new I3DMTile(); }
 

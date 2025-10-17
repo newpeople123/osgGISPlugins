@@ -473,6 +473,7 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 	{
 		children.push_back(group->getChild(i));
 	}
+	std::sort(children.begin(), children.end(), sortNodeByRadius);
 
 	unsigned int drawcallCommandCount = 0, triangleCount = 0;
 	osg::ref_ptr<osg::Node> outTriangleCountNode = nullptr;

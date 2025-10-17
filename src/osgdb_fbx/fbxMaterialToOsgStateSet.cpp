@@ -155,7 +155,6 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			if (invertRoughness) {
 				roughness = 1.0f - roughness;
 			}
-			FbxDouble4 emissiveColor = getValue(physicalProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
 			mat->metallicFactor = metalness;
 			mat->roughnessFactor = roughness;
 
@@ -224,7 +223,9 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 				mat->metallicRoughnessTexture = metalnessMap;
 			}
 
-			mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
+			FbxDouble4 emissiveColor = getValue(physicalProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
+			FbxDouble emisFactor = getValue(physicalProps, "emission", FbxDouble(1.0));
+			mat->emissiveFactor = { emissiveColor[0] * emisFactor,emissiveColor[1] * emisFactor,emissiveColor[2] * emisFactor };
 			mat->emissiveTexture = getTex("emit_color");
 			mat->normalTexture = result.normalMap ? result.normalMap->texture : NULL;
 			mat->occlusionTexture = result.ambient ? result.ambient->texture : NULL;
@@ -298,7 +299,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					assignTextureDetails(result.emissive, mat->emissiveTexture, emissiveFileTexture);
 				}
 				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
-				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
+				FbxDouble emisFactor = getValue(physicalProps, "emission", FbxDouble(1.0));
+				mat->emissiveFactor = { emissiveColor[0] * emisFactor,emissiveColor[1] * emisFactor,emissiveColor[2] * emisFactor };
 
 				const FbxFileTexture* baseColorFileTexture = getTex("base_color");
 				if (baseColorFileTexture) {
@@ -374,7 +376,8 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 					assignTextureDetails(result.emissive, mat->emissiveTexture, emissiveFileTexture);
 				}
 				FbxDouble4 emissiveColor = getValue(pbrProps, "emit_color", FbxDouble4(0.0, 0.0, 0.0, 1.0));
-				mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
+				FbxDouble emisFactor = getValue(physicalProps, "emission", FbxDouble(1.0));
+				mat->emissiveFactor = { emissiveColor[0] * emisFactor,emissiveColor[1] * emisFactor,emissiveColor[2] * emisFactor };
 
 				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = new KHR_materials_pbrSpecularGlossiness;
 				FbxDouble4 Specular = getValue(pbrProps, "Specular", FbxDouble4(1.0, 1.0, 1.0, 1.0));
@@ -504,8 +507,9 @@ StateSetContent FbxMaterialToOsgStateSet::convert(const FbxSurfaceMaterial* pFbx
 			emissive_strength_extension->setEmissiveStrength(1.0);
 			mat->materialExtensions.push_back(emissive_strength_extension);
 
-			FbxDouble3 emissiveColor = pFbxLambert->Emissive.Get();
-			mat->emissiveFactor = { emissiveColor[0],emissiveColor[1],emissiveColor[2] };
+			mat->emissiveFactor = { static_cast<float>(color[0] * factor),
+				static_cast<float>(color[1] * factor),
+				static_cast<float>(color[2] * factor) };
 			if (shadingModel.Lower() == "blinn" || shadingModel.Lower() == "phong") {
 				pOsgMat->setName(pFbxMat->GetName());
 

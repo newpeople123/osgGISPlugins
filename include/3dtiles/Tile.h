@@ -15,7 +15,7 @@ using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
 
-	constexpr float InitPixelSize = 20.0;
+	constexpr float InitPixelSize = 25.0;
 	constexpr int CesiumCanvasClientWidth = 1920;
 	constexpr int CesiumCanvasClientHeight = 936;// if fullscreen,set 1080
 	constexpr float CesiumFrustumAspectRatio = CesiumCanvasClientWidth / CesiumCanvasClientHeight;

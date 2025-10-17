@@ -33,7 +33,8 @@ void OBBVisitor::apply(osg::Geode& geode)
 			{
 				for (size_t i = 0; i < vertices->size(); ++i)
 				{
-					_vertices->push_back(vertices->at(i) * _currentMatrix);
+					const osg::Vec3& vertex = vertices->at(i);
+					_vertices->push_back(vertex * _currentMatrix);
 				}
 			}
 		}

@@ -21,7 +21,7 @@ void Utils::pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, s
 
 bool Utils::isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords)
 {
-	for (osg::Vec2 texCoord : *texCoords.get())
+	for (const osg::Vec2& texCoord : *texCoords.get())
 	{
 		const float texCoordX = osg::absolute(texCoord.x());
 		const float texCoordY = osg::absolute(texCoord.y());
