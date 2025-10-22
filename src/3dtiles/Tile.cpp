@@ -1,7 +1,8 @@
 #include "3dtiles/Tile.h"
 #include "utils/Simplifier.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
-void Tile::fromJson(const json &j)
+
+void Tile::fromJson(const json& j)
 {
 	if (j.contains("boundingVolume"))
 		boundingVolume.fromJson(j.at("boundingVolume"));
@@ -51,7 +52,7 @@ json Tile::toJson() const
 	if (!children.empty())
 	{
 		j["children"] = json::array();
-		for (const auto &child : children)
+		for (const auto& child : children)
 		{
 			j["children"].push_back(child->toJson());
 		}
@@ -62,7 +63,7 @@ json Tile::toJson() const
 int Tile::getMaxLevel() const
 {
 	int currentLevel = this->level;
-	for (auto &child : this->children)
+	for (auto& child : this->children)
 	{
 		currentLevel = osg::maximum(child->getMaxLevel(), currentLevel);
 	}
@@ -80,49 +81,55 @@ void Tile::computeGeometricError()
 	if (!this->children.size())
 		return;
 
-	// for (size_t i = 0; i < this->children.size(); ++i)
-	//{
-	//	this->children[i]->computeGeometricError();
-	// }
-
+#ifndef USE_TBB_PARALLEL
+	for (size_t i = 0; i < this->children.size(); ++i)
+	{
+		this->children[i]->computeGeometricError();
+	}
+#else
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-					  [&](const tbb::blocked_range<size_t> &r)
-					  {
-						  for (size_t i = r.begin(); i < r.end(); ++i)
-						  {
-							  this->children[i]->computeGeometricError();
-						  }
-					  });
-	
+		[&](const tbb::blocked_range<size_t>& r)
+		{
+			for (size_t i = r.begin(); i < r.end(); ++i)
+			{
+				this->children[i]->computeGeometricError();
+			}
+		});
+#endif // !USE_TBB_PARALLEL
+
+
 	double totalWeightedError = 0.0;
 	double totalWeight = 0.0;
 	for (osg::ref_ptr<Tile> child : this->children)
 	{
-		if (child->node.valid())
+		//if (child->node.valid())
+		//{
+		double childGeometricError = 0.0;
+
+		if (this->lod != -1)
 		{
-			double childGeometricError = 0.0;
-
-			if (this->lod != -1)
-			{
-				childGeometricError = getCesiumGeometricErrorByLodError(child->lodError, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
-			}
-			else
-			{
-				childGeometricError = getCesiumGeometricErrorByPixelSize(this->level > -1 ? InitPixelSize * std::pow(2, this->level) : InitPixelSize, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
-			}
-
-			totalWeightedError += childGeometricError * child->volume;
-			totalWeight += child->volume;
+			childGeometricError = getCesiumGeometricErrorByLodError(child->lodError, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
 		}
+		else
+		{
+			float pixelSize = this->level > -1 ? InitPixelSize * std::pow(2, this->level) : InitPixelSize;
+			pixelSize = osg::clampBetween(pixelSize, InitPixelSize, 250.0f);
+			//pixelSize = InitPixelSize;
+			childGeometricError = getCesiumGeometricErrorByPixelSize(pixelSize, child->diagonalLength * DIAGONAL_SCALE_FACTOR);
+		}
+
+		totalWeightedError += childGeometricError * child->volume;
+		totalWeight += child->volume;
+		//}
 	}
 	if (totalWeight > 0.0)
 	{
 		this->geometricError = totalWeightedError / totalWeight;
 	}
-	
+
 	// 确保父节点误差大于所有子节点
 	double maxChildError = 0.0;
-	for (const auto &child : this->children)
+	for (const auto& child : this->children)
 	{
 		maxChildError = osg::maximum(maxChildError, child->geometricError);
 	}
@@ -150,11 +157,11 @@ osg::ref_ptr<osg::Group> Tile::getAllDescendantNodes() const
 	if (this->node.valid() && this->lod == 0)
 	{
 		osg::ref_ptr<osg::Group> currentNodeAsGroup = this->node->asGroup();
-			for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
-			{
-				group->addChild(currentNodeAsGroup->getChild(i));
-			}
+		for (size_t i = 0; i < currentNodeAsGroup->getNumChildren(); ++i)
+		{
+			group->addChild(currentNodeAsGroup->getChild(i));
 		}
+	}
 	for (size_t i = 0; i < this->children.size(); ++i)
 	{
 		osg::ref_ptr<osg::Group> childGroup = this->children[i]->getAllDescendantNodes();
@@ -246,11 +253,57 @@ double Tile::getDistanceByPixelSize(const float pixelSize, const float radius)
 	return distance;
 }
 
+void Tile::getVolumeWeightedDiagonalLength(osg::ref_ptr<osg::Group> group, double& outDiagonalLength, double& outVolume)
+{
+	outDiagonalLength = 0.0;
+	outVolume = 0.0;
+
+	std::vector<double> clusterVolumes;
+	std::vector<double> clusterDiagonals;
+	double totalVolume = 0.0;
+
+	for (size_t i = 0; i < group->getNumChildren(); ++i)
+	{
+		osg::ref_ptr<osg::Node> node = group->getChild(i);
+
+		Utils::MaxGeometryVisitor mgv;
+		node->accept(mgv);
+		const osg::BoundingBox clusterMaxBound = mgv.maxBB;
+
+		// 计算聚类体积
+		const double clusterVolume = (clusterMaxBound._max.x() - clusterMaxBound._min.x()) *
+			(clusterMaxBound._max.y() - clusterMaxBound._min.y()) *
+			(clusterMaxBound._max.z() - clusterMaxBound._min.z());
+
+		// 计算聚类体积的对角线长度
+		const double clusterDiagonalLength = (clusterMaxBound._max - clusterMaxBound._min).length();
+
+		clusterVolumes.push_back(clusterVolume);
+		clusterDiagonals.push_back(clusterDiagonalLength);
+
+		totalVolume += clusterVolume;
+	}
+
+	// 计算加权平均对角线长度
+	if (totalVolume > 0.0)
+	{
+		double weightedDiagonalSum = 0.0;
+		for (size_t i = 0; i < clusterVolumes.size(); ++i)
+		{
+			double weight = clusterVolumes[i] / totalVolume;
+			weightedDiagonalSum += clusterDiagonals[i] * weight;
+		}
+		outDiagonalLength = weightedDiagonalSum;
+	}
+
+	outVolume = totalVolume;
+}
+
 void Tile::write()
 {
 	computeBoundingVolumeBox();
 
-	if (this->node.valid())
+	if (this->lod != -1)
 	{
 		if (writeNode())
 			setContentUri();
@@ -261,24 +314,65 @@ void Tile::write()
 
 void Tile::writeChildren()
 {
-	for (auto &child : children)
+#ifndef USE_TBB_PARALLEL
+	for (auto& child : children)
 	{
 		child->write();
 	}
+#else
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
+		[&](const tbb::blocked_range<size_t>& r)
+		{
+			for (size_t i = r.begin(); i < r.end(); ++i)
+			{
+				this->children[i]->write();
+			}
+		});
+#endif // !USE_TBB_PARALLEL
 }
 
 bool Tile::writeNode()
 {
+	osg::ref_ptr<osg::Node> oldNode = this->node;
+	this->node.release();
+	switch (this->lod)
+	{
+	case 2:
+		if (this->children[0]->lod == 0)
+		{
+			this->node = osg::clone(this->children[0]->node.get(), osg::CopyOp::DEEP_COPY_ALL);
+		}
+		else {
+			this->node = osg::clone(this->children[0]->children[0]->node.get(), osg::CopyOp::DEEP_COPY_ALL);
+		}
+		this->applyLODStrategy();
+		break;
+	case 1:
+		this->node = osg::clone(this->children[0]->node.get(), osg::CopyOp::DEEP_COPY_ALL);
+		this->applyLODStrategy();
+		break;
+	case 0:
+		this->node = osg::clone(oldNode.get(), osg::CopyOp::DEEP_COPY_ALL);
+		this->applyLODStrategy();
+		oldNode.release();
+		break;
+	default:
+		break;
+	}
+	if (!this->node.valid()) return false;
 	Utils::TriangleCounterVisitor tcv;
-	node->accept(tcv);
+	this->node->accept(tcv);
 	if (tcv.count == 0)
+	{
+		this->node = nullptr;
 		return false;
+	}
 
-	optimizeNode();
+	this->optimizeNode();
 
-	writeToFile();
+	this->writeToFile();
 
-	node = nullptr;
+	this->node = nullptr;
 	return true;
 }
 
@@ -292,30 +386,29 @@ void Tile::writeToFile()
 
 void Tile::buildLOD()
 {
+	unsigned int size = this->children.size();
+	osg::ref_ptr<osg::Node> waitCopyNode = this->node;
 	// 创建代理节点（LOD根节点）
-	osg::ref_ptr<Tile> rootProxy = this;
-	unsigned int size = rootProxy->children.size();
-
-	if (rootProxy->node.valid())
+	if (this->node.valid())
 	{
 		osg::ref_ptr<Tile> lodProxy;
 
 		// 根据是否有子节点决定是否需要额外的代理层
 		if (this->children.size() > 0)
 		{
-			lodProxy = createLODTile(rootProxy, -1);
-			rootProxy->node = nullptr;
-			rootProxy->children.push_back(lodProxy);
+			lodProxy = createLODTileWithoutNode(this, -1);
+			this->children.push_back(lodProxy);
 		}
 		else
 		{
-			lodProxy = rootProxy;
+			lodProxy = this;
 		}
 
 		// 构建LOD层级
-		osg::ref_ptr<Tile> tileLOD2 = createLODTile(lodProxy, 2);
-		osg::ref_ptr<Tile> tileLOD1 = createLODTile(tileLOD2, 1);
-		osg::ref_ptr<Tile> tileLOD0 = createLODTile(tileLOD1, 0);
+		osg::ref_ptr<Tile> tileLOD2 = createLODTile(lodProxy, waitCopyNode, 2);
+		osg::ref_ptr<Tile> tileLOD1 = createLODTile(tileLOD2, waitCopyNode, 1);
+		osg::ref_ptr<Tile> tileLOD0 = createLODTileWithoutNode(tileLOD1, 0);
+		tileLOD0->node = waitCopyNode;
 
 		// 设置属性和关系
 		tileLOD0->refine = Refinement::ADD;
@@ -362,12 +455,17 @@ void Tile::buildLOD()
 			}
 		}
 
-		size = rootProxy->children.size() - 1; // 最后一个是lod2或者lodProxy,不处理
+		tileLOD2->node = nullptr;
+		tileLOD1->node = nullptr;
+		this->node = nullptr;
+
+		size = this->children.size() - 1; // 最后一个是lod2或者lodProxy,不处理
 	}
+
 	// 递归处理子节点
 	for (size_t i = 0; i < size; ++i)
 	{
-		auto &child = rootProxy->children.at(i);
+		auto& child = this->children.at(i);
 		child->config = config;
 		child->buildLOD();
 	}
@@ -378,34 +476,36 @@ void Tile::computeDiagonalLengthAndVolume()
 	computeDiagonalLengthAndVolume(this->node);
 }
 
-void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node> &gnode)
+void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
 {
 	if (gnode.valid())
 	{
-		osg::ComputeBoundsVisitor cbv;
-		gnode->accept(cbv);
-		const osg::BoundingBox bb = cbv.getBoundingBox();
-		this->diagonalLength = (bb._max - bb._min).length();
+		//osg::ComputeBoundsVisitor cbv;
+		//gnode->accept(cbv);
+		//const osg::BoundingBox bb = cbv.getBoundingBox();
+		//this->diagonalLength = (bb._max - bb._min).length();
 
-		// 计算体积
-		this->volume = (bb._max.x() - bb._min.x()) *
-					   (bb._max.y() - bb._min.y()) *
-					   (bb._max.z() - bb._min.z());
+		//// 计算体积
+		//this->volume = (bb._max.x() - bb._min.x()) *
+		//	(bb._max.y() - bb._min.y()) *
+		//	(bb._max.z() - bb._min.z());
+		getVolumeWeightedDiagonalLength(gnode->asGroup(), this->diagonalLength, this->volume);
 	}
-	/* single thread */
-	// for (size_t i = 0; i < this->children.size(); ++i)
-	//{
-	//	this->children[i]->computeDiagonalLengthAndVolume();
-	// }
-
+#ifndef USE_TBB_PARALLEL
+	for (size_t i = 0; i < this->children.size(); ++i)
+	{
+		this->children[i]->computeDiagonalLengthAndVolume();
+	}
+#else
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-					  [&](const tbb::blocked_range<size_t> &r)
-					  {
-						  for (size_t i = r.begin(); i < r.end(); ++i)
-						  {
-							  this->children[i]->computeDiagonalLengthAndVolume();
-						  }
-					  });
+		[&](const tbb::blocked_range<size_t>& r)
+		{
+			for (size_t i = r.begin(); i < r.end(); ++i)
+			{
+				this->children[i]->computeDiagonalLengthAndVolume();
+			}
+		});
+#endif // !USE_TBB_PARALLEL
 }
 
 void Tile::optimizeNode(const unsigned int options)
@@ -423,15 +523,39 @@ void Tile::optimizeNode()
 	optimizeNode(config.gltfOptimizerOptions);
 }
 
-osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, int lodLevel)
+osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, osg::ref_ptr<osg::Node> waitCopyNode, int lodLevel)
 {
 	try
 	{
 		osg::ref_ptr<osg::Node> nodeCopy = osg::clone(
-			parent->node.get(),
+			waitCopyNode.get(),
 			osg::CopyOp::DEEP_COPY_ALL);
 
 		auto tile = createTileOfSameType(nodeCopy, parent);
+		tile->config = parent->config;
+		tile->level = parent->level;
+		tile->x = parent->x;
+		tile->y = parent->y;
+		tile->z = parent->z;
+		tile->lod = lodLevel;
+		tile->diagonalLength = parent->diagonalLength;
+		tile->volume = parent->volume;
+		tile->refine = Refinement::REPLACE;
+
+		return tile;
+	}
+	catch (const std::bad_alloc& e)
+	{
+		osg::notify(osg::FATAL) << "Error: Memory allocation failed. The model is too large or the available memory is insufficient. Please split the model or increase the available memory and try again!" << e.what() << std::endl;
+		return nullptr;
+	}
+}
+
+osg::ref_ptr<Tile> osgGISPlugins::Tile::createLODTileWithoutNode(osg::ref_ptr<Tile> parent, int lodLevel)
+{
+	try
+	{
+		auto tile = createTileOfSameType(nullptr, parent);
 		tile->config = parent->config;
 		tile->level = parent->level;
 		tile->x = parent->x;
@@ -493,7 +617,7 @@ void Tile::applyLODStrategy(const float simplifyRatioFactor, const float texture
 			// 几何误差:0.1~0.01m
 			targetError = 0.01 / this->diagonalLength;
 		}
-		if (this->lod != 0)
+		if (this->lod != 0 && node.valid())
 		{
 			Simplifier simplifier(sampleRatio, false, false, targetError);
 			node->accept(simplifier);

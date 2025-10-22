@@ -4,6 +4,9 @@
 #include <osg/MatrixTransform>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
+#ifdef USE_TBB_PARALLEL
+#include <tbb/parallel_for.h>
+#endif // USE_TBB_PARALLEL
 using namespace osgGISPlugins;
 osg::ref_ptr<B3DMTile> TreeBuilder::build()
 {
@@ -23,8 +26,11 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 			const unsigned int num = gnode->getNumDrawables();
 			for (size_t j = 0; j < num; ++j)
 			{
-				osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::DEEP_COPY_NODES | osg::CopyOp::DEEP_COPY_USERDATA);
-				geodeCopy->removeChild(0, num);
+				//osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::DEEP_COPY_NODES | osg::CopyOp::DEEP_COPY_USERDATA);
+				//geodeCopy->removeChild(0, num);
+				osg::ref_ptr<osg::Geode> geodeCopy = new osg::Geode;
+				geodeCopy->setName(gnode->getName());
+				geodeCopy->setUserDataContainer(gnode->getUserDataContainer());
 				geodeCopy->addChild(gnode->getChild(j));
 				for (size_t k = 0; k < matrixs.size(); ++k)
 				{
@@ -92,6 +98,7 @@ void TreeBuilder::apply(osg::Geode& geode)
 		return;
 	osg::ref_ptr<osg::UserDataContainer> userData = gnode->getUserDataContainer();
 	int index = -1;
+#ifndef USE_TBB_PARALLEL
 	for (size_t i = 0; i < _geodes.size(); ++i)
 	{
 		if (Utils::compareGeode(_geodes.at(i), gnode))
@@ -100,6 +107,24 @@ void TreeBuilder::apply(osg::Geode& geode)
 			break;
 		}
 	}
+#else
+	std::atomic<size_t> foundIndex(_geodes.size());  // 初始值设为 size() 表示“未找到”
+	tbb::task_group_context context;
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, _geodes.size()), [&](auto& range) {
+		for (size_t i = range.begin(); i != range.end(); ++i) {
+			if (context.is_group_execution_cancelled())
+				return;
+			if (Utils::compareGeode(_geodes[i], gnode))
+			{
+				foundIndex.store(i, std::memory_order_relaxed);
+				context.cancel_group_execution(); // 通知所有任务取消
+				return;
+			}
+		}
+		}, context);
+	index = (foundIndex.load() == _geodes.size()) ? -1 : foundIndex.load();
+#endif // !USE_TBB_PARALLEL
+
 	if (index != -1)
 	{
 		_matrixs.at(index).push_back(_currentMatrix);
@@ -178,6 +203,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 			else
 			{
 				int index = -1;
+#ifndef USE_TBB_PARALLEL
 				for (size_t j = 0; j < uniqueStateSets.size(); j++)
 				{
 					const osg::ref_ptr<osg::StateSet> key = uniqueStateSets.at(j);
@@ -188,6 +214,30 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 					}
 
 				}
+#else
+				std::atomic<size_t> foundIndex(_geodes.size());  // 初始值表示“未找到”
+				tbb::task_group_context context;                // 用于提前取消任务
+
+				tbb::parallel_for(tbb::blocked_range<size_t>(0, uniqueStateSets.size()),
+					[&](const tbb::blocked_range<size_t>& range) {
+						for (size_t j = range.begin(); j != range.end(); ++j) {
+							// 检查是否已取消
+							if (context.is_group_execution_cancelled())
+								return;
+
+							const osg::ref_ptr<osg::StateSet> key = uniqueStateSets.at(j);
+							if (Utils::compareStateSet(key, stateSet))
+							{
+								foundIndex.store(j, std::memory_order_relaxed);
+								context.cancel_group_execution(); // 通知所有任务取消
+								return;
+							}
+						}
+					}, context);
+
+				index = (foundIndex.load() == _geodes.size()) ? -1 : foundIndex.load();
+#endif // !USE_TBB_PARALLEL
+
 				if (index != -1)
 					stateSetGroup[index]->addChild(child);
 				else
@@ -265,8 +315,13 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 
 			osg::ref_ptr<osg::MatrixTransform> transform = new osg::MatrixTransform;
 			transform->setMatrix(matrix);
-			osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::SHALLOW_COPY);
+			//osg::ref_ptr<osg::Geode> geodeCopy = osg::clone(gnode.get(), osg::CopyOp::SHALLOW_COPY);
+			osg::ref_ptr<osg::Geode> geodeCopy = new osg::Geode;
+			geodeCopy->setName(gnode->getName());
 			geodeCopy->setUserDataContainer(userData);
+			for (size_t k = 0; k < gnode->getNumChildren(); ++k) {
+				geodeCopy->addChild(gnode->getChild(k));
+			}
 			transform->addChild(geodeCopy);
 			group->addChild(transform);
 		}
@@ -372,21 +427,43 @@ void TreeBuilder::processOverSizedNodes()
 {
 	std::vector<osg::ref_ptr<osg::Node>> oversizedNodes;
 
+	const unsigned int size = _groupsToDivideList->getNumChildren();
+#ifdef USE_TBB_PARALLEL
+	std::vector<unsigned int> triangleCounts(size);
+
+	tbb::parallel_for(size_t(0), (size_t)size, [&](size_t i) {
+		osg::ref_ptr<osg::Node> node = _groupsToDivideList->getChild(static_cast<unsigned int>(i));
+		Utils::TriangleCounterVisitor cv;
+		node->accept(cv);
+		triangleCounts[i] = cv.count;
+		});
+
 	// 第一步：识别需要拆分的节点
-	for (unsigned int i = 0; i < _groupsToDivideList->getNumChildren(); ++i)
+	for (unsigned int i = 0; i < size; ++i)
 	{
 		osg::ref_ptr<osg::Node> node = _groupsToDivideList->getChild(i);
-
 		// 检查三角形数量
-		Utils::TriangleCounterVisitor triangleCv;
-		node->accept(triangleCv);
-
-		if (triangleCv.count > _config.getMaxTriangleCount())
+		if (triangleCounts[i] > _config.getMaxTriangleCount())
 		{
 			if (node->asGroup()->getNumChildren() > 1)
 				oversizedNodes.push_back(node);
 		}
 	}
+#else
+	// 第一步：识别需要拆分的节点
+	for (unsigned int i = 0; i < size; ++i)
+	{
+		osg::ref_ptr<osg::Node> node = _groupsToDivideList->getChild(i);
+		// 检查三角形数量
+		Utils::TriangleCounterVisitor cv;
+		node->accept(cv);
+		if (cv.count > _config.getMaxTriangleCount())
+		{
+			if (node->asGroup()->getNumChildren() > 1)
+				oversizedNodes.push_back(node);
+		}
+	}
+#endif // USE_TBB_PARALLEL
 
 	// 第二步：处理需要拆分的节点
 	for (auto& node : oversizedNodes)
@@ -477,9 +554,22 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 
 	unsigned int drawcallCommandCount = 0, triangleCount = 0;
 	osg::ref_ptr<osg::Node> outTriangleCountNode = nullptr;
+
+	const unsigned int size = children.size();
+#ifdef USE_TBB_PARALLEL
+	std::vector<unsigned int> triangleCounts(size);
+
+	tbb::parallel_for(size_t(0), (size_t)size, [&](size_t i) {
+		osg::ref_ptr<osg::Node> node = children[i];
+		Utils::TriangleCounterVisitor cv;
+		node->accept(cv);
+		triangleCounts[i] = cv.count;
+		});
+
 	// 将排序后的子节点添加到子组，并记录需要移除的子节点
-	for (auto& child : children)
+	for (size_t i = 0; i < size; ++i)
 	{
+		auto& child = children[i];
 		if (triangleCount >= _config.getMaxTriangleCount())
 			break;
 
@@ -487,17 +577,13 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 		if (intersect(bounds, childBB))
 		{
 			childGroup->addChild(child);
-
-			Utils::TriangleCounterVisitor triangleCV;
-			child->accept(triangleCV);
-
 			Utils::DrawcallCommandCounterVisitor dccv;
 			childGroup->accept(dccv);
 			if (dccv.getCount() <= maxDrawcallCommandCount)
 			{
-				if (triangleCV.count + triangleCount <= _config.getMaxTriangleCount())
+				if (triangleCounts[i] + triangleCount <= _config.getMaxTriangleCount())
 				{
-					triangleCount += triangleCV.count;
+					triangleCount += triangleCounts[i];
 					drawcallCommandCount = dccv.getCount();
 					needToRemove.push_back(child);
 				}
@@ -516,6 +602,48 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 			}
 		}
 	}
+#else
+	// 将排序后的子节点添加到子组，并记录需要移除的子节点
+	for (size_t i = 0; i < size; ++i)
+	{
+		auto& child = children[i];
+		if (triangleCount >= _config.getMaxTriangleCount())
+			break;
+
+		const osg::BoundingBox childBB = computeBoundingBox(child);
+		if (intersect(bounds, childBB))
+		{
+			childGroup->addChild(child);
+			Utils::DrawcallCommandCounterVisitor dccv;
+			childGroup->accept(dccv);
+
+			Utils::TriangleCounterVisitor cv;
+			child->accept(cv);
+			if (dccv.getCount() <= maxDrawcallCommandCount)
+			{
+				if (cv.count + triangleCount <= _config.getMaxTriangleCount())
+				{
+					triangleCount += cv.count;
+					drawcallCommandCount = dccv.getCount();
+					needToRemove.push_back(child);
+				}
+				else
+				{
+					childGroup->removeChild(child);
+					if (!outTriangleCountNode.valid())
+						outTriangleCountNode = child;
+				}
+			}
+			else
+			{
+				childGroup->removeChild(child);
+				if (!outTriangleCountNode.valid())
+					outTriangleCountNode = child;
+			}
+		}
+	}
+#endif // USE_TBB_PARALLEL
+
 
 	if (outTriangleCountNode.valid() && childGroup->getNumChildren() == 0)
 	{

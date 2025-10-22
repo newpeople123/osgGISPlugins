@@ -77,6 +77,7 @@ namespace osgGISPlugins
 			_node->accept(builder);
 			root = builder.build();
 			root->config = config.tileConfig;
+			OSG_NOTICE << "Building HLod...\n";
 			root->build();
 		}
 

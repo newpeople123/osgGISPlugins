@@ -720,6 +720,8 @@ void fbxProperty2OsgUserValue(const FbxNode* pNode, osg::Node& node) {
                     osg::Vec3 val3;
                     osg::Vec4 val4;
 
+                    std::string val5;
+
                     switch (eType)
                     {
                     case fbxsdk::eFbxUndefined:
@@ -781,7 +783,8 @@ void fbxProperty2OsgUserValue(const FbxNode* pNode, osg::Node& node) {
                     case fbxsdk::eFbxEnumM:
                         break;
                     case fbxsdk::eFbxString:
-                        node.setUserValue(key, prop.Get<std::string>());
+                        val5 = prop.Get<FbxString>();
+                        node.setUserValue(key, val5);
                         break;
                     case fbxsdk::eFbxTime:
                         break;

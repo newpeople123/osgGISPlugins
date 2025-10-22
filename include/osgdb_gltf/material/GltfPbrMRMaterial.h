@@ -24,7 +24,9 @@ namespace osgGISPlugins {
             }
         }
         GltfPbrMRMaterial() :GltfMaterial() {}
-        ~GltfPbrMRMaterial(){}
+        ~GltfPbrMRMaterial() {
+            safeReleaseTexture(baseColorTexture);
+        }
 
         META_Object(osg, GltfPbrMRMaterial);
 

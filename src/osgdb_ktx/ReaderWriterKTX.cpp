@@ -12,13 +12,12 @@ const char* ReaderWriterKTX::className() const
     return "KTX texture reader";
 }
 
-osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& path, const Options* options) const
+osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(const std::string& file, const Options* options) const
 {
-    std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
-    std::string ext = osgDB::getLowerCaseFileExtension(path);
+    std::string ext = osgDB::getLowerCaseFileExtension(file);
     if (!acceptsExtension(ext)) return ReadResult::FILE_NOT_HANDLED;
 
-    const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx(fileName);
+    const std::vector<osg::ref_ptr<osg::Image>> images = osg::loadKtx(file);
     if (images.size() > 1)
     {
         osg::ref_ptr<osg::ImageSequence> seq = new osg::ImageSequence;
@@ -40,21 +39,20 @@ osgDB::ReaderWriter::ReadResult ReaderWriterKTX::readImage(std::istream& fin, co
     return images.empty() ? ReadResult::ERROR_IN_READING_FILE : ReadResult(images[0]);
 }
 
-osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, const std::string& path,
+osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& image, const std::string& file,
     const Options* options) const
 {
-    std::string fileName = osgDB::convertStringFromUTF8toCurrentCodePage(path.c_str());;
-    std::string ext = osgDB::getLowerCaseFileExtension(path);
+    std::string ext = osgDB::getLowerCaseFileExtension(file);
     if (!acceptsExtension(ext)) return WriteResult::FILE_NOT_HANDLED;
 
     osg::Image* imagePtr = const_cast<osg::Image*>(&image);
     imagePtr->flipVertical();
     if (ext == "ktx2") {
-        const bool result = osg::saveKtx2(fileName, imagePtr, true);
+        const bool result = osg::saveKtx2(file, imagePtr, true);
         return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
     }
     else {
-        const bool result = osg::saveKtx1(fileName, imagePtr);
+        const bool result = osg::saveKtx1(file, imagePtr);
         return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
     }
 }

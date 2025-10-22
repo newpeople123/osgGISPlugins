@@ -17,7 +17,11 @@ namespace osgGISPlugins {
 		osg::MixinVector<GltfExtension*> materialExtensionsByCesiumSupport;
 		virtual osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2) = 0;
 		virtual osg::ref_ptr<osg::Image> mergeImages(const osg::ref_ptr<osg::Image>& img1, const osg::ref_ptr<osg::Image>& img2, const osg::ref_ptr<osg::Image>& img3) = 0;
-		virtual ~GltfMaterial() = default;
+		virtual ~GltfMaterial() {
+			safeReleaseTexture(normalTexture);
+			safeReleaseTexture(occlusionTexture);
+			safeReleaseTexture(emissiveTexture);
+		}
 		GltfMaterial(const GltfMaterial& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)
 			: osg::Material(other, copyop),
 			emissiveFactor(other.emissiveFactor) {
@@ -30,10 +34,10 @@ namespace osgGISPlugins {
 			if (other.emissiveTexture.valid()) {
 				emissiveTexture = (osg::Texture2D*)other.emissiveTexture->clone(copyop);
 			}
-			for (GltfExtension* item : other.materialExtensions) {
-				GltfExtension* extension = item->clone();
-				materialExtensions.push_back(extension);
-			}
+			//for (GltfExtension* item : other.materialExtensions) {
+			//	GltfExtension* extension = item->clone();
+			//	materialExtensions.push_back(extension);
+			//}
 			for (GltfExtension* item : other.materialExtensionsByCesiumSupport) {
 				GltfExtension* extension = item->clone();
 				materialExtensionsByCesiumSupport.push_back(extension);
@@ -43,6 +47,16 @@ namespace osgGISPlugins {
 		//META_Object(osg, GltfMaterial);
 
 		static bool compareTexture2D(osg::ref_ptr<osg::Texture2D> texture1, osg::ref_ptr<osg::Texture2D> texture2);
+
+		static void safeReleaseTexture(osg::ref_ptr<osg::Texture2D>& tex)
+		{
+			if (tex.valid())
+			{
+				if (tex->referenceCount() == 1)
+					tex->setImage(0, nullptr);
+				tex.release();
+			}
+		}
 
 		virtual bool compare(const GltfMaterial& other) const
 		{

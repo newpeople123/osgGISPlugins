@@ -9,12 +9,13 @@
 #include "3dtiles/BoundingVolume.h"
 #include "utils/GltfOptimizer.h"
 #include <osgDB/WriteFile>
+#ifdef USE_TBB_PARALLEL
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
+#endif // USE_TBB_PARALLEL
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
-
 	constexpr float InitPixelSize = 25.0;
 	constexpr int CesiumCanvasClientWidth = 1920;
 	constexpr int CesiumCanvasClientHeight = 936;// if fullscreen,set 1080
@@ -134,6 +135,8 @@ namespace osgGISPlugins
 		static double getCesiumGeometricErrorByDistance(const float distance);
 
 		static double getDistanceByPixelSize(const float pixelSize, const float radius);
+
+		static void getVolumeWeightedDiagonalLength(osg::ref_ptr<osg::Group> group, double& outDiagonalLength, double& outVolume);
 	protected:
 		void cleanupEmptyNodes();
 
@@ -163,7 +166,8 @@ namespace osgGISPlugins
 
 		virtual void writeToFile();
 
-		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> parent, int lodLevel);
+		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> parent, osg::ref_ptr<osg::Node> waitCopyNode, int lodLevel);
+		osg::ref_ptr<Tile> createLODTileWithoutNode(osg::ref_ptr<Tile> parent, int lodLevel);
 
 		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) = 0;
 		virtual string getOutputPath() const = 0;

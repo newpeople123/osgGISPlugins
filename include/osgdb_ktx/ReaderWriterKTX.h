@@ -39,7 +39,7 @@ public:
         return readImage(file, options);
     }
 
-    ReadResult readImage(const std::string& path, const Options* options) const override;
+    ReadResult readImage(const std::string& file, const Options* options) const override;
     WriteResult writeImage(const osg::Image &image, const std::string& file, const osgDB::ReaderWriter::Options* options) const override;
     WriteResult writeImage(const osg::Image& image, std::ostream& fout, const Options* options) const override;
 };

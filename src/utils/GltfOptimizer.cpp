@@ -12,6 +12,13 @@
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <numeric>
+#ifdef _WIN32
+#ifndef OSG_GIS_PLUGINS_PATH_SPLIT_STRING
+#define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "\\"
+#else
+#define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "/"
+#endif
+#endif // !OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 
 using namespace osgGISPlugins;
 
@@ -757,32 +764,138 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 }
 
 /** TextureAtlasBuilderVisitor */
+std::unordered_map<std::string, std::shared_ptr<std::mutex>> GltfOptimizer::TextureAtlasBuilderVisitor::imageFileLocks;  // 定义静态成员
+std::shared_mutex GltfOptimizer::TextureAtlasBuilderVisitor::imageFileLocksMapMutex;
+
+std::shared_ptr<std::mutex> osgGISPlugins::GltfOptimizer::TextureAtlasBuilderVisitor::getImageLock(const std::string& filename)
+{
+	// 尝试使用共享锁查找
+	{
+		std::shared_lock<std::shared_mutex> readLock(imageFileLocksMapMutex);
+		auto it = imageFileLocks.find(filename);
+		if (it != imageFileLocks.end())
+			return it->second;
+	}
+
+	// 写锁：若不存在则创建
+	std::unique_lock<std::shared_mutex> writeLock(imageFileLocksMapMutex);
+	auto& ptr = imageFileLocks[filename];
+	if (!ptr)
+		ptr = std::make_shared<std::mutex>();
+	return ptr;
+}
+
+std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<osg::Image>& img, const GltfTextureType type)
+{
+	std::string ext = _options.ext;
+	std::string filename = TexturePacker::computeImageHash(img);
+	switch (type)
+	{
+	case GltfTextureType::NORMAL:
+		filename += "-normal";
+		break;
+	case GltfTextureType::OCCLUSION:
+		filename += "-occlusion";
+		break;
+	case GltfTextureType::EMISSIVE:
+		filename += "-emissive";
+		break;
+	case GltfTextureType::METALLICROUGHNESS:
+		filename += "-metallicroughness";
+		break;
+	case GltfTextureType::BASECOLOR:
+		filename += "-basecolor";
+		break;
+	case GltfTextureType::DIFFUSE:
+		filename += "-diffuse";
+		break;
+	case GltfTextureType::SPECULARGLOSSINESS:
+		filename += "-specularglossiness";
+		break;
+	default:
+		break;
+	}
+
+	const GLenum pixelFormat = img->getPixelFormat();
+	if (_options.ext == ".jpg" && pixelFormat != GL_ALPHA && pixelFormat != GL_RGB)
+	{
+		ext = ".png";
+	}
+
+	std::string basePath = _options.cachePath + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + filename;
+	std::string primaryPath = basePath + ext;
+	std::string fallbackPath = basePath + ".png";
+	std::string fullPath = primaryPath;
+
+	std::shared_ptr<std::mutex> fileLock = getImageLock(basePath);
+	std::unique_lock<std::mutex> fileWriteLock(*fileLock);
+
+	std::ifstream fileCheck(fullPath);
+	bool fileExists = fileCheck.good() && fileCheck.peek() != std::ifstream::traits_type::eof();
+	fileCheck.close();
+
+	if (!fileExists)
+	{
+		osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
+		if (ext == ".jpg" || ext == ".jpeg")
+			options->setOptionString("JPEG_QUALITY 75");
+		else if (ext == ".png")
+			options->setOptionString("PNG_COMPRESSION 5");
+
+		if (!osgDB::writeImageFile(*img.get(), fullPath, options))
+		{
+			fullPath = fallbackPath;
+			std::ifstream altCheck(fullPath);
+			bool altExists = altCheck.good() && altCheck.peek() != std::ifstream::traits_type::eof();
+			altCheck.close();
+			if (!altExists) {
+				options->setOptionString("PNG_COMPRESSION 5");
+				if (!osgDB::writeImageFile(*img.get(), fullPath, options))
+				{
+					osg::notify(osg::FATAL) << "\nFailed to write image: " << fullPath << std::endl;
+					fullPath.clear();
+				}
+			}
+		}
+	}
+
+	if (img->getFileName().empty())
+		img->setFileName(fullPath);
+
+	return fullPath;
+}
+
 void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 {
-	const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
-	osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
-	if (oldStateSet.valid())
-	{
-		osg::ref_ptr<osg::StateSet> stateSet = osg::clone(oldStateSet.get(), osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES | osg::CopyOp::DEEP_COPY_TEXTURES);
-		drawable.setStateSet(stateSet);
-		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-		if (osgMaterial.valid())
+	try {
+		const osg::ref_ptr<osg::Geometry> geom = drawable.asGeometry();
+		osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
+		if (oldStateSet.valid())
 		{
-			osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
-			if (gltfMaterial.valid())
+			osg::ref_ptr<osg::StateSet> stateSet = osg::clone(oldStateSet.get(), osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES | osg::CopyOp::DEEP_COPY_TEXTURES);
+			drawable.setStateSet(stateSet);
+			const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+			if (osgMaterial.valid())
 			{
-				if (gltfMaterialHasTexture(gltfMaterial))
-					optimizeOsgMaterial(gltfMaterial, geom);
+				osg::ref_ptr<GltfMaterial> gltfMaterial = dynamic_cast<GltfMaterial*>(osgMaterial.get());
+				if (gltfMaterial.valid())
+				{
+					if (gltfMaterialHasTexture(gltfMaterial))
+						optimizeOsgMaterial(gltfMaterial, geom);
+				}
+				else
+				{
+					optimizeOsgTexture(stateSet, geom);
+				}
 			}
 			else
 			{
 				optimizeOsgTexture(stateSet, geom);
 			}
 		}
-		else
-		{
-			optimizeOsgTexture(stateSet, geom);
-		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
@@ -794,46 +907,50 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packTextures()
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::ref_ptr<osg::StateSet>& stateSet, const osg::ref_ptr<osg::Geometry>& geom)
 {
-	osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-	osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
-	if (texCoords.valid() && texture.valid())
-	{
-		osg::ref_ptr<osg::Image> image = texture->getImage();
-		if (image.valid())
+	try {
+		osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
+		osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+		if (texCoords.valid() && texture.valid())
 		{
-			resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
-			if (_options.packTexture)
+			osg::ref_ptr<osg::Image> image = texture->getImage();
+			if (image.valid())
 			{
-				bool bBuildTexturePacker = true;
-				for (const auto& texCoord : *texCoords.get())
+				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+				if (_options.packTexture)
 				{
-					const float texCoordX = osg::absolute(texCoord.x());
-					const float texCoordY = osg::absolute(texCoord.y());
+					bool bBuildTexturePacker = true;
+					for (const auto& texCoord : *texCoords.get())
+					{
+						const float texCoordX = osg::absolute(texCoord.x());
+						const float texCoordY = osg::absolute(texCoord.y());
 
-					if (texCoordX > 1.0 || texCoordY > 1.0)
-					{
-						bBuildTexturePacker = false;
-						break;
-					}
-				}
-				if (bBuildTexturePacker)
-				{
-					if (image->s() <= _options.maxTextureWidth || image->t() <= _options.maxTextureHeight)
-					{
-						bool bAdd = true;
-						for (osg::ref_ptr<osg::Image> img : _images)
+						if (texCoordX > 1.0 || texCoordY > 1.0)
 						{
-							if (img->getFileName() == image->getFileName())
+							bBuildTexturePacker = false;
+							break;
+						}
+					}
+					if (bBuildTexturePacker)
+					{
+						if (image->s() <= _options.maxTextureWidth || image->t() <= _options.maxTextureHeight)
+						{
+							bool bAdd = true;
+							for (osg::ref_ptr<osg::Image> img : _images)
 							{
-								_geometryImgMap[geom] = img;
-								bAdd = false;
+								if (img->getFileName() == image->getFileName())
+								{
+									_geometryImgMap[geom] = img;
+									bAdd = false;
+								}
+							}
+							if (bAdd)
+							{
+								_images.push_back(image);
+								_geometryImgMap[geom] = image;
 							}
 						}
-						if (bAdd)
-						{
-							_images.push_back(image);
-							_geometryImgMap[geom] = image;
-						}
+						else
+							exportOsgTextureIfNeeded(texture);
 					}
 					else
 						exportOsgTextureIfNeeded(texture);
@@ -841,160 +958,199 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 				else
 					exportOsgTextureIfNeeded(texture);
 			}
-			else
-				exportOsgTextureIfNeeded(texture);
 		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_ptr<osg::Texture2D> texture)
 {
-	if (texture.valid())
-	{
-		if (texture->getNumImages())
+	try {
+		if (texture.valid())
 		{
-			osg::ref_ptr<osg::Image> image = texture->getImage(0);
-			if (image.valid())
+			if (texture->getNumImages())
 			{
-				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+				osg::ref_ptr<osg::Image> image = texture->getImage(0);
+				if (image.valid())
+				{
+					resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+				}
 			}
 		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(osg::ref_ptr<osg::Texture2D> texture, const GltfTextureType type)
 {
-	if (texture.valid())
-	{
-		if (texture->getNumImages())
+	try {
+		if (texture.valid())
 		{
-			osg::ref_ptr<osg::Image> image = texture->getImage();
-			if (image.valid())
+			if (texture->getNumImages())
 			{
-				std::string fileFieldName;
-				switch (type)
+				osg::ref_ptr<osg::Image> image = texture->getImage();
+				if (image.valid())
 				{
-				case GltfTextureType::NORMAL:
-					fileFieldName = NORMAL_TEXTURE_FILENAME;
-					break;
-				case GltfTextureType::OCCLUSION:
-					fileFieldName = OCCLUSION_TEXTURE_FILENAME;
-					break;
-				case GltfTextureType::EMISSIVE:
-					fileFieldName = EMISSIVE_TEXTURE_FILENAME;
-					break;
-				case GltfTextureType::METALLICROUGHNESS:
-					fileFieldName = MR_TEXTURE_FILENAME;
-					break;
-				case GltfTextureType::BASECOLOR:
-					fileFieldName = BASECOLOR_TEXTURE_FILENAME;
-					break;
-				case GltfTextureType::DIFFUSE:
-					fileFieldName = DIFFUSE_TEXTURE_FILENAME;
-					break;
-				case GltfTextureType::SPECULARGLOSSINESS:
-					fileFieldName = SG_TEXTURE_FILENAME;
-					break;
-				default:
-					break;
-				}
+					std::string fileFieldName;
+					switch (type)
+					{
+					case GltfTextureType::NORMAL:
+						fileFieldName = NORMAL_TEXTURE_FILENAME;
+						break;
+					case GltfTextureType::OCCLUSION:
+						fileFieldName = OCCLUSION_TEXTURE_FILENAME;
+						break;
+					case GltfTextureType::EMISSIVE:
+						fileFieldName = EMISSIVE_TEXTURE_FILENAME;
+						break;
+					case GltfTextureType::METALLICROUGHNESS:
+						fileFieldName = MR_TEXTURE_FILENAME;
+						break;
+					case GltfTextureType::BASECOLOR:
+						fileFieldName = BASECOLOR_TEXTURE_FILENAME;
+						break;
+					case GltfTextureType::DIFFUSE:
+						fileFieldName = DIFFUSE_TEXTURE_FILENAME;
+						break;
+					case GltfTextureType::SPECULARGLOSSINESS:
+						fileFieldName = SG_TEXTURE_FILENAME;
+						break;
+					default:
+						break;
+					}
 
 
-				std::string name;
-				texture->getUserValue(fileFieldName, name);
-				if (name.empty())
-				{
-					const std::string fullPath = exportImage(image, type);
-					texture->setUserValue(fileFieldName, fullPath);
+					std::string name;
+					texture->getUserValue(fileFieldName, name);
+					if (name.empty())
+					{
+						const std::string fullPath = exportImage(image, type);
+						texture->setUserValue(fileFieldName, fullPath);
+					}
 				}
 			}
 		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
 bool GltfOptimizer::TextureAtlasBuilderVisitor::gltfMaterialHasTexture(const osg::ref_ptr<GltfMaterial>& gltfMaterial)
 {
-	if (gltfMaterial->normalTexture.valid()) return true;
-	if (gltfMaterial->occlusionTexture.valid()) return true;
-	if (gltfMaterial->emissiveTexture.valid()) return true;
+	try {
+		if (gltfMaterial->normalTexture.valid()) return true;
+		if (gltfMaterial->occlusionTexture.valid()) return true;
+		if (gltfMaterial->emissiveTexture.valid()) return true;
 
-	osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
-	if (gltfMRMaterial.valid())
-	{
-		if (gltfMRMaterial->metallicRoughnessTexture.valid()) return true;
-		if (gltfMRMaterial->baseColorTexture.valid()) return true;
-	}
-	for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
-	{
-		GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-		if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+		osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+		if (gltfMRMaterial.valid())
 		{
-			KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-			if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) return true;
-			if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) return true;
+			if (gltfMRMaterial->metallicRoughnessTexture.valid()) return true;
+			if (gltfMRMaterial->baseColorTexture.valid()) return true;
 		}
+		for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
+		{
+			GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
+			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+			{
+				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+				if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) return true;
+				if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) return true;
+			}
+		}
+		return false;
 	}
-	return false;
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
+		return false;
+	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::ref_ptr<GltfMaterial>& gltfMaterial, const osg::ref_ptr<osg::Geometry>& geom)
 {
-	if (gltfMaterial.valid())
-	{
-		osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
-		if (texCoords.valid())
+	try {
+		if (gltfMaterial.valid())
 		{
-			optimizeOsgTextureSize(gltfMaterial->normalTexture);
-			optimizeOsgTextureSize(gltfMaterial->occlusionTexture);
-			optimizeOsgTextureSize(gltfMaterial->emissiveTexture);
-			osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
-			if (gltfMRMaterial.valid())
+			osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geom->getTexCoordArray(0));
+			if (texCoords.valid())
 			{
-				optimizeOsgTextureSize(gltfMRMaterial->metallicRoughnessTexture);
-				optimizeOsgTextureSize(gltfMRMaterial->baseColorTexture);
-				if (gltfMRMaterial->baseColorTexture->getImage()->getFileName() == "E:\\Code\\2023\\Other\\data\\芜湖水厂总装.fbm\\栏杆.png")
-					OSG_NOTICE << "\n";
-			}
-			for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
-			{
-				GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-				if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+				optimizeOsgTextureSize(gltfMaterial->normalTexture);
+				optimizeOsgTextureSize(gltfMaterial->occlusionTexture);
+				optimizeOsgTextureSize(gltfMaterial->emissiveTexture);
+				osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+				if (gltfMRMaterial.valid())
 				{
-					KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-					optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgDiffuseTexture);
-					optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
+					optimizeOsgTextureSize(gltfMRMaterial->metallicRoughnessTexture);
+					optimizeOsgTextureSize(gltfMRMaterial->baseColorTexture);
 				}
-			}
-
-			if (_options.packTexture)
-			{
-				bool bBuildTexturePacker = true;
-				for (const auto& texCoord : *texCoords.get())
+				for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 				{
-					const float texCoordX = osg::absolute(texCoord.x());
-					const float texCoordY = osg::absolute(texCoord.y());
-
-					if (texCoordX > 1.0 || texCoordY > 1.0)
+					GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
+					if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
 					{
-						bBuildTexturePacker = false;
-						break;
+						KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+						optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgDiffuseTexture);
+						optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
 					}
 				}
-				if (bBuildTexturePacker)
+
+				if (_options.packTexture)
 				{
-					bool bAdd = true;
-					for (GltfMaterial* item : _gltfMaterials)
+					bool bBuildTexturePacker = true;
+					for (const auto& texCoord : *texCoords.get())
 					{
-						if (item == gltfMaterial.get())
+						const float texCoordX = osg::absolute(texCoord.x());
+						const float texCoordY = osg::absolute(texCoord.y());
+
+						if (texCoordX > 1.0 || texCoordY > 1.0)
 						{
-							_geometryGltfMaterialMap[geom] = item;
-							bAdd = false;
+							bBuildTexturePacker = false;
+							break;
 						}
 					}
-					if (bAdd)
+					if (bBuildTexturePacker)
 					{
-						_gltfMaterials.push_back(gltfMaterial.get());
-						_geometryGltfMaterialMap[geom] = gltfMaterial.get();
+						bool bAdd = true;
+						for (GltfMaterial* item : _gltfMaterials)
+						{
+							if (item == gltfMaterial.get())
+							{
+								_geometryGltfMaterialMap[geom] = item;
+								bAdd = false;
+							}
+						}
+						if (bAdd)
+						{
+							_gltfMaterials.push_back(gltfMaterial.get());
+							_geometryGltfMaterialMap[geom] = gltfMaterial.get();
+						}
+					}
+					else
+					{
+						exportOsgTextureIfNeeded(gltfMaterial->normalTexture, GltfTextureType::NORMAL);
+						exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture, GltfTextureType::OCCLUSION);
+						exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture, GltfTextureType::EMISSIVE);
+						osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
+						if (localGltfMRMaterial.valid())
+						{
+							exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture, GltfTextureType::METALLICROUGHNESS);
+							exportOsgTextureIfNeeded(localGltfMRMaterial->baseColorTexture);
+						}
+						for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
+						{
+							GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
+							if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+							{
+								KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+								exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, GltfTextureType::DIFFUSE);
+								exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, GltfTextureType::SPECULARGLOSSINESS);
+							}
+						}
 					}
 				}
 				else
@@ -1020,122 +1176,114 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 					}
 				}
 			}
-			else
-			{
-				exportOsgTextureIfNeeded(gltfMaterial->normalTexture, GltfTextureType::NORMAL);
-				exportOsgTextureIfNeeded(gltfMaterial->occlusionTexture, GltfTextureType::OCCLUSION);
-				exportOsgTextureIfNeeded(gltfMaterial->emissiveTexture, GltfTextureType::EMISSIVE);
-				osg::ref_ptr<GltfPbrMRMaterial> localGltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
-				if (localGltfMRMaterial.valid())
-				{
-					exportOsgTextureIfNeeded(localGltfMRMaterial->metallicRoughnessTexture, GltfTextureType::METALLICROUGHNESS);
-					exportOsgTextureIfNeeded(localGltfMRMaterial->baseColorTexture);
-				}
-				for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
-				{
-					GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-					if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
-					{
-						KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, GltfTextureType::DIFFUSE);
-						exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, GltfTextureType::SPECULARGLOSSINESS);
-					}
-				}
-			}
 		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 {
-	if (_images.empty()) return;
-	while (_images.size())
-	{
-		TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
-		std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
-		osg::ref_ptr<osg::Image> packedImage = packImges(packer, _images, deleteImgs);
-
-		if (packedImage.valid() && deleteImgs.size())
+	try {
+		if (_images.empty()) return;
+		while (_images.size())
 		{
-			const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
-			const int width = packedImage->s(), height = packedImage->t();
-			const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
-			packer.setScales(scaleWidth, sclaeHeight);
-			const std::string fullPath = exportImage(packedImage, GltfTextureType::BASECOLOR);
-			for (auto& entry : _geometryImgMap)
+			TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+			std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
+			osg::ref_ptr<osg::Image> packedImage = packImges(packer, _images, deleteImgs);
+
+			if (packedImage.valid() && deleteImgs.size())
 			{
-				osg::Geometry* geometry = entry.first;
-				osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
-				osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-
-				osg::ref_ptr<osg::Image> image = entry.second;
-				int w, h;
-				double x, y;
-				const size_t id = packer.getId(image);
-				if (packer.getPackingData(id, x, y, w, h))
+				const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
+				resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+				const int width = packedImage->s(), height = packedImage->t();
+				const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
+				packer.setScales(scaleWidth, sclaeHeight);
+				const std::string fullPath = exportImage(packedImage, GltfTextureType::BASECOLOR);
+				for (auto& entry : _geometryImgMap)
 				{
-					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, true);
-					double offsetX = x / width;
-					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, osg::clampTo(offsetX, 0.0, 1.0));
-					double offsetY = y / height;
-					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_Y, osg::clampTo(offsetY, 0.0, 1.0));
-					double scaleX = static_cast<double>(w) / width;
-					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_X, osg::clampTo(scaleX, 0.0, 1.0));
-					double scaleY = static_cast<double>(h) / height;
-					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_Y, osg::clampTo(scaleY, 0.0, 1.0));
-					texture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXCOORD, 0);
-					texture->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
-				}
-			}
-			removePackedImages(_images, deleteImgs);
-		}
+					osg::Geometry* geometry = entry.first;
+					osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+					osg::ref_ptr<osg::Texture2D> texture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
 
-		packedImage = nullptr;
+					osg::ref_ptr<osg::Image> image = entry.second;
+					int w, h;
+					double x, y;
+					const size_t id = packer.getId(image);
+					if (packer.getPackingData(id, x, y, w, h))
+					{
+						texture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME, true);
+						double offsetX = x / width;
+						texture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_X, osg::clampTo(offsetX, 0.0, 1.0));
+						double offsetY = y / height;
+						texture->setUserValue(TEX_TRANSFORM_BASECOLOR_OFFSET_Y, osg::clampTo(offsetY, 0.0, 1.0));
+						double scaleX = static_cast<double>(w) / width;
+						texture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_X, osg::clampTo(scaleX, 0.0, 1.0));
+						double scaleY = static_cast<double>(h) / height;
+						texture->setUserValue(TEX_TRANSFORM_BASECOLOR_SCALE_Y, osg::clampTo(scaleY, 0.0, 1.0));
+						texture->setUserValue(TEX_TRANSFORM_BASECOLOR_TEXCOORD, 0);
+						texture->setUserValue(BASECOLOR_TEXTURE_FILENAME, fullPath);
+					}
+				}
+				removePackedImages(_images, deleteImgs);
+			}
+
+			packedImage = nullptr;
+		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
 osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::packImges(TexturePacker& packer, std::vector<osg::ref_ptr<osg::Image>>& imgs, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs)
 {
-	int area = _options.maxTextureAtlasWidth * _options.maxTextureAtlasHeight;
-	std::sort(imgs.begin(), imgs.end(), GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight);
-	std::vector<size_t> indexPacks;
-	osg::ref_ptr<osg::Image> packedImage;
+	try {
+		int area = _options.maxTextureAtlasWidth * _options.maxTextureAtlasHeight;
+		std::sort(imgs.begin(), imgs.end(), GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight);
+		std::vector<size_t> indexPacks;
+		osg::ref_ptr<osg::Image> packedImage;
 
-	for (size_t i = 0; i < imgs.size(); ++i)
-	{
-		osg::ref_ptr<osg::Image> img = imgs.at(i);
-		if (area >= img->s() * img->t())
+		for (size_t i = 0; i < imgs.size(); ++i)
 		{
-			if (deleteImgs.size())
+			osg::ref_ptr<osg::Image> img = imgs.at(i);
+			if (area >= img->s() * img->t())
 			{
-				if (deleteImgs.at(0)->getInternalTextureFormat() == img->getInternalTextureFormat() &&
-					deleteImgs.at(0)->getPixelFormat() == img->getPixelFormat())
+				if (deleteImgs.size())
+				{
+					if (deleteImgs.at(0)->getInternalTextureFormat() == img->getInternalTextureFormat() &&
+						deleteImgs.at(0)->getPixelFormat() == img->getPixelFormat())
+					{
+						indexPacks.push_back(packer.addElement(img));
+						area -= img->s() * img->t();
+						deleteImgs.push_back(img);
+					}
+				}
+				else
 				{
 					indexPacks.push_back(packer.addElement(img));
 					area -= img->s() * img->t();
 					deleteImgs.push_back(img);
 				}
+				if (i == (imgs.size() - 1))
+				{
+					packImages(packedImage, indexPacks, deleteImgs, packer);
+				}
 			}
 			else
 			{
-				indexPacks.push_back(packer.addElement(img));
-				area -= img->s() * img->t();
-				deleteImgs.push_back(img);
-			}
-			if (i == (imgs.size() - 1))
-			{
 				packImages(packedImage, indexPacks, deleteImgs, packer);
+				break;
 			}
 		}
-		else
-		{
-			packImages(packedImage, indexPacks, deleteImgs, packer);
-			break;
-		}
-	}
 
-	return packedImage;
+		return packedImage;
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
+		return nullptr;
+	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::updateGltfMaterialUserValue(
@@ -1148,148 +1296,162 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::updateGltfMaterialUserValue(
 	const std::string fullPath,
 	const GltfTextureType type)
 {
+	try {
+		std::string textureFileFieldName, textureTransformExtensionName, textureOffsetXExtension, textureOffsetYExtension, textureScaleXExtension, textureScaleYExtension, textureTecCoord;
+		switch (type)
+		{
+		case GltfTextureType::NORMAL:
+			textureFileFieldName = NORMAL_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_NORMAL_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_NORMAL_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_NORMAL_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_NORMAL_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_NORMAL_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_NORMAL_TEXCOORD;
+			break;
+		case GltfTextureType::OCCLUSION:
+			textureFileFieldName = OCCLUSION_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_OCCLUSION_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_OCCLUSION_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_OCCLUSION_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_OCCLUSION_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_OCCLUSION_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_OCCLUSION_TEXCOORD;
+			break;
+		case GltfTextureType::EMISSIVE:
+			textureFileFieldName = EMISSIVE_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_EMISSIVE_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_EMISSIVE_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_EMISSIVE_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_EMISSIVE_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_EMISSIVE_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_EMISSIVE_TEXCOORD;
+			break;
+		case GltfTextureType::METALLICROUGHNESS:
+			textureFileFieldName = MR_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_MR_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_MR_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_MR_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_MR_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_MR_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_MR_TEXCOORD;
+			break;
+		case GltfTextureType::BASECOLOR:
+			textureFileFieldName = BASECOLOR_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_BASECOLOR_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_BASECOLOR_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_BASECOLOR_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_BASECOLOR_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_BASECOLOR_TEXCOORD;
+			break;
+		case GltfTextureType::DIFFUSE:
+			textureFileFieldName = DIFFUSE_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_DIFFUSE_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_DIFFUSE_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_DIFFUSE_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_DIFFUSE_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_DIFFUSE_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_DIFFUSE_TEXCOORD;
+			break;
+		case GltfTextureType::SPECULARGLOSSINESS:
+			textureFileFieldName = SG_TEXTURE_FILENAME;
+			textureTransformExtensionName = TEX_TRANSFORM_SG_TEXTURE_NAME;
+			textureOffsetXExtension = TEX_TRANSFORM_SG_OFFSET_X;
+			textureOffsetYExtension = TEX_TRANSFORM_SG_OFFSET_Y;
+			textureScaleXExtension = TEX_TRANSFORM_SG_SCALE_X;
+			textureScaleYExtension = TEX_TRANSFORM_SG_SCALE_Y;
+			textureTecCoord = TEX_TRANSFORM_SG_TEXCOORD;
+			break;
+		default:
+			break;
+		}
 
-	std::string textureFileFieldName, textureTransformExtensionName, textureOffsetXExtension, textureOffsetYExtension, textureScaleXExtension, textureScaleYExtension, textureTecCoord;
-	switch (type)
-	{
-	case GltfTextureType::NORMAL:
-		textureFileFieldName = NORMAL_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_NORMAL_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_NORMAL_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_NORMAL_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_NORMAL_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_NORMAL_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_NORMAL_TEXCOORD;
-		break;
-	case GltfTextureType::OCCLUSION:
-		textureFileFieldName = OCCLUSION_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_OCCLUSION_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_OCCLUSION_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_OCCLUSION_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_OCCLUSION_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_OCCLUSION_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_OCCLUSION_TEXCOORD;
-		break;
-	case GltfTextureType::EMISSIVE:
-		textureFileFieldName = EMISSIVE_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_EMISSIVE_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_EMISSIVE_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_EMISSIVE_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_EMISSIVE_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_EMISSIVE_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_EMISSIVE_TEXCOORD;
-		break;
-	case GltfTextureType::METALLICROUGHNESS:
-		textureFileFieldName = MR_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_MR_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_MR_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_MR_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_MR_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_MR_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_MR_TEXCOORD;
-		break;
-	case GltfTextureType::BASECOLOR:
-		textureFileFieldName = BASECOLOR_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_BASECOLOR_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_BASECOLOR_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_BASECOLOR_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_BASECOLOR_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_BASECOLOR_TEXCOORD;
-		break;
-	case GltfTextureType::DIFFUSE:
-		textureFileFieldName = DIFFUSE_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_DIFFUSE_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_DIFFUSE_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_DIFFUSE_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_DIFFUSE_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_DIFFUSE_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_DIFFUSE_TEXCOORD;
-		break;
-	case GltfTextureType::SPECULARGLOSSINESS:
-		textureFileFieldName = SG_TEXTURE_FILENAME;
-		textureTransformExtensionName = TEX_TRANSFORM_SG_TEXTURE_NAME;
-		textureOffsetXExtension = TEX_TRANSFORM_SG_OFFSET_X;
-		textureOffsetYExtension = TEX_TRANSFORM_SG_OFFSET_Y;
-		textureScaleXExtension = TEX_TRANSFORM_SG_SCALE_X;
-		textureScaleYExtension = TEX_TRANSFORM_SG_SCALE_Y;
-		textureTecCoord = TEX_TRANSFORM_SG_TEXCOORD;
-		break;
-	default:
-		break;
+		gltfMaterial->setUserValue(textureTransformExtensionName, true);
+		gltfMaterial->setUserValue(textureOffsetXExtension, osg::clampTo(offsetX, 0.0, 1.0));
+		gltfMaterial->setUserValue(textureOffsetYExtension, osg::clampTo(offsetY, 0.0, 1.0));
+		gltfMaterial->setUserValue(textureScaleXExtension, osg::clampTo(scaleX, 0.0, 1.0));
+		gltfMaterial->setUserValue(textureScaleYExtension, osg::clampTo(scaleY, 0.0, 1.0));
+		gltfMaterial->setUserValue(textureTecCoord, 0);
+		texture->setUserValue(textureFileFieldName, fullPath);
 	}
-
-	gltfMaterial->setUserValue(textureTransformExtensionName, true);
-	gltfMaterial->setUserValue(textureOffsetXExtension, osg::clampTo(offsetX, 0.0, 1.0));
-	gltfMaterial->setUserValue(textureOffsetYExtension, osg::clampTo(offsetY, 0.0, 1.0));
-	gltfMaterial->setUserValue(textureScaleXExtension, osg::clampTo(scaleX, 0.0, 1.0));
-	gltfMaterial->setUserValue(textureScaleYExtension, osg::clampTo(scaleY, 0.0, 1.0));
-	gltfMaterial->setUserValue(textureTecCoord, 0);
-	texture->setUserValue(textureFileFieldName, fullPath);
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
+	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs)
 {
-	if (!imgs.size()) return;
-	// 用于存储唯一图像的集合
-	std::unordered_set<std::string> fileNameSet; // 存储文件名的集合
-	std::unordered_set<std::string> hashSet;     // 存储哈希值的集合
-	std::vector<osg::ref_ptr<osg::Image>> uniqueImages; // 去重后的图像列表
+	try {
+		if (!imgs.size()) return;
+		// 用于存储唯一图像的集合
+		std::unordered_set<std::string> fileNameSet; // 存储文件名的集合
+		std::unordered_set<std::string> hashSet;     // 存储哈希值的集合
+		std::vector<osg::ref_ptr<osg::Image>> uniqueImages; // 去重后的图像列表
 
-	std::vector<osg::ref_ptr<osg::Image>> filenameEmptyImgs;
-	std::vector<osg::ref_ptr<osg::Image>> filenameNotEmptyImgs;
-	// 第一次遍历，检查是否所有文件名为空
-	for (const auto& img : imgs)
-	{
-		if (img->getFileName().empty())
-			filenameEmptyImgs.push_back(img);
-		else
-			filenameNotEmptyImgs.push_back(img);
-	}
-
-	for (const auto& img : filenameEmptyImgs)
-	{
-		std::string hash = TexturePacker::computeImageHash(img);
-		if (hashSet.find(hash) == hashSet.end()) // 如果哈希值不重复
+		std::vector<osg::ref_ptr<osg::Image>> filenameEmptyImgs;
+		std::vector<osg::ref_ptr<osg::Image>> filenameNotEmptyImgs;
+		// 第一次遍历，检查是否所有文件名为空
+		for (const auto& img : imgs)
 		{
-			hashSet.insert(hash);
-			uniqueImages.push_back(img);
+			if (img->getFileName().empty())
+				filenameEmptyImgs.push_back(img);
+			else
+				filenameNotEmptyImgs.push_back(img);
 		}
-	}
 
-	for (const auto& img : filenameNotEmptyImgs)
-	{
-		const std::string fileName = img->getFileName();
-		if (fileNameSet.find(fileName) == fileNameSet.end()) // 如果文件名不重复
+		for (const auto& img : filenameEmptyImgs)
 		{
-			fileNameSet.insert(fileName);
-			uniqueImages.push_back(img);
+			std::string hash = TexturePacker::computeImageHash(img);
+			if (hashSet.find(hash) == hashSet.end()) // 如果哈希值不重复
+			{
+				hashSet.insert(hash);
+				uniqueImages.push_back(img);
+			}
 		}
-	}
 
-	// 用去重后的结果替换原始图像列表
-	imgs = std::move(uniqueImages);
+		for (const auto& img : filenameNotEmptyImgs)
+		{
+			const std::string fileName = img->getFileName();
+			if (fileNameSet.find(fileName) == fileNameSet.end()) // 如果文件名不重复
+			{
+				fileNameSet.insert(fileName);
+				uniqueImages.push_back(img);
+			}
+		}
+
+		// 用去重后的结果替换原始图像列表
+		imgs = std::move(uniqueImages);
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
+	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs)
 {
-	if (texture.valid())
-	{
-		if (texture->getNumImages())
+	try {
+		if (texture.valid())
 		{
-			bool bAdd = true;
-			osg::ref_ptr<osg::Image> image = texture->getImage(0);
-			for (osg::ref_ptr<osg::Image> img : imgs)
+			if (texture->getNumImages())
 			{
-				if (img == image || (img->getFileName() == image->getFileName() && !img->getFileName().empty()))
-					bAdd = false;
-			}
-			if (bAdd)
-			{
-				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
-				imgs.push_back(image);
+				bool bAdd = true;
+				osg::ref_ptr<osg::Image> image = texture->getImage(0);
+				for (osg::ref_ptr<osg::Image> img : imgs)
+				{
+					if (img == image || (img->getFileName() == image->getFileName() && !img->getFileName().empty()))
+						bAdd = false;
+				}
+				if (bAdd)
+				{
+					resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+					imgs.push_back(image);
+				}
 			}
 		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
@@ -1304,54 +1466,59 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::removePackedImages(std::vector<o
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::processTextureImages(std::vector<osg::ref_ptr<osg::Image>>& images, std::unordered_map<osg::Geometry*, osg::ref_ptr<GltfMaterial>> geometryGltfMaterialMap, const GltfTextureType type, const std::function<osg::ref_ptr<osg::Texture2D>(GltfMaterial*)>& getTextureFunc)
 {
-	removeRepeatImages(images);
+	try {
+		removeRepeatImages(images);
 
-	while (!images.empty()) {
-		TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
-		std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
-		osg::ref_ptr<osg::Image> packedImage = packImges(packer, images, deleteImgs);
+		while (!images.empty()) {
+			TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+			std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
+			osg::ref_ptr<osg::Image> packedImage = packImges(packer, images, deleteImgs);
 
-		if (packedImage && !deleteImgs.empty()) {
-			const double oldWidth = packedImage->s();
-			const double oldHeight = packedImage->t();
-			resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
-			const int width = packedImage->s();
-			const int height = packedImage->t();
-			const double scaleWidth = width / oldWidth;
-			const double scaleHeight = height / oldHeight;
-			packer.setScales(scaleWidth, scaleHeight);
-			const std::string fullPath = exportImage(packedImage, type);
+			if (packedImage && !deleteImgs.empty()) {
+				const double oldWidth = packedImage->s();
+				const double oldHeight = packedImage->t();
+				resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+				const int width = packedImage->s();
+				const int height = packedImage->t();
+				const double scaleWidth = width / oldWidth;
+				const double scaleHeight = height / oldHeight;
+				packer.setScales(scaleWidth, scaleHeight);
+				const std::string fullPath = exportImage(packedImage, type);
 
 
-			for (auto it = geometryGltfMaterialMap.begin(); it != geometryGltfMaterialMap.end();) {
-				osg::Geometry* geometry = it->first;
-				osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
-				osg::ref_ptr<GltfMaterial> currentMaterial = dynamic_cast<GltfMaterial*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
+				for (auto it = geometryGltfMaterialMap.begin(); it != geometryGltfMaterialMap.end();) {
+					osg::Geometry* geometry = it->first;
+					osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
+					osg::ref_ptr<GltfMaterial> currentMaterial = dynamic_cast<GltfMaterial*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
 
-				if (currentMaterial) {
-					osg::ref_ptr<osg::Texture2D> texture = getTextureFunc(currentMaterial.get());
-					if (texture && texture->getNumImages()) {
-						osg::ref_ptr<osg::Image> image = texture->getImage();
-						const size_t id = packer.getId(image);
-						int w, h;
-						double x, y;
-						if (packer.getPackingData(id, x, y, w, h)) {
-							const double offsetX = x / width;
-							const double offsetY = y / height;
-							const double scaleX = static_cast<double>(w) / width;
-							const double scaleY = static_cast<double>(h) / height;
-							updateGltfMaterialUserValue(currentMaterial, texture, offsetX, offsetY, scaleX, scaleY, fullPath, type);
-							it = geometryGltfMaterialMap.erase(it);
-							continue;
+					if (currentMaterial) {
+						osg::ref_ptr<osg::Texture2D> texture = getTextureFunc(currentMaterial.get());
+						if (texture && texture->getNumImages()) {
+							osg::ref_ptr<osg::Image> image = texture->getImage();
+							const size_t id = packer.getId(image);
+							int w, h;
+							double x, y;
+							if (packer.getPackingData(id, x, y, w, h)) {
+								const double offsetX = x / width;
+								const double offsetY = y / height;
+								const double scaleX = static_cast<double>(w) / width;
+								const double scaleY = static_cast<double>(h) / height;
+								updateGltfMaterialUserValue(currentMaterial, texture, offsetX, offsetY, scaleX, scaleY, fullPath, type);
+								it = geometryGltfMaterialMap.erase(it);
+								continue;
+							}
 						}
 					}
+					++it;
 				}
-				++it;
-			}
 
-			removePackedImages(images, deleteImgs);
+				removePackedImages(images, deleteImgs);
+			}
+			packedImage = nullptr;
 		}
-		packedImage = nullptr;
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
@@ -1420,49 +1587,54 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgMaterials()
 {
-	if (_gltfMaterials.empty()) return;
-	std::vector<osg::ref_ptr<osg::Image>> normalImgs, occlusionImgs, emissiveImgs, mrImgs, baseColorImgs, diffuseImgs, sgImgs;
-	for (GltfMaterial* material : _gltfMaterials)
-	{
-		addImageFromTexture(material->normalTexture, normalImgs);
-		addImageFromTexture(material->occlusionTexture, occlusionImgs);
-		addImageFromTexture(material->emissiveTexture, emissiveImgs);
+	try {
+		if (_gltfMaterials.empty()) return;
+		std::vector<osg::ref_ptr<osg::Image>> normalImgs, occlusionImgs, emissiveImgs, mrImgs, baseColorImgs, diffuseImgs, sgImgs;
+		for (GltfMaterial* material : _gltfMaterials)
+		{
+			addImageFromTexture(material->normalTexture, normalImgs);
+			addImageFromTexture(material->occlusionTexture, occlusionImgs);
+			addImageFromTexture(material->emissiveTexture, emissiveImgs);
 
-		osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(material);
-		if (gltfMRMaterial.valid())
-		{
-			addImageFromTexture(gltfMRMaterial->metallicRoughnessTexture, mrImgs);
-			addImageFromTexture(gltfMRMaterial->baseColorTexture, baseColorImgs);
-		}
-		for (size_t i = 0; i < material->materialExtensionsByCesiumSupport.size(); ++i)
-		{
-			GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(i);
-			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+			osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(material);
+			if (gltfMRMaterial.valid())
 			{
-				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-				addImageFromTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture, diffuseImgs);
-				addImageFromTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, sgImgs);
+				addImageFromTexture(gltfMRMaterial->metallicRoughnessTexture, mrImgs);
+				addImageFromTexture(gltfMRMaterial->baseColorTexture, baseColorImgs);
+			}
+			for (size_t i = 0; i < material->materialExtensionsByCesiumSupport.size(); ++i)
+			{
+				GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(i);
+				if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+				{
+					KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
+					addImageFromTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture, diffuseImgs);
+					addImageFromTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, sgImgs);
+				}
 			}
 		}
+
+		processGltfGeneralImages(normalImgs, GltfTextureType::NORMAL);
+		processGltfGeneralImages(occlusionImgs, GltfTextureType::OCCLUSION);
+		processGltfGeneralImages(emissiveImgs, GltfTextureType::EMISSIVE);
+
+		processGltfPbrMRImages(mrImgs, GltfTextureType::METALLICROUGHNESS);
+		processGltfPbrMRImages(baseColorImgs, GltfTextureType::BASECOLOR);
+
+		processGltfPbrSGImages(diffuseImgs, GltfTextureType::DIFFUSE);
+		processGltfPbrSGImages(sgImgs, GltfTextureType::SPECULARGLOSSINESS);
+
+		normalImgs.clear();
+		occlusionImgs.clear();
+		emissiveImgs.clear();
+		mrImgs.clear();
+		baseColorImgs.clear();
+		diffuseImgs.clear();
+		sgImgs.clear();
 	}
-
-	processGltfGeneralImages(normalImgs, GltfTextureType::NORMAL);
-	processGltfGeneralImages(occlusionImgs, GltfTextureType::OCCLUSION);
-	processGltfGeneralImages(emissiveImgs, GltfTextureType::EMISSIVE);
-
-	processGltfPbrMRImages(mrImgs, GltfTextureType::METALLICROUGHNESS);
-	processGltfPbrMRImages(baseColorImgs, GltfTextureType::BASECOLOR);
-
-	processGltfPbrSGImages(diffuseImgs, GltfTextureType::DIFFUSE);
-	processGltfPbrSGImages(sgImgs, GltfTextureType::SPECULARGLOSSINESS);
-
-	normalImgs.clear();
-	occlusionImgs.clear();
-	emissiveImgs.clear();
-	mrImgs.clear();
-	baseColorImgs.clear();
-	diffuseImgs.clear();
-	sgImgs.clear();
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
+	}
 }
 
 void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Image>& img, std::vector<size_t>& indexes, std::vector<osg::ref_ptr<osg::Image>>& deleteImgs, TexturePacker& packer)
@@ -1478,101 +1650,32 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Ima
 	}
 }
 
-std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::ref_ptr<osg::Image>& img, const GltfTextureType type)
-{
-	std::string ext = _options.ext;
-	std::string filename = TexturePacker::computeImageHash(img);
-	switch (type)
-	{
-	case GltfTextureType::NORMAL:
-		filename += "-normal";
-		break;
-	case GltfTextureType::OCCLUSION:
-		filename += "-occlusion";
-		break;
-	case GltfTextureType::EMISSIVE:
-		filename += "-emissive";
-		break;
-	case GltfTextureType::METALLICROUGHNESS:
-		filename += "-metallicroughness";
-		break;
-	case GltfTextureType::BASECOLOR:
-		filename += "-basecolor";
-		break;
-	case GltfTextureType::DIFFUSE:
-		filename += "-diffuse";
-		break;
-	case GltfTextureType::SPECULARGLOSSINESS:
-		filename += "-specularglossiness";
-		break;
-	default:
-		break;
-	}
-
-	const GLenum pixelFormat = img->getPixelFormat();
-	if (_options.ext == ".jpg" && pixelFormat != GL_ALPHA && pixelFormat != GL_RGB)
-	{
-		ext = ".png";
-	}
-
-	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
-	if (ext == ".jpg" || ext == ".jpeg")
-		options->setOptionString("JPEG_QUALITY  75");
-	else if (ext == ".png")
-		options->setOptionString("PNG_COMPRESSION 5");
-
-
-	std::string fullPath = _options.cachePath + "/" + filename + ext;
-	std::ifstream fileExistedJpg(fullPath);
-	if ((!fileExistedJpg.good()) || (fileExistedJpg.peek() == std::ifstream::traits_type::eof()))
-	{
-		osg::ref_ptr< osg::Image > flipped = new osg::Image(*img);
-		if (!(osgDB::writeImageFile(*flipped.get(), fullPath)))
-		{
-			fullPath = _options.cachePath + "/" + filename + ".png";
-			options->setOptionString("PNG_COMPRESSION 5");
-			std::ifstream fileExistedPng(fullPath);
-			if ((!fileExistedPng.good()) || (fileExistedPng.peek() == std::ifstream::traits_type::eof()))
-			{
-				if (!(osgDB::writeImageFile(*flipped.get(), fullPath)))
-				{
-					osg::notify(osg::FATAL) << '\n';
-					fullPath = "";
-				}
-			}
-			if (fileExistedPng.good())
-				fileExistedPng.close();
-		}
-		flipped = nullptr;
-		if (fileExistedJpg.good())
-			fileExistedJpg.close();
-	}
-	if (img->getFileName().empty())
-		img->setFileName(fullPath);
-	return fullPath;
-}
-
 void GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight)
 {
-	int originalWidth = -1;
-	int originalHeight = -1;
-	img->getUserValue(ORIGIN_WIDTH, originalWidth);
-	img->getUserValue(ORIGIN_HEIGHT, originalHeight);
-	if (originalWidth == -1 || originalHeight == -1)
-	{
-		originalWidth = img->s();
-		originalHeight = img->t();
-		img->setUserValue(ORIGIN_WIDTH, originalWidth);
-		img->setUserValue(ORIGIN_HEIGHT, originalHeight);
-	}
-	int newWidth = osg::Image::computeNearestPowerOfTwo(originalWidth);
-	int newHeight = osg::Image::computeNearestPowerOfTwo(originalHeight);
+	try {
+		int originalWidth = -1;
+		int originalHeight = -1;
+		img->getUserValue(ORIGIN_WIDTH, originalWidth);
+		img->getUserValue(ORIGIN_HEIGHT, originalHeight);
+		if (originalWidth == -1 || originalHeight == -1)
+		{
+			originalWidth = img->s();
+			originalHeight = img->t();
+			img->setUserValue(ORIGIN_WIDTH, originalWidth);
+			img->setUserValue(ORIGIN_HEIGHT, originalHeight);
+		}
+		int newWidth = osg::Image::computeNearestPowerOfTwo(originalWidth);
+		int newHeight = osg::Image::computeNearestPowerOfTwo(originalHeight);
 
-	newWidth = newWidth > maxWidth ? maxWidth : newWidth;
-	newHeight = newHeight > maxHeight ? maxHeight : newHeight;
-	if (newWidth != originalWidth || newHeight != originalHeight)
-	{
-		img->scaleImage(newWidth, newHeight, img->r());
+		newWidth = newWidth > maxWidth ? maxWidth : newWidth;
+		newHeight = newHeight > maxHeight ? maxHeight : newHeight;
+		if (newWidth != originalWidth || newHeight != originalHeight)
+		{
+			img->scaleImage(newWidth, newHeight, img->r());
+		}
+	}
+	catch (const std::exception& e) {
+		OSG_NOTICE << e.what() << std::endl;
 	}
 }
 
