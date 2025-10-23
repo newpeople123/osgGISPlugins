@@ -1,5 +1,8 @@
 set(TOOL_NAME "simplifier")
-
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
+endif()
 # 查找源文件
 aux_source_directory(. DIR_SRCS)
 
@@ -30,6 +33,7 @@ set(SOURCE_FILES
 
 # 添加可执行文件
 add_executable(${TOOL_NAME} ${SOURCE_FILES})
+target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 
 # 添加依赖
 add_dependencies(${TOOL_NAME}

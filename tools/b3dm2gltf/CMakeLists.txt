@@ -1,4 +1,8 @@
 set(TOOL_NAME "b3dm2gltf")
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
+endif()
 aux_source_directory(. DIR_SRCS)
 add_executable(${TOOL_NAME} ${DIR_SRCS})
 source_group("src" FILES ${DIR_SRCS})

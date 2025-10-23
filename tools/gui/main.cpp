@@ -112,7 +112,11 @@ void openURL(const char* url) {
 void openURL(const char* url) {
     std::string cmd = "xdg-open ";
     cmd += url;
-    system(cmd.c_str());
+    int ret = system(cmd.c_str());
+    if (ret != 0)
+    {
+        std::cerr << "Failed to execute command: " << cmd << std::endl;
+    }
 }
 #endif // _WIN32
 

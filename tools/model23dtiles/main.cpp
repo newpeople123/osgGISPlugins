@@ -18,6 +18,7 @@
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
+#include <tbb/global_control.h>
 
 class CoordinateTransformVisitor :public osg::NodeVisitor
 {
@@ -525,6 +526,8 @@ int main(int argc, char** argv)
 		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder, config);
 
 		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
+		//控制全局线程池中最多并行线程数
+		tbb::global_control c(tbb::global_control::max_allowed_parallelism, 8);
 		const bool result = tileset->write();
 
 		if (result)

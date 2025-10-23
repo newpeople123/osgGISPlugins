@@ -1,5 +1,8 @@
 set(TOOL_NAME "texturepacker")
-
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
+endif()
 # 查找当前目录源文件
 aux_source_directory(. TOOL_SRCS)
 

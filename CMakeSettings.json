@@ -52,7 +52,7 @@
     {
       "name": "Linux-GCC-Release",
       "generator": "Ninja",
-      "configurationType": "RelWithDebInfo",
+      "configurationType": "Release",
       "cmakeExecutable": "cmake",
       "remoteCopySourcesExclusionList": [ ".vs", ".git", "out", "build", "vcpkg_installed", "/Debug", "/Release" ],
       "cmakeCommandArgs": "-DCMAKE_SYSTEM_NAME=Linux",

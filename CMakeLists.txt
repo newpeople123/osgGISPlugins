@@ -82,11 +82,6 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
 
     file(COPY ${THIRD_PARTY_PLUGINS} DESTINATION ${OUT_DIR})
     file(COPY ${VCPKG_INSTALL_DIR}/bin/jpeg62.dll DESTINATION ${OUT_DIR})
-    file(COPY ${PROJECT_ROOT_DIR}/assets/favicon.png DESTINATION ${OUT_DIR})
-    file(COPY ${PROJECT_ROOT_DIR}/assets/msyh.ttc DESTINATION ${OUT_DIR})
-elseif(UNIX)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
 endif()
 
 # 打印关键路径

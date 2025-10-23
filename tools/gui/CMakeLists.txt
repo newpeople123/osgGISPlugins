@@ -2,8 +2,11 @@ cmake_minimum_required(VERSION 3.12)
 
 # 项目名和C++标准
 set(TOOL_NAME "gui")
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
+endif()
 
 # 查找当前目录下所有源文件（cpp/c等）
 aux_source_directory(. DIR_SRCS)
@@ -20,6 +23,7 @@ add_executable(${TOOL_NAME}
     ${HEADER_FILES}
     ${PROJECT_ROOT_DIR}/3rdparty/lib/ImGuiFileDialog/ImGuiFileDialog.cpp
 )
+target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 
 # 通过 source_group 按分组显示
 source_group("include" FILES
@@ -64,6 +68,14 @@ endif()
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${TOOL_NAME} pthread dl)
 endif()
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(OUT_DIR "${PROJECT_ROOT_DIR}/Debug")
+else()
+    set(OUT_DIR "${PROJECT_ROOT_DIR}/Release")
+endif()
+file(COPY ${PROJECT_ROOT_DIR}/assets/favicon.png DESTINATION ${OUT_DIR})
+file(COPY ${PROJECT_ROOT_DIR}/assets/msyh.ttc DESTINATION ${OUT_DIR})
 
 # 安装配置
 install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})

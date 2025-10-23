@@ -12,8 +12,8 @@
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <numeric>
-#ifdef _WIN32
 #ifndef OSG_GIS_PLUGINS_PATH_SPLIT_STRING
+#ifdef _WIN32
 #define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "\\"
 #else
 #define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "/"

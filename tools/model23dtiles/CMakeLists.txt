@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.12)
 set(TOOL_NAME "model23dtiles")
-
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
+endif()
 # 查找测试目录下源文件
 aux_source_directory(. DIR_SRCS)
 
@@ -35,6 +38,10 @@ add_executable(${TOOL_NAME}
     ${B3DM_HEADER} ${B3DM_SOURCE}
     ${MATERIAL_HEADERS} ${MATERIAL_SOURCES}
 )
+target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
+
+# 启用并行处理
+target_compile_definitions(${TOOL_NAME} PRIVATE USE_TBB_PARALLEL=1)
 
 # 添加依赖
 add_dependencies(${TOOL_NAME}

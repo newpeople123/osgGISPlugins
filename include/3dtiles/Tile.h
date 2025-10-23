@@ -1,9 +1,11 @@
 #ifndef OSG_GIS_PLUGINS_TILE_H
 #define OSG_GIS_PLUGINS_TILE_H
+#ifndef OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 #ifdef _WIN32
 #define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "\\"
 #else
 #define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "/"
+#endif
 #endif // !OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 #include <osg/Node>
 #include "3dtiles/BoundingVolume.h"
