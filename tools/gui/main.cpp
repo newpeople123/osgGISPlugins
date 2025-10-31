@@ -22,11 +22,16 @@
 #include <mutex>
 #include <osgDB/ConvertUTF>
 
-#define VERSION "osgGISPlugins Tools Desktop v2.3.0 Beta"
+#define VERSION "osgGISPlugins Tools Desktop v2.3.0"
 
 struct Model23dtilesParams {
-    char inputModel[1024] = R"(C:)";
-    char outputDir[1024] = R"(C:)";
+#ifdef _WIN32
+    char inputModel[1024] = "C:\\";
+    char outputDir[1024] = "C:\\";
+#else
+    char inputModel[1024] = "/";
+    char outputDir[1024] = "/";
+#endif
 
     // 坐标参数
     bool useLatLngAlt = true;
@@ -119,6 +124,14 @@ void openURL(const char* url) {
     }
 }
 #endif // _WIN32
+
+std::string buildCommand(const std::string& exe, const std::string& args) {
+#ifdef _WIN32
+    return "cmd /c \"chcp 936 > nul && \"" + exe + "\" " + osgDB::convertStringFromUTF8toCurrentCodePage(args) + "\"";
+#else
+    return exe + " " + args + " 2>&1";
+#endif
+}
 
 // 自定义风格
 void setupCustomStyle()
@@ -235,8 +248,7 @@ void runExternalTool(const std::string& exePath, const std::string& args,const i
 
         CloseHandle(hReadPipe);
 #else
-        std::string cmd = exePath + " " + args + " 2>&1";
-        FILE* pipe = popen(cmd.c_str(), "r");
+        FILE* pipe = popen(buildCommand(exePath, args).c_str(), "r");
         if (!pipe) {
             fullOutput << "无法启动转换程序。\n";
         }
@@ -541,7 +553,11 @@ void createModel23dtilesToolTab(bool enable) {
 
         ImGui::BeginDisabled(isConverting);
         if (ImGui::Button("转换", ImVec2(150, 40))) {
+#ifdef _WIN32
             currentToolName = "model23dtiles.exe";
+#else
+            currentToolName = "./model23dtiles";
+#endif
 
             std::ostringstream args;
             args << " -sp"
@@ -659,7 +675,11 @@ void createB3dm2gltfToolTab(bool enable) {
         }
         ImGui::Dummy(ImVec2(0, 10));
         if (ImGui::Button("转换", ImVec2(150, 40))) {
+#ifdef _WIN32
             currentToolName = "b3dm2gltf.exe";
+#else
+            currentToolName = "./b3dm2gltf";
+#endif
             std::ostringstream args;
             args << " -i " << inputB3dm
                 << " -o " << outputFile;

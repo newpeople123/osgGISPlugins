@@ -32,10 +32,10 @@ void Tileset::fromJson(const json& j) {
 	if (j.contains("root")) root->fromJson(j.at("root"));
 }
 
-Tileset Tileset::fromFile(const string& filePath) {
-	ifstream file(filePath);
+Tileset Tileset::fromFile(const std::string& filePath) {
+	std::ifstream file(filePath);
 	if (!file.is_open()) {
-		throw runtime_error("Unable to open file: " + filePath);
+		throw std::runtime_error("Unable to open file: " + filePath);
 	}
 
 	json j;
@@ -66,9 +66,9 @@ bool Tileset::write() {
 
 	this->root->write();
 	this->computeTransform(config.longitude, config.latitude, config.altitude);
-	const string filePath = config.tileConfig.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
+	const std::string filePath = config.tileConfig.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json";
 	std::setlocale(LC_ALL, "zh_CN.UTF-8");
-	ofstream file(filePath);
+	std::ofstream file(filePath);
 	if (!file.is_open()) {
 		return false;
 	}
@@ -79,9 +79,9 @@ bool Tileset::write() {
 
 	json j = toJson();
 #ifndef NDEBUG
-	const string str = j.dump(4);//格式化输出
+	const std::string str = j.dump(4);//格式化输出
 #else
-	const string str = j.dump();
+	const std::string str = j.dump();
 #endif
 	file << str;
 	file.close();

@@ -1,7 +1,6 @@
 #include <iostream>
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
-using namespace std;
 int findNearestPowerOfTwo(int value)
 {
     int powerOfTwo = 1;

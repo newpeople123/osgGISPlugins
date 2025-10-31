@@ -22,7 +22,6 @@
 #include <osg/NodeVisitor>
 #include <algorithm>
 using json = nlohmann::json;
-using namespace std;
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
@@ -52,10 +51,10 @@ namespace osgGISPlugins
 				tileConfig.validate();
 			}
 		};
-		string assetVersion = "1.0";
-		string tilesetVersion = "1.0.0";
-		const string generator = "osgGISPlugins";
-		string gltfUpAxis = "Y";
+		std::string assetVersion = "1.0";
+		std::string tilesetVersion = "1.0.0";
+		const std::string generator = "osgGISPlugins";
+		std::string gltfUpAxis = "Y";
 		double geometricError;
 		osg::ref_ptr<Tile> root;
 
@@ -63,7 +62,7 @@ namespace osgGISPlugins
 
 		void fromJson(const json& j);
 
-		static Tileset fromFile(const string& filePath);
+		static Tileset fromFile(const std::string& filePath);
 
 		json toJson() const;
 

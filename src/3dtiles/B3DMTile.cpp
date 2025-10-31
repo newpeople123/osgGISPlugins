@@ -2,29 +2,29 @@
 #include <osgDB/FileUtils>
 using namespace osgGISPlugins;
 
-string B3DMTile::getOutputPath() const
+std::string B3DMTile::getOutputPath() const
 {
-	return config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(level);
+	return config.path + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + std::to_string(level);
 }
 
-string B3DMTile::getFullPath() const
+std::string B3DMTile::getFullPath() const
 {
 	return getOutputPath() + OSG_GIS_PLUGINS_PATH_SPLIT_STRING +
-		"Tile_L" + to_string(lod) + "_" + to_string(x) + "_" +
-		to_string(y) + "_" + to_string(z) + "." + type;
+		"Tile_L" + std::to_string(lod) + "_" + std::to_string(x) + "_" +
+		std::to_string(y) + "_" + std::to_string(z) + "." + type;
 }
 
-string B3DMTile::getTextureCachePath(const string textureCachePath) const
+std::string B3DMTile::getTextureCachePath(const std::string textureCachePath) const
 {
 	return textureCachePath + OSG_GIS_PLUGINS_PATH_SPLIT_STRING +
-		"Tile_" + to_string(x) + "_" +
-		to_string(y) + "_" + to_string(z) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + to_string(lod);
+		"Tile_" + std::to_string(x) + "_" +
+		std::to_string(y) + "_" + std::to_string(z) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + std::to_string(lod);
 }
 
 void B3DMTile::setContentUri()
 {
 	if (this->lod != -1)
-		contentUri = to_string(level) + "/" + "Tile_L" + to_string(lod) + "_" + to_string(x) + "_" + to_string(y) + "_" + to_string(z) + "." + type;
+		contentUri = std::to_string(level) + "/" + "Tile_L" + std::to_string(lod) + "_" + std::to_string(x) + "_" + std::to_string(y) + "_" + std::to_string(z) + "." + type;
 }
 
 B3DMTile* B3DMTile::createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent)

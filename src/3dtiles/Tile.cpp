@@ -10,7 +10,7 @@ void Tile::fromJson(const json& j)
 		j.at("geometricError").get_to(geometricError);
 	if (j.contains("refine"))
 	{
-		string refineStr;
+		std::string refineStr;
 		j.at("refine").get_to(refineStr);
 		if (refineStr == "REPLACE")
 		{
@@ -178,21 +178,13 @@ bool Tile::valid() const
 	const size_t size = this->children.size();
 	if (size)
 	{
-		bool isValid = true;
 		for (size_t i = 0; i < size; ++i)
 		{
 			if (this->geometricError <= this->children[i]->geometricError)
-			{
-				isValid = false;
-				break;
-			}
+				return false;
 			if (!this->children[i]->valid())
-			{
-				isValid = false;
-				break;
-			}
+				return false;
 		}
-		return isValid;
 	}
 	else
 		return this->geometricError == 0.0;
@@ -379,7 +371,7 @@ bool Tile::writeNode()
 void Tile::writeToFile()
 {
 
-	const string outputPath = getOutputPath();
+	const std::string outputPath = getOutputPath();
 	if (osgDB::makeDirectory(outputPath))
 		osgDB::writeNodeFile(*this->node.get(), getFullPath(), config.options);
 }

@@ -229,15 +229,21 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, doub
 			exit(0);
 		}
 		const osg::Vec3d center = bs.center();
-		const string dstEpsg = "EPSG:4326";
-		const string srcEpsg = "EPSG:" + epsg;
+		const std::string dstEpsg = "EPSG:4326";
+		const std::string srcEpsg = "EPSG:" + epsg;
 		PJ_CONTEXT* ctx = proj_context_create();
 		if (!ctx)
 		{
 			OSG_NOTICE << "Error creating projection context!" << std::endl;
 			exit(0);
 		}
-		const char* searchPath[] = { "./share/proj" };
+#ifndef NDEBUG
+		const std::string projDBPath = "./share/proj";
+#else
+		const std::string projDBPath = osgDB::convertStringFromCurrentCodePageToUTF8(osgDB::getCurrentWorkingDirectory()) + "\\share\\proj";
+		OSG_NOTICE << projDBPath << "\n";
+#endif // !NDEBUG
+		const char* searchPath[] = { projDBPath.c_str() };
 		proj_context_set_search_paths(ctx, 1, searchPath);
 		const char* dbPath = proj_context_get_database_path(ctx);
 		if (!dbPath) {
@@ -414,7 +420,7 @@ int main(int argc, char** argv)
 	if (showProgress)
 		instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
 	const std::string inputPath = osgDB::getFilePath(input);
-	const std::string currentWorkingPath = osgDB::getCurrentWorkingDirectory();
+	const std::string currentWorkingPath = osgDB::convertStringFromCurrentCodePageToUTF8(osgDB::getCurrentWorkingDirectory());
 	osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
 	osg::ref_ptr<osg::Node> node = readModelFile(input, showProgress);
 	if (!node.valid())

@@ -36,11 +36,11 @@ namespace osgGISPlugins
 
 		void optimizeNode() override;
 
-		string getOutputPath() const override;
+		std::string getOutputPath() const override;
 
-		string getFullPath() const override;
+		std::string getFullPath() const override;
 
-		string getTextureCachePath(const string textureCachePath) const override;
+		std::string getTextureCachePath(const std::string textureCachePath) const override;
 
 		void setContentUri() override;
 

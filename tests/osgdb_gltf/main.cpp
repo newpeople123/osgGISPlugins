@@ -16,12 +16,12 @@
 #include <future>
 #include "utils/Simplifier.h"
 #include <utils/GltfOptimizer.h>
+#include "osgdb_gltf/material/GltfPbrMRMaterial.h"
 #ifdef _WIN32
 #define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
 #include <crtdbg.h>
 #endif
-using namespace std;
 using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(D:\nginx-1.27.0\html\test\gltf\)";
 //const std::string INPUT_BASE_PATH = R"(E:\Data\data\)";
@@ -191,6 +191,10 @@ int main() {
 	instance->addFileExtensionAlias("glb", "gltf");//插件注册别名
 	instance->addFileExtensionAlias("b3dm", "gltf");//插件注册别名
 	instance->addFileExtensionAlias("ktx2", "ktx");//插件注册别名
+
+	osg::ref_ptr<osg::Image> jpgImg = osgDB::readImageFile(R"(D:\BaiduNetdiskDownload\龙翔桥站.fbm\DTD0709013.png)");
+
+	osgDB::writeImageFile(*jpgImg.get(), R"(D:\BaiduNetdiskDownload\1.ktx2)");
 
 	osg::ref_ptr<osg::Node> node = readModelFile(R"(C:\baidunetdiskdownload\芜湖水厂总装.fbx)");
 	osgUtil::Optimizer optimizer;

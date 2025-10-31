@@ -3,14 +3,13 @@
 #include <osg/Object>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
-using namespace std;
 namespace osgGISPlugins
 {
 	class BoundingVolume :public osg::Object {
 	public:
-		vector<double> region;
-		vector<double> box;
-		vector<double> sphere;
+		std::vector<double> region;
+		std::vector<double> box;
+		std::vector<double> sphere;
 		BoundingVolume() = default;
 
 		BoundingVolume(const BoundingVolume& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY)

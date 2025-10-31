@@ -13,7 +13,6 @@
 #include <3dtiles/Tileset.h>
 #include <3dtiles/hlod/QuadTreeBuilder.h>
 #include <osg/MatrixTransform>
-using namespace std;
 using namespace osgGISPlugins;
 //const std::string OUTPUT_BASE_PATH = R"(C:\Users\94764\Desktop\nginx-1.26.2\html\)";
 //const std::string INPUT_BASE_PATH = R"(C:\baidunetdiskdownload\)";

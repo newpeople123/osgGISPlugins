@@ -1,7 +1,6 @@
 #ifndef OSG_GIS_PLUGINS_B3DM_TILE_H
 #define OSG_GIS_PLUGINS_B3DM_TILE_H
 #include "3dtiles/Tile.h"
-using namespace std;
 using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
@@ -29,11 +28,11 @@ namespace osgGISPlugins
 
 		virtual const char* className() const { return "B3DMTile"; }
 
-		string getOutputPath() const override;
+		std::string getOutputPath() const override;
 
-		string getFullPath() const override;
+		std::string getFullPath() const override;
 
-		string getTextureCachePath(const string textureCachePath) const override;
+		std::string getTextureCachePath(const std::string textureCachePath) const override;
 
 		void setContentUri() override;
 

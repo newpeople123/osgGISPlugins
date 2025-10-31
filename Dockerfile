@@ -1,9 +1,9 @@
 # 第一阶段：builder1:准备vcpkg的运行环境并安装fbxsdk
-FROM ubuntu:20.04 as builder1
+FROM docker.m.daocloud.io/library/ubuntu:20.04 AS builder1
 LABEL author="wang tian yu"
 LABEL website="https://gitee.com/wtyhz/osg-gis-plugins"
 
-ARG GHPROXY=https://hk.gh-proxy.com/
+ARG GHPROXY=https://gh-proxy.com/
 ENV GHPROXY=${GHPROXY}
 
 # 设置工作目录
@@ -19,16 +19,25 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo '$TZ' > /etc/timezone
     && sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
     && sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
     && apt-get update \
-    && apt-get -y install git curl zip unzip tar build-essential pkg-config freeglut3-dev mesa-utils libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev libx11-dev libxi-dev libxrandr-dev autoconf python3 libtool bison wget vim zlib1g-dev libffi-dev software-properties-common cmake \
+    && apt-get -y install git curl zip unzip tar build-essential pkg-config freeglut3-dev mesa-utils libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev libx11-dev libxi-dev libxrandr-dev autoconf python3 libtool bison wget vim zlib1g-dev libffi-dev software-properties-common cmake gnupg2 \
     && git clone ${GHPROXY}github.com/microsoft/vcpkg.git \
     && sed -i "s#https://github.com/#${GHPROXY}github.com/#g" /app/vcpkg/scripts/bootstrap.sh \
     && sed -i "s#https://github.com/#${GHPROXY}github.com/#g" /app/vcpkg/scripts/vcpkg-tools.json \
     && sed -z -i "s|    vcpkg_list(SET params \"x-download\" \"\${arg_FILENAME}\")\n    foreach(url IN LISTS arg_URLS)\n        vcpkg_list(APPEND params \"--url=\${url}\")\n    endforeach()\n|    vcpkg_list(SET params \"x-download\" \"\${arg_FILENAME}\")\n    vcpkg_list(SET arg_URLS_Real)\n    foreach(url IN LISTS arg_URLS)\n        string(REPLACE \"http://download.savannah.nongnu.org/releases/gta/\" \"https://marlam.de/gta/releases/\" url \"\${url}\")\n        string(REPLACE \"https://github.com/\" \"${GHPROXY}github.com/\" url \"\${url}\")\n        string(REPLACE \"https://ftp.gnu.org/\" \"https://mirrors.aliyun.com/\" url \"\${url}\")\n        string(REPLACE \"https://raw.githubusercontent.com/\" \"${GHPROXY}raw.githubusercontent.com/\" url \"\${url}\")\n        string(REPLACE \"http://ftp.gnu.org/pub/gnu/\" \"https://mirrors.aliyun.com/gnu/\" url \"\${url}\")\n        string(REPLACE \"https://ftp.postgresql.org/pub/\" \"https://mirrors.cloud.tencent.com/postgresql/\" url \"\${url}\")\n        string(REPLACE \"https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/\" \"https://distfiles.macports.org/szip/\" url \"\${url}\")\n        vcpkg_list(APPEND params \"--url=\${url}\")\n        vcpkg_list(APPEND arg_URLS_Real \"\${url}\")\n    endforeach()\n    if(NOT vcpkg_download_distfile_QUIET)\n        message(STATUS \"Downloading \${arg_URLS_Real} -> \${arg_FILENAME}...\")\n    endif()|g" /app/vcpkg/scripts/cmake/vcpkg_download_distfile.cmake \
     && /app/vcpkg/bootstrap-vcpkg.sh \
     && ln -s /app/vcpkg/vcpkg /usr/bin/vcpkg \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get -y install python3.7 python3.7-dev python3.7-distutils \
+    && apt-get -y install libssl-dev libbz2-dev libreadline-dev libsqlite3-dev libncurses5-dev libncursesw5-dev libffi-dev liblzma-dev tk-dev uuid-dev \
+    && cd /tmp \
+    && wget https://mirrors.aliyun.com/python-release/source/Python-3.7.17.tgz \
+    && tar -xzf Python-3.7.17.tgz \
+    && cd Python-3.7.17 \
+    && ./configure --enable-optimizations --prefix=/usr/local/python3.7 \
+    && make -j$(nproc) \
+    && make install \
+    && ln -sf /usr/local/python3.7/bin/python3.7 /usr/bin/python3.7 \
+    && ln -sf /usr/local/python3.7/bin/pip3.7 /usr/bin/pip3.7 \
+    && python3.7 -m ensurepip \
+    && python3.7 -m pip install --upgrade pip setuptools wheel \
     && apt-get clean \
     && chmod ugo+x /app/3rdparty/lib/linux/fbx20180_fbxsdk_linux \
     && yes yes | /app/3rdparty/lib/linux/fbx20180_fbxsdk_linux /usr/local
@@ -43,14 +52,14 @@ RUN echo 'C_INCLUDE_PATH=/app/vcpkg_installed/x64-linux-dynamic/include/' >> ~/.
     && echo 'LIBRARY_PATH=/app/vcpkg_installed/x64-linux-dynamic/lib/:/usr/local/lib/gcc4/x64/release/:/usr/local/lib/gcc4/x64/debug/' >> ~/.bashrc \
     && bash -c "source ~/.bashrc" \
     && rm /usr/bin/python3 \
-    && ln -s /usr/bin/python3.7 /usr/bin/python3 \
-    && vcpkg install --triplet=x64-linux-dynamic
+    && ln -s /usr/bin/python3.7 /usr/bin/python3
 
 # 第三阶段：builder3:编译并安装程序，安装位置由CMAKE_INSTALL_PREFIX参数决定，这里设置安装到/app目录下
 FROM builder2 AS builder3
 WORKDIR /app
 COPY . .
-RUN bash -c "source ~/.bashrc" \
+RUN vcpkg install --triplet=x64-linux-dynamic \
+    && bash -c "source ~/.bashrc" \
     && cmake . -DCMAKE_TOOLCHAIN_FILE=/app/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app \
     && make -j$(nproc) \
     && make install \
@@ -61,7 +70,7 @@ RUN bash -c "source ~/.bashrc" \
     && yes yes | /app/3rdparty/lib/linux/fbx20180_fbxsdk_linux /app/fbxsdk \
     && find /app/* -maxdepth 0 ! -name 'fbxsdk' ! -name 'model23dtiles' ! -name 'b3dm2gltf' ! -name 'texturepacker' ! -name 'simplifier' ! -name 'osgdb_fbx.so' ! -name 'osgdb_ktx.so' ! -name 'osgdb_webp.so' ! -name 'osgdb_gltf.so' ! -name 'vcpkg_installed' -exec rm -rf {} \;
 # 最终阶段
-FROM ubuntu:20.04 AS final
+FROM m.daocloud.io/docker.io/library/ubuntu:20.04 AS final
 WORKDIR /app
 COPY --from=builder3 /app/ /app
 ENV VCPKG_DYNAMIC_X64_INCLUDE=/app/vcpkg_installed/x64-linux-dynamic/include/  
@@ -76,9 +85,9 @@ ENV C_INCLUDE_PATH="${VCPKG_DYNAMIC_X64_INCLUDE}:${VCPKG_X64_INCLUDE}"
 ENV CPLUS_INCLUDE_PATH="${VCPKG_DYNAMIC_X64_INCLUDE}:${VCPKG_X64_INCLUDE}"  
 ENV LIBRARY_PATH="${FBXSDK_X64_LIB}:${VCPKG_DYNAMIC_X64_LIB}:${VCPKG_DYNAMIC_X64_PLUGINS}:${VCPKG_X64_LIB}:${VCPKG_X64_PLUGINS}:${OSG_GIS_PLUGINS_LIBRARY_PATH}"  
 ENV LD_LIBRARY_PATH="${FBXSDK_X64_LIB}:${VCPKG_DYNAMIC_X64_LIB}:${VCPKG_DYNAMIC_X64_PLUGINS}:${VCPKG_X64_LIB}:${VCPKG_X64_PLUGINS}:${OSG_GIS_PLUGINS_LIBRARY_PATH}"  
-ENV LANG zh_CN.UTF-8  
-ENV LANGUAGE zh_CN:zh  
-ENV LC_ALL zh_CN.UTF-8  
+ENV LANG=zh_CN.UTF-8  
+ENV LANGUAGE=zh_CN:zh  
+ENV LC_ALL=zh_CN.UTF-8  
 #定义时区参数
 ENV TZ=Asia/Shanghai
 #设置时区

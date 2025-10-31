@@ -43,7 +43,7 @@ target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 # 启用并行处理
 target_compile_definitions(${TOOL_NAME} PRIVATE USE_TBB_PARALLEL=1)
 
-# 添加依赖
+# 构建依赖
 add_dependencies(${TOOL_NAME}
     osgdb_gltf
     osgdb_fbx

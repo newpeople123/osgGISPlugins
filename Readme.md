@@ -2,7 +2,7 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/Version-2.0.0-blue.svg" />
-  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
+  <img src="https://img.shields.io/badge/C++-C++11/C++17-green.svg" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg" />
   <img src="https://img.shields.io/badge/platform-windows/linux-green.svg" />
 </div>
@@ -53,6 +53,7 @@ osg的GIS插件，能够读取、显示3dsmax导出的具有PBR材质的fbx文�
 <div align="left">
   <img src="https://img.shields.io/badge/read-fbx-brightgreen.svg" />
   <img src="https://img.shields.io/badge/write-fbx-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
 </div>
 
 在osg的fbx的插件的基础上，参考了[FBX2glTF](https://github.com/facebookincubator/FBX2glTF)项目，使得能够读取3dmax导出的带有PBR材质的FBX文件(原本的插件读取带有PBR材质的FBX文件时，材质会丢失，读到引擎里显示为白模)，并能在osg引擎中正常渲染。
@@ -62,6 +63,7 @@ osg的GIS插件，能够读取、显示3dsmax导出的具有PBR材质的fbx文�
 <div align="left">
   <img src="https://img.shields.io/badge/read-gltf/glb/b3dm/i3dm-red.svg" />
   <img src="https://img.shields.io/badge/write-gltf/glb/b3dm/i3dm-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
 </div>
 <div align="left">
   <img src="https://img.shields.io/badge/extension-KHR_materials_unlit-brightgreen.svg" />
@@ -100,6 +102,7 @@ osg的GIS插件，能够读取、显示3dsmax导出的具有PBR材质的fbx文�
 <div align="left">
   <img src="https://img.shields.io/badge/read-webp-brightgreen.svg" />
   <img src="https://img.shields.io/badge/write-webp-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
 </div>
 
 和osgEarth的webp插件一样。
@@ -109,6 +112,7 @@ osg的GIS插件，能够读取、显示3dsmax导出的具有PBR材质的fbx文�
 <div align="left">
   <img src="https://img.shields.io/badge/read-ktx/ktx2-brightgreen.svg" />
   <img src="https://img.shields.io/badge/write-ktx/ktx2-brightgreen.svg" />
+  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
 </div>
 
 在王锐大神的[osgVerse](https://github.com/xarray/osgverse)的ktx插件基础上进行了小改动，支持导出ktx2格式的纹理图片，支持Mipmaps。
@@ -117,6 +121,9 @@ osg的GIS插件，能够读取、显示3dsmax导出的具有PBR材质的fbx文�
 
 ## b3dm2gltf
 
+<div align="left">
+  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
+</div>
 将b3dm文件转换为gltf/glb文件。
 
 ### 用法说明
@@ -134,6 +141,10 @@ b3dm2gltf.exe -i D:\test.b3dm -o D:\output.glb
 ```
 
 ## model23dtiles
+
+<div align="left">
+  <img src="https://img.shields.io/badge/C++-C++17-green.svg" />
+</div>
 
 - 将3D模型转换为符合 3dtiles 1.0 标准的瓦片数据；
 - 支持三种3dtiles空间组织结构：KD树（kd）、四叉树（quad） 和 八叉树（oc）；
@@ -223,6 +234,10 @@ model23dtiles.exe -i D:\test.fbx -t quad -o D:\output -epsg 4549 -sx 0.01 -sy 0.
 
 ## simplifier
 
+<div align="left">
+  <img src="https://img.shields.io/badge/C++-C++17-green.svg" />
+</div>
+
 对3D模型进行网格简化操作，同时会删除简化后的空闲顶点。
 
 ### 用法说明
@@ -251,6 +266,10 @@ simplifier.exe -i C:\input\test.fbx -o C:\output\test_05.fbx -ratio 0.1
 
 ## texturepacker
 
+<div align="left">
+  <img src="https://img.shields.io/badge/C++-C++11-green.svg" />
+</div>
+
 将多张纹理图片打包成一个纹理图集，并输出一个json文件指示原始纹理图片在纹理图集中的位置。
 
 ### 用法说明
@@ -276,6 +295,15 @@ texturepacker.exe -i C:\input -o C:\output\atlas.png -width 2048 -height 2048
 `-width` 纹理图集最大宽度。
 
 `-height` 纹理图集最大高度。
+
+## gui
+
+<div align="left">
+  <img src="https://img.shields.io/badge/C++-C++17-green.svg" />
+</div>
+
+跨平台图形化界面工具，支持Windows和Linux系统，支持model23dtiles、b3dm2gltf工具的图形化操作，方便用户使用。
+
 
 # 下载Release版本
 
@@ -314,9 +342,8 @@ texturepacker.exe -i C:\input -o C:\output\atlas.png -width 2048 -height 2048
 这个项目陆陆续续已经开发了两年了，占用精力较多，数据转换这里也就搞成这样了，接下来学习重点将会是着色器，后续不会投入太多精力在这个项目了。
 1、bug修复
 2、代码重构
-3、增加GUI界面
-4、支持3dtiles 1.1
-5、model23dtiles支持倾斜摄影数据转换
+3、支持3dtiles 1.1
+4、model23dtiles支持倾斜摄影数据转换
 ...
 
 # 关于作者
