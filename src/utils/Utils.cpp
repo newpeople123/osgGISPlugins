@@ -837,3 +837,28 @@ bool Utils::compareVec<osg::Vec4ubArray>(const osg::Vec4ub& v1, const osg::Vec4u
 {
 	return v1 == v2;
 }
+
+void Utils::GltfMaterialOptionsVisitor::apply(osg::Drawable& drawable)
+{
+	osg::ref_ptr<osg::StateSet> stateSet = drawable.getStateSet();
+	if (stateSet.valid())
+	{
+		if(doubleSide)
+			stateSet->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+		else
+			stateSet->setMode(GL_CULL_FACE, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+
+		if (alphaMode == "BLEND") {
+			stateSet->setMode(GL_BLEND, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+		}
+		else if (alphaMode == "OPAQUE") {
+			stateSet->setMode(GL_BLEND, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+			stateSet->setUserValue("osgGISPlugins-alphaMode", std::string("OPAQUE"));
+		}
+		else if (alphaMode == "MASK") {
+			stateSet->setMode(GL_BLEND, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+			stateSet->setUserValue("osgGISPlugins-alphaMode", std::string("MASK"));
+			stateSet->setUserValue("osgGISPlugins-alphaCutoff", alphaCutoff);
+		}
+	}
+}

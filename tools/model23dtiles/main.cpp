@@ -297,7 +297,7 @@ void printUsage()
 	osg::notify(osg::NOTICE) << "    -sx <number>        - Scale on X axis. Default is 1.0" << std::endl;
 	osg::notify(osg::NOTICE) << "    -sy <number>        - Scale on Y axis. Default is 1.0" << std::endl;
 	osg::notify(osg::NOTICE) << "    -sz <number>        - Scale on Z axis. Default is 1.0" << std::endl;
-	osg::notify(osg::NOTICE) << "    -up <X/Y/Z>         - Model up direction. Options: X, Y, Z. Default is Y" << std::endl;
+	osg::notify(osg::NOTICE) << "    -up <X/Y/Z>         - Model up direction. Options: X, Y, Z, -X, -Y, -Z. Default is Y" << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 
 	// =================== Tile Structure ===================
@@ -328,6 +328,23 @@ void printUsage()
 	osg::notify(osg::NOTICE) << "                          Must be power of 2 and >= tw, otherwise no atlas is created" << std::endl;
 	osg::notify(osg::NOTICE) << "    -ah <number>        - Max texture atlas height. Default is 2048" << std::endl;
 	osg::notify(osg::NOTICE) << "                          Must be power of 2 and >= th, otherwise no atlas is created" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+
+	// =================== Material ===================
+	osg::notify(osg::NOTICE) << "material options:" << std::endl;
+	osg::notify(osg::NOTICE) << "    (Default: All material parameters are read from the model's original material data)" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+	osg::notify(osg::NOTICE) << "    -alphamode <value>    - Override glTF alphaMode." << std::endl;
+	osg::notify(osg::NOTICE) << "                            Values: OPAQUE | MASK | BLEND" << std::endl;
+	osg::notify(osg::NOTICE) << "                            If not set, default is OPAQUE." << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+	osg::notify(osg::NOTICE) << "    -alphacutoff <number> - Override alpha cutoff when alphaMode=MASK." << std::endl;
+	osg::notify(osg::NOTICE) << "                            Range: 0.0 ~ 1.0   Default: 0.5" << std::endl;
+	osg::notify(osg::NOTICE) << std::endl;
+	osg::notify(osg::NOTICE) << "    -doubleside <0|1>    - Override double-sided rendering." << std::endl;
+	osg::notify(osg::NOTICE) << "                            0 = false (cull back faces)" << std::endl;
+	osg::notify(osg::NOTICE) << "                            1 = true  (render both sides)" << std::endl;
+	osg::notify(osg::NOTICE) << "                            If not set, default is 0 (cull back faces)." << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 
 	// =================== Transformation Mode ===================
@@ -387,6 +404,10 @@ int main(int argc, char** argv)
 	double longitude = parseArgument(arguments, "-lng", 116.0);
 	double altitude = parseArgument(arguments, "-alt", 300.0);
 
+	const bool doubleSide = parseArgument(arguments, "-doubleside", 0) == 0 ? false : true;
+	const std::string alphaMode = parseArgument(arguments, "-alphamode", std::string("OPAQUE"));
+	const float alphaCutoff = osg::clampBetween(parseArgument(arguments, "-alphacutoff", 0.5f), 0.0f, 1.0f);
+
 	const int maxTextureWidth = parseArgument(arguments, "-tw", 2048);
 	const int maxTextureHeight = parseArgument(arguments, "-th", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-aw", 2048);
@@ -439,6 +460,10 @@ int main(int argc, char** argv)
 		applyProjection(tNode, epsg, latitude, longitude, altitude);
 		osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
 
+		Utils::GltfMaterialOptionsVisitor gmov(doubleSide, alphaMode, alphaCutoff);
+		tNode->accept(gmov);
+
+
 		std::string optionsStr = "";
 		if (vertexFormat == "draco")
 		{
@@ -490,9 +515,9 @@ int main(int argc, char** argv)
 		{
 			const std::string normalMode = parseArgument(arguments, "-nm", std::string("f"));
 			if (normalMode == "v")
-				recomputeNormals(node, false);
+				recomputeNormals(tNode, false);
 			else if (normalMode == "f")
-				recomputeNormals(node, true);
+				recomputeNormals(tNode, true);
 		}
 
 		Tileset::Config config;
@@ -529,7 +554,7 @@ int main(int argc, char** argv)
 		else if (treeFormat == "kd")
 			treeBuilder = new KDTreeBuilder(treeConfig);
 		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
-		osg::ref_ptr<Tileset> tileset = new Tileset(xtransform, *treeBuilder, config);
+		osg::ref_ptr<Tileset> tileset = new Tileset(tNode, *treeBuilder, config);
 
 		OSG_NOTICE << "Exporting 3dtiles..." << std::endl;
 		//控制全局线程池中最多并行线程数

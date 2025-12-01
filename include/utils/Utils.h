@@ -264,7 +264,7 @@ namespace osgGISPlugins
 		class DrawcallCommandCounterVisitor :public osg::NodeVisitor
 		{
 		public:
-			DrawcallCommandCounterVisitor():osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN){}
+			DrawcallCommandCounterVisitor() :osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
 
 			void apply(osg::Transform& transform) override;
 
@@ -279,6 +279,18 @@ namespace osgGISPlugins
 			std::unordered_map<osg::Matrixd, std::vector<osg::ref_ptr<osg::Geometry>>, Utils::MatrixHash, Utils::MatrixEqual> _matrixGeometryMap;
 			osg::Matrix _currentMatrix;
 			std::vector<osg::Matrix> _matrixStack;
+		};
+
+		class GltfMaterialOptionsVisitor :public osg::NodeVisitor
+		{
+		public:
+			GltfMaterialOptionsVisitor(bool doubleSide = false, std::string alphaMode = "", float alphaCutoff = 0.5f) :doubleSide(doubleSide), alphaMode(alphaMode), alphaCutoff(alphaCutoff), osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
+
+			void apply(osg::Drawable& drawable) override;
+		private:
+			bool doubleSide;
+			float alphaCutoff;
+			std::string alphaMode;
 		};
 
 		// 设置控台编码

@@ -560,11 +560,19 @@ int Osg2Gltf::getCurrentMaterial()
 		}
 		else
 		{
-			// gltf规范中alphaMode的默认值为OPAQUE
-			gltfMaterial.alphaMode = "OPAQUE";
-
-			// gltfMaterial.alphaMode = "MASK";
-			// gltfMaterial.alphaCutoff = 0.5;
+			std::string alphaMode;
+			stateSet->getUserValue("osgGISPlugins-alphaMode", alphaMode);
+			if (alphaMode.empty()|| alphaMode=="OPAQUE")
+			{
+				// gltf规范中alphaMode的默认值为OPAQUE
+				gltfMaterial.alphaMode = "OPAQUE";
+			}
+			else {
+				float alphaCutoff = 0.5f;
+				stateSet->getUserValue("osgGISPlugins-alphaCutoff", alphaCutoff);
+				gltfMaterial.alphaMode = "MASK";
+				gltfMaterial.alphaCutoff = alphaCutoff;
+			}
 		}
 
 		const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material *>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
