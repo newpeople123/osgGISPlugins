@@ -61,7 +61,7 @@ struct Model23dtilesParams {
 	// 材质
 	int alphaModeIndex = 0;
 	bool doubleSide = false;
-	float alphaCutoff = 0.5f;
+	double alphaCutoff = 0.5;
 
 	static constexpr const char* alphaModes[] = { "OPAQUE", "BLEND", "MASK", R"(从模型中读取)" };
 	static constexpr const char* upAxisItems[] = { "X", "Y", "Z","-X", "-Y", "-Z" };
@@ -430,7 +430,7 @@ void createModel23dtilesToolTab(bool enable) {
 
 				ImGui::Text("向上轴 (-up)");
 				ImGui::Combo("##upAxis", &modelParams.upAxis, modelParams.upAxisItems, IM_ARRAYSIZE(modelParams.upAxisItems));
-				ImGui::SameLine(); showHelpMarker("模型向上方向轴，选项：X、Y、Z，默认Y。");
+				ImGui::SameLine(); showHelpMarker("模型向上方向轴，选项：X、Y、Z、-X、-Y、-Z，默认Y。");
 			}
 			ImGui::EndChild();
 			ImGui::Unindent();
@@ -531,13 +531,13 @@ void createModel23dtilesToolTab(bool enable) {
 				ImGui::Text("单个纹理最大宽度 (-tw)");
 				ImGui::InputInt("##tw", &modelParams.tw);
 				modelParams.tw = std::max(2, modelParams.tw);
-				modelParams.tw = std::min(4096, modelParams.tw);
+				modelParams.tw = std::min(8192, modelParams.tw);
 				ImGui::SameLine(); showHelpMarker("单个纹理最大宽度，需为2的幂，默认256。");
 
 				ImGui::Text("单个纹理最大高度 (-th)");
 				ImGui::InputInt("##th", &modelParams.th);
 				modelParams.th = std::max(2, modelParams.th);
-				modelParams.th = std::min(4096, modelParams.th);
+				modelParams.th = std::min(8192, modelParams.th);
 				ImGui::SameLine(); showHelpMarker("单个纹理最大高度，需为2的幂，默认256。");
 
 				ImGui::Text("纹理图集最大宽度 (-aw)");
@@ -635,6 +635,8 @@ void createModel23dtilesToolTab(bool enable) {
 			if (modelParams.doubleSide) {
 				args << " -doubleside 1 ";
 			}
+
+			args << " -up " << modelParams.upAxisItems[modelParams.upAxis];
 
 			args << " -tri " << modelParams.tri
 				<< " -dc " << modelParams.dc
