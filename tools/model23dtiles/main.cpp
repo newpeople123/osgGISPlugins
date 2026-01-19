@@ -118,8 +118,8 @@ void recomputeNormals(osg::ref_ptr<osg::Node>& node, const bool faceModel) {
 
 // 解析单个命令行参数
 template <typename T>
-T parseArgument(osg::ArgumentParser& arguments, const std::string& option, const T& defaultValue) {
-	T value = defaultValue;
+T parseArgument(osg::ArgumentParser& arguments, const std::string& option, T&& defaultValue) {
+	T value = std::forward<T>(defaultValue);
 	arguments.read(option, value);
 	return value;
 }

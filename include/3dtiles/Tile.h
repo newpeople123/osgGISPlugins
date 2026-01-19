@@ -174,7 +174,7 @@ namespace osgGISPlugins
 		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) = 0;
 		virtual std::string getOutputPath() const = 0;
 		virtual std::string getFullPath() const = 0;
-		virtual std::string getTextureCachePath(const std::string textureCachePath) const = 0;
+		virtual std::string getTextureCachePath(const std::string& textureCachePath) const = 0;
 		virtual void setContentUri() = 0;
 	private:
 		void applyLODStrategy(const float simplifyRatioFactor, const float textureFactor);

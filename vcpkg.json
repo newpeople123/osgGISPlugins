@@ -43,6 +43,10 @@
         "glfw-binding",
         "glut-binding"
       ]
+    },
+    {
+      "name": "tinyfiledialogs",
+      "version>=": "3.19.1#0"
     }
   ],
   "name": "osg-gis-plugins",

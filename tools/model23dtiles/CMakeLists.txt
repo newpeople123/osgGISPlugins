@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 set(TOOL_NAME "model23dtiles")
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")#-no-pie用于在linux环境下将可执行文件识别为.so
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")#-no-pie用于在linux环境下将可执行文件识别为.so
 endif()
 # 查找测试目录下源文件
 aux_source_directory(. DIR_SRCS)

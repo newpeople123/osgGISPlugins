@@ -17,7 +17,7 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     set(DEFAULT_TOOLCHAIN_PATH "E:/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake")
 else()
     set(VCPKG_TARGET_TRIPLET "x64-linux-dynamic" CACHE STRING "Vcpkg target triplet")
-    set(DEFAULT_TOOLCHAIN_PATH "/home/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    set(DEFAULT_TOOLCHAIN_PATH "/home/wty/vcpkg/scripts/buildsystems/vcpkg.cmake")
 endif()
 
 # 设置 toolchain

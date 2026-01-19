@@ -40,6 +40,11 @@ source_group("src" FILES
 find_package(imgui CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(tinyfiledialogs CONFIG REQUIRED)
+find_package(Stb REQUIRED)
+
+target_include_directories(${TOOL_NAME} PRIVATE ${Stb_INCLUDE_DIR})
+
 
 # 添加构建依赖，保证顺序
 add_dependencies(${TOOL_NAME}
@@ -54,6 +59,7 @@ target_link_libraries(${TOOL_NAME}
     imgui::imgui
     glfw
     OpenGL::GL
+    tinyfiledialogs::tinyfiledialogs
 )
 
 # OpenSceneGraph 支持

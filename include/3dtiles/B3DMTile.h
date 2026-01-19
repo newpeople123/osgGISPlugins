@@ -32,7 +32,7 @@ namespace osgGISPlugins
 
 		std::string getFullPath() const override;
 
-		std::string getTextureCachePath(const std::string textureCachePath) const override;
+		std::string getTextureCachePath(const std::string& textureCachePath) const override;
 
 		void setContentUri() override;
 

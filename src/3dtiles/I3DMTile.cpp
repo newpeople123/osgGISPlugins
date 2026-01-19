@@ -23,7 +23,7 @@ std::string I3DMTile::getFullPath() const
 		"Tile_L" + std::to_string(lod) + "_" + std::to_string(z) + "." + type;
 }
 
-std::string I3DMTile::getTextureCachePath(const std::string textureCachePath) const
+std::string I3DMTile::getTextureCachePath(const std::string& textureCachePath) const
 {
 	return textureCachePath + OSG_GIS_PLUGINS_PATH_SPLIT_STRING +
 		"Tile_" + std::to_string(z) + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + std::to_string(lod);
