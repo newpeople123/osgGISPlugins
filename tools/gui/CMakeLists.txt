@@ -11,26 +11,11 @@ endif()
 # 查找当前目录下所有源文件（cpp/c等）
 aux_source_directory(. DIR_SRCS)
 
-# 头文件列表，必须添加进 add_executable 才能在 IDE 中显示
-set(HEADER_FILES
-    ${PROJECT_ROOT_DIR}/3rdparty/include/ImGuiFileDialog/ImGuiFileDialog.h
-    ${PROJECT_ROOT_DIR}/3rdparty/include/ImGuiFileDialog/stb/stb_image.h
-)
-
 # 添加可执行文件，包含源文件和头文件
-add_executable(${TOOL_NAME}
-    ${DIR_SRCS}
-    ${HEADER_FILES}
-    ${PROJECT_ROOT_DIR}/3rdparty/lib/ImGuiFileDialog/ImGuiFileDialog.cpp
-)
+add_executable(${TOOL_NAME} ${DIR_SRCS})
 target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 
 # 通过 source_group 按分组显示
-source_group("include" FILES
-    ${PROJECT_ROOT_DIR}/3rdparty/include/ImGuiFileDialog/ImGuiFileDialog.h
-    ${PROJECT_ROOT_DIR}/3rdparty/include/ImGuiFileDialog/stb/stb_image.h
-)
-
 source_group("src" FILES
     ${DIR_SRCS}
     ${PROJECT_ROOT_DIR}/3rdparty/lib/ImGuiFileDialog/ImGuiFileDialog.cpp
