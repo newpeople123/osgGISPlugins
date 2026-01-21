@@ -1,0 +1,22 @@
+# 版本控制
+.git
+.gitignore
+.github
+# 编译产物
+build
+cmake-build-*
+*.o
+*.so
+*.a
+# 日志/临时文件
+logs
+tmp
+*.log
+# 编辑器配置
+.vscode
+.idea
+*.swp
+# 其他无关文件
+README.md
+LICENSE
+*.md
