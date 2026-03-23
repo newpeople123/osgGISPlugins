@@ -85,7 +85,7 @@ RUN mkdir -p build && cd build \
     && cmake .. \
         -DCMAKE_TOOLCHAIN_FILE=/app/vcpkg/scripts/buildsystems/vcpkg.cmake \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/app \
+        -DCMAKE_INSTALL_PREFIX=/app/dist \
     && make -j$(nproc) \
     && make install
 
@@ -98,24 +98,22 @@ FROM docker.m.daocloud.io/library/ubuntu:20.04 AS runtime
 ENV TZ=Asia/Shanghai
 WORKDIR /app
 
-COPY --from=build /app /app
-COPY --from=base /usr/local /app/fbxsdk
+COPY --from=build /app/dist/ /app/
+COPY --from=build /app/vcpkg_installed/x64-linux-dynamic/lib /app/vcpkg_libs
+COPY --from=build /app/vcpkg_installed/x64-linux-dynamic/plugins /app/vcpkg_libs/plugins
+COPY --from=base /usr/local/lib/gcc4/x64/release /app/fbx_libs
 
-ENV VCPKG_DYNAMIC_X64_INCLUDE=/app/vcpkg_installed/x64-linux-dynamic/include
-ENV VCPKG_DYNAMIC_X64_LIB=/app/vcpkg_installed/x64-linux-dynamic/lib
-ENV FBXSDK_X64_LIB=/app/fbxsdk/lib/gcc4/x64/release
-ENV OSG_GIS_PLUGINS_LIBRARY_PATH=/app
-
-ENV C_INCLUDE_PATH="${VCPKG_DYNAMIC_X64_INCLUDE}"
-ENV CPLUS_INCLUDE_PATH="${VCPKG_DYNAMIC_X64_INCLUDE}"
-ENV LD_LIBRARY_PATH="${FBXSDK_X64_LIB}:${VCPKG_DYNAMIC_X64_LIB}:${OSG_GIS_PLUGINS_LIBRARY_PATH}"
-ENV LIBRARY_PATH="${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/app/vcpkg_libs:/app/vcpkg_libs/plugins:/app/fbx_libs"
+ENV LANG=zh_CN.UTF-8  
+ENV LANGUAGE=zh_CN:zh  
+ENV LC_ALL=zh_CN.UTF-8  
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo "$TZ" > /etc/timezone \
     && apt-get update \
     && apt-get install -y \
         libgl1-mesa-glx \
+        libxinerama1 \
         libxrandr-dev \
         locales \
         fonts-wqy-zenhei fonts-wqy-microhei \
@@ -125,4 +123,9 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && ln -s /app/b3dm2gltf /usr/bin/b3dm2gltf \
     && ln -s /app/simplifier /usr/bin/simplifier \
     && ln -s /app/texturepacker /usr/bin/texturepacker \
+    && mv osgdb_fbx.so /app/vcpkg_libs/plugins/osgPlugins-3.6.5/ \
+    && mv osgdb_ktx.so /app/vcpkg_libs/plugins/osgPlugins-3.6.5/ \
+    && mv osgdb_gltf.so /app/vcpkg_libs/plugins/osgPlugins-3.6.5/ \
+    && mv osgdb_webp.so /app/vcpkg_libs/plugins/osgPlugins-3.6.5/ \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
