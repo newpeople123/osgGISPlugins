@@ -1,37 +1,42 @@
-cmake_minimum_required(VERSION 3.12)
+# 1. 动态获取当前文件夹名称 (得到 "gui")
+get_filename_component(DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+set(TOOL_NAME ${DIR_NAME})
 
-# 项目名和C++标准
-set(TOOL_NAME "gui")
-
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
-endif()
-
-# 查找当前目录下所有源文件（cpp/c等）
+# 2. 搜集源文件
 aux_source_directory(. DIR_SRCS)
 
-# 添加可执行文件，包含源文件和头文件
+# 3. 定义可执行文件
 add_executable(${TOOL_NAME} ${DIR_SRCS})
+
+# 4. 设置 C++ 标准 (GUI 通常需要更现代的特性，这里设为 17)
 target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 
-# 通过 source_group 按分组显示
-source_group("src" FILES
-    ${DIR_SRCS}
-    ${PROJECT_ROOT_DIR}/3rdparty/lib/ImGuiFileDialog/ImGuiFileDialog.cpp
-)
+# 5. 设置 IDE 分组
+source_group("src" FILES ${DIR_SRCS})
 
-# 查找依赖库
+# 6. 查找依赖库
 find_package(imgui CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(tinyfiledialogs CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 
-target_include_directories(${TOOL_NAME} PRIVATE ${Stb_INCLUDE_DIR})
+# 7. 包含路径与编译选项
+target_include_directories(${TOOL_NAME} PRIVATE 
+    .
+    ${PROJECT_ROOT_DIR}/include
+    ${OPENSCENEGRAPH_INCLUDE_DIRS}
+    ${Stb_INCLUDE_DIR}
+)
 
+# Linux 平台特定选项
+if(UNIX AND NOT APPLE)
+    target_compile_options(${TOOL_NAME} PRIVATE "-no-pie")
+    target_link_options(${TOOL_NAME} PRIVATE "-no-pie")
+endif()
 
-# 添加构建依赖，保证顺序
+# 8. 设置构建依赖顺序
+# 确保 GUI 在其他工具编译完成后再构建
 add_dependencies(${TOOL_NAME}
     b3dm2gltf
     model23dtiles
@@ -39,34 +44,31 @@ add_dependencies(${TOOL_NAME}
     texturepacker
 )
 
-# 链接库
-target_link_libraries(${TOOL_NAME}
+# 9. 链接库
+# 注意：vcpkg 引入的 glfw3 目标通常叫 glfw，OpenGL 是 OpenGL::GL
+target_link_libraries(${TOOL_NAME} PRIVATE
     imgui::imgui
     glfw
     OpenGL::GL
     tinyfiledialogs::tinyfiledialogs
+    ${OPENSCENEGRAPH_LIBRARIES}
 )
 
-# OpenSceneGraph 支持
-if (OPENSCENEGRAPH_FOUND)
-    include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
-    target_link_libraries(${TOOL_NAME} ${OPENSCENEGRAPH_LIBRARIES})
-else()
-    message(FATAL_ERROR "${TOOL_NAME}: osg not found!")
+# Linux 补充链接
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${TOOL_NAME} PRIVATE pthread dl)
 endif()
 
-# Linux 平台添加 pthread、dl
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${TOOL_NAME} pthread dl)
-endif()
+# 10. 资源文件拷贝 (使用生成器表达式优化路径)
+set(ASSETS_DIR "${PROJECT_ROOT_DIR}/assets")
+set(TARGET_OUT_DIR "$<TARGET_FILE_DIR:${TOOL_NAME}>")
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(OUT_DIR "${PROJECT_ROOT_DIR}/Debug")
-else()
-    set(OUT_DIR "${PROJECT_ROOT_DIR}/Release")
-endif()
-file(COPY ${PROJECT_ROOT_DIR}/assets/favicon.png DESTINATION ${OUT_DIR})
-file(COPY ${PROJECT_ROOT_DIR}/assets/msyh.ttc DESTINATION ${OUT_DIR})
+# 在构建完成后自动拷贝资源到生成目录下
+add_custom_command(TARGET ${TOOL_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASSETS_DIR}/favicon.png" "${TARGET_OUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASSETS_DIR}/msyh.ttc" "${TARGET_OUT_DIR}"
+    COMMENT "Copying assets to output directory..."
+)
 
-# 安装配置
-install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+# 11. 安装逻辑
+install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION bin)

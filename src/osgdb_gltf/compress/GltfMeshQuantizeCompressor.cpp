@@ -135,7 +135,7 @@ void GltfMeshQuantizeCompressor::apply()
 			_model.nodes[index].translation[1] = minVY;
 			_model.nodes[index].translation[2] = minVZ;
 
-			const float nodeScale = scaleV / float((1 << _compressionOptions.PositionQuantizationBits) - 1) * (_compressionOptions.PositionNormalized ? 65535.f : 1.f);
+			const float nodeScale = static_cast<float>(scaleV) / static_cast<float>((1 << _compressionOptions.PositionQuantizationBits) - 1) * (_compressionOptions.PositionNormalized ? 65535.f : 1.f);
 			_model.nodes[index].scale.resize(3);
 			_model.nodes[index].scale[0] = nodeScale;
 			_model.nodes[index].scale[1] = nodeScale;

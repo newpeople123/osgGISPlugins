@@ -1,24 +1,36 @@
-set(TOOL_NAME "b3dm2gltf")
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
-endif()
+# 1. 动态获取当前文件夹名称作为项目/工具名称
+get_filename_component(DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+set(TOOL_NAME ${DIR_NAME})
+
+# 2. 搜集源文件
 aux_source_directory(. DIR_SRCS)
+
+# 3. 定义可执行文件
 add_executable(${TOOL_NAME} ${DIR_SRCS})
+
+# 4. 设置 IDE 分组
 source_group("src" FILES ${DIR_SRCS})
 
-if (OPENSCENEGRAPH_FOUND)
-        include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
-        if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
-            target_link_libraries(${TOOL_NAME}
-            ${OPENSCENEGRAPH_LIBRARIES}
-            )
-        else()
-            target_link_libraries(${TOOL_NAME}
-            ${OPENSCENEGRAPH_LIBRARIES}
-            )
-        endif()
-else()
-    message(FATAL_ERROR ${TOOL_NAME}+":osg not found!")
+# 5. 包含路径 (使用 target 作用域)
+target_include_directories(${TOOL_NAME} PRIVATE 
+    ${PROJECT_ROOT_DIR}/include
+    ${OPENSCENEGRAPH_INCLUDE_DIRS}
+)
+
+# 6. 平台特定编译选项 (Linux 下禁用 PIE)
+if(UNIX AND NOT APPLE)
+    target_compile_options(${TOOL_NAME} PRIVATE "-no-pie")
+    target_link_options(${TOOL_NAME} PRIVATE "-no-pie")
 endif()
-install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+# 7. 链接 OSG
+if (OPENSCENEGRAPH_FOUND)
+    target_link_libraries(${TOOL_NAME} PRIVATE ${OPENSCENEGRAPH_LIBRARIES})
+else()
+    message(FATAL_ERROR "${TOOL_NAME}: OpenSceneGraph not found!")
+endif()
+
+# 8. 安装逻辑
+install(TARGETS ${TOOL_NAME} 
+    RUNTIME DESTINATION bin
+)

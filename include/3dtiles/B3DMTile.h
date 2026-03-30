@@ -36,7 +36,7 @@ namespace osgGISPlugins
 
 		void setContentUri() override;
 
-		B3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) override;
+		B3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> p) override;
 	};
 }
 #endif // !OSG_GIS_PLUGINS_B3DM_TILE_H

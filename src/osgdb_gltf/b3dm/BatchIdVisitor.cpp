@@ -29,7 +29,9 @@ void BatchIdVisitor::apply(osg::Geode& geode)
 {
     if (geode.getNumDrawables()) {
         traverse(geode);
-        if(_bAdd)
+        if (_bAdd)
+        {
             _currentBatchId++;
+        }
     }
 }

@@ -16,7 +16,9 @@ void Utils::pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, s
 
 	}
 	if (index == -1)
+	{
 		uniqueStateSets.push_back(stateSet);
+	}
 }
 
 bool Utils::isRepeatTexCoords(osg::ref_ptr<osg::Vec2Array> texCoords)
@@ -39,7 +41,9 @@ bool Utils::compareMatrix(const osg::Matrixd& lhs, const osg::Matrixd& rhs)
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {
 			if (!osg::equivalent(lhs(i, j), rhs(i, j)))
+			{
 				return false;
+			}
 		}
 	}
 	return true;
@@ -61,8 +65,8 @@ bool Utils::compareMatrixs(const std::vector<osg::Matrixd>& lhses, const std::ve
 bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::ref_ptr<osg::StateSet>& ss2)
 {
 	// 快速路径
-	if (ss1.get() == ss2.get()) return true;
-	if (!ss1.valid() || !ss2.valid()) return false;
+	if (ss1.get() == ss2.get()) { return true; }
+	if (!ss1.valid() || !ss2.valid()) { return false; }
 
 	// 比较渲染状态
 	static const GLenum modes[] = {
@@ -81,14 +85,16 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 
 	for (GLenum mode : modes) {
 		if (ss1->getMode(mode) != ss2->getMode(mode))
+		{
 			return false;
+		}
 	}
 
 	// 比较属性列表
 	const osg::StateSet::AttributeList& attr1 = ss1->getAttributeList();
 	const osg::StateSet::AttributeList& attr2 = ss2->getAttributeList();
 
-	if (attr1.size() != attr2.size()) return false;
+	if (attr1.size() != attr2.size()) { return false; }
 
 	// 比较材质
 	const osg::Material* mat1 = dynamic_cast<const osg::Material*>(
@@ -102,10 +108,10 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 		const GltfMaterial* gltfMat2 = dynamic_cast<const GltfMaterial*>(mat2);
 
 		if (gltfMat1 && gltfMat2) {
-			if (!gltfMat1->compare(*gltfMat2)) return false;
+			if (!gltfMat1->compare(*gltfMat2)) { return false; }
 		}
 		else {
-			if (!mat1->compare(*mat2)) return false;
+			if (!mat1->compare(*mat2)) { return false; }
 		}
 	}
 	else if (mat1 || mat2) {
@@ -115,21 +121,26 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 	// 比较所有纹理单元
 	const osg::StateSet::TextureAttributeList& tal1 = ss1->getTextureAttributeList();
 	const osg::StateSet::TextureAttributeList& tal2 = ss2->getTextureAttributeList();
-	if (tal1.size() != tal2.size()) return false;
+	if (tal1.size() != tal2.size()) { return false; }
 
 	for (size_t unit = 0; unit < tal1.size(); ++unit) {
 		const osg::StateSet::AttributeList& texAttr1 = tal1[unit];
 		const osg::StateSet::AttributeList& texAttr2 = tal2[unit];
 
-		if (texAttr1.size() != texAttr2.size()) return false;
+		if (texAttr1.size() != texAttr2.size()) { return false; }
 
 		// 比较每个纹理属性
 		for (const auto& pair : texAttr1) {
 			auto it = texAttr2.find(pair.first);
-			if (it == texAttr2.end()) return false;
+			if (it == texAttr2.end()) { return false; }
 
 			const osg::StateAttribute* sa1 = pair.second.first.get();
 			const osg::StateAttribute* sa2 = it->second.first.get();
+
+			if (!sa1 || !sa2) {
+				if (sa1 == sa2) { continue; }
+				return false;           
+			}
 
 			// 特别处理 Texture2D
 			const osg::Texture2D* tex1 = dynamic_cast<const osg::Texture2D*>(sa1);
@@ -138,10 +149,12 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 				if (!GltfMaterial::compareTexture2D(
 					const_cast<osg::Texture2D*>(tex1),
 					const_cast<osg::Texture2D*>(tex2)))
+				{
 					return false;
+				}
 			}
 			else {
-				if (sa1->compare(*sa2) != 0) return false;
+				if (sa1->compare(*sa2) != 0) { return false; }
 			}
 		}
 	}
@@ -150,20 +163,20 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 	const osg::StateSet::UniformList& uniforms1 = ss1->getUniformList();
 	const osg::StateSet::UniformList& uniforms2 = ss2->getUniformList();
 
-	if (uniforms1.size() != uniforms2.size()) return false;
+	if (uniforms1.size() != uniforms2.size()) { return false; }
 
 	for (const auto& pair : uniforms1) {
 		auto it = uniforms2.find(pair.first);
-		if (it == uniforms2.end()) return false;
+		if (it == uniforms2.end()) { return false; }
 
 		const osg::Uniform* u1 = pair.second.first.get();
 		const osg::Uniform* u2 = it->second.first.get();
 
-		if (u1->getType() != u2->getType()) return false;
-		if (u1->getNumElements() != u2->getNumElements()) return false;
+		if (u1->getType() != u2->getType()) { return false; }
+		if (u1->getNumElements() != u2->getNumElements()) { return false; }
 
 		// 比较 uniform 值
-		if (!compareUniformValue(*u1, *u2)) return false;
+		if (!compareUniformValue(*u1, *u2)) { return false; }
 	}
 
 	return true;
@@ -173,25 +186,25 @@ bool Utils::compareStateSet(const osg::ref_ptr<osg::StateSet>& ss1, const osg::r
 bool Utils::comparePrimitiveSet(const osg::ref_ptr<osg::PrimitiveSet>& pSet1, const osg::ref_ptr<osg::PrimitiveSet>& pSet2)
 {
 	// 快速路径：相同指针
-	if (pSet1.get() == pSet2.get()) return true;
-	if (!pSet1.valid() || !pSet2.valid()) return false;
+	if (pSet1.get() == pSet2.get()) { return true; }
+	if (!pSet1.valid() || !pSet2.valid()) { return false; }
 
 	// 基本属性比较
-	if (pSet1->getMode() != pSet2->getMode()) return false;
-	if (pSet1->getType() != pSet2->getType()) return false;
-	if (pSet1->getNumIndices() != pSet2->getNumIndices()) return false;
+	if (pSet1->getMode() != pSet2->getMode()) { return false; }
+	if (pSet1->getType() != pSet2->getType()) { return false; }
+	if (pSet1->getNumIndices() != pSet2->getNumIndices()) { return false; }
 
 	// 根据具体类型比较
 	if (osg::DrawElements* de1 = dynamic_cast<osg::DrawElements*>(pSet1.get()))
 	{
 		osg::DrawElements* de2 = dynamic_cast<osg::DrawElements*>(pSet2.get());
-		if (!de2) return false;
+		if (!de2) { return false; }
 		return compareDrawElements(de1, de2);
 	}
 	else if (osg::DrawArrays* da1 = dynamic_cast<osg::DrawArrays*>(pSet1.get()))
 	{
 		osg::DrawArrays* da2 = dynamic_cast<osg::DrawArrays*>(pSet2.get());
-		if (!da2) return false;
+		if (!da2) { return false; }
 		return compareDrawArrays(da1, da2);
 	}
 
@@ -200,8 +213,8 @@ bool Utils::comparePrimitiveSet(const osg::ref_ptr<osg::PrimitiveSet>& pSet1, co
 
 bool Utils::compareDrawElements(const osg::DrawElements* de1, const osg::DrawElements* de2)
 {
-	if (!de1 || !de2) return false;
-	if (de1->getType() != de2->getType()) return false;
+	if (!de1 || !de2) { return false; }
+	if (de1->getType() != de2->getType()) { return false; }
 
 	switch (de1->getType())
 	{
@@ -225,43 +238,55 @@ bool Utils::compareDrawElements(const osg::DrawElements* de1, const osg::DrawEle
 bool Utils::compareGeometry(const osg::ref_ptr<osg::Geometry>& geom1, const osg::ref_ptr<osg::Geometry>& geom2)
 {
 	// 快速路径
-	if (geom1.get() == geom2.get()) return true;
-	if (!geom1.valid() || !geom2.valid()) return false;
+	if (geom1.get() == geom2.get()) { return true; }
+	if (!geom1.valid() || !geom2.valid()) { return false; }
 
 	// 基本属性比较
-	if (geom1->getNumPrimitiveSets() != geom2->getNumPrimitiveSets()) return false;
+	if (geom1->getNumPrimitiveSets() != geom2->getNumPrimitiveSets()) { return false; }
 
 	// 顶点数组比较（最重要的）
 	if (!compareArray(geom1->getVertexArray(), geom2->getVertexArray()))
+	{
 		return false;
+	}
 
 	// 法线数组比较
 	if (!compareArray(geom1->getNormalArray(), geom2->getNormalArray()))
+	{
 		return false;
+	}
 
 	// 颜色数组比较
 	if (!compareArray(geom1->getColorArray(), geom2->getColorArray()))
+	{
 		return false;
+	}
 
 	// 纹理坐标数组比较
 	for (unsigned int i = 0; i < geom1->getNumTexCoordArrays(); ++i) {
 		if (!compareArray(geom1->getTexCoordArray(i), geom2->getTexCoordArray(i)))
+		{
 			return false;
+		}
 	}
 
 	// 绑定方式比较
-	if (geom1->getNormalBinding() != geom2->getNormalBinding()) return false;
-	if (geom1->getColorBinding() != geom2->getColorBinding()) return false;
+	if (geom1->getNormalBinding() != geom2->getNormalBinding()) { return false; }
+	if (geom1->getColorBinding() != geom2->getColorBinding()) { return false; }
 
 	// StateSet比较
 	if (!compareStateSet(geom1->getStateSet(), geom2->getStateSet()))
+	{
 		return false;
+	}
 
 	// PrimitiveSets比较
 	for (size_t i = 0; i < geom1->getNumPrimitiveSets(); ++i)
 	{
 		if (!comparePrimitiveSet(geom1->getPrimitiveSet(i), geom2->getPrimitiveSet(i)))
+		{
 			return false;
+		}
 	}
 
 	return true;
@@ -270,16 +295,20 @@ bool Utils::compareGeometry(const osg::ref_ptr<osg::Geometry>& geom1, const osg:
 bool Utils::compareGeode(const osg::ref_ptr<osg::Geode>& geode1, const osg::ref_ptr<osg::Geode>& geode2)
 {
 	// 快速路径
-	if (geode1.get() == geode2.get()) return true;
-	if (!geode1.valid() || !geode2.valid()) return false;
+	if (geode1.get() == geode2.get()) { return true; }
+	if (!geode1.valid() || !geode2.valid()) { return false; }
 
 	// 基本属性比较
 	if (geode1->getNumDrawables() != geode2->getNumDrawables())
+	{
 		return false;
+	}
 
 	// StateSet比较
 	if (!compareStateSet(geode1->getStateSet(), geode2->getStateSet()))
+	{
 		return false;
+	}
 
 	// 比较所有Drawable
 	for (size_t i = 0; i < geode1->getNumDrawables(); ++i)
@@ -294,7 +323,9 @@ bool Utils::compareGeode(const osg::ref_ptr<osg::Geode>& geode1, const osg::ref_
 		{
 			if (!compareGeometry(osg::ref_ptr<osg::Geometry>(const_cast<osg::Geometry*>(geom1)),
 				osg::ref_ptr<osg::Geometry>(const_cast<osg::Geometry*>(geom2))))
+			{
 				return false;
+			}
 		}
 		else if (geom1 || geom2)  // 一个是Geometry另一个不是
 		{
@@ -308,13 +339,13 @@ bool Utils::compareGeode(const osg::ref_ptr<osg::Geode>& geode1, const osg::ref_
 bool Utils::compareArray(const osg::Array* array1, const osg::Array* array2)
 {
 	// 空指针检查
-	if (array1 == array2) return true;
-	if (!array1 || !array2) return false;
+	if (array1 == array2) { return true; }
+	if (!array1 || !array2) { return false; }
 
 	// 基本属性检查
-	if (array1->getType() != array2->getType()) return false;
-	if (array1->getDataType() != array2->getDataType()) return false;
-	if (array1->getNumElements() != array2->getNumElements()) return false;
+	if (array1->getType() != array2->getType()) { return false; }
+	if (array1->getDataType() != array2->getDataType()) { return false; }
+	if (array1->getNumElements() != array2->getNumElements()) { return false; }
 
 	// 根据数组类型进行具体比较
 	switch (array1->getType())
@@ -436,10 +467,12 @@ void Utils::CRenderingThread::run()
 		while (!_bStop && !bar.is_completed())
 		{
 			int pos = _fin->tellg();
-			float percent = 100.0 * pos / _length;
+			float percent = 100.0f * static_cast<float>(pos) / static_cast<float>(_length);
 
 			if (_fin->eof())
+			{
 				percent = 100.0;
+			}
 
 			// 当进度大于等于 1% 时更新进度条
 			if (percent >= 1)
@@ -554,20 +587,20 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 		texMin.set(FLT_MAX, FLT_MAX);
 		texMax.set(-FLT_MAX, -FLT_MAX);
 		osg::Geometry* geometry = geode.getDrawable(i)->asGeometry();
-		if (!geometry) continue;
+		if (!geometry) { continue; }
 		osg::ref_ptr<osg::StateSet> stateSet = geometry->getStateSet();
-		if (!stateSet.valid()) continue;
+		if (!stateSet.valid()) { continue; }
 		osg::ref_ptr<osg::Texture2D> osgTexture = dynamic_cast<osg::Texture2D*>(stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-		if (!osgTexture.valid()) continue;
-		if (!osgTexture->getNumImages()) continue;
+		if (!osgTexture.valid()) { continue; }
+		if (!osgTexture->getNumImages()) { continue; }
 
 		osg::Image* image = osgTexture->getImage();
-		if (!image) continue;
+		if (!image) { continue; }
 
 		// 获取顶点数组和纹理坐标
 		osg::Vec3Array* vertices = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
 		osg::Vec2Array* texCoords = dynamic_cast<osg::Vec2Array*>(geometry->getTexCoordArray(0));
-		if (!vertices || !texCoords) continue;
+		if (!vertices || !texCoords) { continue; }
 
 		// 更新纹理坐标范围
 		for (const auto& texCoord : *texCoords)
@@ -582,7 +615,7 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 		for (unsigned int j = 0; j < geometry->getNumPrimitiveSets(); ++j)
 		{
 			osg::PrimitiveSet* primSet = geometry->getPrimitiveSet(j);
-			if (primSet->getMode() != osg::PrimitiveSet::TRIANGLES) continue;
+			if (primSet->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
 
 			for (unsigned int k = 0; k < primSet->getNumIndices(); k += 3)
 			{
@@ -597,7 +630,7 @@ void Utils::TextureMetricsVisitor::apply(osg::Geode& geode)
 
 		// 计算 UV 面积
 		double uvArea = (texMax.x() - texMin.x()) * (texMax.y() - texMin.y());
-		if (uvArea <= 0.0) continue; // 如果 UV 面积无效，跳过
+		if (uvArea <= 0.0) { continue; }// 如果 UV 面积无效，跳过
 
 		// 计算纹理总像素数
 		int s = osg::Image::computeNearestPowerOfTwo(image->s());
@@ -653,7 +686,7 @@ void Utils::MaxGeometryVisitor::apply(osg::Geode& geode)
 		osg::BoundingBox boundingBox;
 
 		osg::Geometry* geometry = geode.getDrawable(i)->asGeometry();
-		if (!geometry) continue;
+		if (!geometry) { continue; }
 
 		// 获取顶点数组和纹理坐标
 		osg::Vec3Array* vertices = dynamic_cast<osg::Vec3Array*>(geometry->getVertexArray());
@@ -662,7 +695,7 @@ void Utils::MaxGeometryVisitor::apply(osg::Geode& geode)
 		for (unsigned int j = 0; j < geometry->getNumPrimitiveSets(); ++j)
 		{
 			osg::PrimitiveSet* primSet = geometry->getPrimitiveSet(j);
-			if (primSet->getMode() != osg::PrimitiveSet::TRIANGLES) continue;
+			if (primSet->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
 
 			for (unsigned int k = 0; k < primSet->getNumIndices(); k += 3)
 			{
@@ -732,7 +765,9 @@ unsigned int Utils::DrawcallCommandCounterVisitor::getCount() const
 	for (auto it= _matrixGeometryMap.begin();it!= _matrixGeometryMap.end();++it)
 	{
 		if (it->second.size() == 1)
+		{
 			count++;
+		}
 		else
 		{
 			std::vector<osg::ref_ptr<osg::StateSet>> stateSets;
@@ -745,13 +780,19 @@ unsigned int Utils::DrawcallCommandCounterVisitor::getCount() const
 				osg::ref_ptr<osg::Vec2Array> texCoords = dynamic_cast<osg::Vec2Array*>(geometry->getTexCoordArray(0));
 				if (texCoords.valid())
 				{
-					if(isRepeatTexCoords(texCoords))
+					if (isRepeatTexCoords(texCoords))
+					{
 						pushStateSet2UniqueStateSets(stateSet, repeatStateSets);
+					}
 					else
+					{
 						pushStateSet2UniqueStateSets(stateSet, stateSets);
+					}
 				}
 				else
+				{
 					pushStateSet2UniqueStateSets(stateSet, stateSets);
+				}
 			}
 
 			count += repeatStateSets.size() + stateSets.size();
@@ -843,10 +884,14 @@ void Utils::GltfMaterialOptionsVisitor::apply(osg::Drawable& drawable)
 	osg::ref_ptr<osg::StateSet> stateSet = drawable.getStateSet();
 	if (stateSet.valid())
 	{
-		if(doubleSide)
+		if (doubleSide)
+		{
 			stateSet->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+		}
 		else
+		{
 			stateSet->setMode(GL_CULL_FACE, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+		}
 
 		if (alphaMode == "BLEND") {
 			stateSet->setMode(GL_BLEND, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);

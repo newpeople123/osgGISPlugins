@@ -13,7 +13,7 @@ osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             osg::Vec4f specularPixel = specularImage->getColor(x, y);
-            osg::Vec4f glossinessPixel = specularImage->getColor(x, y);
+            osg::Vec4f glossinessPixel = glossinessImage->getColor(x, y);
 
             osg::Vec4f combinedPixel(specularPixel.r(), specularPixel.g(), specularPixel.b(), glossinessPixel.a());
             specularGlossinessImage->setColor(combinedPixel, x, y);
@@ -24,6 +24,6 @@ osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::
 
 osg::ref_ptr<osg::Image> GltfPbrSGMaterial::mergeImages(const osg::ref_ptr<osg::Image>& occlusionImage, const osg::ref_ptr<osg::Image>& specularImage, const osg::ref_ptr<osg::Image>& glossinessImage)
 {
-    return osg::ref_ptr<osg::Image>();
+    return nullptr;
 }
 

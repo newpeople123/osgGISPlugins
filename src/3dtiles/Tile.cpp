@@ -5,9 +5,13 @@
 void Tile::fromJson(const json& j)
 {
 	if (j.contains("boundingVolume"))
+	{
 		boundingVolume.fromJson(j.at("boundingVolume"));
+	}
 	if (j.contains("geometricError"))
+	{
 		j.at("geometricError").get_to(geometricError);
+	}
 	if (j.contains("refine"))
 	{
 		std::string refineStr;
@@ -79,7 +83,9 @@ void Tile::computeBoundingVolumeBox()
 void Tile::computeGeometricError()
 {
 	if (!this->children.size())
+	{
 		return;
+	}
 
 #ifndef USE_TBB_PARALLEL
 	for (size_t i = 0; i < this->children.size(); ++i)
@@ -87,10 +93,12 @@ void Tile::computeGeometricError()
 		this->children[i]->computeGeometricError();
 	}
 #else
-	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-		[&](const tbb::blocked_range<size_t>& r)
+	using IndexType = decltype(this->children)::size_type;
+
+	tbb::parallel_for(tbb::blocked_range<IndexType>(0, this->children.size()),
+		[this](const tbb::blocked_range<IndexType>& r)
 		{
-			for (size_t i = r.begin(); i < r.end(); ++i)
+			for (IndexType i = r.begin(); i < r.end(); ++i)
 			{
 				this->children[i]->computeGeometricError();
 			}
@@ -141,12 +149,17 @@ void Tile::computeGeometricError()
 
 bool Tile::descendantNodeIsEmpty() const
 {
-	for (size_t i = 0; i < this->children.size(); ++i)
+	using IndexType = decltype(this->children)::size_type;
+	for (IndexType i = 0; i < this->children.size(); ++i)
 	{
 		if (this->children[i]->node->asGroup()->getNumChildren() > 0)
+		{
 			return false;
+		}
 		if (!this->children[i]->descendantNodeIsEmpty())
+		{
 			return false;
+		}
 	}
 	return true;
 }
@@ -181,13 +194,19 @@ bool Tile::valid() const
 		for (size_t i = 0; i < size; ++i)
 		{
 			if (this->geometricError <= this->children[i]->geometricError)
+			{
 				return false;
+			}
 			if (!this->children[i]->valid())
+			{
 				return false;
+			}
 		}
 	}
 	else
+	{
 		return this->geometricError == 0.0;
+	}
 	return true;
 }
 
@@ -233,9 +252,9 @@ double Tile::getCesiumGeometricErrorByLodError(const float lodError, const doubl
 	return geometricError;
 }
 
-double Tile::getCesiumGeometricErrorByDistance(const float distance)
+double Tile::getCesiumGeometricErrorByDistance(const double distance)
 {
-	return CesiumSSEDenominator * CesiumMaxScreenSpaceError * distance / CesiumCanvasClientHeight;
+	return static_cast<double>(CesiumSSEDenominator) * static_cast<double>(CesiumMaxScreenSpaceError) * distance / static_cast<double>(CesiumCanvasClientHeight);
 }
 
 double Tile::getDistanceByPixelSize(const float pixelSize, const float radius)
@@ -298,7 +317,9 @@ void Tile::write()
 	if (this->lod != -1)
 	{
 		if (writeNode())
+		{
 			setContentUri();
+		}
 	}
 
 	writeChildren();
@@ -313,7 +334,7 @@ void Tile::writeChildren()
 	}
 #else
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-		[&](const tbb::blocked_range<size_t>& r)
+		[this](const tbb::blocked_range<size_t>& r)
 		{
 			for (size_t i = r.begin(); i < r.end(); ++i)
 			{
@@ -351,7 +372,7 @@ bool Tile::writeNode()
 	default:
 		break;
 	}
-	if (!this->node.valid()) return false;
+	if (!this->node.valid()) { return false; }
 	Utils::TriangleCounterVisitor tcv;
 	this->node->accept(tcv);
 	if (tcv.count == 0)
@@ -373,7 +394,9 @@ void Tile::writeToFile()
 
 	const std::string outputPath = getOutputPath();
 	if (osgDB::makeDirectory(outputPath))
+	{
 		osgDB::writeNodeFile(*this->node.get(), getFullPath(), config.options);
+	}
 }
 
 void Tile::buildLOD()
@@ -490,11 +513,11 @@ void Tile::computeDiagonalLengthAndVolume(const osg::ref_ptr<osg::Node>& gnode)
 	}
 #else
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, this->children.size()),
-		[&](const tbb::blocked_range<size_t>& r)
+		[this](const tbb::blocked_range<size_t>& r)
 		{
 			for (size_t i = r.begin(); i < r.end(); ++i)
 			{
-				this->children[i]->computeDiagonalLengthAndVolume();
+				children[i]->computeDiagonalLengthAndVolume();
 			}
 		});
 #endif // !USE_TBB_PARALLEL
@@ -515,7 +538,7 @@ void Tile::optimizeNode()
 	optimizeNode(config.gltfOptimizerOptions);
 }
 
-osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, osg::ref_ptr<osg::Node> waitCopyNode, int lodLevel)
+osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> p, osg::ref_ptr<osg::Node> waitCopyNode, int lodLevel)
 {
 	try
 	{
@@ -523,15 +546,15 @@ osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, osg::ref_ptr<o
 			waitCopyNode.get(),
 			osg::CopyOp::DEEP_COPY_ALL);
 
-		auto tile = createTileOfSameType(nodeCopy, parent);
-		tile->config = parent->config;
-		tile->level = parent->level;
-		tile->x = parent->x;
-		tile->y = parent->y;
-		tile->z = parent->z;
+		auto tile = createTileOfSameType(nodeCopy, p);
+		tile->config = p->config;
+		tile->level = p->level;
+		tile->x = p->x;
+		tile->y = p->y;
+		tile->z = p->z;
 		tile->lod = lodLevel;
-		tile->diagonalLength = parent->diagonalLength;
-		tile->volume = parent->volume;
+		tile->diagonalLength = p->diagonalLength;
+		tile->volume = p->volume;
 		tile->refine = Refinement::REPLACE;
 
 		return tile;
@@ -543,19 +566,19 @@ osg::ref_ptr<Tile> Tile::createLODTile(osg::ref_ptr<Tile> parent, osg::ref_ptr<o
 	}
 }
 
-osg::ref_ptr<Tile> osgGISPlugins::Tile::createLODTileWithoutNode(osg::ref_ptr<Tile> parent, int lodLevel)
+osg::ref_ptr<Tile> Tile::createLODTileWithoutNode(osg::ref_ptr<Tile> p, int lodLevel)
 {
 	try
 	{
-		auto tile = createTileOfSameType(nullptr, parent);
-		tile->config = parent->config;
-		tile->level = parent->level;
-		tile->x = parent->x;
-		tile->y = parent->y;
-		tile->z = parent->z;
+		auto tile = createTileOfSameType(nullptr, p);
+		tile->config = p->config;
+		tile->level = p->level;
+		tile->x = p->x;
+		tile->y = p->y;
+		tile->z = p->z;
 		tile->lod = lodLevel;
-		tile->diagonalLength = parent->diagonalLength;
-		tile->volume = parent->volume;
+		tile->diagonalLength = p->diagonalLength;
+		tile->volume = p->volume;
 		tile->refine = Refinement::REPLACE;
 
 		return tile;

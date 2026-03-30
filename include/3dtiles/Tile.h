@@ -134,7 +134,7 @@ namespace osgGISPlugins
 
 		static double getCesiumGeometricErrorByLodError(const float lodError, const double radius);
 
-		static double getCesiumGeometricErrorByDistance(const float distance);
+		static double getCesiumGeometricErrorByDistance(const double distance);
 
 		static double getDistanceByPixelSize(const float pixelSize, const float radius);
 
@@ -168,10 +168,10 @@ namespace osgGISPlugins
 
 		virtual void writeToFile();
 
-		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> parent, osg::ref_ptr<osg::Node> waitCopyNode, int lodLevel);
-		osg::ref_ptr<Tile> createLODTileWithoutNode(osg::ref_ptr<Tile> parent, int lodLevel);
+		osg::ref_ptr<Tile> createLODTile(osg::ref_ptr<Tile> p, osg::ref_ptr<osg::Node> waitCopyNode, int lodLevel);
+		osg::ref_ptr<Tile> createLODTileWithoutNode(osg::ref_ptr<Tile> p, int lodLevel);
 
-		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) = 0;
+		virtual Tile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> p) = 0;
 		virtual std::string getOutputPath() const = 0;
 		virtual std::string getFullPath() const = 0;
 		virtual std::string getTextureCachePath(const std::string& textureCachePath) const = 0;

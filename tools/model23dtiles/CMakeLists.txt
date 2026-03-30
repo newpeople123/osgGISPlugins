@@ -1,76 +1,78 @@
-cmake_minimum_required(VERSION 3.12)
-set(TOOL_NAME "model23dtiles")
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")#-no-pie用于在linux环境下将可执行文件识别为.so
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")#-no-pie用于在linux环境下将可执行文件识别为.so
-endif()
-# 查找测试目录下源文件
+# 1. 动态获取文件夹名 (model23dtiles)
+get_filename_component(DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+set(TOOL_NAME ${DIR_NAME})
+
+# 2. 搜集源文件与跨模块引用
 aux_source_directory(. DIR_SRCS)
 
-# 路径统一变量
-set(B3DM_HEADER ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h)
-set(B3DM_SOURCE ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp)
-
-set(MATERIAL_HEADERS
+# 显式引用 gltf/b3dm 和 material 相关源码 (因其逻辑与插件共享)
+set(GLTF_COMPONENTS_H
+    ${PROJECT_ROOT_DIR}/include/osgdb_gltf/b3dm/BatchIdVisitor.h
     ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfMaterial.h
     ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrMRMaterial.h
     ${PROJECT_ROOT_DIR}/include/osgdb_gltf/material/GltfPbrSGMaterial.h
 )
-
-set(MATERIAL_SOURCES
+set(GLTF_COMPONENTS_SRC
+    ${PROJECT_ROOT_DIR}/src/osgdb_gltf/b3dm/BatchIdVisitor.cpp
     ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfMaterial.cpp
     ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrMRMaterial.cpp
     ${PROJECT_ROOT_DIR}/src/osgdb_gltf/material/GltfPbrSGMaterial.cpp
 )
 
-file(GLOB_RECURSE THREED_TILES_HEADER_FILES ${PROJECT_ROOT_DIR}/include/3dtiles/*.h)
-file(GLOB_RECURSE THREED_TILES_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/3dtiles/*.cpp)
-file(GLOB_RECURSE UTILS_HEADER_FILES ${PROJECT_ROOT_DIR}/include/utils/*.h)
-file(GLOB_RECURSE UTILS_SOURCE_FILES ${PROJECT_ROOT_DIR}/src/utils/*.cpp)
+# 搜集 3dtiles 和 utils 模块
+file(GLOB_RECURSE THREED_TILES_FILES_H 
+    "${PROJECT_ROOT_DIR}/include/3dtiles/*.h" 
+)
+file(GLOB_RECURSE THREED_TILES_FILES_SRC
+    "${PROJECT_ROOT_DIR}/src/3dtiles/*.cpp"
+)
+file(GLOB_RECURSE UTILS_FILES_H
+    "${PROJECT_ROOT_DIR}/include/utils/*.h" 
+)
+file(GLOB_RECURSE UTILS_FILES_SRC
+    "${PROJECT_ROOT_DIR}/src/utils/*.cpp"
+)
 
-# 添加可执行文件
+# 3. 定义可执行文件
 add_executable(${TOOL_NAME}
     ${DIR_SRCS}
-    ${THREED_TILES_HEADER_FILES}
-    ${THREED_TILES_SOURCE_FILES}
-    ${UTILS_HEADER_FILES}
-    ${UTILS_SOURCE_FILES}
-    ${B3DM_HEADER} ${B3DM_SOURCE}
-    ${MATERIAL_HEADERS} ${MATERIAL_SOURCES}
+    ${GLTF_COMPONENTS_H}
+    ${GLTF_COMPONENTS_SRC}
+    ${THREED_TILES_FILES_H}
+    ${THREED_TILES_FILES_SRC}
+    ${UTILS_FILES_H}
+    ${UTILS_FILES_SRC}
 )
-target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 
-# 启用并行处理
+# 4. 编译属性设置
+target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
+# 启用并行定义
 target_compile_definitions(${TOOL_NAME} PRIVATE USE_TBB_PARALLEL=1)
 
-# 构建依赖
-add_dependencies(${TOOL_NAME}
-    osgdb_gltf
-    osgdb_fbx
-    osgdb_ktx
-    osgdb_webp
-)
-
-# 分组（VS用）
+# 5. 设置 IDE 分组 (使用单反斜杠或正斜杠，CMake 推荐正斜杠)
+source_group("include/3dtiles" FILES ${THREED_TILES_FILES_H})
+source_group("include/utils" FILES ${UTILS_FILES_H})
+source_group("include/gltf" FILES ${GLTF_COMPONENTS_H})
 source_group("src" FILES ${DIR_SRCS})
+source_group("src/3dtiles" FILES ${THREED_TILES_FILES_SRC})
+source_group("src/utils" FILES ${UTILS_FILES_SRC})
+source_group("src/gltf" FILES ${GLTF_COMPONENTS_SRC})
 
-source_group("include\\3dtiles" FILES ${THREED_TILES_HEADER_FILES})
-source_group("include\\utils" FILES ${UTILS_HEADER_FILES})
-source_group("include\\gltf\\b3dm" FILES ${B3DM_HEADER})
-source_group("include\\gltf\\material" FILES ${MATERIAL_HEADERS})
-
-source_group("src\\3dtiles" FILES ${THREED_TILES_SOURCE_FILES})
-source_group("src\\utils" FILES ${UTILS_SOURCE_FILES})
-source_group("src\\gltf\\b3dm" FILES ${B3DM_SOURCE})
-source_group("src\\gltf\\material" FILES ${MATERIAL_SOURCES})
-
-# 查找依赖库
+# 6. 查找依赖
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)
 find_package(PROJ CONFIG REQUIRED)
 
-# 链接库
-target_link_libraries(${TOOL_NAME}
+# 7. 包含路径 (PRIVATE 作用域)
+target_include_directories(${TOOL_NAME} PRIVATE 
+    .
+    ${PROJECT_ROOT_DIR}/include
+    ${OPENSCENEGRAPH_INCLUDE_DIRS}
+)
+
+# 8. 链接库
+target_link_libraries(${TOOL_NAME} PRIVATE
+    ${OPENSCENEGRAPH_LIBRARIES}
     meshoptimizer::meshoptimizer
     TBB::tbb
     TBB::tbbmalloc
@@ -78,33 +80,27 @@ target_link_libraries(${TOOL_NAME}
     PROJ::proj
 )
 
-# Linux 平台添加 pthread
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${TOOL_NAME} pthread)
+# 9. 平台特定逻辑
+if(UNIX AND NOT APPLE)
+    # 修正：-no-pie 的作用是关闭“位置无关可执行程序”，通常用于解决某些静态库链接时的符号冲突
+    # 它并不会把可执行文件“识别为 .so”，.so 是共享库(SHARED)
+    target_compile_options(${TOOL_NAME} PRIVATE "-no-pie")
+    target_link_options(${TOOL_NAME} PRIVATE "-no-pie")
+    target_link_libraries(${TOOL_NAME} PRIVATE pthread)
 endif()
 
-# OpenSceneGraph 处理
-if (OPENSCENEGRAPH_FOUND)
-    message(STATUS "Found OpenSceneGraph")
-    message(STATUS "OPENSCENEGRAPH_INCLUDE_DIRS: ${OPENSCENEGRAPH_INCLUDE_DIRS}")
-    message(STATUS "OPENSCENEGRAPH_LIBRARIES: ${OPENSCENEGRAPH_LIBRARIES}")
-    include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
-    target_link_libraries(${TOOL_NAME} ${OPENSCENEGRAPH_LIBRARIES})
-else()
-    message(FATAL_ERROR "${TOOL_NAME}: OpenSceneGraph not found!")
+# 10. 资源/数据拷贝 (PROJ 数据库文件)
+if(WIN32)
+    # 使用 POST_BUILD 确保每次构建后同步数据，而不是仅在配置阶段
+    set(PROJ_DATA_DIR "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows/share/proj")
+    set(TARGET_DATA_DEST "$<TARGET_FILE_DIR:${TOOL_NAME}>/share/proj")
+
+    add_custom_command(TARGET ${TOOL_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${TARGET_DATA_DEST}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJ_DATA_DIR}" "${TARGET_DATA_DEST}"
+        COMMENT "Syncing PROJ data files..."
+    )
 endif()
 
-# Windows 下拷贝 PROJ 数据文件（仅一次 GLOB）
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
-    set(PROJ_SHARE_SRC "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows/share/proj/*")
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(PROJ_SHARE_DEST "${PROJECT_ROOT_DIR}/Debug/share/proj")
-    else()
-        set(PROJ_SHARE_DEST "${PROJECT_ROOT_DIR}/Release/share/proj")
-    endif()
-    file(GLOB PROJ_FILES ${PROJ_SHARE_SRC})
-    file(COPY ${PROJ_FILES} DESTINATION ${PROJ_SHARE_DEST})
-endif()
-
-# 安装
-install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+# 11. 安装
+install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION bin)

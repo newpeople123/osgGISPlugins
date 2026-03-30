@@ -105,8 +105,6 @@ void GltfDracoCompressor::compressMesh(tinygltf::Mesh& mesh)
 		draco::Mesh dracoMesh;
 		if (primitive.indices != -1) {
 			tinygltf::Accessor& indicesAccessor = _model.accessors[primitive.indices];
-			const tinygltf::BufferView& indicesBv = _model.bufferViews[indicesAccessor.bufferView];
-			const tinygltf::Buffer& indicesBuffer = _model.buffers[indicesBv.buffer];
 
 			switch (indicesAccessor.componentType) {
 			case TINYGLTF_COMPONENT_TYPE_BYTE:

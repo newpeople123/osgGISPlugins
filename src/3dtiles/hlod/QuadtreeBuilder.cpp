@@ -6,8 +6,8 @@ int QuadTreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 	float zSpan = bounds._max.z() - bounds._min.z();
 
 	// 返回跨度最小的轴
-	if (xSpan <= ySpan && xSpan <= zSpan) return 0;
-	if (ySpan <= xSpan && ySpan <= zSpan) return 1;
+	if (xSpan <= ySpan && xSpan <= zSpan) { return 0; }
+	if (ySpan <= xSpan && ySpan <= zSpan) { return 1; }
 	return 2;
 }
 
@@ -38,7 +38,9 @@ osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
 	if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
+	{
 		return tile;
+	}
 
 	const int axis = chooseSplitAxis(bounds);
 	// 根据选择的轴进行分割
@@ -51,10 +53,14 @@ osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 				const osg::BoundingBox childTileNodeBound = computeChildBounds(bounds, axis, a, b);
 				osg::ref_ptr<B3DMTile> childB3DMTile = divideB3DM(group, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, 0, level + 1);
 				if (childB3DMTile->node.valid())
+				{
 					tile->children.push_back(childB3DMTile);
+				}
 			}
 			else
+			{
 				return tile;
+			}
 		}
 	}
 
@@ -63,10 +69,12 @@ osg::ref_ptr<B3DMTile> QuadTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> grou
 
 void QuadTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) {
 
-	if (!tile.valid() || group.empty()) return;
+	if (!tile.valid() || group.empty()) { return; }
 
 	if (TreeBuilder::processI3DM(group, bounds, tile))
+	{
 		return;
+	}
 
 	const int axis = chooseSplitAxis(bounds);
 	for (size_t i = 0; i < tile->children.size(); ++i)
@@ -79,7 +87,9 @@ void QuadTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, con
 					divideI3DM(group, childBounds, dynamic_cast<I3DMTile*>(tile->children[i].get()));
 				}
 				else
+				{
 					return;
+				}
 			}
 		}
 

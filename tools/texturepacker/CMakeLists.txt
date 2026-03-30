@@ -1,26 +1,55 @@
-set(TOOL_NAME "texturepacker")
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -no-pie")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-pie")
-endif()
-# 查找当前目录源文件
+# 1. 动态获取文件夹名 (texturepacker)
+get_filename_component(DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+set(TOOL_NAME ${DIR_NAME})
+
+# 2. 搜集源文件与跨模块引用
 aux_source_directory(. TOOL_SRCS)
 
-# 工具相关头文件和源文件
-set(TEXTURE_PACKER_HEADER ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h)
-set(TEXTURE_PACKER_SOURCE ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp)
-
-# 所有源文件
-set(SOURCE_FILES
-    ${TOOL_SRCS}
-    ${TEXTURE_PACKER_HEADER}
-    ${TEXTURE_PACKER_SOURCE}
+# 引用公共的 TexturePacker 工具类
+set(TEXTURE_PACKER_FILES_H
+    ${PROJECT_ROOT_DIR}/include/utils/TexturePacker.h
+)
+set(TEXTURE_PACKER_FILES_SRC
+    ${PROJECT_ROOT_DIR}/src/utils/TexturePacker.cpp
 )
 
-# 添加可执行文件
-add_executable(${TOOL_NAME} ${SOURCE_FILES})
+# 3. 定义可执行文件
+add_executable(${TOOL_NAME} ${TOOL_SRCS} ${TEXTURE_PACKER_FILES_H} ${TEXTURE_PACKER_FILES_SRC})
 
-# 添加依赖
+# 4. 编译属性设置 (统一使用 C++17)
+target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
+
+# 5. 设置 IDE 分组
+source_group("src" FILES ${TOOL_SRCS})
+source_group("src/utils" FILES ${TEXTURE_PACKER_FILES_SRC})
+source_group("include/utils" FILES ${TEXTURE_PACKER_FILES_H})
+
+# 6. 查找依赖
+find_package(meshoptimizer CONFIG REQUIRED)
+find_package(Stb REQUIRED)
+
+# 7. 包含路径 (使用 target 作用域，包含 Stb 和项目全局 include)
+target_include_directories(${TOOL_NAME} PRIVATE 
+    .
+    ${PROJECT_ROOT_DIR}/include
+    ${Stb_INCLUDE_DIR}
+    ${OPENSCENEGRAPH_INCLUDE_DIRS}
+)
+
+# 8. 链接库
+target_link_libraries(${TOOL_NAME} PRIVATE
+    ${OPENSCENEGRAPH_LIBRARIES}
+    meshoptimizer::meshoptimizer
+)
+
+# 9. 平台特定逻辑 (Linux)
+if(UNIX AND NOT APPLE)
+    target_compile_options(${TOOL_NAME} PRIVATE "-no-pie")
+    target_link_options(${TOOL_NAME} PRIVATE "-no-pie")
+    target_link_libraries(${TOOL_NAME} PRIVATE pthread)
+endif()
+
+# 10. 明确构建依赖顺序
 add_dependencies(${TOOL_NAME}
     osgdb_gltf
     osgdb_fbx
@@ -28,40 +57,5 @@ add_dependencies(${TOOL_NAME}
     osgdb_webp
 )
 
-# 查找依赖库
-find_package(meshoptimizer CONFIG REQUIRED)
-find_package(Stb REQUIRED)
-
-# 包含头文件目录（仅本目标）
-target_include_directories(${TOOL_NAME} PRIVATE
-    ${PROJECT_ROOT_DIR}/include
-    ${Stb_INCLUDE_DIR}
-)
-
-# 链接库
-target_link_libraries(${TOOL_NAME}
-    meshoptimizer::meshoptimizer
-)
-
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${TOOL_NAME} pthread)
-endif()
-
-# OpenSceneGraph
-if (OPENSCENEGRAPH_FOUND)
-    message(STATUS "Found OpenSceneGraph")
-    message(STATUS "OPENSCENEGRAPH_INCLUDE_DIRS: ${OPENSCENEGRAPH_INCLUDE_DIRS}")
-    message(STATUS "OPENSCENEGRAPH_LIBRARIES: ${OPENSCENEGRAPH_LIBRARIES}")
-
-    target_include_directories(${TOOL_NAME} PRIVATE ${OPENSCENEGRAPH_INCLUDE_DIRS})
-    target_link_libraries(${TOOL_NAME} ${OPENSCENEGRAPH_LIBRARIES})
-else()
-    message(FATAL_ERROR "${TOOL_NAME}: OpenSceneGraph not found!")
-endif()
-
-# Visual Studio 文件分组
-source_group("src" FILES ${TOOL_SRCS} ${TEXTURE_PACKER_SOURCE})
-source_group("include" FILES ${TEXTURE_PACKER_HEADER})
-
-# 安装目标
-install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+# 11. 安装逻辑 (规范安装到 bin 目录)
+install(TARGETS ${TOOL_NAME} RUNTIME DESTINATION bin)

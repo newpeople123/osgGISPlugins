@@ -12,24 +12,30 @@ void Tileset::computeTransform(const double lng, const double lat, const double 
 
 	const double* ptr = localToWorld.ptr();
 	for (unsigned i = 0; i < 16; ++i)
+	{
 		this->root->transform.push_back(*ptr++);
+	}
 }
 
 bool Tileset::valid() const
 {
-	if (!this->root) return false;
-	return this->geometricError > this->root->geometricError && this->root->valid();
+	if (!this->root) { return false; }
+	return this->root->valid() && this->geometricError > this->root->geometricError;
 }
 
 void Tileset::fromJson(const json& j) {
 	if (j.contains("asset")) {
 		if (j.at("asset").contains("version"))
+		{
 			j.at("asset").at("version").get_to(assetVersion);
+		}
 		if (j.at("asset").contains("tilesetVersion"))
+		{
 			j.at("asset").at("tilesetVersion").get_to(tilesetVersion);
+		}
 	}
-	if (j.contains("geometricError")) j.at("geometricError").get_to(geometricError);
-	if (j.contains("root")) root->fromJson(j.at("root"));
+	if (j.contains("geometricError")) { j.at("geometricError").get_to(geometricError); }
+	if (j.contains("root")) { root->fromJson(j.at("root")); }
 }
 
 Tileset Tileset::fromFile(const std::string& filePath) {
@@ -62,7 +68,9 @@ bool Tileset::write() {
 	this->computeGeometricError();
 
 	if (!this->valid())
+	{
 		return false;
+	}
 
 	this->root->write();
 	this->computeTransform(config.longitude, config.latitude, config.altitude);

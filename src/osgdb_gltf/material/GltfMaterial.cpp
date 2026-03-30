@@ -69,16 +69,16 @@ bool GltfMaterial::compareTexture2D(osg::ref_ptr<osg::Texture2D> texture1, osg::
 
 bool GltfMaterial::compareExtensions(const osg::MixinVector<GltfExtension*>& ext1,
 	const osg::MixinVector<GltfExtension*>& ext2) {
-	if (ext1.size() != ext2.size()) return false;
+	if (ext1.size() != ext2.size()) { return false; }
 
 	for (size_t i = 0; i < ext1.size(); ++i) {
-		if (!ext1[i]->compare(*ext2[i])) return false;
+		if (!ext1[i]->compare(*ext2[i])) { return false; }
 	}
 	return true;
 }
 
 osg::ref_ptr<osg::Image> GltfMaterial::convertToGrayscale(osg::Image* input) {
-	if (!input) return nullptr;
+	if (!input) { return nullptr; }
 
 	int width = input->s();
 	int height = input->t();
@@ -98,14 +98,13 @@ osg::ref_ptr<osg::Image> GltfMaterial::convertToGrayscale(osg::Image* input) {
 }
 
 osg::ref_ptr<osg::Image> GltfMaterial::generateNormalMap(osg::Image* heightMap) {
-	if (!heightMap || heightMap->getPixelFormat() != GL_LUMINANCE) return nullptr;
+	if (!heightMap || heightMap->getPixelFormat() != GL_LUMINANCE) { return nullptr; }
 	int width = heightMap->s(), height = heightMap->t();
 	osg::ref_ptr<osg::Image> normalMap = new osg::Image;
 	// 使用浮点存储提高精度
 	normalMap->allocateImage(width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE);
-	GLenum type = heightMap->getDataType();
 
-	auto sample = [&](int x, int y)->float {
+	auto sample = [&width, &height, heightMap](int x, int y)->float {
 		x = osg::clampBetween(x, 0, width - 1);
 		y = osg::clampBetween(y, 0, height - 1);
 		return heightMap->getColor(x, y).r();

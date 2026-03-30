@@ -80,11 +80,10 @@ source_group("src" FILES ${DIR_SRCS})
 
 # OpenSceneGraph 支持
 if (OPENSCENEGRAPH_FOUND)
-    include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
-    target_link_libraries(${TOOL_TEST_NAME} ${OPENSCENEGRAPH_LIBRARIES})
+    # 链接路径列表
+    target_link_libraries(${LIB_NAME} PRIVATE ${OPENSCENEGRAPH_LIBRARIES})
+    # 添加头文件包含路径
+    target_include_directories(${LIB_NAME} PRIVATE ${OPENSCENEGRAPH_INCLUDE_DIRS})
 else()
-    message(FATAL_ERROR "${TOOL_TEST_NAME}: osg not found!")
+    message(FATAL_ERROR "OSG not found for ${LIB_NAME}!")
 endif()
-
-# 安装目标
-install(TARGETS ${TOOL_TEST_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})

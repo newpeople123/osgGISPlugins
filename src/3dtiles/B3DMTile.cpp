@@ -24,11 +24,13 @@ std::string B3DMTile::getTextureCachePath(const std::string& textureCachePath) c
 void B3DMTile::setContentUri()
 {
 	if (this->lod != -1)
+	{
 		contentUri = std::to_string(level) + "/" + "Tile_L" + std::to_string(lod) + "_" + std::to_string(x) + "_" + std::to_string(y) + "_" + std::to_string(z) + "." + type;
+	}
 }
 
-B3DMTile* B3DMTile::createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent)
+B3DMTile* B3DMTile::createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> p)
 {
-	return new B3DMTile(node, dynamic_cast<B3DMTile*>(parent.get()));
+	return new B3DMTile(node, dynamic_cast<B3DMTile*>(p.get()));
 }
 

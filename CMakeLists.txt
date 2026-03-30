@@ -1,92 +1,175 @@
 cmake_minimum_required(VERSION 3.12)
 
-# 设置 C++ 标准
+# ==============================================================================
+# 1. 预项目配置 (Pre-Project Configuration)
+# 设置工具链必须在 project() 之前，以便 CMake 正确初始化编译器环境
+# ==============================================================================
+
+# 自动处理 vcpkg 工具链路径
+if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if (WIN32)
+        set(DEFAULT_TOOLCHAIN_PATH "E:/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    else()
+        set(DEFAULT_TOOLCHAIN_PATH "/home/wty/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    endif()
+
+    if (EXISTS "${DEFAULT_TOOLCHAIN_PATH}")
+        set(CMAKE_TOOLCHAIN_FILE "${DEFAULT_TOOLCHAIN_PATH}" CACHE STRING "Vcpkg toolchain file")
+    endif()
+endif()
+
+# ==============================================================================
+# 2. 项目声明 (Project Declaration)
+# 调用 project() 会触发内部系统检测，自动填充 CMAKE_SYSTEM_NAME 等变量
+# ==============================================================================
+project(osgGISPlugins LANGUAGES C CXX)
+
+# ==============================================================================
+# 3. 全局编译选项与标准
+# ==============================================================================
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# 启用 compile_commands.json 文件生成，该文件用于代码分析
+#set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(BUILD_SHARED_LIBS ON)
 
-# 打开 Visual Studio 文件夹分组支持
+# Visual Studio 文件夹分组支持
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# 设置项目根目录变量
+# 项目根目录缩写
 set(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-message(STATUS "目标操作系统(target system name): ${CMAKE_SYSTEM_NAME}")
-# 设置平台相关参数
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+
+# ==============================================================================
+# 4. 平台相关参数判定
+# ==============================================================================
+if (WIN32)
+    # Windows 特有配置
     add_compile_options("/utf-8")
+    # 开启 MSVC 的多处理器编译
+    add_compile_options("/MP")
+    if (MSVC)
+        # 开启 MSVC 异常支持
+        add_compile_options("/EHsc")
+    endif()
     set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "Vcpkg target triplet")
-    set(DEFAULT_TOOLCHAIN_PATH "E:/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    
+    # 定义 Windows 下的输出目录逻辑（通常用于拷贝依赖）
+    set(VCPKG_INSTALL_DIR "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows")
+    message(STATUS "Build Platform: Windows")
 else()
+    # Linux/Unix 特有配置
     set(VCPKG_TARGET_TRIPLET "x64-linux-dynamic" CACHE STRING "Vcpkg target triplet")
-    set(DEFAULT_TOOLCHAIN_PATH "/home/wty/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    message(STATUS "Build Platform: Linux/Unix")
 endif()
 
-# 设置 toolchain
-if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "${DEFAULT_TOOLCHAIN_PATH}")
-endif()
+# ==============================================================================
+# 5. 设置输出目录 (Artifact Output Directories)
+# 针对不同配置（Debug/Release等）统一设置输出路径
+# ==============================================================================
+set(CONFIGS Debug Release RelWithDebInfo MinSizeRel)
+foreach(cfg ${CONFIGS})
+    string(TOUPPER ${cfg} CFG)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CFG} "${PROJECT_ROOT_DIR}/${cfg}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CFG} "${PROJECT_ROOT_DIR}/${cfg}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CFG} "${PROJECT_ROOT_DIR}/${cfg}")
+endforeach()
 
-# 引入 Vcpkg 工具链
-include(${CMAKE_TOOLCHAIN_FILE})
+# 设置生成文件后缀
+set(CMAKE_DEBUG_POSTFIX "d")
+set(CMAKE_RELWITHDEBINFO_POSTFIX "_rel")
+set(CMAKE_MINSIZEREL_POSTFIX "_min")
 
-# 设置头文件全局包含路径（如不推荐全局 include，可转为 target_include_directories）
+# ==============================================================================
+# 6. 包含路径与静态检查
+# ==============================================================================
 include_directories(
     ${PROJECT_ROOT_DIR}/3rdparty/include
     ${PROJECT_ROOT_DIR}/include
 )
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PROJECT_ROOT_DIR}/Debug)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_ROOT_DIR}/Debug)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG ${PROJECT_ROOT_DIR}/Debug)
+# 启用 Clang-Tidy (如果环境中存在)
+# find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
+# if(CLANG_TIDY_EXE)
+#     set(CMAKE_CXX_CLANG_TIDY 
+#         "${CLANG_TIDY_EXE};--extra-arg=-fexceptions;--extra-arg=-fms-compatibility;--extra-arg=-DWINGDIAPI="
+#     )
+# endif()
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PROJECT_ROOT_DIR}/Release)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PROJECT_ROOT_DIR}/Release)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${PROJECT_ROOT_DIR}/Release)
+# --- 处理 3rdparty 文件夹 ---
+file(GLOB_RECURSE THIRDPARTY_FILES 
+    "${PROJECT_ROOT_DIR}/3rdparty/*.h"
+    "${PROJECT_ROOT_DIR}/3rdparty/*.cpp"
+    "${PROJECT_ROOT_DIR}/3rdparty/*.cmake"
+    "${PROJECT_ROOT_DIR}/3rdparty/*.txt"
+)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_ROOT_DIR}/RelWithDebInfo)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_ROOT_DIR}/RelWithDebInfo)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_ROOT_DIR}/RelWithDebInfo)
+if(THIRDPARTY_FILES)
+    # 创建一个不编译的目标
+    add_custom_target(3rdparty SOURCES ${THIRDPARTY_FILES})
+    # 自动保持 3rdparty 内部的物理目录结构 (需要 CMake 3.8+)
+    source_group(TREE "${PROJECT_ROOT_DIR}/3rdparty" FILES ${THIRDPARTY_FILES})
+    # 放入 VS 的虚拟文件夹
+    set_target_properties(3rdparty PROPERTIES FOLDER "Configurations")
+endif()
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_ROOT_DIR}/MinSizeRel)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_ROOT_DIR}/MinSizeRel)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_ROOT_DIR}/MinSizeRel)
+# --- 处理 assets 资源文件夹 ---
+file(GLOB_RECURSE ASSET_FILES 
+    "${PROJECT_ROOT_DIR}/assets/*"
+)
 
-# 设置生成文件后缀（可选）
-set(CMAKE_DEBUG_POSTFIX "d")
-set(CMAKE_RELEASE_POSTFIX "")
-set(CMAKE_RELWITHDEBINFO_POSTFIX "_rel")
-set(CMAKE_MINSIZEREL_POSTFIX "_min")
+if(ASSET_FILES)
+    add_custom_target(Assets SOURCES ${ASSET_FILES})
+    # 在 VS 中按 assets 路径分组
+    source_group(TREE "${PROJECT_ROOT_DIR}/assets" FILES ${ASSET_FILES})
+    set_target_properties(Assets PROPERTIES FOLDER "Configurations")
+endif()
 
-# 构建共享库
-set(BUILD_SHARED_LIBS ON)
-
-project(osgGISPlugins)
-
-# 添加子模块
+# ==============================================================================
+# 7. 添加子模块
+# ==============================================================================
 add_subdirectory(src)
 add_subdirectory(tools)
+
+# 仅在 Debug 模式下添加测试
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_subdirectory(tests)
 endif()
 
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
-# 拷贝插件和资源文件（仅 Windows）
-    set(VCPKG_INSTALL_DIR "${PROJECT_ROOT_DIR}/build/vcpkg_installed/x64-windows")
-    set(PLUGINS_DIR "${VCPKG_INSTALL_DIR}")
+# ==============================================================================
+# 8. Windows 特有的资源与插件拷贝逻辑
+# ==============================================================================
+if (WIN32)
+    # 注意：file(COPY) 在配置阶段执行。如果插件是动态生成的，建议改用 add_custom_command
+    # 这里沿用你的逻辑，根据当前 CMAKE_BUILD_TYPE 决定拷贝路径
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-        file(GLOB THIRD_PARTY_PLUGINS "${PLUGINS_DIR}/debug/plugins/osgPlugins-3.6.5/*")
+        set(OSG_PLUGINS_SRC "${VCPKG_INSTALL_DIR}/debug/plugins/osgPlugins-3.6.5/*")
         set(OUT_DIR "${PROJECT_ROOT_DIR}/Debug")
     else()
-        file(GLOB THIRD_PARTY_PLUGINS "${PLUGINS_DIR}/plugins/osgPlugins-3.6.5/*")
+        set(OSG_PLUGINS_SRC "${VCPKG_INSTALL_DIR}/plugins/osgPlugins-3.6.5/*")
         set(OUT_DIR "${PROJECT_ROOT_DIR}/Release")
     endif()
 
-    file(COPY ${THIRD_PARTY_PLUGINS} DESTINATION ${OUT_DIR})
-    file(COPY ${VCPKG_INSTALL_DIR}/bin/jpeg62.dll DESTINATION ${OUT_DIR})
+    # 执行拷贝动作
+    file(GLOB THIRD_PARTY_PLUGINS "${OSG_PLUGINS_SRC}")
+    if(THIRD_PARTY_PLUGINS)
+        file(COPY ${THIRD_PARTY_PLUGINS} DESTINATION ${OUT_DIR})
+    endif()
+    
+    # 拷贝必要的 DLL
+    if(EXISTS "${VCPKG_INSTALL_DIR}/bin/jpeg62.dll")
+        file(COPY "${VCPKG_INSTALL_DIR}/bin/jpeg62.dll" DESTINATION ${OUT_DIR})
+    endif()
 endif()
 
-# 打印关键路径
-message(STATUS "本机操作系统(current system name): ${CMAKE_HOST_SYSTEM_NAME}")
-message(STATUS "目标操作系统(target system name): ${CMAKE_SYSTEM_NAME}")
-message(STATUS "查找依赖包路径(cmake prefix path): ${CMAKE_PREFIX_PATH}")
-message(STATUS "自定义模块路径(camke module path): ${CMAKE_MODULE_PATH}")
-message(STATUS "程序安装路径(install directory): ${CMAKE_INSTALL_PREFIX}")
+# ==============================================================================
+# 9. 关键信息打印
+# ==============================================================================
+message(STATUS "------------------------------------------------------------")
+# CMAKE_HOST_SYSTEM_NAME：当前编译代码的机器的操作系统
+message(STATUS "Host System:    ${CMAKE_HOST_SYSTEM_NAME}")
+# CMAKE_SYSTEM_NAME：想将代码编译为哪种操作系统上可运行的程序
+message(STATUS "Target System:  ${CMAKE_SYSTEM_NAME}")
+message(STATUS "Build Type:     ${CMAKE_BUILD_TYPE}")
+message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "Toolchain File: ${CMAKE_TOOLCHAIN_FILE}")
+message(STATUS "------------------------------------------------------------")

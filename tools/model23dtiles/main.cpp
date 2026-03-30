@@ -38,7 +38,7 @@ private:
 		return quat * localPosition;
 	}
 public:
-	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) :_pj(pj), _worldToLocal(worldToLocal), osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {
+	CoordinateTransformVisitor(PJ* pj, const osg::Matrixd worldToLocal) : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _pj(pj), _worldToLocal(worldToLocal) {
 
 
 	}
@@ -58,7 +58,9 @@ public:
 
 	void apply(osg::Drawable& drawable) override {
 		if (drawable.getDataVariance() == osg::Object::DataVariance::STATIC)
+		{
 			return;
+		}
 
 		osg::Geometry* geometry = drawable.asGeometry();
 		if (geometry) {
@@ -86,10 +88,14 @@ osg::ref_ptr<osg::Node> readModelFile(const std::string& input, const bool bSP) 
 	}
 #ifndef NDEBUG
 	if (bSP)
+	{
 		optionStr += "ShowProgress ";
+	}
 #else
 	if (ext == "fbx")
+	{
 		optionStr += "TessellatePolygons ";
+	}
 #endif // !NDEBUG
 
 	readOptions->setOptionString(optionStr);
@@ -112,7 +118,9 @@ void applyOptimizer(osg::ref_ptr<osg::Node>& node) {
 void recomputeNormals(osg::ref_ptr<osg::Node>& node, const bool faceModel) {
 	osgUtil::SmoothingVisitor sv;
 	if (faceModel)
+	{
 		sv.setCreaseAngle(0.0);
+	}
 	node->accept(sv);
 }
 
@@ -145,8 +153,8 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
 	osg::ref_ptr<osg::Node>& node,
 	const double translationX, const double translationY, const double translationZ,
 	const double scaleX, const double scaleY, const double scaleZ,
-	const std::string upAxis,
-	const std::string ext)
+	const std::string& upAxis,
+	const std::string& ext)
 {
 	// datumPoint 是 Z轴向上的坐标
 	osg::Vec3d datumPointZUp(translationX, translationY, translationZ);
@@ -217,7 +225,7 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
 }
 
 // 将投影坐标的模型进行坐标转换
-void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string epsg, double& latitude, double& longitude, double& altitude)
+void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, double& latitude, double& longitude, double& altitude)
 {
 	if (!epsg.empty())
 	{
@@ -374,11 +382,14 @@ int main(int argc, char** argv)
 	osg::ArgumentParser arguments(&argc, argv);
 	osg::ApplicationUsage* usage = arguments.getApplicationUsage();
 	usage->setDescription(arguments.getApplicationName() + ", a tool to convert 3D models into 3D Tiles.");
-	usage->setCommandLineUsage("model23dtiles.exe -i C:\\input\\test.fbx -o C:\\output\\test -lat 39.0 -lng 116.0 -h 300.0 -tf ktx2");
+	usage->setCommandLineUsage(R"(model23dtiles.exe -i C:\input\test.fbx -o C:\output\test -lat 39.0 -lng 116.0 -h 300.0 -tf ktx2)");
 	usage->addCommandLineOption("-h/--help", "Display help information");
 
 	// Display help if requested
-	if (arguments.read("-h") || arguments.read("--help")) {
+	bool helpRequested = arguments.read("-h");
+	bool helpLongRequested = arguments.read("--help");
+
+	if (helpRequested || helpLongRequested){
 		osg::setNotifyLevel(osg::NOTICE);
 		printUsage();
 		return 100;
@@ -437,9 +448,13 @@ int main(int argc, char** argv)
 
 	bool showProgress = true;
 	if (arguments.find("-sp") > 0)
+	{
 		showProgress = false;
+	}
 	if (showProgress)
+	{
 		instance->setReadFileCallback(new Utils::ProgressReportingFileReadCallback);
+	}
 	const std::string inputPath = osgDB::getFilePath(input);
 	const std::string currentWorkingPath = osgDB::convertStringFromCurrentCodePageToUTF8(osgDB::getCurrentWorkingDirectory());
 	osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
@@ -515,9 +530,13 @@ int main(int argc, char** argv)
 		{
 			const std::string normalMode = parseArgument(arguments, "-nm", std::string("f"));
 			if (normalMode == "v")
+			{
 				recomputeNormals(tNode, false);
+			}
 			else if (normalMode == "f")
+			{
 				recomputeNormals(tNode, true);
+			}
 		}
 
 		Tileset::Config config;
@@ -532,9 +551,13 @@ int main(int argc, char** argv)
 		config.tileConfig.gltfTextureOptions.maxTextureAtlasHeight = maxTextureAtlasHeight;
 		config.tileConfig.gltfTextureOptions.ext = "." + textureFormat;
 		if (arguments.find("-nft") > 0)
+		{
 			config.tileConfig.gltfOptimizerOptions &= ~GltfOptimizer::FLATTEN_TRANSFORMS;
+		}
 		if (arguments.find("-gn") > 0)
+		{
 			config.tileConfig.gltfOptimizerOptions |= GltfOptimizer::GENERATE_NORMAL_TEXTURE;
+		}
 
 #ifdef _WIN32
 		config.tileConfig.gltfTextureOptions.cachePath = config.tileConfig.path + "\\textures";
@@ -550,9 +573,13 @@ int main(int argc, char** argv)
 
 		TreeBuilder* treeBuilder = new QuadTreeBuilder(treeConfig);
 		if (treeFormat == "oc")
+		{
 			treeBuilder = new OcTreeBuilder(treeConfig);
+		}
 		else if (treeFormat == "kd")
+		{
 			treeBuilder = new KDTreeBuilder(treeConfig);
+		}
 		OSG_NOTICE << "Building " + treeFormat << " tree..." << std::endl;
 		osg::ref_ptr<Tileset> tileset = new Tileset(tNode, *treeBuilder, config);
 

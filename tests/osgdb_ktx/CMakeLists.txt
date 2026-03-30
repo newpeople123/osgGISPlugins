@@ -11,17 +11,10 @@ add_dependencies(${TOOL_TEST_NAME}
     osgdb_webp
 )
 if (OPENSCENEGRAPH_FOUND)
-        include_directories(${OPENSCENEGRAPH_INCLUDE_DIRS})
-        if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
-            target_link_libraries(${TOOL_TEST_NAME}
-            ${OPENSCENEGRAPH_LIBRARIES}
-            )
-        else()
-            target_link_libraries(${TOOL_TEST_NAME}
-            ${OPENSCENEGRAPH_LIBRARIES}
-            )
-        endif()
+    # 链接路径列表
+    target_link_libraries(${LIB_NAME} PRIVATE ${OPENSCENEGRAPH_LIBRARIES})
+    # 添加头文件包含路径
+    target_include_directories(${LIB_NAME} PRIVATE ${OPENSCENEGRAPH_INCLUDE_DIRS})
 else()
-    message(FATAL_ERROR ${TOOL_TEST_NAME}+":osg not found!")
+    message(FATAL_ERROR "OSG not found for ${LIB_NAME}!")
 endif()
-install(TARGETS ${TOOL_TEST_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})

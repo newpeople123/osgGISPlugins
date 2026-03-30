@@ -44,7 +44,7 @@ namespace osgGISPlugins
 
 		void setContentUri() override;
 
-		I3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> parent) override;
+		I3DMTile* createTileOfSameType(osg::ref_ptr<osg::Node> node, osg::ref_ptr<Tile> p) override;
 
 		void computeDiagonalLengthAndVolume() override;
 	};

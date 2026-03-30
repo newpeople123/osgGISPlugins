@@ -37,29 +37,33 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 	if (options & MERGE_TRANSFORMS)
 	{
 		OSG_INFO << "Optimizer::optimize() doing MERGE_TRANSFORMS" << std::endl;
+		// 1. 统一获取一次 group 指针，避免重复定义
 		osg::Group* group = node->asGroup();
-		//if (group && group->getNumChildren() > 1)
 		if (group)
 		{
 			MergeTransformVisitor mtv;
 			node->accept(mtv);
-			osg::Group* group = node->asGroup();
 
-			if (group)
+			// 2. 检查访问器结果是否有效
+			osg::Node* visitorNode = mtv.getNode();
+			if (visitorNode)
 			{
-				osg::Group* newGroup = mtv.getNode()->asGroup();
+				osg::Group* newGroup = visitorNode->asGroup();
 				if (newGroup)
 				{
-					// 清除group中的所有子节点
+					// 3. 移除旧节点
 					group->removeChildren(0, group->getNumChildren());
-					// 将newGroup中的所有子节点添加到group中
-					for (unsigned int i = 0; i < newGroup->getNumChildren(); ++i)
+
+					// 4. 优化节点转移：
+					// 使用 range-based for 遍历所有子节点（需 OSG 支持迭代器，或手动处理）
+					// 另一种更稳健的方法是直接将子节点列表移动过来
+					unsigned int numChildren = newGroup->getNumChildren();
+					for (unsigned int i = 0; i < numChildren; ++i)
 					{
 						group->addChild(newGroup->getChild(i));
 					}
 				}
 			}
-
 		}
 	}
 
@@ -357,11 +361,11 @@ void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 }
 /** GenerateNormalTextureVisitor */
 osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::getOrGenerateNormalMap(osg::Image* image) {
-	if (!image) return nullptr;
+	if (!image) { return nullptr; }
 	std::string filename = image->getFileName();
 
 	auto found = _imageCache.find(filename);
-	if (found != _imageCache.end()) return found->second;
+	if (found != _imageCache.end()) { return found->second; }
 
 	osg::ref_ptr<osg::Image> gray = GltfMaterial::convertToGrayscale(image);
 	osg::ref_ptr<osg::Image> normalMap = GltfMaterial::generateNormalMap(gray);
@@ -373,11 +377,11 @@ osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::getOrGener
 
 osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::getOrGenerateMetallicRoughnessMap(osg::Image* image)
 {
-	if (!image) return nullptr;
+	if (!image) { return nullptr; }
 	std::string filename = image->getFileName();
 
 	auto found = _imageCache2.find(filename);
-	if (found != _imageCache2.end()) return found->second;
+	if (found != _imageCache2.end()) { return found->second; }
 
 	osg::ref_ptr<osg::Image> metallicRoughnessMap = GltfPbrMRMaterial::generateMetallicRoughnessMap(image);
 	if (metallicRoughnessMap.valid()) {
@@ -388,13 +392,13 @@ osg::ref_ptr<osg::Image> GltfOptimizer::GenerateNormalTextureVisitor::getOrGener
 
 void GltfOptimizer::GenerateNormalTextureVisitor::processGeometry(osg::Geometry* geometry) {
 	osg::StateSet* stateSet = geometry->getStateSet();
-	if (!stateSet) return;
+	if (!stateSet) { return; }
 
 	osg::Material* material = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
-	if (!material) return;
+	if (!material) { return; }
 
 	GltfMaterial* gltfMaterial = dynamic_cast<GltfMaterial*>(material);
-	if (!gltfMaterial) return;
+	if (!gltfMaterial) { return; }
 
 	osg::Image* baseImage = nullptr;
 
@@ -434,12 +438,12 @@ void GltfOptimizer::GenerateNormalTextureVisitor::apply(osg::Geode& geode) {
 	std::vector<osg::ref_ptr<osg::Geometry>> geometries;
 	for (unsigned int i = 0; i < geode.getNumDrawables(); ++i) {
 		osg::Geometry* geom = dynamic_cast<osg::Geometry*>(geode.getDrawable(i));
-		if (geom) geometries.emplace_back(geom);
+		if (geom) { geometries.emplace_back(geom); }
 	}
 
 	tbb::parallel_for(
 		tbb::blocked_range<size_t>(0, geometries.size()),
-		[&](const tbb::blocked_range<size_t>& range) {
+		[this, &geometries](const tbb::blocked_range<size_t>& range) {
 			for (size_t i = range.begin(); i < range.end(); ++i) {
 				processGeometry(geometries[i].get());
 			}
@@ -454,15 +458,15 @@ void GltfOptimizer::GenerateTangentVisitor::generateTangent(osg::Geometry& geome
 	auto* vertices = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
 	auto* texcoords = dynamic_cast<osg::Vec2Array*>(geometry.getTexCoordArray(0));
 
-	if (!vertices || !texcoords || texcoords->size() != vertices->size()) return;
-	if (geometry.getNumPrimitiveSets() == 0) return;
+	if (!vertices || !texcoords || texcoords->size() != vertices->size()) { return; }
+	if (geometry.getNumPrimitiveSets() == 0) { return; }
 
 	osg::DrawElements* indices = nullptr;
 	for (unsigned int i = 0; i < geometry.getNumPrimitiveSets(); ++i) {
 		indices = dynamic_cast<osg::DrawElements*>(geometry.getPrimitiveSet(i));
-		if (indices) break;
+		if (indices) { break; }
 	}
-	if (!indices) return;
+	if (!indices) { return; }
 
 	osg::ref_ptr<osg::Vec4Array> tangents = new osg::Vec4Array(vertices->size());
 	std::vector<osg::Vec3> tan1(vertices->size(), osg::Vec3(0.0f, 0.0f, 0.0f));
@@ -580,18 +584,20 @@ void GltfOptimizer::ReindexMeshVisitor::apply(osg::Geometry& geometry)
 {
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
-	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
+	for (unsigned int primIndex = 0; primIndex < psetCount; ++primIndex)
 	{
-		osg::ref_ptr<osg::PrimitiveSet> pset = geometry.getPrimitiveSet(primIndex);
-		if (typeid(*pset.get()) == typeid(osg::DrawElementsUShort))
+		osg::PrimitiveSet* pset = geometry.getPrimitiveSet(primIndex);
+		if (!pset) { continue; }
+
+		// 尝试转换为 UShort 类型
+		if (auto* deUShort = dynamic_cast<osg::DrawElementsUShort*>(pset))
 		{
-			osg::ref_ptr<osg::DrawElementsUShort> drawElementsUShort = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
-			reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(geometry, drawElementsUShort, primIndex);
+			reindexMesh<osg::DrawElementsUShort, osg::UShortArray>(geometry, deUShort, primIndex);
 		}
-		else if (typeid(*pset.get()) == typeid(osg::DrawElementsUInt))
+		// 尝试转换为 UInt 类型
+		else if (auto* deUInt = dynamic_cast<osg::DrawElementsUInt*>(pset))
 		{
-			osg::ref_ptr<osg::DrawElementsUInt> drawElementsUInt = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
-			reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(geometry, drawElementsUInt, primIndex);
+			reindexMesh<osg::DrawElementsUInt, osg::UIntArray>(geometry, deUInt, primIndex);
 		}
 	}
 }
@@ -600,9 +606,9 @@ void GltfOptimizer::ReindexMeshVisitor::apply(osg::Geometry& geometry)
 void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 {
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
-	if (!positions) return;
+	if (!positions) { return; }
 	const size_t vertexCount = positions->size();
-	if (vertexCount <= 0)return;
+	if (vertexCount == 0) { return; }
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
@@ -615,12 +621,15 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UByteArray> indices = new osg::UByteArray;
 				processDrawElements<osg::DrawElementsUByte, osg::UByteArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 				if (_compressmore)
-					//能顾提高压缩效率，但是GPU顶点缓存利用不如meshopt_optimizeVertexCache
+				{//能顾提高压缩效率，但是GPU顶点缓存利用不如meshopt_optimizeVertexCache
 					meshopt_optimizeVertexCacheStrip(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
+				}
 				else
+				{
 					meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
+				}
 
 				osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
@@ -629,12 +638,15 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
 				processDrawElements<osg::DrawElementsUShort, osg::UShortArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 				if (_compressmore)
-					//能顾提高压缩效率，但是GPU顶点缓存利用不如meshopt_optimizeVertexCache
+				{//能顾提高压缩效率，但是GPU顶点缓存利用不如meshopt_optimizeVertexCache
 					meshopt_optimizeVertexCacheStrip(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
+				}
 				else
+				{
 					meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
+				}
 
 				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
@@ -643,12 +655,15 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
 				processDrawElements<osg::DrawElementsUInt, osg::UIntArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 				if (_compressmore)
-					//能顾提高压缩效率，但是GPU顶点缓存利用不如meshopt_optimizeVertexCache
+				{//能顾提高压缩效率，但是GPU顶点缓存利用不如meshopt_optimizeVertexCache
 					meshopt_optimizeVertexCacheStrip(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
+				}
 				else
+				{
 					meshopt_optimizeVertexCache(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), vertexCount);
+				}
 
 				osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
@@ -661,9 +676,9 @@ void GltfOptimizer::VertexCacheVisitor::apply(osg::Geometry& geometry)
 void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 {
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
-	if (!positions) return;
+	if (!positions) { return; }
 	const size_t vertexCount = positions->size();
-	if (vertexCount <= 0)return;
+	if (vertexCount == 0) { return; }
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
@@ -676,7 +691,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UByteArray> indices = new osg::UByteArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUByte, osg::UByteArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 				meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
 				osg::ref_ptr<osg::DrawElementsUByte> drawElements = dynamic_cast<osg::DrawElementsUByte*>(pset.get());
@@ -687,7 +702,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 
 				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUShort, osg::UShortArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 				osg::ref_ptr<osg::DrawElementsUShort> drawElements = dynamic_cast<osg::DrawElementsUShort*>(pset.get());
 				drawElements->assign(indices->begin(), indices->end());
 
@@ -696,7 +711,7 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUInt, osg::UIntArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 				meshopt_optimizeOverdraw(indices->asVector().data(), indices->asVector().data(), indices->asVector().size(), &positions->at(0).x(), positions->size(), sizeof(osg::Vec3f), 1.05f);
 
 				osg::ref_ptr<osg::DrawElementsUInt> drawElements = dynamic_cast<osg::DrawElementsUInt*>(pset.get());
@@ -711,9 +726,9 @@ void GltfOptimizer::OverDrawVisitor::apply(osg::Geometry& geometry)
 void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 {
 	const osg::ref_ptr<osg::Vec3Array> positions = dynamic_cast<osg::Vec3Array*>(geometry.getVertexArray());
-	if (!positions) return;
+	if (!positions) { return; }
 	const size_t vertexCount = positions->size();
-	if (vertexCount <= 0)return;
+	if (vertexCount == 0) { return; }
 	const unsigned int psetCount = geometry.getNumPrimitiveSets();
 
 	for (size_t primIndex = 0; primIndex < psetCount; ++primIndex)
@@ -726,7 +741,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UByteArray> indices = new osg::UByteArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUByte, osg::UByteArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 
 				osg::MixinVector<unsigned int> remap(vertexCount);
 				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
@@ -738,7 +753,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UShortArray> indices = new osg::UShortArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUShort, osg::UShortArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 
 				osg::MixinVector<unsigned int> remap(vertexCount);
 				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
@@ -751,7 +766,7 @@ void GltfOptimizer::VertexFetchVisitor::apply(osg::Geometry& geometry)
 			{
 				osg::ref_ptr<osg::UIntArray> indices = new osg::UIntArray;
 				GltfOptimizer::VertexCacheVisitor::processDrawElements<osg::DrawElementsUInt, osg::UIntArray>(pset.get(), *indices);
-				if (indices->empty()) continue;
+				if (indices->empty()) { continue; }
 
 				osg::MixinVector<unsigned int> remap(vertexCount);
 				size_t uniqueVertices = meshopt_optimizeVertexFetchRemap(&remap.asVector()[0], &indices->asVector()[0], indices->asVector().size(), vertexCount);
@@ -774,14 +789,18 @@ std::shared_ptr<std::mutex> osgGISPlugins::GltfOptimizer::TextureAtlasBuilderVis
 		std::shared_lock<std::shared_mutex> readLock(imageFileLocksMapMutex);
 		auto it = imageFileLocks.find(filename);
 		if (it != imageFileLocks.end())
+		{
 			return it->second;
+		}
 	}
 
 	// 写锁：若不存在则创建
 	std::unique_lock<std::shared_mutex> writeLock(imageFileLocksMapMutex);
 	auto& ptr = imageFileLocks[filename];
 	if (!ptr)
+	{
 		ptr = std::make_shared<std::mutex>();
+	}
 	return ptr;
 }
 
@@ -838,9 +857,13 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::re
 	{
 		osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 		if (ext == ".jpg" || ext == ".jpeg")
+		{
 			options->setOptionString("JPEG_QUALITY 75");
+		}
 		else if (ext == ".png")
+		{
 			options->setOptionString("PNG_COMPRESSION 5");
+		}
 
 		if (!osgDB::writeImageFile(*img.get(), fullPath, options))
 		{
@@ -860,7 +883,9 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::re
 	}
 
 	if (img->getFileName().empty())
+	{
 		img->setFileName(fullPath);
+	}
 
 	return fullPath;
 }
@@ -881,7 +906,9 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 				if (gltfMaterial.valid())
 				{
 					if (gltfMaterialHasTexture(gltfMaterial))
+					{
 						optimizeOsgMaterial(gltfMaterial, geom);
+					}
 				}
 				else
 				{
@@ -950,13 +977,19 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 							}
 						}
 						else
+						{
 							exportOsgTextureIfNeeded(texture);
+						}
 					}
 					else
+					{
 						exportOsgTextureIfNeeded(texture);
+					}
 				}
 				else
+				{
 					exportOsgTextureIfNeeded(texture);
+				}
 			}
 		}
 	}
@@ -1043,24 +1076,23 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::exportOsgTextureIfNeeded(osg::re
 bool GltfOptimizer::TextureAtlasBuilderVisitor::gltfMaterialHasTexture(const osg::ref_ptr<GltfMaterial>& gltfMaterial)
 {
 	try {
-		if (gltfMaterial->normalTexture.valid()) return true;
-		if (gltfMaterial->occlusionTexture.valid()) return true;
-		if (gltfMaterial->emissiveTexture.valid()) return true;
+		if (gltfMaterial->normalTexture.valid()) { return true; }
+		if (gltfMaterial->occlusionTexture.valid()) { return true; }
+		if (gltfMaterial->emissiveTexture.valid()) { return true; }
 
 		osg::ref_ptr<GltfPbrMRMaterial> gltfMRMaterial = dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get());
 		if (gltfMRMaterial.valid())
 		{
-			if (gltfMRMaterial->metallicRoughnessTexture.valid()) return true;
-			if (gltfMRMaterial->baseColorTexture.valid()) return true;
+			if (gltfMRMaterial->metallicRoughnessTexture.valid()) { return true; }
+			if (gltfMRMaterial->baseColorTexture.valid()) { return true; }
 		}
 		for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 		{
 			GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+			if (auto* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension))
 			{
-				KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-				if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) return true;
-				if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) return true;
+				if (pbrSpecularGlossiness_extension->osgDiffuseTexture.valid()) { return true; }
+				if (pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture.valid()) { return true; }
 			}
 		}
 		return false;
@@ -1091,9 +1123,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 				for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 				{
 					GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-					if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+					if (auto* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension))
 					{
-						KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 						optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgDiffuseTexture);
 						optimizeOsgTextureSize(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture);
 					}
@@ -1144,9 +1175,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 						for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 						{
 							GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-							if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+							if (auto* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension))
 							{
-								KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 								exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, GltfTextureType::DIFFUSE);
 								exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, GltfTextureType::SPECULARGLOSSINESS);
 							}
@@ -1167,9 +1197,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 					for (size_t i = 0; i < gltfMaterial->materialExtensionsByCesiumSupport.size(); ++i)
 					{
 						GltfExtension* extension = gltfMaterial->materialExtensionsByCesiumSupport.at(i);
-						if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+						if (auto* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension))
 						{
-							KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgDiffuseTexture, GltfTextureType::DIFFUSE);
 							exportOsgTextureIfNeeded(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, GltfTextureType::SPECULARGLOSSINESS);
 						}
@@ -1186,7 +1215,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgMaterial(const osg::r
 void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 {
 	try {
-		if (_images.empty()) return;
+		if (_images.empty()) { return; }
 		while (_images.size())
 		{
 			TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
@@ -1383,7 +1412,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::updateGltfMaterialUserValue(
 void GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<osg::ref_ptr<osg::Image>>& imgs)
 {
 	try {
-		if (!imgs.size()) return;
+		if (!imgs.size()) { return; }
 		// 用于存储唯一图像的集合
 		std::unordered_set<std::string> fileNameSet; // 存储文件名的集合
 		std::unordered_set<std::string> hashSet;     // 存储哈希值的集合
@@ -1395,9 +1424,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::removeRepeatImages(std::vector<o
 		for (const auto& img : imgs)
 		{
 			if (img->getFileName().empty())
+			{
 				filenameEmptyImgs.push_back(img);
+			}
 			else
+			{
 				filenameNotEmptyImgs.push_back(img);
+			}
 		}
 
 		for (const auto& img : filenameEmptyImgs)
@@ -1440,7 +1473,9 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::r
 				for (osg::ref_ptr<osg::Image> img : imgs)
 				{
 					if (img == image || (img->getFileName() == image->getFileName() && !img->getFileName().empty()))
+					{
 						bAdd = false;
+					}
 				}
 				if (bAdd)
 				{
@@ -1565,17 +1600,14 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 	auto getTextureFunc = [type](GltfMaterial* material) -> osg::ref_ptr<osg::Texture2D> {
 		for (size_t j = 0; j < material->materialExtensionsByCesiumSupport.size(); ++j) {
 			GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(j);
-			if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness)) {
-				auto pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
-				if (pbrSpecularGlossiness_extension) {
-					switch (type) {
-					case GltfTextureType::DIFFUSE:
-						return pbrSpecularGlossiness_extension->osgDiffuseTexture;
-					case GltfTextureType::SPECULARGLOSSINESS:
-						return pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
-					default:
-						return nullptr;
-					}
+			if (auto* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension)) {
+				switch (type) {
+				case GltfTextureType::DIFFUSE:
+					return pbrSpecularGlossiness_extension->osgDiffuseTexture;
+				case GltfTextureType::SPECULARGLOSSINESS:
+					return pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture;
+				default:
+					return nullptr;
 				}
 			}
 		}
@@ -1588,7 +1620,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processGltfPbrSGImages(std::vect
 void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgMaterials()
 {
 	try {
-		if (_gltfMaterials.empty()) return;
+		if (_gltfMaterials.empty()) { return; }
 		std::vector<osg::ref_ptr<osg::Image>> normalImgs, occlusionImgs, emissiveImgs, mrImgs, baseColorImgs, diffuseImgs, sgImgs;
 		for (GltfMaterial* material : _gltfMaterials)
 		{
@@ -1605,9 +1637,8 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgMaterials()
 			for (size_t i = 0; i < material->materialExtensionsByCesiumSupport.size(); ++i)
 			{
 				GltfExtension* extension = material->materialExtensionsByCesiumSupport.at(i);
-				if (typeid(*extension) == typeid(KHR_materials_pbrSpecularGlossiness))
+				if (auto* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension))
 				{
-					KHR_materials_pbrSpecularGlossiness* pbrSpecularGlossiness_extension = dynamic_cast<KHR_materials_pbrSpecularGlossiness*>(extension);
 					addImageFromTexture(pbrSpecularGlossiness_extension->osgDiffuseTexture, diffuseImgs);
 					addImageFromTexture(pbrSpecularGlossiness_extension->osgSpecularGlossinessTexture, sgImgs);
 				}

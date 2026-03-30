@@ -42,7 +42,7 @@ osg::ref_ptr<osg::Image> GltfPbrMRMaterial::mergeImages(const osg::ref_ptr<osg::
 }
 
 osg::ref_ptr<osg::Image> GltfPbrMRMaterial::generateMetallicRoughnessMap(osg::Image* input) {
-    if (!input) return nullptr;
+    if (!input) { return nullptr; }
 
     int width = input->s();
     int height = input->t();

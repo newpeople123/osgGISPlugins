@@ -5,9 +5,9 @@
 using namespace osgGISPlugins;
 void BoundingVolume::fromJson(const json& j)
 {
-	if (j.contains("region")) j.at("region").get_to(region);
-	if (j.contains("box")) j.at("box").get_to(box);
-	if (j.contains("sphere")) j.at("sphere").get_to(sphere);
+	if (j.contains("region")) { j.at("region").get_to(region); }
+	if (j.contains("box")) { j.at("box").get_to(box); }
+	if (j.contains("sphere")) { j.at("sphere").get_to(sphere); }
 }
 
 json BoundingVolume::toJson() const {
@@ -32,7 +32,7 @@ json BoundingVolume::toJson() const {
 
 void BoundingVolume::computeBox(osg::ref_ptr<osg::Node> node)
 {
-	if (!node.valid()) return;
+	if (!node.valid()) { return; }
 	osg::ComputeBoundsVisitor cbv;
 	node->accept(cbv);
 	const osg::BoundingBox boundingBox = cbv.getBoundingBox();
@@ -81,7 +81,9 @@ void BoundingVolume::computeRegion(osg::ref_ptr<osg::Node> node, const double la
 	osg::ref_ptr<osg::Vec3Array> corners = ov.getOBBCorners();
 
 	if (corners->size() != 8)
-		return; // 确保 OBB 有 8 个角点
+	{
+		return;
+	}// 确保 OBB 有 8 个角点
 
 	// 初始化 min 和 max 值为第一个角点的坐标
 	double minX = corners->at(0).x();

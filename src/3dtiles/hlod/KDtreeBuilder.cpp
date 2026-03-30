@@ -22,8 +22,8 @@ float KDTreeBuilder::evaluateSAH(const osg::BoundingBox& bounds,
     // 3. 计算SAH代价
     return TRAVERSAL_COST + // 遍历成本
            INTERSECTION_COST * (
-               P_left * leftCount +  // 左子树的期望代价
-               P_right * rightCount  // 右子树的期望代价
+               P_left * static_cast<float>(leftCount) +  // 左子树的期望代价
+               P_right * static_cast<float>(rightCount)  // 右子树的期望代价
            );
 }
 
@@ -36,7 +36,7 @@ bool KDTreeBuilder::findBestSplit(const osg::ref_ptr<osg::Group>& group,
     const size_t numObjects = group->getNumChildren();
 
     // 如果对象太少，不进行分割
-    if (numObjects <= 1) return false;
+    if (numObjects <= 1) { return false; }
 
     // 对每个轴进行评估
     for (int axis = 0; axis < 3; ++axis) {
@@ -52,8 +52,8 @@ bool KDTreeBuilder::findBestSplit(const osg::ref_ptr<osg::Group>& group,
             osg::BoundingBox nodeBounds = computeBoundingBox(node);
             float centroid = (nodeBounds._min[axis] + nodeBounds._max[axis]) * 0.5f;
 
-            int b = NUM_BUCKETS * ((centroid - axisMin) / axisExtent);
-            if (b == NUM_BUCKETS) b = NUM_BUCKETS - 1;
+            int b = NUM_BUCKETS * static_cast<int>((centroid - axisMin) / axisExtent);
+            if (b == NUM_BUCKETS) { b = NUM_BUCKETS - 1; }
             buckets[b].count++;
             buckets[b].bounds.expandBy(nodeBounds);
         }
@@ -87,7 +87,7 @@ bool KDTreeBuilder::findBestSplit(const osg::ref_ptr<osg::Group>& group,
             float splitPos = axisMin + axisExtent * (float)(i + 1) / NUM_BUCKETS;
 
             // 如果任一侧为空，跳过这个分割
-            if (leftCounts[i] == 0 || rightCounts[i] == 0) continue;
+            if (leftCounts[i] == 0 || rightCounts[i] == 0) { continue; }
 
             float cost = evaluateSAH(bounds, leftBoxes[i], rightBoxes[i],
                 leftCounts[i], rightCounts[i]);
@@ -124,7 +124,9 @@ osg::ref_ptr<B3DMTile> KDTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
     }
 
     if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
+    {
         return tile;
+    }
 
     // 创建左右子节点的包围盒
     osg::BoundingBox leftBounds = bounds;
@@ -192,10 +194,12 @@ osg::ref_ptr<B3DMTile> KDTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 
 void KDTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile)
 {
-    if (!tile.valid() || group.empty()) return;
+    if (!tile.valid() || group.empty()) { return; }
 
     if (TreeBuilder::processI3DM(group, bounds, tile))
+    {
         return;
+    }
 
     // 使用SAH找到最佳分割
     int bestAxis;

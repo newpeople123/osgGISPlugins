@@ -31,9 +31,9 @@ void OBBVisitor::apply(osg::Geode& geode)
 			osg::Vec3Array* vertices = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 			if (vertices)
 			{
-				for (size_t i = 0; i < vertices->size(); ++i)
+				for (size_t j = 0; j < vertices->size(); ++j)
 				{
-					const osg::Vec3& vertex = vertices->at(i);
+					const osg::Vec3& vertex = vertices->at(j);
 					_vertices->push_back(vertex * _currentMatrix);
 				}
 			}
@@ -99,7 +99,9 @@ osg::Matrix OBBVisitor::getOBBOrientation(osg::ref_ptr<osg::Vec3Array> vertices)
 	osg::Matrix result;
 
 	if (vertices->size() <= 0)
+	{
 		return osg::Matrix::identity();
+	}
 
 	result = getConvarianceMatrix(vertices);
 
@@ -182,7 +184,13 @@ void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix
 	for (i = 0; i < 50; i++)
 	{
 		sm = 0.0;
-		for (ip = 0; ip < n; ip++) for (iq = ip + 1; iq < n; iq++) sm += fabs((a(ip, iq)));
+		for (ip = 0; ip < n; ip++)
+		{
+			for (iq = ip + 1; iq < n; iq++)
+			{
+				sm += fabs((a(ip, iq)));
+			}
+		}
 		if (false/*fabs(sm) < FLT_EPSILON*/)
 		{
 			v = transpose(v);
@@ -192,9 +200,13 @@ void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix
 			return;
 		}
 		if (i < 3)
+		{
 			tresh = 0.2 * sm / (n * n);
+		}
 		else
+		{
 			tresh = 0.0;
+		}
 
 		for (ip = 0; ip < n; ip++)
 		{
@@ -219,7 +231,7 @@ void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix
 					{
 						theta = 0.5 * h / (a(ip, iq));
 						t = 1.0 / (fabs(theta) + sqrt(1.0 + theta * theta));
-						if (theta < 0.0) t = -t;
+						if (theta < 0.0) { t = -t; }
 					}
 					c = 1.0 / sqrt(1 + t * t);
 					s = t * c;
@@ -256,11 +268,17 @@ void OBBVisitor::getEigenVectors(osg::Matrix* vout, osg::Vec3* dout, osg::Matrix
 float& OBBVisitor::getElement(osg::Vec3& point, int index)
 {
 	if (index == 0)
+	{
 		return point.x();
+	}
 	if (index == 1)
+	{
 		return point.y();
+	}
 	if (index == 2)
+	{
 		return point.z();
+	}
 
 	return point.x();
 }

@@ -18,8 +18,7 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 		{
 			_instanceGeodes.push_back(gnode);
 			_instanceMatrixs.push_back(matrixs);
-			std::vector<osg::ref_ptr<osg::UserDataContainer>> instanceUserDatas = _dataContainers.at(i);
-			_instanceDataContainers.push_back(instanceUserDatas);
+			_instanceDataContainers.push_back(_dataContainers[i]);
 		}
 		else
 		{
@@ -32,9 +31,9 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 				geodeCopy->setName(gnode->getName());
 				geodeCopy->setUserDataContainer(gnode->getUserDataContainer());
 				geodeCopy->addChild(gnode->getChild(j));
-				for (size_t k = 0; k < matrixs.size(); ++k)
+				for (const auto& matrix : matrixs)
 				{
-					osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(matrixs[k]);
+					osg::ref_ptr<osg::Group> transform = new osg::MatrixTransform(matrix);
 					transform->addChild(geodeCopy);
 					transform->computeBound();
 					_groupsToDivideList->addChild(transform);
@@ -53,14 +52,10 @@ osg::ref_ptr<B3DMTile> TreeBuilder::build()
 	rootTile->children.push_back(b3dmTile);
 	osg::ref_ptr<I3DMTile> i3dmTile = generateI3DMTile();
 	regroupI3DMTile(b3dmTile, i3dmTile);
-	if (i3dmTile->children.size())
+	for (auto& child : i3dmTile->children)
 	{
-		for (auto it = i3dmTile->children.begin(); it != i3dmTile->children.end();)
-		{
-			it->get()->parent = rootTile;
-			rootTile->children.push_back(it->get());
-			++it;
-		}
+		child->parent = rootTile;
+		rootTile->children.push_back(child);
 	}
 	return rootTile;
 }
@@ -95,7 +90,9 @@ void TreeBuilder::apply(osg::Geode& geode)
 {
 	osg::ref_ptr<osg::Geode> gnode = geode.asGeode();
 	if (gnode->getNumDrawables() == 0)
+	{
 		return;
+	}
 	osg::ref_ptr<osg::UserDataContainer> userData = gnode->getUserDataContainer();
 	int index = -1;
 #ifndef USE_TBB_PARALLEL
@@ -113,7 +110,9 @@ void TreeBuilder::apply(osg::Geode& geode)
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, _geodes.size()), [&](auto& range) {
 		for (size_t i = range.begin(); i != range.end(); ++i) {
 			if (context.is_group_execution_cancelled())
+			{
 				return;
+			}
 			if (Utils::compareGeode(_geodes[i], gnode))
 			{
 				foundIndex.store(i, std::memory_order_relaxed);
@@ -223,14 +222,16 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 						for (size_t j = range.begin(); j != range.end(); ++j) {
 							// 检查是否已取消
 							if (context.is_group_execution_cancelled())
+							{
 								return;
+							}
 
 							const osg::ref_ptr<osg::StateSet> key = uniqueStateSets.at(j);
 							if (Utils::compareStateSet(key, stateSet))
 							{
 								foundIndex.store(j, std::memory_order_relaxed);
 								context.cancel_group_execution(); // 通知所有任务取消
-								return;
+								{ return; }
 							}
 						}
 					}, context);
@@ -239,7 +240,9 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 #endif // !USE_TBB_PARALLEL
 
 				if (index != -1)
+				{
 					stateSetGroup[index]->addChild(child);
+				}
 				else
 				{
 					osg::ref_ptr<osg::Group> val = new osg::Group;
@@ -287,10 +290,12 @@ osg::ref_ptr<B3DMTile> TreeBuilder::generateB3DMTile()
 	const double yLength = rootBox.yMax() - rootBox.yMin();
 	const double zLength = rootBox.zMax() - rootBox.zMin();
 	const double max = osg::maximum(osg::maximum(xLength, yLength), zLength);
-	_config.setMaxLevel(std::log2(max / min));
+	_config.setMaxLevel(static_cast<unsigned int>(std::log2(max / min)));
 	osg::ref_ptr<B3DMTile> result = divideB3DM(_groupsToDivideList, rootBox);
 	if (_groupsToDivideList->getNumChildren())
+	{
 		OSG_NOTICE << "b3dmTiles' length > 0!" << std::endl;
+	}
 	return result.release();
 }
 
@@ -334,14 +339,16 @@ osg::ref_ptr<I3DMTile> TreeBuilder::generateI3DMTile()
 	std::sort(i3dmTiles.begin(), i3dmTiles.end(), sortTileNodeByRadius);
 	divideI3DM(i3dmTiles, computeBoundingBox(i3dmTileGroup), rootI3dmTile);
 	if (i3dmTiles.size())
+	{
 		OSG_NOTICE << "i3dmTiles' length > 0!" << std::endl;
+	}
 	return rootI3dmTile;
 }
 
 void TreeBuilder::regroupI3DMTile(osg::ref_ptr<B3DMTile> b3dmTile, osg::ref_ptr<I3DMTile> i3dmTile)
 {
-	if (!i3dmTile.valid()) return;
-	if (!b3dmTile.valid()) return;
+	if (!i3dmTile.valid()) { return; }
+	if (!b3dmTile.valid()) { return; }
 	if (b3dmTile->node.valid())
 	{
 		const osg::BoundingBox b3dmTileBB = computeBoundingBox(b3dmTile->node);
@@ -394,16 +401,22 @@ double TreeBuilder::calculateBoundingBoxVolume(const osg::BoundingBox& box)
 bool TreeBuilder::intersect(const osg::BoundingBox& tileBBox, const osg::BoundingBox& nodeBBox)
 {
 	if (!tileBBox.valid() || !nodeBBox.valid())
+	{
 		return false;
+	}
 
 	if (tileBBox.contains(nodeBBox._min) && tileBBox.contains(nodeBBox._max))
+	{
 		return true;
+	}
 
 	if (tileBBox.intersects(nodeBBox))
 	{
 		const osg::Vec3d center = nodeBBox.center();
 		if (tileBBox.contains(center))
+		{
 			return true;
+		}
 	}
 
 	return false;
@@ -446,7 +459,9 @@ void TreeBuilder::processOverSizedNodes()
 		if (triangleCounts[i] > _config.getMaxTriangleCount())
 		{
 			if (node->asGroup()->getNumChildren() > 1)
+			{
 				oversizedNodes.push_back(node);
+			}
 		}
 	}
 #else
@@ -460,7 +475,9 @@ void TreeBuilder::processOverSizedNodes()
 		if (cv.count > _config.getMaxTriangleCount())
 		{
 			if (node->asGroup()->getNumChildren() > 1)
+			{
 				oversizedNodes.push_back(node);
+			}
 		}
 	}
 #endif // USE_TBB_PARALLEL
@@ -516,7 +533,7 @@ void TreeBuilder::processOverSizedNodes()
 		}
 	}
 
-	if (oversizedNodes.size() > 0) processOverSizedNodes();
+	if (oversizedNodes.size() > 0) { processOverSizedNodes(); }
 }
 
 bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> tile)
@@ -538,7 +555,9 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 
 	osg::ref_ptr<osg::Group> childGroup;
 	if (!tile->node.valid())
+	{
 		tile->node = new osg::Group;
+	}
 	childGroup = tile->node->asGroup();
 
 
@@ -571,7 +590,9 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 	{
 		auto& child = children[i];
 		if (triangleCount >= _config.getMaxTriangleCount())
+		{
 			break;
+		}
 
 		const osg::BoundingBox childBB = computeBoundingBox(child);
 		if (intersect(bounds, childBB))
@@ -591,14 +612,18 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 				{
 					childGroup->removeChild(child);
 					if (!outTriangleCountNode.valid())
+					{
 						outTriangleCountNode = child;
+					}
 				}
 			}
 			else
 			{
 				childGroup->removeChild(child);
 				if (!outTriangleCountNode.valid())
+				{
 					outTriangleCountNode = child;
+				}
 			}
 		}
 	}
@@ -608,7 +633,9 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 	{
 		auto& child = children[i];
 		if (triangleCount >= _config.getMaxTriangleCount())
+		{
 			break;
+		}
 
 		const osg::BoundingBox childBB = computeBoundingBox(child);
 		if (intersect(bounds, childBB))
@@ -631,14 +658,18 @@ bool TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Grou
 				{
 					childGroup->removeChild(child);
 					if (!outTriangleCountNode.valid())
+					{
 						outTriangleCountNode = child;
+					}
 				}
 			}
 			else
 			{
 				childGroup->removeChild(child);
 				if (!outTriangleCountNode.valid())
+				{
 					outTriangleCountNode = child;
+				}
 			}
 		}
 	}
@@ -680,6 +711,8 @@ bool TreeBuilder::processI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const 
 		++it;
 	}
 	if (tile->children.size())
+	{
 		return false;
+	}
 	return true;
 }
