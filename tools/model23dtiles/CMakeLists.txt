@@ -44,6 +44,9 @@ add_executable(${TOOL_NAME}
     ${UTILS_FILES_SRC}
 )
 
+# 调用根目录定义的函数，传入你的目标名称
+copy_osg_dependencies(${TOOL_NAME})
+
 # 4. 编译属性设置
 target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 # 启用并行定义

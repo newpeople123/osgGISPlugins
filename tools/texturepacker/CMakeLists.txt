@@ -16,6 +16,9 @@ set(TEXTURE_PACKER_FILES_SRC
 # 3. 定义可执行文件
 add_executable(${TOOL_NAME} ${TOOL_SRCS} ${TEXTURE_PACKER_FILES_H} ${TEXTURE_PACKER_FILES_SRC})
 
+# 调用根目录定义的函数，传入你的目标名称
+copy_osg_dependencies(${TOOL_NAME})
+
 # 4. 编译属性设置 (统一使用 C++17)
 target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 

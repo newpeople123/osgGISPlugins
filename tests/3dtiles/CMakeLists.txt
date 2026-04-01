@@ -35,6 +35,9 @@ add_executable(${TOOL_TEST_NAME}
     ${B3DM_SOURCE_FILES}
 )
 
+# 调用根目录定义的函数，传入你的目标名称
+copy_osg_dependencies(${TOOL_NAME})
+
 # target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 
 # 启用并行处理

@@ -8,6 +8,9 @@ aux_source_directory(. DIR_SRCS)
 # 3. 定义可执行文件
 add_executable(${TOOL_NAME} ${DIR_SRCS})
 
+# 调用根目录定义的函数，传入你的目标名称
+copy_osg_dependencies(${TOOL_NAME})
+
 # 4. 设置 IDE 分组
 source_group("src" FILES ${DIR_SRCS})
 

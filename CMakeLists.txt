@@ -125,6 +125,36 @@ if(ASSET_FILES)
 endif()
 
 # ==============================================================================
+# 定义拷贝函数 (放在项目根目录)
+# ==============================================================================
+function(copy_osg_dependencies TARGET_NAME)
+    if (WIN32)
+        set(PLUGIN_SRC "${VCPKG_INSTALL_DIR}/$<$<CONFIG:Debug>:debug/>plugins/osgPlugins-3.6.5")
+        set(PLUGIN_DST "${PROJECT_ROOT_DIR}/$<CONFIG>/osgPlugins-3.6.5")
+
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            # 创建目录
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${PLUGIN_DST}"
+            
+            # 拷贝整个文件夹
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${PLUGIN_SRC}" "${PLUGIN_DST}"
+            
+            # 删除特定文件 (注意：这里必须使用双引号包裹完整路径)
+            COMMAND ${CMAKE_COMMAND} -E rm -f "${PLUGIN_DST}/osgdb_ktx.dll"
+            COMMAND ${CMAKE_COMMAND} -E rm -f "${PLUGIN_DST}/osgdb_ktxd.dll"
+            
+            # 拷贝依赖 DLL
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALL_DIR}/$<$<CONFIG:Debug>:debug/>bin/jpeg62.dll"
+                "${PLUGIN_DST}/"
+                
+            COMMENT "Deploying OSG dependencies and filtering KTX..."
+            VERBATIM # 强烈建议加上这个参数，确保转义正确
+        )
+    endif()
+endfunction()
+
+# ==============================================================================
 # 7. 添加子模块
 # ==============================================================================
 add_subdirectory(src)
@@ -136,33 +166,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ==============================================================================
-# 8. Windows 特有的资源与插件拷贝逻辑
-# ==============================================================================
-if (WIN32)
-    # 注意：file(COPY) 在配置阶段执行。如果插件是动态生成的，建议改用 add_custom_command
-    # 这里沿用你的逻辑，根据当前 CMAKE_BUILD_TYPE 决定拷贝路径
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(OSG_PLUGINS_SRC "${VCPKG_INSTALL_DIR}/debug/plugins/osgPlugins-3.6.5/*")
-        set(OUT_DIR "${PROJECT_ROOT_DIR}/Debug")
-    else()
-        set(OSG_PLUGINS_SRC "${VCPKG_INSTALL_DIR}/plugins/osgPlugins-3.6.5/*")
-        set(OUT_DIR "${PROJECT_ROOT_DIR}/Release")
-    endif()
-
-    # 执行拷贝动作
-    file(GLOB THIRD_PARTY_PLUGINS "${OSG_PLUGINS_SRC}")
-    if(THIRD_PARTY_PLUGINS)
-        file(COPY ${THIRD_PARTY_PLUGINS} DESTINATION ${OUT_DIR})
-    endif()
-    
-    # 拷贝必要的 DLL
-    if(EXISTS "${VCPKG_INSTALL_DIR}/bin/jpeg62.dll")
-        file(COPY "${VCPKG_INSTALL_DIR}/bin/jpeg62.dll" DESTINATION ${OUT_DIR})
-    endif()
-endif()
-
-# ==============================================================================
-# 9. 关键信息打印
+# 8. 关键信息打印
 # ==============================================================================
 message(STATUS "------------------------------------------------------------")
 # CMAKE_HOST_SYSTEM_NAME：当前编译代码的机器的操作系统

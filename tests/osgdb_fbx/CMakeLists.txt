@@ -14,10 +14,10 @@ source_group("src" FILES ${DIR_SRCS})
 
 if (OPENSCENEGRAPH_FOUND)
     # 链接路径列表
-    target_link_libraries(${LIB_NAME} PRIVATE ${OPENSCENEGRAPH_LIBRARIES})
+    target_link_libraries(${TOOL_TEST_NAME} PRIVATE ${OPENSCENEGRAPH_LIBRARIES})
     # 添加头文件包含路径
-    target_include_directories(${LIB_NAME} PRIVATE ${OPENSCENEGRAPH_INCLUDE_DIRS})
+    target_include_directories(${TOOL_TEST_NAME} PRIVATE ${OPENSCENEGRAPH_INCLUDE_DIRS})
 else()
-    message(FATAL_ERROR "OSG not found for ${LIB_NAME}!")
+    message(FATAL_ERROR "OSG not found for ${TOOL_TEST_NAME}!")
 endif()
 
