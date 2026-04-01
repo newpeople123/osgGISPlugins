@@ -1,6 +1,7 @@
 #include "3dtiles/Tile.h"
 #include "utils/Simplifier.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
+using namespace osgGISPlugins;
 
 void Tile::fromJson(const json& j)
 {

@@ -1,10 +1,11 @@
 #ifndef READERWRITERGLTF_H
 #define READERWRITERGLTF_H 1
 #include <osgDB/ReaderWriter>
-#include "osgdb_gltf/Osg2Gltf.h"
-#include "osgdb_gltf/b3dm/ThreeDModelHeader.h"
-#include "osgdb_gltf/b3dm/BatchTableHierarchy.h"
-using namespace osgGISPlugins;
+namespace osgGISPlugins {
+    class BatchTableHierarchyVisitor;
+    struct B3DMFile;
+    struct I3DMFile;
+}
 class ReaderWriterGLTF:public osgDB::ReaderWriter
 {
 private:
@@ -100,11 +101,11 @@ public:
 
     std::string createFeatureI3DMTableBinary(osg::ref_ptr<osg::Group> matrixTransforms) const;
 
-    std::string createBatchTableJSON(BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const;
+    std::string createBatchTableJSON(osgGISPlugins::BatchTableHierarchyVisitor& batchTableHierarchyVisitor) const;
 
-    WriteResult writeB3DMFile(const std::string& filename, const B3DMFile& b3dmFile) const;
+    WriteResult writeB3DMFile(const std::string& filename, const osgGISPlugins::B3DMFile& b3dmFile) const;
 
-    WriteResult writeI3DMFile(const std::string& filename, const I3DMFile& i3dmFile) const;
+    WriteResult writeI3DMFile(const std::string& filename, const osgGISPlugins::I3DMFile& i3dmFile) const;
 
 };
 

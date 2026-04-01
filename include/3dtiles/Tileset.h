@@ -22,7 +22,7 @@
 #include <osg/NodeVisitor>
 #include <algorithm>
 using json = nlohmann::json;
-using namespace osgGISPlugins;
+
 namespace osgGISPlugins
 {
 	class Tileset :public osg::Object {

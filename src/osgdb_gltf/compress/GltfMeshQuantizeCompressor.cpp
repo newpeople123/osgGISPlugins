@@ -1,4 +1,5 @@
 #include "osgdb_gltf/compress/GltfMeshQuantizeCompressor.h"
+#include "osgdb_gltf/Extensions.h"
 #include <meshoptimizer.h>
 #include <algorithm>
 using namespace osgGISPlugins;

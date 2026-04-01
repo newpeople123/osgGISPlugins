@@ -15,7 +15,6 @@
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
 #endif // USE_TBB_PARALLEL
-using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
 	constexpr float InitPixelSize = 25.0;

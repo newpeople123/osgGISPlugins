@@ -5,7 +5,6 @@
 #include <osg/MixinVector>
 #include <string>
 
-using namespace nlohmann;
 namespace osgGISPlugins
 {
     const std::string NAME = "GeodeName";
@@ -13,11 +12,11 @@ namespace osgGISPlugins
     {
         std::string name;
         uint32_t length;
-        json instances;
+        nlohmann::json instances;
 
-        json toJson() const
+        nlohmann::json toJson() const
         {
-            return json{
+            return nlohmann::json{
                 {"name", this->name},
                 {"length", this->length},
                 {"instances", this->instances}
@@ -33,16 +32,16 @@ namespace osgGISPlugins
         osg::MixinVector<int32_t> parentCounts;
         osg::MixinVector<int32_t> parentIds;
 
-        json toJson() const
+        nlohmann::json toJson() const
         {
-            json jClasses = json::array();
+            nlohmann::json jClasses = nlohmann::json::array();
             for (const Class& cls : classes)
             {
                 jClasses.push_back(cls.toJson());
             }
             if (parentCounts.size())
             {
-                return json{
+                return nlohmann::json{
                     {"classes", jClasses},
                     {"instancesLength", this->instancesLength},
                     {"classIds", this->classIds},
@@ -50,7 +49,7 @@ namespace osgGISPlugins
                     {"parentIds", this->parentIds}
                 };
             }
-            return json{
+            return nlohmann::json{
                     {"classes", jClasses},
                     {"instancesLength", this->instancesLength},
                     {"classIds", this->classIds},

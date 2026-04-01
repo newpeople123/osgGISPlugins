@@ -23,7 +23,6 @@
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 #include <unordered_set>
 #include <unordered_map>
-using namespace indicators;
 namespace osgGISPlugins
 {
 	class Utils {
@@ -153,22 +152,22 @@ namespace osgGISPlugins
 		{
 		public:
 
-			ProgressBar bar{
-				option::BarWidth{50},
-				option::PrefixText("Reading model file:"),
-				option::Start{"["},
-				option::Fill{"="},
-				option::Lead{">"},
-				option::Remainder{" "},
-				option::End{"]"},
-				option::ShowElapsedTime{true},
-				option::ShowRemainingTime{true},
-				option::ShowPercentage{true}
+			indicators::ProgressBar bar{
+				indicators::option::BarWidth{50},
+				indicators::option::PrefixText("Reading model file:"),
+				indicators::option::Start{"["},
+				indicators::option::Fill{"="},
+				indicators::option::Lead{">"},
+				indicators::option::Remainder{" "},
+				indicators::option::End{"]"},
+				indicators::option::ShowElapsedTime{true},
+				indicators::option::ShowRemainingTime{true},
+				indicators::option::ShowPercentage{true}
 			};
 
 			CRenderingThread(osgDB::ifstream* fin) :_fin(fin)
 			{
-				show_console_cursor(false);
+				indicators::show_console_cursor(false);
 				fin->seekg(0, std::ifstream::end);
 				_length = fin->tellg();
 				fin->seekg(0, std::ifstream::beg);

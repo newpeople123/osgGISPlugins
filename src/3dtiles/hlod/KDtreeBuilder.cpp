@@ -1,4 +1,5 @@
 #include "3dtiles/hlod/KDTreeBuilder.h"
+using namespace osgGISPlugins;
 float KDTreeBuilder::computeSurfaceArea(const osg::BoundingBox& bounds) const {
     float dx = bounds._max.x() - bounds._min.x();
     float dy = bounds._max.y() - bounds._min.y();

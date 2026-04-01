@@ -1,5 +1,5 @@
 #include "3dtiles/hlod/OcTreeBuilder.h"
-
+using namespace osgGISPlugins;
 osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(std::vector<NodeProperty>& nodeProps, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
 	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(nodeProps, bounds, parent, x, y, z, level);

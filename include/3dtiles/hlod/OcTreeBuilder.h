@@ -1,7 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_OCTREE_BUILDER_H
 #define OSG_GIS_PLUGINS_OCTREE_BUILDER_H
 #include "3dtiles/hlod/TreeBuilder.h"
-using namespace osgGISPlugins;
+
 namespace osgGISPlugins
 {
 	class OcTreeBuilder :public TreeBuilder

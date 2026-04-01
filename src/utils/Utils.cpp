@@ -1,6 +1,7 @@
 #include "utils/Utils.h"
 
 using namespace osgGISPlugins;
+using namespace indicators;
 
 void Utils::pushStateSet2UniqueStateSets(osg::ref_ptr<osg::StateSet> stateSet, std::vector<osg::ref_ptr<osg::StateSet>>& uniqueStateSets)
 {

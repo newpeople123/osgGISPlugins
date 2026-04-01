@@ -1,8 +1,8 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H
 #define OSG_GIS_PLUGINS_GLTF_COMPRESSOR_H 1
-#include "osgdb_gltf/Extensions.h"
 #include "osgdb_gltf/GltfProcessor.h"
 namespace osgGISPlugins {
+    struct GltfExtension;
     class GltfCompressor :public GltfProcessor
     {
     public:

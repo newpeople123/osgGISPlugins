@@ -2,13 +2,16 @@
 #include <osgDB/Registry>
 #include <osgdb_gltf/ReaderWriterGLTF.h>
 #include <osgDB/FileNameUtils>
-#include "osgdb_gltf/Osg2Gltf.h"
-#include "osgdb_gltf/GltfProcessorManager.h"
 #include <nlohmann/json.hpp>
 #include <osgDB/ConvertUTF>
 #include <osg/MatrixTransform>
 #include <osg/CoordinateSystemNode>
+#include "osgdb_gltf/Osg2Gltf.h"
+#include "osgdb_gltf/GltfProcessorManager.h"
+#include "osgdb_gltf/b3dm/ThreeDModelHeader.h"
+#include "osgdb_gltf/b3dm/BatchTableHierarchy.h"
 using namespace nlohmann;
+using namespace osgGISPlugins;
 osgDB::ReaderWriter::ReadResult ReaderWriterGLTF::readNode(const std::string& filenameInit,
     const Options* options) const
 {

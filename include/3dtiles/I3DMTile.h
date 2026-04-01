@@ -1,7 +1,6 @@
 #ifndef OSG_GIS_PLUGINS_I3DM_TILE_H
 #define OSG_GIS_PLUGINS_I3DM_TILE_H
 #include "3dtiles/Tile.h"
-using namespace osgGISPlugins;
 namespace osgGISPlugins
 {
 	class I3DMTile :public Tile

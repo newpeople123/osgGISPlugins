@@ -1,4 +1,5 @@
 #include "3dtiles/hlod/QuadTreeBuilder.h"
+using namespace osgGISPlugins;
 int QuadTreeBuilder::chooseSplitAxis(const osg::BoundingBox& bounds)
 {
 	float xSpan = bounds._max.x() - bounds._min.x();

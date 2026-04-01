@@ -1,6 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_DRACO_COMPRESSOR_H
 #define OSG_GIS_PLUGINS_GLTF_DRACO_COMPRESSOR_H 1
 #include "osgdb_gltf/compress/GltfCompressor.h"
+#include "osgdb_gltf/Extensions.h"
 #include <unordered_set>
 #include <draco/compression/encode.h>
 namespace osgGISPlugins {

@@ -1,6 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_MESH_QUANTIZE_COMPRESSOR_H
 #define OSG_GIS_PLUGINS_GLTF_MESH_QUANTIZE_COMPRESSOR_H 1
 #include "osgdb_gltf/compress/GltfCompressor.h"
+#include "osgdb_gltf/Extensions.h"
 namespace osgGISPlugins {
 	class GltfMeshQuantizeCompressor :public GltfCompressor
 	{

@@ -1,7 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_KDTREE_BUILDER_H
 #define OSG_GIS_PLUGINS_KDTREE_BUILDER_H
 #include "3dtiles/hlod/TreeBuilder.h"
-using namespace osgGISPlugins;
+
 namespace osgGISPlugins
 {
     /*

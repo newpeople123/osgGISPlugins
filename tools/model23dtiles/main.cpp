@@ -20,6 +20,8 @@
 #include <osgDB/FileNameUtils>
 #include <tbb/global_control.h>
 
+using namespace osgGISPlugins;
+
 class CoordinateTransformVisitor :public osg::NodeVisitor
 {
 private:
