@@ -43,4 +43,4 @@ public:
     WriteResult writeImage(const osg::Image &image, const std::string& file, const osgDB::ReaderWriter::Options* options) const override;
     WriteResult writeImage(const osg::Image& image, std::ostream& fout, const Options* options) const override;
 };
-REGISTER_OSGPLUGIN(ktx, ReaderWriterKTX)
+

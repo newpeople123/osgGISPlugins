@@ -1,10 +1,10 @@
 #include "3dtiles/hlod/OcTreeBuilder.h"
 
-osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
+osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(std::vector<NodeProperty>& nodeProps, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent, const int x, const int y, const int z, const int level)
 {
-	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
+	osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(nodeProps, bounds, parent, x, y, z, level);
 
-	if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
+	if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(nodeProps, bounds, tile))
 	{
 		return tile;
 	}
@@ -17,7 +17,7 @@ osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 		{
 			for (int c = 0; c < 2; ++c)
 			{
-				if (group->getNumChildren() > 0)
+				if (nodeProps.size() > 0)
 				{
 					osg::BoundingBox childTileNodeBound;
 					// 计算子空间的包围盒
@@ -32,7 +32,7 @@ osg::ref_ptr<B3DMTile> OcTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
 						c ? bounds._max.z() : mid.z()
 					);
 
-					osg::ref_ptr<B3DMTile> childB3DMTile = divideB3DM(group, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, tile->z * 2 + c, level + 1);
+					osg::ref_ptr<B3DMTile> childB3DMTile = divideB3DM(nodeProps, childTileNodeBound, tile, tile->x * 2 + a, tile->y * 2 + b, tile->z * 2 + c, level + 1);
 					if (childB3DMTile->node.valid())
 					{
 						tile->children.push_back(childB3DMTile);

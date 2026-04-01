@@ -1,0 +1,16 @@
+---
+# 不要只写 -*，后面加一些你需要的规则集
+Checks: >
+  -*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  clang-analyzer-*,
+  -clang-diagnostic-error
+  
+# 排除 3rdparty 和 build 目录的头文件
+HeaderFilterRegex: '^(?!.*(3rdparty|build)/).*'
+
+WarningsAsErrors: ''
+FormatStyle: 'file'
+---

@@ -39,10 +39,12 @@ namespace osgGISPlugins
         private:
             unsigned int maxTriangleCount = 2.0e5;
             unsigned int maxDrawcallCommandCount = 20;
-            int maxLevel = 32;
+            int maxLevel = 15;
         };
     protected:
         BuilderConfig _config;
+        const double MIN_TILE_SIZE = 1.0;
+        const unsigned int ABSOLUTE_MAX_LEVEL = 15;
 
         osg::ref_ptr<osg::Group> _groupsToDivideList = new osg::Group;
 
@@ -66,6 +68,12 @@ namespace osgGISPlugins
         std::vector<std::vector<osg::ref_ptr<osg::UserDataContainer>>> _instanceDataContainers;
 
     protected:
+        struct NodeProperty {
+            osg::ref_ptr<osg::Node> node = nullptr;
+            osg::BoundingBox bb;
+            unsigned int triangleCount = 0;
+        };
+
         void pushMatrix(const osg::Matrix& matrix);
 
         void popMatrix();
@@ -74,7 +82,7 @@ namespace osgGISPlugins
 
         virtual void apply(osg::Geode& geode) override;
 
-        virtual osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0);
+        virtual osg::ref_ptr<B3DMTile> divideB3DM(std::vector<NodeProperty>& nodeProps, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0);
 
         virtual void divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>&, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile);
 
@@ -96,10 +104,11 @@ namespace osgGISPlugins
 
         void processOverSizedNodes();
 
-        bool processB3DMWithMeshDrawcallCommandLimit(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> tile);
+        bool processB3DMWithMeshDrawcallCommandLimit(std::vector<NodeProperty>& nodeProps, const osg::BoundingBox& bounds, const osg::ref_ptr<B3DMTile> tile);
 
         bool processI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, const osg::ref_ptr<I3DMTile> tile);
-
+    private:
+        std::vector<NodeProperty> convertGroup2NodeProperties();
 	};
 }
 

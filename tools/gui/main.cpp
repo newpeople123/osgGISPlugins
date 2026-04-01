@@ -21,7 +21,7 @@
 #include <mutex>
 #include <osgDB/ConvertUTF>
 
-#define VERSION "osgGISPlugins Tools Desktop v2.3.1"
+#define VERSION "osgGISPlugins Tools Desktop v2.3.2 Test"
 
 struct Model23dtilesParams {
 #ifdef _WIN32

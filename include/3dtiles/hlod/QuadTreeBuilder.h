@@ -18,7 +18,7 @@ namespace osgGISPlugins
 
 		osg::BoundingBox computeChildBounds(const osg::BoundingBox& bounds, int axis, int a, int b);
 
-		osg::ref_ptr<B3DMTile> divideB3DM(osg::ref_ptr<osg::Group> group, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0) override;
+		osg::ref_ptr<B3DMTile> divideB3DM(std::vector<NodeProperty>& nodeProps, const osg::BoundingBox& bounds, osg::ref_ptr<B3DMTile> parent = nullptr, const int x = 0, const int y = 0, const int z = 0, const int level = 0) override;
 
 		void divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const osg::BoundingBox& bounds, osg::ref_ptr<I3DMTile> tile) override;
 	};

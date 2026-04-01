@@ -65,4 +65,5 @@ osgDB::ReaderWriter::WriteResult ReaderWriterKTX::writeImage(const osg::Image& i
     return result ? WriteResult::FILE_SAVED : WriteResult::ERROR_IN_WRITING_FILE;
 }
 
+REGISTER_OSGPLUGIN(ktx, ReaderWriterKTX)
 

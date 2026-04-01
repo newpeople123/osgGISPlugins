@@ -27,43 +27,37 @@ float KDTreeBuilder::evaluateSAH(const osg::BoundingBox& bounds,
            );
 }
 
-bool KDTreeBuilder::findBestSplit(const osg::ref_ptr<osg::Group>& group,
+bool KDTreeBuilder::findBestSplit(const std::vector<NodeProperty>& nodeProps,
     const osg::BoundingBox& bounds,
     int& bestAxis,
     float& bestPos,
     float& bestCost) {
+
     bestCost = FLT_MAX;
-    const size_t numObjects = group->getNumChildren();
+    const size_t numObjects = nodeProps.size();
+    if (numObjects <= 1) return false;
 
-    // 如果对象太少，不进行分割
-    if (numObjects <= 1) { return false; }
-
-    // 对每个轴进行评估
+    // 遍历三个轴：X, Y, Z
     for (int axis = 0; axis < 3; ++axis) {
-        // 初始化桶
-        std::vector<SAHBucket> buckets(NUM_BUCKETS);
         float axisMin = bounds._min[axis];
         float axisMax = bounds._max[axis];
         float axisExtent = axisMax - axisMin;
+        if (axisExtent < 1e-4) continue; // 轴过短，跳过
 
-        // 将对象分配到桶中
-        for (size_t i = 0; i < numObjects; ++i) {
-            osg::ref_ptr<osg::Node> node = group->getChild(i);
-            osg::BoundingBox nodeBounds = computeBoundingBox(node);
-            float centroid = (nodeBounds._min[axis] + nodeBounds._max[axis]) * 0.5f;
+        std::vector<SAHBucket> buckets(NUM_BUCKETS);
 
-            int b = NUM_BUCKETS * static_cast<int>((centroid - axisMin) / axisExtent);
-            if (b == NUM_BUCKETS) { b = NUM_BUCKETS - 1; }
+        // 1. 将对象分配到桶中 (使用预存的 BoundingBox)
+        for (const auto& prop : nodeProps) {
+            float centroid = (prop.bb._min[axis] + prop.bb._max[axis]) * 0.5f;
+            int b = static_cast<int>(NUM_BUCKETS * (centroid - axisMin) / axisExtent);
+            b = std::max(0, std::min(b, NUM_BUCKETS - 1));
             buckets[b].count++;
-            buckets[b].bounds.expandBy(nodeBounds);
+            buckets[b].bounds.expandBy(prop.bb);
         }
 
-        // 计算前缀和后缀的包围盒和计数
+        // 2. 预计算前缀和后缀代价
         std::vector<osg::BoundingBox> leftBoxes(NUM_BUCKETS - 1);
-        std::vector<osg::BoundingBox> rightBoxes(NUM_BUCKETS - 1);
         std::vector<int> leftCounts(NUM_BUCKETS - 1);
-        std::vector<int> rightCounts(NUM_BUCKETS - 1);
-
         osg::BoundingBox currentLeft;
         int leftSum = 0;
         for (int i = 0; i < NUM_BUCKETS - 1; ++i) {
@@ -73,6 +67,8 @@ bool KDTreeBuilder::findBestSplit(const osg::ref_ptr<osg::Group>& group,
             leftCounts[i] = leftSum;
         }
 
+        std::vector<osg::BoundingBox> rightBoxes(NUM_BUCKETS - 1);
+        std::vector<int> rightCounts(NUM_BUCKETS - 1);
         osg::BoundingBox currentRight;
         int rightSum = 0;
         for (int i = NUM_BUCKETS - 1; i > 0; --i) {
@@ -82,112 +78,94 @@ bool KDTreeBuilder::findBestSplit(const osg::ref_ptr<osg::Group>& group,
             rightCounts[i - 1] = rightSum;
         }
 
-        // 评估所有可能的分割
+        // 3. 评估每一个分割点
         for (int i = 0; i < NUM_BUCKETS - 1; ++i) {
-            float splitPos = axisMin + axisExtent * (float)(i + 1) / NUM_BUCKETS;
+            if (leftCounts[i] == 0 || rightCounts[i] == 0) continue;
 
-            // 如果任一侧为空，跳过这个分割
-            if (leftCounts[i] == 0 || rightCounts[i] == 0) { continue; }
-
-            float cost = evaluateSAH(bounds, leftBoxes[i], rightBoxes[i],
-                leftCounts[i], rightCounts[i]);
-
+            float cost = evaluateSAH(bounds, leftBoxes[i], rightBoxes[i], leftCounts[i], rightCounts[i]);
             if (cost < bestCost) {
-                bestAxis = axis;
-                bestPos = splitPos;
                 bestCost = cost;
+                bestAxis = axis;
+                bestPos = axisMin + axisExtent * (static_cast<float>(i + 1) / NUM_BUCKETS);
             }
         }
     }
 
-    // 如果分割代价高于不分割的代价，返回false
-    float noSplitCost = INTERSECTION_COST * numObjects;
-    return bestCost < noSplitCost;
+    // 如果分割的期望代价还不如不分割（直接渲染全部），则返回 false
+    return bestCost < (INTERSECTION_COST * numObjects);
 }
 
-osg::ref_ptr<B3DMTile> KDTreeBuilder::divideB3DM(osg::ref_ptr<osg::Group> group,
+osg::ref_ptr<B3DMTile> KDTreeBuilder::divideB3DM(std::vector<NodeProperty>& nodeProps,
     const osg::BoundingBox& bounds,
     osg::ref_ptr<B3DMTile> parent,
     const int x, const int y, const int z,
     const int level) {
-    osg::ref_ptr<B3DMTile> tile = TreeBuilder::divideB3DM(group, bounds, parent, x, y, z, level);
 
-    // 使用SAH找到最佳分割
-    int bestAxis;
-    float bestPos;
-    float bestCost;
+    // 1. 创建当前 Tile
+    osg::ref_ptr<B3DMTile> tile = new B3DMTile(parent.get());
+    tile->level = level;
+    tile->x = x; tile->y = y; tile->z = z;
 
-    if (!findBestSplit(group, bounds, bestAxis, bestPos, bestCost)) {
-        // 如果不值得分割，直接返回
-        tile->node = group;
+    // 2. 提取当前层级 LOD 物体 (重要：根据预算抽走大物体)
+    // 注意：这个方法会修改 nodeProps，移除已被抽走的节点
+    TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(nodeProps, bounds, tile);
+
+    // 如果所有物体都被当前瓦片消化了，直接返回
+    if (nodeProps.empty()) return tile;
+
+    // 3. 寻找 SAH 最佳分割点
+    int bestAxis = -1;
+    float bestPos = 0.0f;
+    float bestCost = 0.0f;
+
+    bool shouldSplit = (level < _config.getMaxLevel()) &&
+        findBestSplit(nodeProps, bounds, bestAxis, bestPos, bestCost);
+
+    if (!shouldSplit) {
+        // 如果不值得继续分割，将剩余所有物体放入当前 Tile 的节点中
+        if (!tile->node.valid()) tile->node = new osg::Group;
+        for (auto& prop : nodeProps) {
+            tile->node->asGroup()->addChild(prop.node.get());
+        }
+        nodeProps.clear();
         return tile;
     }
 
-    if (TreeBuilder::processB3DMWithMeshDrawcallCommandLimit(group, bounds, tile))
-    {
-        return tile;
-    }
-
-    // 创建左右子节点的包围盒
+    // 4. 执行空间切分
+    std::vector<NodeProperty> leftProps, rightProps;
     osg::BoundingBox leftBounds = bounds;
     osg::BoundingBox rightBounds = bounds;
     leftBounds._max[bestAxis] = bestPos;
     rightBounds._min[bestAxis] = bestPos;
 
-    // 创建左右子组
-    osg::ref_ptr<osg::Group> leftGroup = new osg::Group;
-    osg::ref_ptr<osg::Group> rightGroup = new osg::Group;
-
-    // 分配节点到左右子组
-    for (unsigned int i = 0; i < group->getNumChildren(); ++i) {
-        osg::ref_ptr<osg::Node> child = group->getChild(i);
-        osg::BoundingBox childBB = computeBoundingBox(child);
-        float center = (childBB._min[bestAxis] + childBB._max[bestAxis]) * 0.5f;
-
-        if (center <= bestPos) {
-            leftGroup->addChild(child);
+    for (auto& prop : nodeProps) {
+        float centroid = (prop.bb._min[bestAxis] + prop.bb._max[bestAxis]) * 0.5f;
+        if (centroid <= bestPos) {
+            leftProps.push_back(prop);
         }
         else {
-            rightGroup->addChild(child);
+            rightProps.push_back(prop);
         }
     }
+    nodeProps.clear(); // 清空原始列表，防止内存冗余
 
-    // 清空原始组
-    group->removeChildren(0, group->getNumChildren());
-
-    // 根据分割轴计算子节点的坐标
-    int leftX = x, leftY = y, leftZ = z;
-    int rightX = x, rightY = y, rightZ = z;
-
-    // 使用level来确定在哪个维度上增加索引
-    switch (bestAxis) {
-    case 0: // X轴
-        rightX = x + (1 << (level % 3));  // 在X方向上偏移2^(level%3)
-        break;
-    case 1: // Y轴
-        rightY = y + (1 << (level % 3));  // 在Y方向上偏移2^(level%3)
-        break;
-    case 2: // Z轴
-        rightZ = z + (1 << (level % 3));  // 在Z方向上偏移2^(level%3)
-        break;
-    }
-
-    // 递归处理左右子树
-    if (leftGroup->getNumChildren() > 0) {
-        osg::ref_ptr<B3DMTile> leftChild = divideB3DM(leftGroup, leftBounds, tile,
-            leftX, leftY, leftZ, level + 1);
-        if (leftChild->node.valid()) {
-            tile->children.push_back(leftChild);
+    // 5. 递归构建子树
+    // 计算子 Tile 的坐标索引 (针对 KD-Tree 的二叉结构进行逻辑偏移)
+    auto createChild = [&](std::vector<NodeProperty>& props, const osg::BoundingBox& b, int offX, int offY, int offZ) {
+        if (!props.empty()) {
+            osg::ref_ptr<B3DMTile> child = divideB3DM(props, b, tile, x + offX, y + offY, z + offZ, level + 1);
+            if (child->node.valid() || !child->children.empty()) {
+                tile->children.push_back(child);
+            }
         }
-    }
+        };
 
-    if (rightGroup->getNumChildren() > 0) {
-        osg::ref_ptr<B3DMTile> rightChild = divideB3DM(rightGroup, rightBounds, tile,
-            rightX, rightY, rightZ, level + 1);
-        if (rightChild->node.valid()) {
-            tile->children.push_back(rightChild);
-        }
-    }
+    int dx = (bestAxis == 0) ? 1 : 0;
+    int dy = (bestAxis == 1) ? 1 : 0;
+    int dz = (bestAxis == 2) ? 1 : 0;
+
+    createChild(leftProps, leftBounds, 0, 0, 0);
+    createChild(rightProps, rightBounds, dx, dy, dz);
 
     return tile;
 }
@@ -207,14 +185,18 @@ void KDTreeBuilder::divideI3DM(std::vector<osg::ref_ptr<I3DMTile>>& group, const
     float bestCost;
 
     // 创建临时Group用于SAH计算
-    osg::ref_ptr<osg::Group> tempGroup = new osg::Group;
+    std::vector<NodeProperty> nodeProps;
+    nodeProps.reserve(group.size());
     for (const auto& i3dmTile : group) {
         if (i3dmTile->node.valid()) {
-            tempGroup->addChild(i3dmTile->node);
+            NodeProperty np;
+            np.node = i3dmTile->node;
+            np.bb= computeBoundingBox(i3dmTile->node);
+            nodeProps.push_back(np);
         }
     }
 
-    if (!findBestSplit(tempGroup, bounds, bestAxis, bestPos, bestCost)) {
+    if (!findBestSplit(nodeProps, bounds, bestAxis, bestPos, bestCost)) {
         // 如果不值得分割，直接返回
         for (const auto& i3dmTile : group) {
             if (i3dmTile->node.valid()) {
