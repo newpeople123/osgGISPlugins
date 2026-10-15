@@ -315,6 +315,31 @@ void Osg2Gltf::apply(osg::Drawable &drawable)
 					getOrCreateBufferView(tangents, GL_ARRAY_BUFFER_ARB);
 					getOrCreateAccessor(tangents, pset, primitive, "TANGENT");
 				}
+
+				// 生产级修复(AUDIT A-11)：槽 >= 2 的通用顶点属性原先会被引擎直接丢弃，
+				// 其中就包括被 BatchIdVisitor 从槽 0 搬走的源数据。这里显式写成
+				// glTF 自定义属性 _ATTRIBUTE_<n>（glTF 允许下划线前缀的自定义属性），
+				// 保证"源属性通道没有被覆盖"在最终产物里也成立。
+				for (unsigned int a = 2; a < geom->getNumVertexAttribArrays(); ++a)
+				{
+					osg::Array* attrib = geom->getVertexAttribArray(a);
+					if (!attrib) { continue; }
+					if (!positions.valid() || attrib->getNumElements() != positions->getNumElements())
+					{
+						OSG_WARN << "Osg2Gltf: vertexAttribArray(" << a
+								 << ") element count does not match POSITION; skipped." << std::endl;
+						continue;
+					}
+					if (!(dynamic_cast<osg::FloatArray*>(attrib) ||
+						  dynamic_cast<osg::Vec2Array*>(attrib) ||
+						  dynamic_cast<osg::Vec3Array*>(attrib) ||
+						  dynamic_cast<osg::Vec4Array*>(attrib)))
+					{
+						continue;
+					}
+					getOrCreateBufferView(attrib, GL_ARRAY_BUFFER_ARB);
+					getOrCreateAccessor(attrib, pset, primitive, "_ATTRIBUTE_" + std::to_string(a));
+				}
 			}
 		}
 

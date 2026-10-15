@@ -15,6 +15,7 @@
 #include "3dtiles/hlod/QuadTreeBuilder.h"
 #include "3dtiles/hlod/OcTreeBuilder.h"
 #include "3dtiles/hlod/KDTreeBuilder.h"
+#include "3dtiles/production/ProductionPipeline.h"
 #include <osg/CoordinateSystemNode>
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
@@ -378,6 +379,13 @@ int main(int argc, char** argv)
 	Utils::initConsole();
 	osg::setNotifyLevel(osg::NotifySeverity::NOTICE);
 
+	// 进程结束时 OSG 的静态析构链可能异常终止（本仓库运行环境实测：
+	// 即使 "return 0" 的空白程序也会被宿主以 0xC0000409 结束）。
+	// 这会让 C 运行库来不及冲刷 std::cout 的块缓冲，导致重定向到管道/文件时
+	// 丢失全部日志。这里改成无缓冲，保证日志在任何终止方式下都能落盘。
+	std::cout << std::unitbuf;
+	std::cerr << std::unitbuf;
+
 	osgDB::Registry* instance = Utils::registerFileAliases();
 
 	// use an ArgumentParser object to manage the program arguments.
@@ -442,6 +450,15 @@ int main(int argc, char** argv)
 		OSG_NOTICE << "Input or output path is missing!" << '\n';
 		usage->write(std::cout);
 		return 1;
+	}
+
+	// 生产级修复(AUDIT A-24)：本程序在读取模型前会把 CWD 切到输入文件目录，
+	// 相对路径的 -o 会被写到输入目录里，表现为"产物消失"。这里先把两个路径
+	// 都转成绝对路径（相对当前工作目录）。
+	{
+		const std::string cwd = osgDB::convertStringFromCurrentCodePageToUTF8(osgDB::getCurrentWorkingDirectory());
+		if (!osgDB::isAbsolutePath(input)) { input = cwd + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + input; }
+		if (!osgDB::isAbsolutePath(output)) { output = cwd + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + output; }
 	}
 
 	OSG_NOTICE << "Resolving parameters..." << std::endl;
@@ -568,6 +585,67 @@ int main(int argc, char** argv)
 #endif
 		osgDB::makeDirectory(config.tileConfig.gltfTextureOptions.cachePath);
 		config.tileConfig.options->setOptionString(optionsStr);
+
+		// ------------------------------------------------------------------
+		// 生产级管线（默认）。加 -legacy 才走原来的 Quad/Oc/KD 树路径。
+		// ------------------------------------------------------------------
+		if (arguments.find("-legacy") <= 0)
+		{
+			using namespace osgGISPlugins::production;
+
+			ProductionProfile profile;
+			// 命令行覆盖硬上限（用户给的值优先，且不会被自动放宽，手册第 3 节）
+			if (maxTriangleCount != 200000) { profile.budget.maxTrianglesPerTile = maxTriangleCount; }
+			profile.budget.targetTrianglesPerTile =
+				std::min<unsigned>(profile.budget.targetTrianglesPerTile, profile.budget.maxTrianglesPerTile);
+			profile.budget.maxPrimitivesPerTile = std::max<unsigned>(maxDrawcallCommandCount, 1);
+			profile.budget.targetPrimitivesPerTile =
+				std::min<unsigned>(profile.budget.targetPrimitivesPerTile, profile.budget.maxPrimitivesPerTile);
+			profile.budget.maxAtlasDimension = std::max<unsigned>(maxTextureAtlasWidth, maxTextureAtlasHeight);
+			profile.budget.targetAtlasDimension =
+				std::min<unsigned>(profile.budget.targetAtlasDimension, profile.budget.maxAtlasDimension);
+			if (arguments.find("-strictIdentity") > 0) { profile.strictIdentity = true; }
+
+			ProductionPipeline::Options popt;
+			popt.outputDir = output;
+			popt.latitude = latitude;
+			popt.longitude = longitude;
+			popt.altitude = altitude;
+			popt.textureOptions = config.tileConfig.gltfTextureOptions;
+			popt.textureCachePath = config.tileConfig.gltfTextureOptions.cachePath;
+			popt.writeOptions = config.tileConfig.options;
+			popt.gltfOptimizerOptions = config.tileConfig.gltfOptimizerOptions;
+			popt.vertexCompression = !optionsStr.empty();
+
+			osgDB::makeDirectory(output);
+
+			ProductionPipeline pipeline(profile);
+			//控制全局线程池中最多并行线程数
+			tbb::global_control c(tbb::global_control::max_allowed_parallelism, 8);
+			const bool ok = pipeline.run(tNode.get(), popt);
+
+			pipeline.writeTilesetJson(output + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json");
+			pipeline.writeManifest(output + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "feature-manifest.json");
+			pipeline.writeReport(output + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "conversion-report.json");
+
+			for (const std::string& w : pipeline.warnings())
+			{
+				OSG_NOTICE << "WARNING: " << w << std::endl;
+			}
+			if (!ok)
+			{
+				for (const std::string& e : pipeline.failures())
+				{
+					OSG_NOTICE << "ERROR: " << e << std::endl;
+				}
+				OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline)."
+					<< std::endl;
+				return 3;
+			}
+			OSG_NOTICE << "Successfully converted " + input + " to 3dtiles "
+				<< "(" << pipeline.tiles().size() << " tiles, production pipeline)." << std::endl;
+			return 0;
+		}
 
 		TreeBuilder::BuilderConfig treeConfig;
 		treeConfig.setMaxDrawcallCommandCount(maxDrawcallCommandCount);

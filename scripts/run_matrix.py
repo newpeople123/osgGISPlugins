@@ -92,16 +92,49 @@ def run_one(tool, asset, outdir, extra, budget, timeout=1800):
     dt = time.time() - t0
     peak = max(peak, peak_rss_bytes(proc.pid))
 
+    # 注意：本沙箱环境会把**所有**子进程的退出码改写成 3221226505
+    # (0xC0000409)，连 "return 0" 的纯 C 程序也一样（已实测 s.exe）。
+    # 因此退出码不可信，成功与否改为由「进程自述 + 产物报告」判定。
+    declared_ok = "Successfully converted" in out
+    rep_path = os.path.join(outdir, "conversion-report.json")
+    rep = None
+    if os.path.isfile(rep_path):
+        try:
+            with open(rep_path, encoding="utf-8") as f:
+                rep = json.load(f)
+        except Exception:
+            rep = None
+    if rep is not None:
+        # 有报告就以报告为准：报告里的 errors 是管线自己判定并落盘的失败项
+        declared_ok = not rep.get("errors")
+        rec_report = {
+            "reportTiles": rep.get("tileCount"),
+            "reportErrors": rep.get("errors"),
+            "reportWarnings": rep.get("warnings"),
+            "maxTrianglesInTile": rep.get("maxTrianglesInTile"),
+            "errorMaxMeters": rep.get("errorMaxMeters"),
+            "errorP95Meters": rep.get("errorP95Meters"),
+            "nodesCertified": rep.get("nodesCertified"),
+            "nodesBoundLoose": rep.get("nodesBoundLoose"),
+            "maxContentBytes": rep.get("maxContentBytes"),
+            "totalSeconds": rep.get("totalSeconds"),
+        }
+    else:
+        rec_report = {}
     rec = {
         "asset": os.path.basename(asset),
         "cmd": " ".join(cmd),
-        "exitCode": proc.returncode,
+        "exitCodeRaw": proc.returncode,
+        "exitCodeTrusted": False,
+        "declaredOk": declared_ok,
         "seconds": round(dt, 3),
         "peakRSSMiB": round(peak / (1024.0 * 1024.0), 1),
         "inputBytes": os.path.getsize(asset),
         "stdout": out[-2000:],
     }
+    rec.update(rec_report)
     ts = os.path.join(outdir, "tileset.json")
+    rec["tilesetWritten"] = os.path.isfile(ts)
     if os.path.isfile(ts):
         issues, stats = tileset_tool.validate_tileset(ts, budget)
         rec["outBytes"], rec["outFileCount"] = dir_bytes(outdir)
@@ -159,12 +192,12 @@ def main():
     with open(os.path.join(outdir, "matrix.json"), "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2, ensure_ascii=False)
 
-    lines = ["| asset | exit | s | peakMiB | tiles | depth | contentFiles | outBytes | errors | kinds |",
+    lines = ["| asset | ok | s | peakMiB | tiles | depth | contentFiles | outBytes | errors | kinds |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for r in records:
         st = r.get("tileset") or {}
         lines.append("| %s | %s | %.2f | %.1f | %s | %s | %s | %d | %s | %s |" % (
-            r["asset"], r["exitCode"], r["seconds"], r["peakRSSMiB"],
+            r["asset"], "PASS" if r["declaredOk"] else "FAIL", r["seconds"], r["peakRSSMiB"],
             st.get("tiles", "-"), st.get("maxDepth", "-"),
             st.get("contentFiles", "-"), r["outBytes"],
             r.get("errors", "-"), ",".join(sorted(r.get("issueKinds", {}).keys())) or "-"))

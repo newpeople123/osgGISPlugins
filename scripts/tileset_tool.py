@@ -319,9 +319,15 @@ def validate_tileset(tileset_path, hard_budget_bytes=None):
                     issues.append(Issue("BOUNDS", "ERROR", path, "sphere radius negative"))
                 ext = _bv_extent(bv)
                 if ext and parent_extent:
+                    # 容差要随坐标量级放大：float32 存储的包围盒在 1e6 量级下
+                    # 本身就有 ~0.06 的绝对误差，用固定 1e-6 会误报。
+                    scale = max(1.0, abs(parent_extent[0][0]), abs(parent_extent[1][0]),
+                                abs(parent_extent[0][1]), abs(parent_extent[1][1]),
+                                abs(parent_extent[0][2]), abs(parent_extent[1][2]))
+                    tol = 1e-6 * scale
                     for k in range(3):
-                        if ext[0][k] < parent_extent[0][k] - 1e-6 or \
-                           ext[1][k] > parent_extent[1][k] + 1e-6:
+                        if ext[0][k] < parent_extent[0][k] - tol or \
+                           ext[1][k] > parent_extent[1][k] + tol:
                             issues.append(Issue("BOUNDS", "ERROR", path,
                                                 "child %s not covered by parent on axis %d" % (key, k)))
                             break
