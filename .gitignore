@@ -33,3 +33,11 @@ Debug/**
 # ReSharper 相关
 *.ReSharper.user
 *.DotSettings.user
+
+# WorkBuddy 生产级改造：工作构建目录与生成的测试资产
+build_wb/
+test_assets/
+out_test/
+tg_build/
+docs/model23dtiles-production/baseline/
+docs/model23dtiles-production/runs/
