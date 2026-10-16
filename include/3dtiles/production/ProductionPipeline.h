@@ -153,9 +153,37 @@ private:
     int _root = -1;
 
     int buildB3dmTree(int partitionNode);
+    std::map<int, int> _pnToTileId;   // partition 节点 -> tile id（并行预分配）
     int buildInstanceTree();
     void aggregateBounds(int tile);
     void assignGeometricError(int tile);
+
+    // ---- tile 间并行（性能优化，结果与串行版一致）----
+    // 原 buildB3dmTree 每个节点做三件重活：materialize/代理简化、
+    // 双向 Hausdorff 误差评估、写出 b3dm。前两件只读共享源数据、
+    // 输出独立节点，天然可并行；写出涉及纹理导出缓存与聚合统计，
+    // 保持主线程串行。
+    // 1) 递归预分配 tile id 与父子骨架（保证 id 语义与串行版一致）
+    int assignTileIdsB3dm(int pn);
+    // 2) 并行重活：几何构建 + 误差评估（无共享写）
+    struct TileHeavyWork {
+        osg::ref_ptr<osg::Node> content;
+        bool isProxy = false;
+        bool aggregate = false;
+        bool leaf = false;
+        std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
+        double measuredProxyErrorM = 0.0;
+        double errorLowerM = 0.0;
+        double errorUpperM = 0.0;
+        std::string errorStatus;
+        bool certified = false;
+        bool boundLoose = false;
+        double p95M = 0.0;
+        std::string failure;   // proxy 生成失败原因
+    };
+    TileHeavyWork processTileHeavy(int pn, int id);
+    // 3) 主线程串行收尾：writeContent + 状态聚合 + seam 校验
+    void finalizeTileFromWork(int pn, int id, TileHeavyWork&& w);
 
     // 写出内容并测量真实字节数
     struct WriteOutcome {

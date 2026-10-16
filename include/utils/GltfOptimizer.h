@@ -513,13 +513,18 @@ namespace osgGISPlugins
 			}
 		}
 
-		positions->assign(optimizedVertices->begin(), optimizedVertices->end());
+		// 注意：optimizedXxx 按 count 分配（零值初始化），实际只填充了
+		// uniqueVertexCount 个有效顶点。assign 必须截断到 uniqueVertexCount，
+		// 否则尾部零值/未初始化元素会进入 geometry，导致 accessor 的
+		// count 与 min/max 覆盖到假顶点（实测 t08 复现：POSITION min 漂移、
+		// 相邻字符串内存被当作顶点坐标）。
+		positions->assign(optimizedVertices->begin(), optimizedVertices->begin() + uniqueVertexCount);
 		if (normals.valid())
-			normals->assign(optimizedNormals->begin(), optimizedNormals->end());
+			normals->assign(optimizedNormals->begin(), optimizedNormals->begin() + uniqueVertexCount);
 		if (texCoords.valid())
-			texCoords->assign(optimizedTexCoords->begin(), optimizedTexCoords->end());
+			texCoords->assign(optimizedTexCoords->begin(), optimizedTexCoords->begin() + uniqueVertexCount);
 		if (batchIds.valid())
-			batchIds->assign(optimizedBatchIds->begin(), optimizedBatchIds->end());
+			batchIds->assign(optimizedBatchIds->begin(), optimizedBatchIds->begin() + uniqueVertexCount);
 
 		return optimizedIndices.release();
 	}

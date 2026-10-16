@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <map>
+#include <future>
 #include <iterator>
 #include <functional>
 #include <filesystem>
@@ -467,37 +468,56 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri, boo
     return out;
 }
 
-int ProductionPipeline::buildB3dmTree(int pn)
+// ---------------------------------------------------------------------------
+// tile 间并行构建（性能优化）
+//
+// 原实现自底向上递归，每个节点串行做三件重活：materialize/代理简化、
+// 双向 Hausdorff 误差评估、写出 b3dm。实测（lugouqiao 335MB）简化与
+// 误差评估占绝大部分墙钟时间，且二者只读共享源数据、输出独立节点，
+// 天然可并行；写出涉及纹理导出缓存与聚合统计，保持主线程串行。
+// 三段式：预分配 id -> 线程池并行重活 -> 主线程按 id 顺序串行收尾。
+// ---------------------------------------------------------------------------
+
+// 递归预分配 tile id 与父子骨架。id 语义与旧串行版完全一致
+// （先子后父，父 id = 最大子 id + 1），保证 tileset.json 的
+// children 顺序与 t{id}.b3dm 命名和旧版产物一一对应。
+int ProductionPipeline::assignTileIdsB3dm(int pn)
 {
     const PartitionNode& P = _partitioner->nodes[pn];
     const int id = static_cast<int>(_tiles.size());
     _tiles.push_back(ProductionTile());
     _tiles[id].id = id;
+    _tiles[id].isLeaf = P.children.empty();
 
-    // 子节点优先（自底向上）
     for (int c : P.children)
     {
-        const int cid = buildB3dmTree(c);
+        const int cid = assignTileIdsB3dm(c);
         _tiles[id].children.push_back(cid);
     }
+    _pnToTileId[pn] = id;
+    return id;
+}
 
+// 并行重活：几何构建（叶物化 / 代理简化）+ 误差评估。
+// 只读 _model/_prims/_profile/_opt，输出独立节点与评估结果；
+// 共享状态（_tiles/_mapper/_report/_failures/_warnings/_seams 写）一概不碰。
+ProductionPipeline::TileHeavyWork
+ProductionPipeline::processTileHeavy(int pn, int id)
+{
+    TileHeavyWork w;
+    const PartitionNode& P = _partitioner->nodes[pn];
     std::vector<std::uint32_t> items;
     TRACE("buildB3dm pn=" << pn << " children=" << P.children.size());
     _partitioner->subtreeItems(pn, items);
     const bool isLeaf = P.children.empty();
-
-    osg::ref_ptr<osg::Node> content;
-    bool isProxy = false;
-    bool aggregate = false;
-    std::map<FeatureId, std::vector<FeatureId>> aggSources;
+    w.leaf = isLeaf;
 
     if (isLeaf)
     {
         // 叶保留原始高精度几何，只允许坐标规范化与无损重建（手册 7.4）
         TRACE("leaf materialize pn=" << pn << " items=" << items.size());
-        content = _model.materialize(_prims, items, true);
+        w.content = _model.materialize(_prims, items, true);
         TRACE("leaf materialize done");
-        _tiles[id].isLeaf = true;
     }
     else
     {
@@ -507,17 +527,62 @@ int ProductionPipeline::buildB3dmTree(int pn)
                                              !_profile.strictIdentity);
         if (!pr.node.valid())
         {
-            _failures.push_back("proxy generation failed for node " + std::to_string(pn)
-                                + ": " + pr.failure);
+            w.failure = "proxy generation failed for node " + std::to_string(pn)
+                      + ": " + pr.failure;
+            return w;
         }
-        else
-        {
-            content = pr.node;
-            isProxy = true;
-            aggregate = pr.aggregate;
-            aggSources = pr.aggregateSources;
-        }
+        w.content = pr.node;
+        w.isProxy = true;
+        w.aggregate = pr.aggregate;
+        w.aggregateSources = pr.aggregateSources;
     }
+
+    if (!w.content.valid()) { return w; }
+
+    // ---- 几何误差评估（手册 9）----
+    std::vector<SourceModel::Triangle> srcTris;
+    TRACE("collectTriangles pn=" << pn);
+    _model.collectTriangles(_prims, items, srcTris);
+    TRACE("collectTriangles done src=" << srcTris.size());
+    TriangleSoup src, prox;
+    for (const SourceModel::Triangle& t : srcTris) { src.add(t.a, t.b, t.c); }
+    collectTrianglesFromNode(w.content.get(), prox);
+    if (isLeaf && !_opt.vertexCompression)
+    {
+        // 叶保留原始表面：只有确认没有任何有损变换时才可写 0
+        w.measuredProxyErrorM = 0.0;
+        w.errorUpperM = 0.0;
+        w.errorLowerM = 0.0;
+        w.errorStatus = "EXACT_LEAF";
+    }
+    else
+    {
+        GeometryErrorEvaluator ev(_profile.error);
+        TRACE("evaluate pn=" << pn << " srcT=" << src.size() << " proxT=" << prox.size());
+        const ErrorResult er = ev.evaluate(src, prox);
+        TRACE("evaluate done");
+        w.measuredProxyErrorM = er.geometricErrorM();
+        w.errorLowerM = er.lowerBoundM;
+        w.errorUpperM = er.upperBoundM;
+        w.errorStatus = er.status;
+        w.certified = er.certified;
+        w.boundLoose = er.boundLoose;
+        w.p95M = er.p95M;
+    }
+    return w;
+}
+
+// 主线程串行收尾：写出 + 状态聚合 + seam 校验。
+void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
+{
+    if (!w.failure.empty())
+    {
+        _failures.push_back(w.failure);
+        return;
+    }
+
+    const bool isLeaf = w.leaf;
+    osg::ref_ptr<osg::Node> content = w.content;
 
     if (content.valid())
     {
@@ -554,7 +619,7 @@ int ProductionPipeline::buildB3dmTree(int pn)
                 content->accept(cbv);
                 _tiles[id].contentBounds = cbv.getBoundingBox();
 
-                _mapper.addTile(_tiles[id].uri, wo.featureOrder, isProxy);
+                _mapper.addTile(_tiles[id].uri, wo.featureOrder, w.isProxy);
                 _report.maxContentBytes = std::max(_report.maxContentBytes, wo.bytes);
                 _report.maxTrianglesInTile = std::max(_report.maxTrianglesInTile, wo.triangles);
             }
@@ -566,47 +631,28 @@ int ProductionPipeline::buildB3dmTree(int pn)
                             "children still cover the source scope");
     }
 
-    _tiles[id].isProxy = isProxy;
-    _tiles[id].aggregate = aggregate;
-    _tiles[id].aggregateSources = aggSources;
-    if (aggregate) { ++_report.aggregateProxyCount; }
+    _tiles[id].isProxy = w.isProxy;
+    _tiles[id].aggregate = w.aggregate;
+    _tiles[id].aggregateSources = std::move(w.aggregateSources);
+    if (w.aggregate) { ++_report.aggregateProxyCount; }
 
-    // ---- 几何误差评估（手册 9）----
+    // 误差/统计聚合并入 tile 状态（与旧串行版一致：只有 hasContent 的
+    // 瓦片才携带评估结果；超限/写出失败的瓦片误差字段保持默认值）
     if (_tiles[id].hasContent)
     {
-        std::vector<SourceModel::Triangle> srcTris;
-        TRACE("collectTriangles pn=" << pn);
-        _model.collectTriangles(_prims, items, srcTris);
-        TRACE("collectTriangles done src=" << srcTris.size());
-        TriangleSoup src, prox;
-        for (const SourceModel::Triangle& t : srcTris) { src.add(t.a, t.b, t.c); }
-        collectTrianglesFromNode(content.get(), prox);
-        if (isLeaf && !_opt.vertexCompression)
-        {
-            // 叶保留原始表面：只有确认没有任何有损变换时才可写 0
-            _tiles[id].measuredProxyErrorM = 0.0;
-            _tiles[id].errorUpperM = 0.0;
-            _tiles[id].errorLowerM = 0.0;
-            _tiles[id].errorStatus = "EXACT_LEAF";
-        }
-        else
-        {
-            GeometryErrorEvaluator ev(_profile.error);
-            TRACE("evaluate pn=" << pn << " srcT=" << src.size() << " proxT=" << prox.size());
-            const ErrorResult er = ev.evaluate(src, prox);
-            TRACE("evaluate done");
-            _tiles[id].measuredProxyErrorM = er.geometricErrorM();
-            _tiles[id].errorLowerM = er.lowerBoundM;
-            _tiles[id].errorUpperM = er.upperBoundM;
-            _tiles[id].errorStatus = er.status;
-            if (er.certified) { ++_report.nodesCertified; }
-            if (er.boundLoose) { ++_report.nodesBoundLoose; }
-            if (er.p95M > 0) { _report.errorP95 = std::max(_report.errorP95, er.p95M); }
-        }
+        _tiles[id].measuredProxyErrorM = w.measuredProxyErrorM;
+        _tiles[id].errorLowerM = w.errorLowerM;
+        _tiles[id].errorUpperM = w.errorUpperM;
+        _tiles[id].errorStatus = w.errorStatus;
+        if (w.certified) { ++_report.nodesCertified; }
+        if (w.boundLoose) { ++_report.nodesBoundLoose; }
+        if (w.p95M > 0) { _report.errorP95 = std::max(_report.errorP95, w.p95M); }
 
         // 接缝保留校验（手册 8.3）
-        if (isProxy && _seams.seamVertexCount() > 0)
+        if (w.isProxy && _seams.seamVertexCount() > 0)
         {
+            std::vector<std::uint32_t> items;
+            _partitioner->subtreeItems(pn, items);
             const std::pair<std::size_t, std::size_t> keep = _seams.verifyPreserved(content.get(), items);
             if (keep.second > 0 && keep.first < keep.second)
             {
@@ -615,7 +661,67 @@ int ProductionPipeline::buildB3dmTree(int pn)
             }
         }
     }
-    return id;
+}
+
+int ProductionPipeline::buildB3dmTree(int rootPn)
+{
+    // 阶段 1：主线程预分配 id/骨架（快，纯结构遍历）
+    const int rootId = assignTileIdsB3dm(rootPn);
+
+    // pn -> id 反查
+    std::vector<int> idToPn(_tiles.size(), -1);
+    for (const auto& kv : _pnToTileId) { idToPn[kv.second] = kv.first; }
+
+    // 阶段 2/3：滑动窗口流水线。
+    // 并行度：WB_JOBS 环境变量可覆盖；默认 8（过大只会推高内存峰值，
+    // 24 核机器实测 8 已足够喂饱 IO 与单线程 meshopt）。
+    unsigned jobs = 8;
+    if (const char* j = std::getenv("WB_JOBS")) { jobs = static_cast<unsigned>(std::atoi(j)); }
+    if (jobs == 0) { jobs = 1; }
+    const std::size_t window = static_cast<std::size_t>(jobs) * 2;
+
+    // 按工作量（子树三角形数）降序提交：最大的任务最先开跑，
+    // 避免收尾阶段只剩一个巨型任务在跑（straggler）。
+    std::vector<int> pns;
+    pns.reserve(_pnToTileId.size());
+    for (const auto& kv : _pnToTileId) { pns.push_back(kv.first); }
+    std::sort(pns.begin(), pns.end(), [this](int a, int b) {
+        return _partitioner->nodes[a].triangles > _partitioner->nodes[b].triangles;
+    });
+
+    TRACE("parallel build jobs=" << jobs << " tiles=" << pns.size());
+
+    std::size_t next = 0;
+    std::map<int, std::future<TileHeavyWork>> inflight;  // key = pn
+    auto submit = [this, &inflight, &idToPn](int pn) {
+        const int id = idToPn[pn];
+        inflight.emplace(pn, std::async(std::launch::async, [this, pn, id]() {
+            return processTileHeavy(pn, id);
+        }));
+    };
+    while (inflight.size() < window && next < pns.size()) { submit(pns[next++]); }
+
+    // 主线程按 tile id 升序收结果并串行写出，保证与串行版完全一致的
+    // _mapper.addTile 顺序、report 聚合顺序与 staging 文件名。
+    // 注意：提交顺序按工作量降序，而收集按 id 升序——id 靠前的小任务
+    // 可能还没进窗口，此时主线程直接同步执行它（窗口任务照常并行），
+    // 绝不能解引用 end() 迭代器。
+    for (int id = 0; id < static_cast<int>(_tiles.size()); ++id)
+    {
+        const int pn = idToPn[id];
+        auto it = inflight.find(pn);
+        if (it == inflight.end())
+        {
+            TileHeavyWork w = processTileHeavy(pn, id);
+            finalizeTileFromWork(pn, id, std::move(w));
+            continue;
+        }
+        TileHeavyWork w = it->second.get();
+        inflight.erase(it);
+        finalizeTileFromWork(pn, id, std::move(w));
+        if (next < pns.size()) { submit(pns[next++]); }
+    }
+    return rootId;
 }
 
 int ProductionPipeline::buildInstanceTree()
