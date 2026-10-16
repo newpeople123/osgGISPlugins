@@ -10,6 +10,7 @@
 #include "3dtiles/production/SourceModel.h"
 #include "3dtiles/production/SpatialPartitioner.h"
 #include "3dtiles/production/ProductionProfile.h"
+#include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/Group>
@@ -321,6 +322,76 @@ void testFeatureManifest()
     check(errs.empty(), "mapper validates", errs.empty() ? std::string() : errs.front());
 }
 
+// ---------------------------------------------------------------------------
+// 手册 5.5 / AUDIT A-11 回归：源顶点属性 0 被占用时必须被搬到空闲槽，
+// 不能被 _BATCHID 无声覆盖；属性 0 空闲时直接写 _BATCHID，不动其它槽。
+// ---------------------------------------------------------------------------
+void testBatchIdVisitorPreservesAttrib0()
+{
+    // --- 用例 1：属性 0 已被源数据占用，属性 2 也被占用（应落到 3）---
+    {
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> verts = new osg::Vec3Array(6);
+        geom->setVertexArray(verts);
+        osg::ref_ptr<osg::Vec4Array> srcColor = new osg::Vec4Array(6);
+        for (unsigned i = 0; i < 6; ++i) { (*srcColor)[i].set(1.0f, 0.5f, 0.25f, static_cast<float>(i)); }
+        geom->setVertexAttribArray(0, srcColor, osg::Array::BIND_PER_VERTEX);
+        osg::ref_ptr<osg::Vec2Array> uv = new osg::Vec2Array(6);
+        geom->setVertexAttribArray(2, uv, osg::Array::BIND_PER_VERTEX);
+
+        BatchIdVisitor biv;
+        geom->accept(biv);
+        // Geode 层才会递增 batchId；Drawable 层 apply 只写数组
+        check(geom->getVertexAttribArray(0) != nullptr
+              && geom->getVertexAttribArray(0)->getType() == osg::Array::FloatArrayType,
+              "attrib0 reassigned to FloatArray (_BATCHID)");
+        const auto* batchArr = dynamic_cast<const osg::FloatArray*>(geom->getVertexAttribArray(0));
+        check(batchArr != nullptr && batchArr->size() == 6
+              && (*batchArr)[0] == 0.0f,
+              "_BATCHID written with correct length and value");
+        // 源数据必须被搬到 >=2 的空闲槽（0 是新 _BATCHID，1 是 TANGENT 保留，2 已占 -> 3）
+        const osg::Array* moved = geom->getVertexAttribArray(3);
+        check(moved == srcColor.get(), "source attrib0 moved to slot 3");
+        check(geom->getVertexAttribArray(2) == uv.get(), "existing slot 2 untouched");
+    }
+    // --- 用例 2：属性 0 空闲，直接写 _BATCHID，不得搬动任何槽 ---
+    {
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> verts = new osg::Vec3Array(4);
+        geom->setVertexArray(verts);
+        osg::ref_ptr<osg::Vec3Array> normal = new osg::Vec3Array(4);
+        geom->setVertexAttribArray(2, normal, osg::Array::BIND_PER_VERTEX);
+
+        BatchIdVisitor biv;
+        geom->accept(biv);
+        check(geom->getVertexAttribArray(0) != nullptr
+              && geom->getVertexAttribArray(0)->getType() == osg::Array::FloatArrayType,
+              "clean attrib0 gets _BATCHID directly");
+        check(geom->getVertexAttribArray(2) == normal.get(), "clean case leaves slot 2 alone");
+    }
+    // --- 用例 3：同一 Geometry 上跑两遍（双读修复 A-23 的场景），
+    //     第二遍不得把已写的 _BATCHID 又当成"源数据"搬走 ---
+    {
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> verts = new osg::Vec3Array(4);
+        geom->setVertexArray(verts);
+        osg::ref_ptr<osg::Vec4Array> srcData = new osg::Vec4Array(4);
+        geom->setVertexAttribArray(0, srcData, osg::Array::BIND_PER_VERTEX);
+
+        BatchIdVisitor first;
+        geom->accept(first);
+        BatchIdVisitor second;
+        geom->accept(second);
+        // 用例3 的 geom 只有 slot0 被源数据占用，slot2 空闲，
+        // 因此第一遍把源数据搬到 slot2（findFreeAttribSlot 从 2 起找）。
+        const osg::Array* slot0 = geom->getVertexAttribArray(0);
+        check(slot0 != nullptr && slot0->getType() == osg::Array::FloatArrayType,
+              "second pass keeps _BATCHID in slot 0");
+        check(geom->getVertexAttribArray(2) == srcData.get(),
+              "second pass does not re-move source data");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -337,6 +408,7 @@ int main(int argc, char** argv)
     run("giant", &testGiantSingleMeshSplits);
     run("error", &testErrorEvaluatorAnalytic);
     run("manifest", &testFeatureManifest);
+    run("batchid", &testBatchIdVisitorPreservesAttrib0);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();

@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>3D Tiles 视觉验收 — model23dtiles production</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  手册第 15 节：浏览器视觉验收
+  --------------------------------------------------------------------------
+  目标客户端版本固定：CesiumJS 1.119（见下方 CESIUM_VERSION / CDN URL）。
+  固定验收参数：视口 1280x720、FOV 60deg、maximumScreenSpaceError = 4 px。
+  所有相机路径都以 tileset 自身的 boundingSphere 为基准计算，换 tileset 不用改代码。
+
+  用法：
+    ?tileset=<tileset.json 的 URL，相对本页面>
+    &sse=4           覆盖 SSE（像素）
+    &fov=60          覆盖 FOV（度）
+    &path=orbit      启动后立即执行某条路径（供自动截图用）
+    &autocap=1       每条路径跑完自动逐帧截图（供自动截图用）
+
+  9 条相机路径（手册 15 节要求全部覆盖）：
+    1 far-to-near    极远景到近景
+    2 near-to-far    近景返回远景
+    3 orbit          绕场景水平旋转
+    4 oblique-high   高角度斜视
+    5 oblique-low    低角度斜视
+    6 seam-pan       沿同级 tile seam 平移
+    7 feature-approach 关键对象前后移动
+    8 lod-threshold  每个 LOD 切换阈值附近来回移动
+    9 texture-zoom   KTX2 纹理不同缩放 / mipmap 级别
+-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium/Widgets/widgets.css">
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium/Cesium.js"></script>
+<style>
+  :root {
+    --bg: #1b1f24;
+    --panel: #262c33;
+    --line: #3a424c;
+    --fg: #e6e9ed;
+    --muted: #9aa4b0;
+    --accent: #4da3ff;
+    --bad: #ff5f56;
+    --warn: #ffb020;
+    --ok: #35c46b;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #app { height: 100%; position: relative; }
+  #cesiumContainer { position: absolute; inset: 0; }
+  #panel { position: absolute; right: 0; top: 0; bottom: 0; width: 340px; z-index: 5;
+           background: var(--panel); border-left: 1px solid var(--line);
+           overflow-y: auto; padding: 12px; box-sizing: border-box; }
+  body.capturing #panel, body.capturing #hud, body.capturing .cesium-viewer-toolbar,
+  body.capturing .cesium-viewer-bottom { display: none !important; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  h2 { font-size: 12px; margin: 16px 0 6px; color: var(--accent);
+       text-transform: uppercase; letter-spacing: .06em; }
+  .hint { color: var(--muted); font-size: 11px; margin: 0 0 10px; }
+  button { display: block; width: 100%; text-align: left; margin: 3px 0; padding: 6px 8px;
+           background: #2f3742; color: var(--fg); border: 1px solid var(--line);
+           border-radius: 4px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #3a4552; border-color: var(--accent); }
+  button.active { background: #1d4f80; border-color: var(--accent); }
+  button small { color: var(--muted); display: block; }
+  label { display: block; margin: 6px 0 2px; color: var(--muted); font-size: 11px; }
+  input, select, textarea { width: 100%; box-sizing: border-box; background: #1b2027;
+    color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 4px 6px;
+    font-size: 12px; font-family: inherit; }
+  textarea { resize: vertical; min-height: 44px; }
+  #envTable { width: 100%; border-collapse: collapse; font-size: 11px; }
+  #envTable td { border-bottom: 1px solid var(--line); padding: 3px 2px; word-break: break-all; }
+  #envTable td:first-child { color: var(--muted); width: 42%; }
+  #tileList { font-size: 11px; font-family: Consolas, monospace; max-height: 150px;
+              overflow-y: auto; background: #1b2027; border: 1px solid var(--line);
+              border-radius: 3px; padding: 4px; }
+  #pickInfo { font-size: 11px; font-family: Consolas, monospace; white-space: pre-wrap;
+              background: #1b2027; border: 1px solid var(--line); border-radius: 3px;
+              padding: 4px; max-height: 180px; overflow-y: auto; }
+  #defectList { font-size: 11px; max-height: 160px; overflow-y: auto; }
+  #defectList .item { border-left: 3px solid var(--warn); padding: 3px 6px; margin: 3px 0;
+                      background: #1b2027; border-radius: 0 3px 3px 0; }
+  #defectList .item.HOLE   { border-left-color: var(--bad); }
+  #defectList .item.DUPLICATE { border-left-color: #b06bff; }
+  #defectList .item.LOD_POP { border-left-color: var(--warn); }
+  #defectList .item.SEAM_GEO { border-left-color: #ff8c42; }
+  #defectList .item.SEAM_NORMAL { border-left-color: #ffd166; }
+  #defectList .item.SEAM_UV { border-left-color: #06d6a0; }
+  #defectList .item.FEATURE_MAP { border-left-color: #4da3ff; }
+  #defectList .item.BOUND_CULL { border-left-color: #ef476f; }
+  #defectList .item.OVER_BUDGET { border-left-color: #c9c9c9; }
+  #toast { position: absolute; left: 12px; bottom: 12px; background: rgba(0,0,0,.78);
+           color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 12px;
+           display: none; max-width: 60%; z-index: 10; }
+  #hud { position: absolute; right: 12px; top: 12px; background: rgba(0,0,0,.6);
+         padding: 6px 10px; border-radius: 4px; font-size: 11px;
+         font-family: Consolas, monospace; pointer-events: none; }
+  .row { display: flex; gap: 6px; }
+  .row > * { flex: 1; }
+  #progress { height: 4px; background: #1b2027; border-radius: 2px; overflow: hidden;
+              margin-top: 8px; display: none; }
+  #progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="cesiumContainer">
+    <div id="hud"></div>
+    <div id="toast"></div>
+  </div>
+  <div id="panel">
+    <h1>3D Tiles 视觉验收</h1>
+    <p class="hint">手册第 15 节 · CesiumJS 1.119 · 视口 1280×720 · FOV 60° · SSE 4 px</p>
+
+    <h2>环境（截图必须记录）</h2>
+    <table id="envTable"><tbody></tbody></table>
+
+    <h2>tileset</h2>
+    <label>tileset.json 路径（相对本页面）</label>
+    <input id="tilesetUrl" value="">
+    <button id="loadBtn">加载 tileset</button>
+
+    <h2>相机路径（9 条，全部必须跑）</h2>
+    <div id="pathButtons"></div>
+    <div id="progress"><div></div></div>
+
+    <h2>当前可见 tile</h2>
+    <div class="hint">每帧刷新；含 tile URI 与父子路径，缺陷记录要带这些。</div>
+    <div id="tileList">—</div>
+
+    <h2>Feature 查询 / 高亮</h2>
+    <div class="hint">在 3D 视图里点击模型，显示 batch table 属性与 sourceFeatureId。</div>
+    <button id="pickBtn">取景框中心 pick</button>
+    <div id="pickInfo">—</div>
+
+    <h2>缺陷记录</h2>
+    <label>缺陷类型</label>
+    <select id="defectKind">
+      <option>HOLE</option><option>DUPLICATE</option><option>LOD_POP</option>
+      <option>SEAM_GEO</option><option>SEAM_NORMAL</option><option>SEAM_UV</option>
+      <option>FEATURE_MAP</option><option>BOUND_CULL</option><option>OVER_BUDGET</option>
+    </select>
+    <label>tile URI</label><input id="dTileUri" placeholder="tiles/xxx.b3dm">
+    <label>父子路径</label><input id="dPath" placeholder="0 -> 0.2 -> 0.2.1">
+    <label>sourceFeatureId</label><input id="dFid" placeholder="1234">
+    <label>备注</label><textarea id="dNote" placeholder="相机位置、现象描述…"></textarea>
+    <div class="row">
+      <button id="addDefectBtn">记录缺陷</button>
+      <button id="snapBtn">截图 PNG</button>
+    </div>
+    <div class="row">
+      <button id="exportDefectsBtn">导出缺陷 JSON</button>
+      <button id="exportEnvBtn">导出环境 JSON</button>
+    </div>
+    <div id="defectList"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// 固定验收参数（手册 15 节）
+// ---------------------------------------------------------------------------
+var CESIUM_VERSION = "1.119";
+var VIEWPORT = { width: 1280, height: 720 };
+var FOV_DEG = 60;
+var SSE_PX = 4;
+
+var qs = new URLSearchParams(location.search);
+if (qs.get("fov"))  FOV_DEG = parseFloat(qs.get("fov"));
+if (qs.get("sse"))  SSE_PX = parseFloat(qs.get("sse"));
+
+Cesium.Ion.defaultAccessToken = ""; // 只用 3D Tiles，不需要 ion
+
+var viewer = new Cesium.Viewer("cesiumContainer", {
+  baseLayer: false,            // 不连 ion，纯 3D Tiles
+  contextOptions: { webgl: { preserveDrawingBuffer: true } }, // toDataURL 截图必需
+  baseLayerPicker: false,
+  geocoder: false,
+  homeButton: false,
+  sceneModePicker: false,
+  navigationHelpButton: false,
+  animation: false,
+  timeline: false,
+  fullscreenButton: false,
+  vrButton: false,
+  infoBox: false,
+  selectionIndicator: false,
+  requestRenderMode: true,     // 截图前 requestRender，保证画面是最新的
+  maximumRenderTimeChange: Infinity
+});
+
+// 固定视口：CSS 尺寸固定为 1280x720 的等比区域，useBrowserRecommendedResolution=false
+var canvas = viewer.scene.canvas;
+
+var scene = viewer.scene;
+scene.globe = undefined;
+scene.skyAtmosphere = new Cesium.SkyAtmosphere(); // 保留天空，便于判断"内容丢失"
+scene.fog = new Cesium.Fog();
+scene.highDynamicRange = false;
+scene.skyBox = undefined;
+scene.sun = new Cesium.Sun();
+scene.moon = new Cesium.Moon();
+
+var camera = scene.camera;
+camera.frustum.fov = Cesium.Math.toRadians(FOV_DEG);
+camera.frustum.near = 0.1;
+camera.frustum.far = 1e9;
+
+// ---------------------------------------------------------------------------
+// 环境信息（截图必须记录浏览器与 GPU/驱动）
+// ---------------------------------------------------------------------------
+function gpuInfo() {
+  var out = { renderer: "unknown", vendor: "unknown", driverVersion: "unknown",
+              webglVersion: "unknown" };
+  try {
+    var gl = scene.context._gl || canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (gl) {
+      out.webglVersion = gl.getParameter(gl.VERSION);
+      var dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      if (dbg) {
+        out.renderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+        out.vendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+      } else {
+        out.renderer = gl.getParameter(gl.RENDERER);
+        out.vendor = gl.getParameter(gl.VENDOR);
+      }
+    }
+  } catch (e) { out.driverVersion = "probe failed: " + e.message; }
+  return out;
+}
+
+var ENV = null;
+function captureEnv() {
+  var g = gpuInfo();
+  ENV = {
+    cesiumVersion: CESIUM_VERSION,
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    viewport: VIEWPORT.width + "x" + VIEWPORT.height,
+    fovDeg: FOV_DEG,
+    ssePx: SSE_PX,
+    gpuRenderer: g.renderer,
+    gpuVendor: g.vendor,
+    webglVersion: g.webglVersion,
+    devicePixelRatio: window.devicePixelRatio,
+    capturedAt: new Date().toISOString()
+  };
+  var tb = document.querySelector("#envTable tbody");
+  tb.innerHTML = "";
+  Object.keys(ENV).forEach(function (k) {
+    var tr = document.createElement("tr");
+    var td1 = document.createElement("td"); td1.textContent = k;
+    var td2 = document.createElement("td"); td2.textContent = ENV[k];
+    tr.appendChild(td1); tr.appendChild(td2); tb.appendChild(tr);
+  });
+  return ENV;
+}
+
+// ---------------------------------------------------------------------------
+// tileset 加载
+// ---------------------------------------------------------------------------
+var tileset = null;
+var sphere = null;     // tileset boundingSphere（所有相机路径的基准）
+var tileTree = [];     // 扁平化后的 tile 数组，含 uri / parent 链 / geometricError
+
+function flattenTiles(root) {
+  var out = [];
+  (function walk(t, parentPath, parentIdx) {
+    if (!t) return;
+    var uri = "";
+    try { uri = t.contentUrl ? t.contentUrl.replace(/^.*[\\/]/, "") : ""; } catch (e) {}
+    var idx = out.length;
+    out.push({
+      tile: t, uri: uri, path: parentPath + (parentPath ? " -> " : "") + idx,
+      parent: parentIdx, geometricError: t.geometricError, level: t.level
+    });
+    var kids = t.children || [];
+    for (var i = 0; i < kids.length; i++) walk(kids[i], parentPath + (parentPath ? "." : "") + idx, idx);
+  })(root, "", -1);
+  return out;
+}
+
+function loadTileset(url) {
+  if (tileset) { viewer.scene.primitives.remove(tileset); tileset = null; tileTree = []; }
+  // Cesium 1.107+ 移除 readyPromise：用静态 fromUrl()，resolve 时 tileset 已可用
+  return Cesium.Cesium3DTileset.fromUrl(url, {
+    maximumScreenSpaceError: SSE_PX,
+    skipLevelOfDetail: false,          // 逐级 refine，才能观察每级 LOD 切换
+    baseScreenSpaceError: 1024,
+    skipScreenSpaceErrorFactor: 16,
+    maximumMemoryUsage: 1024,
+    preloadWhenHidden: false,
+    debugShowBoundingVolume: false,
+    debugColorizeTiles: false,
+    foveatedScreenSpaceError: true,
+    foveatedTimeDelay: 0.0
+  }).then(function (ts) {
+    tileset = ts;
+    viewer.scene.primitives.add(ts);
+    sphere = ts.boundingSphere;
+    tileTree = flattenTiles(ts._root);
+    toast("已加载 tileset：" + tileTree.length + " 个 tile，半径 "
+          + sphere.radius.toFixed(2));
+    return ts;
+  }).catch(function (e) { toast("tileset 加载失败: " + e); throw e; });
+}
+
+// ---------------------------------------------------------------------------
+// LOD 切换阈值（手册 9.6 / 15 节）
+// CesiumJS 的屏幕空间误差定义：
+//   sse(px) = geometricError * viewportHeightPx / (2 * distance * tan(fov/2))
+// 反解出该 tile 开始被 refine 的距离：
+//   distance = geometricError * viewportHeightPx / (2 * sse * tan(fov/2))
+// ---------------------------------------------------------------------------
+function refineDistance(geometricError) {
+  var h = VIEWPORT.height;
+  return geometricError * h / (2 * SSE_PX * Math.tan(Cesium.Math.toRadians(FOV_DEG) / 2));
+}
+
+// 以 sphere 为基准的相机摆放：给定方向单位向量与距离倍数
+function placeCamera(dirUnit, distMul, opts) {
+  opts = opts || {};
+  var dir = Cesium.Cartesian3.normalize(dirUnit, new Cesium.Cartesian3());
+  var dist = sphere.radius * distMul;
+  var pos = Cesium.Cartesian3.add(sphere.center,
+      Cesium.Cartesian3.multiplyByScalar(dir, dist, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3());
+  camera.position = pos;
+  var up = opts.up || Cesium.Cartesian3.clone(Cesium.Cartesian3.UNIT_Z);
+  camera.direction = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.subtract(sphere.center, pos, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3());
+  if (opts.up) camera.up = Cesium.Cartesian3.normalize(opts.up, new Cesium.Cartesian3());
+  camera.right = Cesium.Cartesian3.cross(camera.direction, camera.up, new Cesium.Cartesian3());
+  scene.requestRender();
+}
+
+function settle() {
+  // 等到当前帧渲染完成且没有新瓦片请求
+  return new Promise(function (resolve) {
+    var t0 = Date.now();
+    function check() {
+      var idle = !scene.globe || tileset === null || tileset.tilesLoaded
+          ? true : false;
+      var noReq = true;
+      try {
+        var stats = scene._frameState ? scene._frameState : null;
+        noReq = (stats && stats.commands) ? true : true;
+      } catch (e) {}
+      if ((idle && noReq) || Date.now() - t0 > 8000) { resolve(); }
+      else requestAnimationFrame(check);
+    }
+    scene.requestRender();
+    requestAnimationFrame(check);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 9 条相机路径
+// 每条路径返回一组关键帧 [{name, position(dir,dist,up), holdMs}]
+// ---------------------------------------------------------------------------
+var PATHS = {};
+PATHS["far-to-near"] = {
+  title: "极远景到近景",
+  desc: "从 30 倍半径外推进到 1.2 倍半径",
+  frames: function () {
+    var dirs = [];
+    for (var i = 0; i <= 10; i++) {
+      var mul = 30 * Math.pow(1.2 / 30, i / 10);
+      dirs.push({ name: "dist_" + mul.toFixed(2) + "R", dir: [1, 0.35, 0.55], dist: mul });
+    }
+    return dirs;
+  }
+};
+PATHS["near-to-far"] = {
+  title: "近景返回远景",
+  desc: "从 1.2 倍半径退到 30 倍半径",
+  frames: function () {
+    var f = [];
+    for (var i = 0; i <= 10; i++) {
+      var mul = 1.2 * Math.pow(30 / 1.2, i / 10);
+      f.push({ name: "dist_" + mul.toFixed(2) + "R", dir: [1, 0.35, 0.55], dist: mul });
+    }
+    return f;
+  }
+};
+PATHS["orbit"] = {
+  title: "绕场景水平旋转",
+  desc: "水平面 360°，每 30° 一帧",
+  frames: function () {
+    var f = [];
+    for (var a = 0; a < 360; a += 30) {
+      var r = Cesium.Math.toRadians(a);
+      f.push({ name: "az_" + a, dir: [Math.cos(r), Math.sin(r), 0.45], dist: 4.5 });
+    }
+    return f;
+  }
+};
+PATHS["oblique-high"] = {
+  title: "高角度斜视",
+  desc: "俯视 60°，远近各一帧",
+  frames: function () {
+    return [
+      { name: "high_12R", dir: [1, 0, 3], dist: 12 },
+      { name: "high_5R", dir: [1, 0, 3], dist: 5 },
+      { name: "high_2R", dir: [1, 0, 2], dist: 2 }
+    ];
+  }
+};
+PATHS["oblique-low"] = {
+  title: "低角度斜视",
+  desc: "仰视 15°，贴地与抬升各一帧",
+  frames: function () {
+    return [
+      { name: "low_1.1R", dir: [1, 0, 0.22], dist: 1.1 },
+      { name: "low_3R", dir: [1, 0, 0.18], dist: 3 },
+      { name: "low_8R", dir: [1, 0, 0.22], dist: 8 }
+    ];
+  }
+};
+PATHS["seam-pan"] = {
+  title: "沿同级 tile seam 平移",
+  desc: "沿 X 轴横穿场景中心，每 1/8 半径一帧",
+  frames: function () {
+    var f = [];
+    for (var i = -4; i <= 4; i++) {
+      var off = i * sphere.radius / 4;
+      var dir = [1, 0.001, 0.5];
+      var d = Cesium.Cartesian3.normalize(new Cesium.Cartesian3(dir[0], dir[1], dir[2]),
+          new Cesium.Cartesian3());
+      var dist = sphere.radius * 3.5;
+      var pos = Cesium.Cartesian3.add(sphere.center,
+          Cesium.Cartesian3.multiplyByScalar(d, dist, new Cesium.Cartesian3()),
+          new Cesium.Cartesian3());
+      pos.x += off; // 横移，让同级 tile 的接缝从相机前穿过
+      f.push({ name: "pan_" + i, pos: pos });
+    }
+    return f;
+  }
+};
+PATHS["feature-approach"] = {
+  title: "关键对象前后移动",
+  desc: "对每个含 feature 的 tile，从外推进到内部",
+  frames: function () {
+    var f = [];
+    var withContent = tileTree.filter(function (t) { return t.uri; });
+    var picks = withContent.slice(0, 6);
+    for (var i = 0; i < picks.length; i++) {
+      var bv = picks[i].tile.boundingVolume;
+      var center = bv && bv.box ? Cesium.Cartesian3.fromDegrees(0, 0) : null;
+      // 用 tile boundingSphere 更稳
+      var bs = picks[i].tile.boundingSphere;
+      if (!bs) continue;
+      f.push({ name: "feat_" + picks[i].path.replace(/[ >]/g, "_") + "_out",
+               center: bs.center, dist: bs.radius * 8 });
+      f.push({ name: "feat_" + picks[i].path.replace(/[ >]/g, "_") + "_in",
+               center: bs.center, dist: bs.radius * 1.4 });
+    }
+    return f;
+  }
+};
+PATHS["lod-threshold"] = {
+  title: "LOD 切换阈值附近来回移动",
+  desc: "对每个 geometricError 非零 tile，在 refine 距离 ±6% 各放一帧",
+  frames: function () {
+    var f = [];
+    var seen = {};
+    for (var i = 0; i < tileTree.length; i++) {
+      var ge = tileTree[i].geometricError;
+      if (!ge || ge <= 0) continue;
+      var d = refineDistance(ge);
+      var key = d.toFixed(1);
+      if (seen[key]) continue;
+      seen[key] = 1;
+      var label = "ge_" + ge.toFixed(1).replace(/\./g, "p");
+      f.push({ name: label + "_below", dir: [1, 0.3, 0.5], dist: d * 1.06 });
+      f.push({ name: label + "_above", dir: [1, 0.3, 0.5], dist: d * 0.94 });
+    }
+    return f;
+  }
+};
+PATHS["texture-zoom"] = {
+  title: "KTX2 纹理不同缩放 / mipmap",
+  desc: "贴近纹理表面逐级拉远，观察 mipmap 过渡",
+  frames: function () {
+    var f = [];
+    var withContent = tileTree.filter(function (t) { return t.uri; });
+    if (!withContent.length) return f;
+    var bs = withContent[0].tile.boundingSphere;
+    if (!bs) return f;
+    var dists = [0.6, 1.2, 2.5, 5, 10, 20];
+    for (var i = 0; i < dists.length; i++) {
+      f.push({ name: "mip_" + dists[i] + "R", center: bs.center, dist: bs.radius * dists[i] });
+    }
+    return f;
+  }
+};
+
+var PATH_ORDER = ["far-to-near", "near-to-far", "orbit", "oblique-high", "oblique-low",
+                  "seam-pan", "feature-approach", "lod-threshold", "texture-zoom"];
+
+// ---------------------------------------------------------------------------
+// 相机帧执行
+// ---------------------------------------------------------------------------
+function applyFrame(fr) {
+  if (fr.center) {
+    var dir = Cesium.Cartesian3.normalize(new Cesium.Cartesian3(1, 0.25, 0.5),
+        new Cesium.Cartesian3());
+    var pos = Cesium.Cartesian3.add(fr.center,
+        Cesium.Cartesian3.multiplyByScalar(dir, fr.dist, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3());
+    camera.position = pos;
+    camera.direction = Cesium.Cartesian3.normalize(
+        Cesium.Cartesian3.subtract(fr.center, pos, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3());
+    camera.up = Cesium.Cartesian3.normalize(Cesium.Cartesian3.UNIT_Z, new Cesium.Cartesian3());
+    camera.right = Cesium.Cartesian3.cross(camera.direction, camera.up, new Cesium.Cartesian3());
+  } else if (fr.pos) {
+    camera.position = fr.pos;
+    camera.direction = Cesium.Cartesian3.normalize(
+        Cesium.Cartesian3.subtract(sphere.center, fr.pos, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3());
+    camera.up = Cesium.Cartesian3.normalize(Cesium.Cartesian3.UNIT_Z, new Cesium.Cartesian3());
+    camera.right = Cesium.Cartesian3.cross(camera.direction, camera.up, new Cesium.Cartesian3());
+  } else {
+    placeCamera(new Cesium.Cartesian3(fr.dir[0], fr.dir[1], fr.dir[2]), fr.dist);
+  }
+  scene.requestRender();
+}
+
+function currentTiles() {
+  if (!tileset) return [];
+  var vis = [];
+  var stack = [tileset._root];
+  while (stack.length) {
+    var t = stack.pop();
+    if (!t) continue;
+    var isVisible = true;
+    try {
+      var bs = t.boundingSphere;
+      var cull = scene._frustumCommands ? null : null;
+      var planes = scene._frustumCommands ? null : (scene.camera ? scene.camera.frustum : null);
+    } catch (e) {}
+    // Cesium 自己的可见性判定
+    var vis2 = true;
+    try { vis2 = t.isVisible !== false; } catch (e) {}
+    if (vis2) {
+      vis.push(t);
+      var kids = t.children || [];
+      for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
+    }
+  }
+  return vis;
+}
+
+function refreshTileList() {
+  var el = document.getElementById("tileList");
+  if (!tileset) { el.textContent = "—"; return; }
+  var vis = currentTiles();
+  var lines = vis.slice(0, 40).map(function (t) {
+    var uri = "";
+    try { uri = t.contentUrl ? t.contentUrl.replace(/^.*[\\/]/, "") : "(no content)"; } catch (e) {}
+    var ge = (typeof t.geometricError === "number") ? t.geometricError.toFixed(2) : "?";
+    return uri + "  ge=" + ge;
+  });
+  el.textContent = vis.length + " 个可见 tile\n" + lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// pick / feature 查询
+// ---------------------------------------------------------------------------
+function pickCenter() {
+  if (!tileset) { toast("先加载 tileset"); return; }
+  var picked = scene.pick();
+  var el = document.getElementById("pickInfo");
+  if (!picked || !Cesium.defined(picked)) { el.textContent = "(未命中任何内容)"; return; }
+  var feature = picked instanceof Cesium.Cesium3DTileFeature ? picked
+      : (picked.primitive && picked.primitive instanceof Cesium.Cesium3DTileset ? picked : null);
+  var lines = [];
+  if (feature && feature.getPropertyIds) {
+    var ids = feature.getPropertyIds() || [];
+    lines.push("sourceFeatureId: " + feature.getProperty("sourceFeatureId"));
+    lines.push("tileUri: " + (feature.content ? feature.content.url : "?"));
+    ids.forEach(function (id) { lines.push("  " + id + " = " + feature.getProperty(id)); });
+  } else if (picked.primitive) {
+    lines.push("命中 primitive（非 tile feature）");
+  }
+  el.textContent = lines.join("\n") || "(无属性)";
+}
+document.getElementById("pickBtn").addEventListener("click", pickCenter);
+
+// 3D 视图点击即 pick
+var handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
+handler.setInputAction(function (click) {
+  if (!tileset) return;
+  var picked = scene.pick(click.position);
+  if (picked && Cesium.defined(picked)) pickCenter();
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+// ---------------------------------------------------------------------------
+// 截图
+// ---------------------------------------------------------------------------
+function shotDataUrl() {
+  // 抓屏帧里不能有面板/HUD（手册 15 节：固定视口截图）
+  document.body.classList.add("capturing");
+  scene.requestRender();
+  return new Promise(function (resolve) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        var url = canvas.toDataURL("image/png");
+        document.body.classList.remove("capturing");
+        resolve(url);
+      });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// UI：路径按钮
+// ---------------------------------------------------------------------------
+var pathButtonsEl = document.getElementById("pathButtons");
+PATH_ORDER.forEach(function (name) {
+  var p = PATHS[name];
+  var b = document.createElement("button");
+  b.dataset.path = name;
+  b.innerHTML = name + " — " + p.title + "<small>" + p.desc + "</small>";
+  b.addEventListener("click", function () { runPath(name); });
+  pathButtonsEl.appendChild(b);
+});
+
+var running = false;
+async function runPath(name) {
+  if (running || !tileset) { if (!tileset) toast("先加载 tileset"); return; }
+  running = true;
+  document.querySelectorAll("#pathButtons button").forEach(function (b) {
+    b.classList.toggle("active", b.dataset.path === name);
+  });
+  var prog = document.getElementById("progress");
+  var bar = prog.firstElementChild;
+  prog.style.display = "block";
+  var frames = PATHS[name].frames();
+  var shots = [];
+  for (var i = 0; i < frames.length; i++) {
+    applyFrame(frames[i]);
+    bar.style.width = Math.round(100 * (i + 1) / frames.length) + "%";
+    await settle();
+    refreshTileList();
+    var url = await shotDataUrl();
+    shots.push({ frame: frames[i].name, index: i, total: frames.length,
+                 path: name, dataUrl: url });
+    updateHud(name, frames[i], i, frames.length);
+  }
+  prog.style.display = "none";
+  running = false;
+  document.querySelectorAll("#pathButtons button").forEach(function (b) { b.classList.remove("active"); });
+  window.__VA_LAST_SHOTS__ = shots;
+  toast("路径 " + name + " 完成，" + frames.length + " 帧");
+}
+
+function updateHud(pathName, frame, i, n) {
+  var c = camera.positionCartographic;
+  var h = Cesium.defined(c) ? c.height.toFixed(1) : "?";
+  document.getElementById("hud").textContent =
+      pathName + "  " + (i + 1) + "/" + n + "  " + frame.name +
+      "  |  相机高度 " + h + " m  |  SSE " + SSE_PX + "px  FOV " + FOV_DEG + "deg";
+}
+
+function toast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { t.style.display = "none"; }, 4000);
+}
+
+// ---------------------------------------------------------------------------
+// 缺陷记录
+// ---------------------------------------------------------------------------
+var defects = [];
+function renderDefects() {
+  var el = document.getElementById("defectList");
+  el.innerHTML = "";
+  defects.forEach(function (d, i) {
+    var div = document.createElement("div");
+    div.className = "item " + d.kind;
+    div.innerHTML = "<b>" + (i + 1) + ". " + d.kind + "</b> @ " + d.pathName
+        + "/" + d.frame + "<br>tile=" + (d.tileUri || "-")
+        + " | fid=" + (d.sourceFeatureId || "-")
+        + "<br>" + (d.note || "").replace(/</g, "&lt;");
+    el.appendChild(div);
+  });
+}
+document.getElementById("addDefectBtn").addEventListener("click", function () {
+  var c = camera.positionCartographic;
+  var lon = Cesium.defined(c) ? Cesium.Math.toDegrees(c.longitude).toFixed(6) : "";
+  var lat = Cesium.defined(c) ? Cesium.Math.toDegrees(c.latitude).toFixed(6) : "";
+  var h = Cesium.defined(c) ? c.height.toFixed(2) : "";
+  defects.push({
+    kind: document.getElementById("defectKind").value,
+    tileUri: document.getElementById("dTileUri").value,
+    tilePath: document.getElementById("dPath").value,
+    sourceFeatureId: document.getElementById("dFid").value,
+    note: document.getElementById("dNote").value,
+    camera: { lon: lon, lat: lat, height: h, fovDeg: FOV_DEG, ssePx: SSE_PX },
+    pathName: (window.__VA_CURRENT_PATH__ || "manual"),
+    frame: (window.__VA_CURRENT_FRAME__ || "manual"),
+    env: ENV,
+    at: new Date().toISOString()
+  });
+  renderDefects();
+  toast("已记录 1 条缺陷，共 " + defects.length + " 条");
+});
+
+function download(name, text) {
+  var blob = new Blob([text], { type: "application/json" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+}
+document.getElementById("exportDefectsBtn").addEventListener("click", function () {
+  download("defects.json", JSON.stringify({ env: ENV, defects: defects }, null, 2));
+});
+document.getElementById("exportEnvBtn").addEventListener("click", function () {
+  download("env.json", JSON.stringify(ENV, null, 2));
+});
+document.getElementById("snapBtn").addEventListener("click", async function () {
+  var url = await shotDataUrl();
+  var a = document.createElement("a");
+  a.href = url; a.download = "shot_" + Date.now() + ".png"; a.click();
+});
+
+// ---------------------------------------------------------------------------
+// 初始化
+// ---------------------------------------------------------------------------
+captureEnv();
+var initUrl = qs.get("tileset") || "";
+document.getElementById("tilesetUrl").value = initUrl;
+if (initUrl) {
+  loadTileset(initUrl).then(function () {
+    var p = qs.get("path");
+    if (p && PATHS[p]) runPath(p);
+  });
+}
+document.getElementById("loadBtn").addEventListener("click", function () {
+  loadTileset(document.getElementById("tilesetUrl").value).catch(function () {});
+});
+
+// ---------------------------------------------------------------------------
+// 自动化接口：Playwright / 人工都通过 window.__VA__ 驱动
+// ---------------------------------------------------------------------------
+window.__VA__ = {
+  version: "1.0",
+  cesiumVersion: CESIUM_VERSION,
+  info: function () { return ENV; },
+  load: function (url) { return loadTileset(url); },
+  paths: function () { return PATH_ORDER; },
+  pathFrames: function (name) { return PATHS[name].frames().map(function (f) { return f.name; }); },
+  gotoFrame: function (name, frameName) {
+    var frames = PATHS[name].frames();
+    var idx = typeof frameName === "number" ? frameName
+        : frames.findIndex(function (f) { return f.name === frameName; });
+    if (idx < 0 || idx >= frames.length) { return Promise.reject("frame not found: " + frameName); }
+    window.__VA_CURRENT_PATH__ = name;
+    window.__VA_CURRENT_FRAME__ = frames[idx].name;
+    applyFrame(frames[idx]);
+    return settle().then(function () { refreshTileList(); return frames[idx].name; });
+  },
+  visibleTiles: function () {
+    return currentTiles().map(function (t) {
+      var uri = "";
+      try { uri = t.contentUrl ? t.contentUrl.replace(/^.*[\\/]/, "") : ""; } catch (e) {}
+      return { uri: uri, geometricError: t.geometricError, level: t.level,
+               refineDistance: refineDistance(t.geometricError || 0) };
+    });
+  },
+  tilePaths: function () {
+    return tileTree.map(function (t) {
+      return { path: t.path, uri: t.uri, geometricError: t.geometricError,
+               refineDistance: refineDistance(t.geometricError || 0) };
+    });
+  },
+  screenshot: shotDataUrl,
+  pick: pickCenter,
+  camera: function () {
+    var c = camera.positionCartographic;
+    return { lon: Cesium.Math.toDegrees(c.longitude), lat: Cesium.Math.toDegrees(c.latitude),
+             height: c.height, fovDeg: FOV_DEG, ssePx: SSE_PX };
+  },
+  recordDefect: function (d) {
+    defects.push(Object.assign({ env: ENV, at: new Date().toISOString() }, d));
+    renderDefects();
+    return defects.length;
+  },
+  defects: function () { return defects; },
+  ready: function () { return tileset ? Promise.resolve(true) : Promise.resolve(false); }
+};
+</script>
+</body>
+</html>

@@ -34,9 +34,14 @@ void BatchIdVisitor::apply(osg::Drawable& drawable) {
             osg::Array* existing = geometry->getVertexAttribArray(0);
             if (existing)
             {
-                // 只有当它不是本 visitor 之前写进去的 _BATCHID 时才搬走。
-                // 判据：FloatArray 且长度与顶点数一致且已被登记。
-                const bool isOurBatchId = (_written.count(existing) > 0);
+                // 是不是本工具写进去的 _BATCHID？两个判据：
+                //   1. 本 visitor 实例之前登记过（同一实例重复 apply）；
+                //   2. slot0 已经是 FloatArray——_BATCHID 恒为 FloatArray，
+                //      而源模型属性 0 实际不会是 FloatArray。这样即使换一个
+                //      visitor 实例再跑一遍（双读修复 A-23 的场景），也不会把
+                //      上一遍写的 _BATCHID 当成"源数据"再搬走。
+                const bool isOurBatchId = (_written.count(existing) > 0)
+                    || (existing->getType() == osg::Array::FloatArrayType);
                 if (!isOurBatchId)
                 {
                     unsigned slot = findFreeAttribSlot(*geometry, 2);

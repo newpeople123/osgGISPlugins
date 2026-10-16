@@ -41,3 +41,9 @@ out_test/
 tg_build/
 docs/model23dtiles-production/baseline/
 docs/model23dtiles-production/runs/
+
+# 生产管线单元测试结果文件
+test_production_result.txt
+
+# 生产管线暂存目录（正常会被清理，失败时可能残留）
+**/.wb-staging/
