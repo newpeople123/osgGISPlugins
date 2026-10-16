@@ -438,6 +438,35 @@ bool SourceModel::build(osg::Node* root)
 
         // prims
         unsigned objTris = 0;
+        // 纹理字节估算（真实 FBX 缺陷 #4，lugouqiao 335MB 复现）：纹理无论
+        // KTX2 与否都会内嵌进 b3dm 的 glb bufferView（Osg2Gltf 固定内嵌），
+        // 大聚合瓦片纹理字节远超几何字节——lugouqiao 实测单瓦片 51MB、
+        // 最高 ~2100 B/tri，旧估算只算几何导致分区器漏切。
+        // KTX2/ETC1S 约 RGBA8 的 1/8，按 /8 折算；atlas 合并收益不扣（保守切分）。
+        std::map<unsigned, std::uint64_t> texBytesByMesh;
+        auto textureBytesForMesh = [this, &texBytesByMesh](unsigned meshId) -> std::uint64_t {
+            auto it = texBytesByMesh.find(meshId);
+            if (it != texBytesByMesh.end()) { return it->second; }
+            std::uint64_t b = 0;
+            const SourceMesh& m = meshes[meshId];
+            if (m.stateSet.valid())
+            {
+                const unsigned units = m.stateSet->getNumTextureAttributeLists();
+                for (unsigned unit = 0; unit < units; ++unit)
+                {
+                    if (const osg::Texture2D* tex =
+                            dynamic_cast<const osg::Texture2D*>(m.stateSet->getTextureAttribute(unit, osg::StateAttribute::TEXTURE)))
+                    {
+                        if (const osg::Image* img = tex->getImage())
+                        {
+                            b += img->getTotalSizeInBytes() / 8ull;
+                        }
+                    }
+                }
+            }
+            texBytesByMesh[meshId] = b;
+            return b;
+        };
         for (unsigned meshId : obj.meshIds)
         {
             const SourceMesh& mesh = meshes[meshId];
@@ -480,9 +509,12 @@ bool SourceModel::build(osg::Node* root)
                 // 只有 ~36 B/tri，导致 17 MB 的瓦片估算成 4.3 MB，
                 // 分区器以为没超预算就不再切分，最后 selfValidate 才爆。
                 // 现按 2 顶点/三角形折算：160*tri + 32*vert ≈ 176 B/tri（偏保守）。
+                // 纹理字节按解码 RGBA8 的 1/8（KTX2/ETC1S 经验压缩率）计入，
+                // 同一 mesh 多 primSet 共享纹理会重复计，偏保守可接受。
                 // 材质/纹理的开销在 SpatialPartitioner::computeLoad 按瓦片去重另加。
                 pr.byteEstimate = static_cast<std::uint64_t>(pr.vertexCount) * 32ull
-                                + static_cast<std::uint64_t>(n) * 160ull;
+                                + static_cast<std::uint64_t>(n) * 160ull
+                                + textureBytesForMesh(meshId);
                 pr.splitLevel = 0;
                 prims.push_back(pr);
                 objTris += n;

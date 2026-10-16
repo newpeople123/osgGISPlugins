@@ -18,7 +18,51 @@
 #include <set>
 #include <sstream>
 #include "utils/Utils.h"
+#include "utils/GltfOptimizer.h"
+#include "osgdb_gltf/Extensions.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
+
+namespace {
+// 清除纹理对象上的导出缓存名（exportOsgTextureIfNeeded 以此判断是否
+// 已导出过），强制下一次 optimize 重新导出——配合降采样的 textureOptions
+// 会生成新内容 hash 的新文件，不与共享缓存冲突。
+// 用途：不可分节点（单对象带几十个材质/纹理，分区器无法再切）的瓦片
+// 内容字节超限时，逐级降采样纹理重写（lugouqiao 实测 1.5k 三角形瓦片
+// 因 30+ 张纹理达 10MB+）。
+struct ClearTextureExportCacheVisitor : public osg::NodeVisitor
+{
+    ClearTextureExportCacheVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    void clearTexture(osg::StateSet* ss)
+    {
+        if (!ss) { return; }
+        const unsigned units = ss->getNumTextureAttributeLists();
+        for (unsigned unit = 0; unit < units; ++unit)
+        {
+            if (osg::Texture2D* tex =
+                    dynamic_cast<osg::Texture2D*>(ss->getTextureAttribute(unit, osg::StateAttribute::TEXTURE)))
+            {
+                tex->setUserValue(BASECOLOR_TEXTURE_FILENAME, std::string());
+                tex->setUserValue(NORMAL_TEXTURE_FILENAME, std::string());
+                tex->setUserValue(OCCLUSION_TEXTURE_FILENAME, std::string());
+                tex->setUserValue(EMISSIVE_TEXTURE_FILENAME, std::string());
+                tex->setUserValue(MR_TEXTURE_FILENAME, std::string());
+                tex->setUserValue(DIFFUSE_TEXTURE_FILENAME, std::string());
+                tex->setUserValue(SG_TEXTURE_FILENAME, std::string());
+            }
+        }
+    }
+    void apply(osg::Geode& geode) override
+    {
+        clearTexture(geode.getStateSet());
+        traverse(geode);
+    }
+    void apply(osg::Drawable& d) override
+    {
+        clearTexture(d.getStateSet());
+        if (osg::Geometry* g = d.asGeometry()) { clearTexture(g->getStateSet()); }
+    }
+};
+} // namespace
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
@@ -382,6 +426,41 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri, boo
     {
         std::ifstream f(abs, std::ios::binary | std::ios::ate);
         if (f.is_open()) { out.bytes = static_cast<std::uint64_t>(f.tellg()); }
+    }
+
+    // 纹理降采样兜底（手册 7.3 不允许超限瓦片）：分区估算含纹理字节后，
+    // 仍有一类超限无法靠切分解决——不可分节点（单对象带几十个材质）。
+    // 此时唯一可压的维度是纹理分辨率，逐级降采样重写直到达标或到下限。
+    if (out.bytes > _profile.budget.maxTileContentBytes)
+    {
+        static const unsigned texCaps[] = { 256u, 128u, 64u };
+        for (unsigned cap : texCaps)
+        {
+            TRACE("rewriteWithSmallerTextures cap=" << cap << " curBytes=" << out.bytes);
+            ClearTextureExportCacheVisitor clr;
+            work->accept(clr);
+
+            GltfOptimizer optimizer2;
+            GltfOptimizer::GltfTextureOptimizationOptions topts = _opt.textureOptions;
+            topts.maxTextureWidth = std::min(topts.maxTextureWidth, static_cast<int>(cap));
+            topts.maxTextureHeight = std::min(topts.maxTextureHeight, static_cast<int>(cap));
+            topts.maxTextureAtlasWidth = std::min(topts.maxTextureAtlasWidth, static_cast<int>(cap));
+            topts.maxTextureAtlasHeight = std::min(topts.maxTextureAtlasHeight, static_cast<int>(cap));
+            optimizer2.setGltfTextureOptimizationOptions(topts);
+            optimizer2.optimize(work.get(), _opt.gltfOptimizerOptions);
+
+            if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
+            {
+                out.error = "writeNodeFile failed (texture rewrite): " + abs;
+                return out;
+            }
+            out.bytes = 0;
+            {
+                std::ifstream f(abs, std::ios::binary | std::ios::ate);
+                if (f.is_open()) { out.bytes = static_cast<std::uint64_t>(f.tellg()); }
+            }
+            if (out.bytes <= _profile.budget.maxTileContentBytes) { break; }
+        }
     }
     (void)isInstanceTile;
     out.ok = true;

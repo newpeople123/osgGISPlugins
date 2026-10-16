@@ -336,7 +336,7 @@ bool SpatialPartitioner::splitItemByTriangles(std::uint32_t itemId, int axis,
     L.splitLevel = 2;
     R.splitLevel = 2;
     // 重算指标
-    auto refresh = [this](PrimRef& pr) {
+    auto refresh = [this, &base](PrimRef& pr) {
         pr.aabb.init();
         osg::Vec3d cen(0, 0, 0);
         std::vector<unsigned> verts;
@@ -357,8 +357,13 @@ bool SpatialPartitioner::splitItemByTriangles(std::uint32_t itemId, int axis,
         verts.erase(std::unique(verts.begin(), verts.end()), verts.end());
         pr.vertexCount = static_cast<unsigned>(verts.size());
         pr.centroid = pr.tris.empty() ? osg::Vec3d(0, 0, 0) : cen / static_cast<double>(pr.tris.size() * 3);
-        pr.byteEstimate = static_cast<std::uint64_t>(pr.vertexCount) * 48ull
-                        + static_cast<std::uint64_t>(pr.tris.size()) * 12ull;
+        // 字节估算按三角形比例从父 PrimRef 分摊（含纹理字节），禁止在此
+        // 用纯几何公式重算——那会把 SourceModel 层的校准估算整个覆盖掉，
+        // 子节点被低估后分区器停止切分，最终写出超限瓦片（lugouqiao 实测
+        // 单瓦片 51MB 漏网即此因 + 纹理字节未计）。
+        const std::uint64_t perTriBytes = (base.triCount > 0)
+            ? base.byteEstimate / static_cast<std::uint64_t>(base.triCount) : 0ull;
+        pr.byteEstimate = perTriBytes * static_cast<std::uint64_t>(pr.tris.size());
     };
     refresh(L);
     refresh(R);

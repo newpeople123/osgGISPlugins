@@ -34,11 +34,37 @@ namespace {
 // 简化受锁边限制收敛不到三角形目标，只看三角形数会漏掉字节超限。
 struct ByteEstimateVisitor : public osg::NodeVisitor
 {
-    std::uint64_t tris = 0, verts = 0;
+    std::uint64_t tris = 0, verts = 0, texBytes = 0;
     std::set<const osg::Geometry*> seen;
+    std::set<const osg::Image*> seenImgs;
     ByteEstimateVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+
+    void collectTextureBytes(const osg::StateSet* ss)
+    {
+        if (!ss) { return; }
+        const unsigned units = ss->getNumTextureAttributeLists();
+        for (unsigned unit = 0; unit < units; ++unit)
+        {
+            const osg::Texture2D* tex =
+                dynamic_cast<const osg::Texture2D*>(ss->getTextureAttribute(unit, osg::StateAttribute::TEXTURE));
+            if (!tex) { continue; }
+            const osg::Image* img = tex->getImage();
+            if (!img) { continue; }
+            if (!seenImgs.insert(img).second) { continue; }
+            // 纹理字节按解码 RGBA8 的 1/8 折算（KTX2/ETC1S 经验压缩率），
+            // atlas 合并收益不扣（保守）。纹理总是内嵌 glb bufferView
+            //（Osg2Gltf 固定行为），大聚合瓦片纹理字节占大头，不能漏估。
+            texBytes += img->getTotalSizeInBytes() / 8ull;
+        }
+    }
+    void apply(osg::Geode& geode) override
+    {
+        collectTextureBytes(geode.getStateSet());
+        traverse(geode);
+    }
     void apply(osg::Drawable& d) override
     {
+        collectTextureBytes(d.getStateSet());
         if (osg::Geometry* g = d.asGeometry())
         {
             if (!seen.insert(g).second) { return; }
@@ -59,10 +85,11 @@ std::uint64_t estimateContentBytes(osg::Node* node)
     if (!node) { return 0; }
     ByteEstimateVisitor v;
     node->accept(v);
-    // 只算几何部分（200 B/三角形覆盖 position/normal/uv/索引/容器开销，
-    // 实测 longxiang 超限瓦片 116~242 B/tri）；纹理经全局去重缓存后
-    // 不随瓦片线性增长，不在此估。
-    return v.tris * 200ull + v.verts * 48ull;
+    // 几何部分：200 B/三角形覆盖 position/normal/uv/索引/容器开销，
+    // 实测 longxiang 超限瓦片 116~242 B/tri。
+    // 纹理部分：内嵌 glb 的 KTX2 字节按解码 /8 折算（lugouqiao 实测
+    // 纹理密集瓦片字节为纯几何估算的 10 倍以上，漏估会直接超限）。
+    return v.tris * 200ull + v.verts * 48ull + v.texBytes;
 }
 } // namespace
 
