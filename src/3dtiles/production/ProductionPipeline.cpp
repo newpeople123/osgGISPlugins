@@ -12,6 +12,9 @@
 #include <algorithm>
 #include <chrono>
 #include <map>
+#include <iterator>
+#include <functional>
+#include <filesystem>
 #include <set>
 #include <sstream>
 #include "utils/Utils.h"
@@ -367,7 +370,7 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri, boo
     out.triangles = tcv.count;
     if (out.triangles == 0) { out.error = "no triangles"; return out; }
 
-    const std::string abs = _opt.outputDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+    const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
     const std::string dir = osgDB::getFilePath(abs);
     if (!dir.empty()) { osgDB::makeDirectory(dir); }
     if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
@@ -664,6 +667,12 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
 {
     Timer total;
     _opt = opt;
+    // 暂存目录：<outputDir>/.wb-staging（可在 Options 里覆盖）
+    if (_opt.stagingDir.empty())
+    {
+        _opt.stagingDir = _opt.outputDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + ".wb-staging";
+    }
+    osgDB::makeDirectory(_opt.stagingDir);
     try
     {
         _profile.validate();
@@ -908,5 +917,187 @@ bool ProductionPipeline::writeReport(const std::string& path) const
     j["tiles"] = tiles;
     f << j.dump(2);
     f.close();
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// 手册 14.17：异常终止与重试
+//
+// 之前是边跑边往 outputDir 里写瓦片，run() 失败后 main 仍然把 tileset.json
+// 写进同一个目录，磁盘上就留下一个"看起来成功其实内容不全"的数据集。
+// 现在改成：全部产物先落暂存目录，自校验通过后才整体搬到 outputDir。
+// ---------------------------------------------------------------------------
+bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
+{
+    std::ifstream f(tilesetJsonPath, std::ios::binary);
+    if (!f.is_open()) { return false; }
+    std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+
+    json parsed;
+    try
+    {
+        parsed = json::parse(text);
+    }
+    catch (const std::exception& e)
+    {
+        _failures.push_back(std::string("selfValidate: tileset.json is not valid JSON: ") + e.what());
+        return false;
+    }
+
+    bool ok = true;
+    // 1) 所有 content URI 必须在暂存目录里真实存在
+    std::vector<std::string> uris;
+    std::function<void(const json&)> walk = [&](const json& t) {
+        if (t.contains("content") && t["content"].is_object()
+            && t["content"].contains("uri") && t["content"]["uri"].is_string())
+        {
+            uris.push_back(t["content"]["uri"].get<std::string>());
+        }
+        if (t.contains("children") && t["children"].is_array())
+        {
+            for (const json& c : t["children"]) { walk(c); }
+        }
+    };
+    if (parsed.contains("root") && parsed["root"].is_object()) { walk(parsed["root"]); }
+    for (const std::string& u : uris)
+    {
+        const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + u;
+        std::ifstream cf(abs, std::ios::binary);
+        if (!cf.is_open())
+        {
+            _failures.push_back("selfValidate: content uri missing on disk: " + u);
+            ok = false;
+        }
+        else
+        {
+            cf.seekg(0, std::ios::end);
+            const std::uint64_t bytes = static_cast<std::uint64_t>(cf.tellg());
+            cf.close();
+            if (bytes > _profile.budget.maxTileContentBytes)
+            {
+                _failures.push_back("selfValidate: content over hard byte limit: " + u
+                                    + " (" + std::to_string(bytes) + " > "
+                                    + std::to_string(_profile.budget.maxTileContentBytes) + ")");
+                ok = false;
+            }
+        }
+    }
+
+    // 2) 每个瓦片的字节预算（写盘后实测）
+    for (const ProductionTile& t : _tiles)
+    {
+        if (t.hasContent && t.contentBytes > _profile.budget.maxTileContentBytes)
+        {
+            _failures.push_back("selfValidate: tile " + std::to_string(t.id) + " content "
+                                + std::to_string(t.contentBytes) + " bytes exceeds hard limit "
+                                + std::to_string(_profile.budget.maxTileContentBytes));
+            ok = false;
+        }
+        if (t.hasContent && t.triangles > _profile.budget.maxTrianglesPerTile)
+        {
+            _failures.push_back("selfValidate: tile " + std::to_string(t.id) + " has "
+                                + std::to_string(t.triangles) + " triangles, over hard limit "
+                                + std::to_string(_profile.budget.maxTrianglesPerTile));
+            ok = false;
+        }
+    }
+
+    // 3) geometricError 根到叶单调不增
+    std::function<void(int)> checkGe = [&](int idx) {
+        if (idx < 0 || static_cast<std::size_t>(idx) >= _tiles.size()) { return; }
+        for (int c : _tiles[idx].children)
+        {
+            if (c < 0 || static_cast<std::size_t>(c) >= _tiles.size()) { continue; }
+            if (_tiles[c].geometricErrorM > _tiles[idx].geometricErrorM + 1e-9)
+            {
+                _failures.push_back("selfValidate: geometricError increases from tile "
+                                    + std::to_string(idx) + " to child " + std::to_string(c));
+                ok = false;
+            }
+            checkGe(c);
+        }
+    };
+    checkGe(_root);
+
+    return ok;
+}
+
+void ProductionPipeline::discardStaging()
+{
+    if (_opt.stagingDir.empty()) { return; }
+    std::error_code ec;
+    const std::filesystem::path p(_opt.stagingDir);
+    if (std::filesystem::exists(p, ec))
+    {
+        std::filesystem::remove_all(p, ec);
+        if (ec) { _warnings.push_back("discardStaging: " + ec.message()); }
+    }
+}
+
+bool ProductionPipeline::finalize()
+{
+    if (_root < 0)
+    {
+        _failures.push_back("finalize: no tile tree produced");
+        discardStaging();
+        return false;
+    }
+    if (!_failures.empty())
+    {
+        // run() 阶段已经有明确失败项：不产出任何数据集
+        discardStaging();
+        return false;
+    }
+
+    const std::string sep = OSG_GIS_PLUGINS_PATH_SPLIT_STRING;
+    const std::string tsPath = _opt.stagingDir + sep + "tileset.json";
+    if (!writeTilesetJson(tsPath)) { _failures.push_back("finalize: write tileset.json failed"); discardStaging(); return false; }
+    if (!writeManifest(_opt.stagingDir + sep + "feature-manifest.json"))
+    { _failures.push_back("finalize: write feature-manifest.json failed"); discardStaging(); return false; }
+    if (!writeReport(_opt.stagingDir + sep + "conversion-report.json"))
+    { _failures.push_back("finalize: write conversion-report.json failed"); discardStaging(); return false; }
+
+    if (!selfValidate(tsPath)) { discardStaging(); return false; }
+
+    // 自校验通过：把暂存内容搬到最终目录
+    std::error_code ec;
+    const std::filesystem::path outDir(_opt.outputDir);
+    std::filesystem::create_directories(outDir, ec);
+    if (ec && !std::filesystem::exists(outDir))
+    {
+        _failures.push_back("finalize: cannot create output dir " + _opt.outputDir + ": " + ec.message());
+        discardStaging();
+        return false;
+    }
+
+    std::vector<std::filesystem::path> entries;
+    for (const auto& e : std::filesystem::directory_iterator(_opt.stagingDir, ec))
+    {
+        entries.push_back(e.path());
+    }
+    for (const std::filesystem::path& src : entries)
+    {
+        const std::filesystem::path dst = outDir / src.filename();
+        // 目标已存在时先删掉，rename 不会覆盖
+        std::filesystem::remove_all(dst, ec);
+        ec.clear();
+        std::filesystem::rename(src, dst, ec);
+        if (ec)
+        {
+            // 跨卷/异常情况下退回复制
+            std::filesystem::copy(src, dst,
+                                  std::filesystem::copy_options::recursive
+                                  | std::filesystem::copy_options::overwrite_existing, ec);
+            if (ec)
+            {
+                _failures.push_back("finalize: cannot move " + src.string() + " -> "
+                                    + dst.string() + ": " + ec.message());
+                discardStaging();
+                return false;
+            }
+        }
+    }
+    discardStaging();
     return true;
 }

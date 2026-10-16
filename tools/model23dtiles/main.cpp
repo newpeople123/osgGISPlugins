@@ -20,6 +20,8 @@
 #include <osg/ComputeBoundsVisitor>
 #include <osgDB/FileNameUtils>
 #include <tbb/global_control.h>
+#include <filesystem>
+#include <system_error>
 
 using namespace osgGISPlugins;
 
@@ -327,8 +329,9 @@ void printUsage()
 
 	// =================== Performance Limits ===================
 	osg::notify(osg::NOTICE) << "performance limits:" << std::endl;
-	osg::notify(osg::NOTICE) << "    -tri <number>       - Max triangles per tile. Default is 200000" << std::endl;
-	osg::notify(osg::NOTICE) << "    -dc <number>        - Max draw calls per tile. Default is 20" << std::endl;
+		osg::notify(osg::NOTICE) << "    -tri <number>       - Max triangles per tile. Default is 200000" << std::endl;
+		osg::notify(osg::NOTICE) << "    -dc <number>        - Max draw calls per tile. Default is 20" << std::endl;
+		osg::notify(osg::NOTICE) << "    -mb <number>        - Max bytes of a single tile content (b3dm/i3dm). Default is 8388608 (8MiB)" << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 
 	// =================== Texture Size ===================
@@ -438,6 +441,9 @@ int main(int argc, char** argv)
 
 	const unsigned int maxTriangleCount = parseArgument(arguments, "-tri", 200000);
 	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-dc", 20);
+	// 单瓦片内容字节上限（默认 8 MiB）。手册 7.3：超过硬上限必须明确失败，
+	// 不允许输出超限瓦片；这个开关就是用来构造超限场景验证该行为的。
+	const unsigned int maxTileContentBytes = parseArgument(arguments, "-mb", 8u * 1024u * 1024u);
 
 
 	std::string input = parseArgument(arguments, "-i", std::string());
@@ -603,6 +609,10 @@ int main(int argc, char** argv)
 			profile.budget.maxPrimitivesPerTile = std::max<unsigned>(maxDrawcallCommandCount, 1);
 			profile.budget.targetPrimitivesPerTile =
 				std::min<unsigned>(profile.budget.targetPrimitivesPerTile, profile.budget.maxPrimitivesPerTile);
+			profile.budget.maxTileContentBytes = static_cast<std::uint64_t>(maxTileContentBytes);
+			profile.budget.targetTileContentBytes =
+				std::min<std::uint64_t>(profile.budget.targetTileContentBytes,
+				                        profile.budget.maxTileContentBytes);
 			profile.budget.maxAtlasDimension = std::max<unsigned>(maxTextureAtlasWidth, maxTextureAtlasHeight);
 			profile.budget.targetAtlasDimension =
 				std::min<unsigned>(profile.budget.targetAtlasDimension, profile.budget.maxAtlasDimension);
@@ -626,24 +636,57 @@ int main(int argc, char** argv)
 			tbb::global_control c(tbb::global_control::max_allowed_parallelism, 8);
 			const bool ok = pipeline.run(tNode.get(), popt);
 
-			pipeline.writeTilesetJson(output + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "tileset.json");
-			pipeline.writeManifest(output + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "feature-manifest.json");
-			pipeline.writeReport(output + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + "conversion-report.json");
-
 			for (const std::string& w : pipeline.warnings())
 			{
 				OSG_NOTICE << "WARNING: " << w << std::endl;
 			}
-			if (!ok)
+		if (!ok)
+		{
+			for (const std::string& e : pipeline.failures())
+			{
+				OSG_NOTICE << "ERROR: " << e << std::endl;
+			}
+			OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline)."
+				<< std::endl;
+			pipeline.discardStaging();
+			// 纹理缓存目录是跑管线前就建的，失败时里面是空的。
+			// 空目录不会让 3D Tiles 加载器误判成数据集，但清掉更干净。
+			// 只删空目录：万一 cachePath 指向用户共享的缓存，不能连带删内容。
+			{
+				const std::string& tc = config.tileConfig.gltfTextureOptions.cachePath;
+				std::error_code ec;
+				if (!tc.empty() && std::filesystem::is_directory(tc, ec)
+					&& std::filesystem::directory_iterator(tc, ec) == std::filesystem::directory_iterator())
+				{
+					std::filesystem::remove(tc, ec);
+				}
+			}
+			return 3;
+		}
+
+			// 手册 14.17：tileset/manifest/report 写进暂存目录并自校验，
+			// 通过才搬到 output。失败时不留半成品数据集。
+			if (!pipeline.finalize())
 			{
 				for (const std::string& e : pipeline.failures())
 				{
 					OSG_NOTICE << "ERROR: " << e << std::endl;
 				}
-				OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline)."
-					<< std::endl;
-				return 3;
+			OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline, "
+				<< "output not committed)." << std::endl;
+			pipeline.discardStaging();
+			{
+				const std::string& tc = config.tileConfig.gltfTextureOptions.cachePath;
+				std::error_code ec;
+				if (!tc.empty() && std::filesystem::is_directory(tc, ec)
+					&& std::filesystem::directory_iterator(tc, ec) == std::filesystem::directory_iterator())
+				{
+					std::filesystem::remove(tc, ec);
+				}
 			}
+			return 3;
+			}
+
 			OSG_NOTICE << "Successfully converted " + input + " to 3dtiles "
 				<< "(" << pipeline.tiles().size() << " tiles, production pipeline)." << std::endl;
 			return 0;

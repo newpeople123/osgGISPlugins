@@ -95,6 +95,9 @@ class ProductionPipeline {
 public:
     struct Options {
         std::string outputDir;
+        // 暂存目录：所有瓦片先写到这里，自校验通过后才搬到 outputDir。
+        // 留空表示用 <outputDir>/.wb-staging。
+        std::string stagingDir;
         double latitude = 30.0;
         double longitude = 116.0;
         double altitude = 300.0;
@@ -110,6 +113,14 @@ public:
 
     bool run(osg::Node* input, const Options& opt);
 
+    // 手册 14.17：瓦片全部写进暂存目录后，写 tileset/manifest/report 并做自校验，
+    // 通过才把内容搬到 outputDir；任何一步失败都丢弃暂存内容，
+    // 绝不在 outputDir 里留下半成品 tileset.json。
+    bool finalize();
+
+    // 丢弃暂存目录（失败路径调用）
+    void discardStaging();
+
     const ConversionReport& report() const { return _report; }
     const std::vector<ProductionTile>& tiles() const { return _tiles; }
     const std::vector<std::string>& failures() const { return _failures; }
@@ -120,6 +131,10 @@ public:
     bool writeTilesetJson(const std::string& path) const;
     bool writeManifest(const std::string& path) const;
     bool writeReport(const std::string& path) const;
+
+    // 自校验：读回刚写出的 tileset.json，核对 URI 存在、预算、误差单调性。
+    // 非 const：失败项要记进 _failures，供调用方打印。
+    bool selfValidate(const std::string& tilesetJsonPath);
 
 private:
     ProductionProfile _profile;
