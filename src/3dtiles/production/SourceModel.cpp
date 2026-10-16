@@ -475,8 +475,14 @@ bool SourceModel::build(osg::Node* root)
                 verts.erase(std::unique(verts.begin(), verts.end()), verts.end());
                 pr.vertexCount = static_cast<unsigned>(verts.size());
                 pr.centroid = (n > 0) ? cen / static_cast<double>(n * 3) : osg::Vec3d(0, 0, 0);
-                pr.byteEstimate = static_cast<std::uint64_t>(pr.vertexCount) * 48ull
-                                + static_cast<std::uint64_t>(n) * 12ull;
+                // 内容字节估算。实测校准（longxiang.fbx，6 个超限瓦片）：
+                // 真实 b3dm ≈ 116–177 字节/三角形。旧公式 vert*48+tri*12
+                // 只有 ~36 B/tri，导致 17 MB 的瓦片估算成 4.3 MB，
+                // 分区器以为没超预算就不再切分，最后 selfValidate 才爆。
+                // 现按 2 顶点/三角形折算：160*tri + 32*vert ≈ 176 B/tri（偏保守）。
+                // 材质/纹理的开销在 SpatialPartitioner::computeLoad 按瓦片去重另加。
+                pr.byteEstimate = static_cast<std::uint64_t>(pr.vertexCount) * 32ull
+                                + static_cast<std::uint64_t>(n) * 160ull;
                 pr.splitLevel = 0;
                 prims.push_back(pr);
                 objTris += n;

@@ -27,6 +27,45 @@ unsigned ProxyMeshBuilder::countTriangles(osg::Node* node)
     return tcv.count;
 }
 
+namespace {
+// 内容字节估算，系数与 SourceModel 的 PrimRef::byteEstimate 一致
+// （实测校准 ~150 B/三角形，见 SourceModel.cpp 注释）。
+// 代理必须同时满足三角形预算与字节预算：实测发现部分瓦片 meshopt
+// 简化受锁边限制收敛不到三角形目标，只看三角形数会漏掉字节超限。
+struct ByteEstimateVisitor : public osg::NodeVisitor
+{
+    std::uint64_t tris = 0, verts = 0;
+    std::set<const osg::Geometry*> seen;
+    ByteEstimateVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    void apply(osg::Drawable& d) override
+    {
+        if (osg::Geometry* g = d.asGeometry())
+        {
+            if (!seen.insert(g).second) { return; }
+            const unsigned pc = g->getNumPrimitiveSets();
+            for (unsigned i = 0; i < pc; ++i)
+            {
+                if (const osg::PrimitiveSet* ps = g->getPrimitiveSet(i))
+                {
+                    tris += ps->getNumPrimitives();
+                }
+            }
+            if (const osg::Array* va = g->getVertexArray()) { verts += va->getNumElements(); }
+        }
+    }
+};
+std::uint64_t estimateContentBytes(osg::Node* node)
+{
+    if (!node) { return 0; }
+    ByteEstimateVisitor v;
+    node->accept(v);
+    // 只算几何部分（200 B/三角形覆盖 position/normal/uv/索引/容器开销，
+    // 实测 longxiang 超限瓦片 116~242 B/tri）；纹理经全局去重缓存后
+    // 不随瓦片线性增长，不在此估。
+    return v.tris * 200ull + v.verts * 48ull;
+}
+} // namespace
+
 double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
                                       double targetErrorMeters) const
 {
@@ -40,7 +79,20 @@ double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
                           static_cast<float>(targetErrorMeters));
     node->accept(simplifier);
 
-    const unsigned after = countTriangles(node);
+    unsigned after = countTriangles(node);
+    if (after > targetTriangles)
+    {
+        // 实测（longxiang.fbx 根节点）：targetError = diag*0.01 对大节点过于
+        // 宽松，meshopt_simplify 达到误差上限就提前停止，面数几乎不减
+        // （133k → 133k）。此时用 sloppy 兜底强行逼近目标——精度由
+        // GeometryErrorEvaluator 的双向 Hausdorff 区间如实上报，不在这里虚报。
+        const double ratio2 = static_cast<double>(targetTriangles)
+                            / static_cast<double>(std::max<unsigned>(after, 1u));
+        Simplifier sloppy(ratio2, true, _profile.lockSeamBorder,
+                          static_cast<float>(targetErrorMeters));
+        node->accept(sloppy);
+        after = countTriangles(node);
+    }
     return (before > 0) ? static_cast<double>(after) / static_cast<double>(before) : 1.0;
 }
 
@@ -168,7 +220,10 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         best = attempt;
         bestTris = got;
         bestRatio = applied;
-        if (got <= targetTriangles) { break; }
+        // 双预算判据：三角形 + 内容字节（实测 longxiang.fbx：部分瓦片
+        // 简化受锁边限制停在 64k~133k 三角形，只按三角形判会漏掉字节超限）
+        const std::uint64_t estBytes = estimateContentBytes(attempt.get());
+        if (got <= targetTriangles && estBytes <= _profile.budget.maxTileContentBytes) { break; }
     }
 
     if (bestTris <= targetTriangles || !allowAggregate)

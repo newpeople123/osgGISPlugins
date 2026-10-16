@@ -757,6 +757,7 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     TRACE("stats");
 
     // ---- 统计 ----
+    TRACE("stats: tileCount=" << _tiles.size());
     _report.tileCount = static_cast<unsigned>(_tiles.size());
     _report.contentTileCount = 0;
     for (const ProductionTile& t : _tiles)
@@ -765,6 +766,7 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     }
     _report.maxDepth = 0;
     {
+        TRACE("stats: maxDepth walk");
         std::vector<int> stack{_root};
         std::map<int, unsigned> depth;
         depth[_root] = 0;
@@ -780,6 +782,7 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
             }
         }
     }
+    TRACE("stats: error agg");
     _report.errorMax = _tiles[_root].geometricErrorM;
     double sum = 0.0;
     unsigned n = 0;
@@ -788,14 +791,18 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         if (t.hasContent) { sum += t.measuredProxyErrorM; ++n; }
     }
     _report.errorMean = (n > 0) ? sum / n : 0.0;
+    TRACE("stats: occurrenceCount");
     _report.manifestOccurrences = static_cast<unsigned>(_mapper.occurrenceCount());
 
+    TRACE("stats: mapper.validate");
     for (const std::string& e : _mapper.validate()) { _failures.push_back("featureMapper: " + e); }
 
+    TRACE("stats: finalize report (rss/seconds)");
     _report.totalSeconds = total.elapsed();
     _report.peakRssBytes = currentPeakRss();
     _report.warnings = _warnings;
     _report.errors = _failures;
+    TRACE("stats: run() returning " << (_failures.empty() ? "true" : "false"));
     return _failures.empty();
 }
 
@@ -1037,6 +1044,7 @@ void ProductionPipeline::discardStaging()
 
 bool ProductionPipeline::finalize()
 {
+    TRACE("finalize enter");
     if (_root < 0)
     {
         _failures.push_back("finalize: no tile tree produced");
@@ -1046,19 +1054,25 @@ bool ProductionPipeline::finalize()
     if (!_failures.empty())
     {
         // run() 阶段已经有明确失败项：不产出任何数据集
+        TRACE("finalize: pre-existing failures=" << _failures.size());
         discardStaging();
         return false;
     }
 
     const std::string sep = OSG_GIS_PLUGINS_PATH_SPLIT_STRING;
     const std::string tsPath = _opt.stagingDir + sep + "tileset.json";
+    TRACE("finalize: writeTilesetJson");
     if (!writeTilesetJson(tsPath)) { _failures.push_back("finalize: write tileset.json failed"); discardStaging(); return false; }
+    TRACE("finalize: writeManifest");
     if (!writeManifest(_opt.stagingDir + sep + "feature-manifest.json"))
     { _failures.push_back("finalize: write feature-manifest.json failed"); discardStaging(); return false; }
+    TRACE("finalize: writeReport");
     if (!writeReport(_opt.stagingDir + sep + "conversion-report.json"))
     { _failures.push_back("finalize: write conversion-report.json failed"); discardStaging(); return false; }
 
-    if (!selfValidate(tsPath)) { discardStaging(); return false; }
+    TRACE("finalize: selfValidate");
+    if (!selfValidate(tsPath)) { TRACE("finalize: selfValidate FAILED (" << _failures.size() << " failures)"); discardStaging(); return false; }
+    TRACE("finalize: selfValidate ok");
 
     // 自校验通过：把暂存内容搬到最终目录
     std::error_code ec;
@@ -1079,6 +1093,7 @@ bool ProductionPipeline::finalize()
     for (const std::filesystem::path& src : entries)
     {
         const std::filesystem::path dst = outDir / src.filename();
+        TRACE("finalize: move " << src.filename().string());
         // 目标已存在时先删掉，rename 不会覆盖
         std::filesystem::remove_all(dst, ec);
         ec.clear();

@@ -79,7 +79,9 @@ SpatialPartitioner::Load SpatialPartitioner::computeLoad(const std::vector<std::
     }
     L.prim = primKeys.size();
     L.mat = mats.size();
-    L.bytes = bytes + mats.size() * 4096ull;
+    // 每材质按 64 KB 计纹理/材质表开销（KTX2 256x256 的常见量级；
+    // 旧的 4 KB 明显低估，会让带纹理瓦片的字节预算形同虚设）
+    L.bytes = bytes + mats.size() * 65536ull;
     return L;
 }
 

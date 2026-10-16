@@ -644,9 +644,13 @@ int main(int argc, char** argv)
 		{
 			for (const std::string& e : pipeline.failures())
 			{
+				// 失败信息必须走 std::cerr（main 开头已 unitbuf）。
+				// OSG notify 的内部流在进程退出阶段会丢缓冲，实测导致
+				// "看起来无声死亡、实际是明确失败"的误导。
+				std::cerr << "ERROR: " << e << std::endl;
 				OSG_NOTICE << "ERROR: " << e << std::endl;
 			}
-			OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline)."
+			std::cerr << "Failed converted " + input + " to 3dtiles (production pipeline)."
 				<< std::endl;
 			pipeline.discardStaging();
 			// 纹理缓存目录是跑管线前就建的，失败时里面是空的。
@@ -670,6 +674,7 @@ int main(int argc, char** argv)
 			{
 				for (const std::string& e : pipeline.failures())
 				{
+					std::cerr << "ERROR: " << e << std::endl;
 					OSG_NOTICE << "ERROR: " << e << std::endl;
 				}
 			OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline, "
