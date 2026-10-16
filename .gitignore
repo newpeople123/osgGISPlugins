@@ -47,3 +47,6 @@ test_production_result.txt
 
 # 生产管线暂存目录（正常会被清理，失败时可能残留）
 **/.wb-staging/
+
+# 视觉验收截图（体积大，capture.json 已足够审计）
+docs/visual-acceptance/runs/*/shots/

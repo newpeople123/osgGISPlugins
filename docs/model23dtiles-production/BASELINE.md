@@ -232,10 +232,25 @@ root ge = 520.840806 / child ge = 520.740806   ← 差值恰好 0.1
 
 | 编号 | 缺失项 | 影响 | 复现命令 |
 |---|---|---|---|
-| B-1 | 真实 FBX 样本（全盘无 `.fbx`） | FBX 端到端无法在本次实测 | `Release/model23dtiles.exe -sp -i <abs path>/x.fbx -o <abs path>/out` |
+| B-1 | ~~真实 FBX 样本（全盘无 `.fbx`）~~ **已解除（2026-10-16）** | FBX 端到端已在 `D:\BaiduNetdiskDownload\longxiang.fbx` 实测，见 §9 | `Release/model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/longxiang.fbx -o <abs path>/out` |
 | B-2 | `osgdb_osgt.dll` 未部署到 `Release/osgPlugins-3.6.5` | `.osgt` 输入 “file not handled”；已改用 `.osg` | 从 `vcpkg_installed/x64-windows/plugins/osgPlugins-3.6.5` 拷贝 |
 | B-3 | OGC 3D Tiles Validator（`3d-tiles-validator`，需 npm 安装） | 无法跑官方 validator；本任务用 `scripts/tileset_tool.py` 做等价结构/内容校验 | `npm i -g 3d-tiles-validator && 3d-tiles-validator --tilesetFile <tileset.json>` |
-| B-4 | CesiumJS 视觉验收页面 + 可运行浏览器 | 第 15 节截图无法自动化 | 见 `docs/model23dtiles-production/VISUAL_TEST.md` |
+| B-4 | ~~CesiumJS 视觉验收页面 + 可运行浏览器~~ **部分解除（2026-10-16）** | 页面与自动截图脚本已就绪（`docs/visual-acceptance/`），但无物理显示输出与 GPU，人眼验收仍需在有显示的机器上复跑 | 见 `docs/visual-acceptance/README.md` |
+
+---
+
+## 9. 真实 FBX 端到端（B-1 解除记录）
+
+输入：`D:\BaiduNetdiskDownload\longxiang.fbx`（65.8 MB，配套 `longxiang.fbm` 65 个纹理文件）。
+
+命令：
+
+```
+Release/model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/longxiang.fbx -o out_test/longxiang
+```
+
+实测结果与统计见 `STATUS.md` 的「真实 FBX 实测」小节与
+`docs/model23dtiles-production/runs/real_fbx/longxiang_run.log`。
 
 ---
 
