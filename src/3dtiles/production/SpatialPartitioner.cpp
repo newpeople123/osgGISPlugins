@@ -34,6 +34,34 @@ double SpatialPartitioner::surfaceArea(const osg::BoundingBox& bb) const
     return 2.0 * (dx * dy + dy * dz + dz * dx);
 }
 
+// 子节点建完后回填本节点的 items / bounds / 负载统计。
+//
+// 关键：内部节点的 items 语义是"该子树覆盖的**叶子**单元集合"（手册 6.5 要求
+// 子节点集合并 == 父节点集合）。三角形级切分会不断造出新的叶子单元，如果只把
+// 本层的切分结果写进去，下一层再切一次就不相等了，coverage 校验必然误报。
+void SpatialPartitioner::refreshItemsFromChildren(int self)
+{
+    PartitionNode& n = nodes[self];
+    std::vector<std::uint32_t> u;
+    for (int c : n.children)
+    {
+        if (c < 0 || static_cast<std::size_t>(c) >= nodes.size()) { continue; }
+        u.insert(u.end(), nodes[c].items.begin(), nodes[c].items.end());
+    }
+    std::sort(u.begin(), u.end());
+    u.erase(std::unique(u.begin(), u.end()), u.end());
+    n.items = u;
+    n.bounds = computeBounds(n.items);
+    const Load nl = computeLoad(n.items);
+    n.triangles = nl.tri;
+    n.vertices = nl.vert;
+    n.primitiveCount = nl.prim;
+    n.materialCount = nl.mat;
+    n.byteEstimate = nl.bytes;
+    const double ratio = nl.maxRatio(_profile.budget);
+    n.overHard = ratio > 1.0;
+}
+
 SpatialPartitioner::Load SpatialPartitioner::computeLoad(const std::vector<std::uint32_t>& items) const
 {
     Load L;
@@ -401,16 +429,13 @@ int SpatialPartitioner::recursiveBuild(const std::vector<std::uint32_t>& items, 
         std::uint32_t li = 0, ri = 0;
         if (bestAxis >= 0 && splitItemByTriangles(items[0], bestAxis, li, ri))
         {
-            nodes[self].items.clear();
-            nodes[self].items.push_back(li);
-            nodes[self].items.push_back(ri);
             nodes[self].splitAxis = bestAxis;
             nodes[self].splitLevel = 2;
             const int cl = recursiveBuild({li}, depth + 1, self);
             const int cr = recursiveBuild({ri}, depth + 1, self);
             nodes[self].children.push_back(cl);
             nodes[self].children.push_back(cr);
-            nodes[self].bounds = computeBounds(nodes[self].items);
+            refreshItemsFromChildren(self);
             return self;
         }
         failures.push_back("cannot split unit further but over hard budget: feature=" +
@@ -477,30 +502,22 @@ int SpatialPartitioner::recursiveBuild(const std::vector<std::uint32_t>& items, 
             }
             if (did)
             {
-                nodes[self].items = newItems;
                 nodes[self].splitLevel = 2;
-                nodes[self].bounds = computeBounds(newItems);
-                const Load nl = computeLoad(newItems);
-                nodes[self].triangles = nl.tri;
-                nodes[self].vertices = nl.vert;
-                nodes[self].primitiveCount = nl.prim;
-                nodes[self].materialCount = nl.mat;
-                nodes[self].byteEstimate = nl.bytes;
-                // 直接把新单元集合交给下一层（按 axis 二分由递归继续处理）
+                // 直接用质心在最长轴上二分 newItems，交给下一层继续处理
                 std::vector<std::uint32_t> left, right;
-                // 用质心在最长轴上二分，保证继续下降
+                osg::BoundingBox nb = computeBounds(newItems);
                 int axis = 0;
                 double bestSpan = -1.0;
                 for (int a = 0; a < 3; ++a)
                 {
-                    const double span = (a == 0) ? (nodes[self].bounds.xMax() - nodes[self].bounds.xMin())
-                                      : (a == 1) ? (nodes[self].bounds.yMax() - nodes[self].bounds.yMin())
-                                                 : (nodes[self].bounds.zMax() - nodes[self].bounds.zMin());
+                    const double span = (a == 0) ? (nb.xMax() - nb.xMin())
+                                      : (a == 1) ? (nb.yMax() - nb.yMin())
+                                                 : (nb.zMax() - nb.zMin());
                     if (span > bestSpan) { bestSpan = span; axis = a; }
                 }
-                const double mid = (axis == 0) ? (nodes[self].bounds.xMin() + nodes[self].bounds.xMax()) * 0.5
-                                 : (axis == 1) ? (nodes[self].bounds.yMin() + nodes[self].bounds.yMax()) * 0.5
-                                               : (nodes[self].bounds.zMin() + nodes[self].bounds.zMax()) * 0.5;
+                const double mid = (axis == 0) ? (nb.xMin() + nb.xMax()) * 0.5
+                                 : (axis == 1) ? (nb.yMin() + nb.yMax()) * 0.5
+                                               : (nb.zMin() + nb.zMax()) * 0.5;
                 for (std::uint32_t id : newItems)
                 {
                     const double c = (axis == 0) ? prims[id].centroid.x()
@@ -524,6 +541,7 @@ int SpatialPartitioner::recursiveBuild(const std::vector<std::uint32_t>& items, 
                 const int cr = recursiveBuild(right, depth + 1, self);
                 nodes[self].children.push_back(cl);
                 nodes[self].children.push_back(cr);
+                refreshItemsFromChildren(self);
                 return self;
             }
             warnings.push_back("node over hard budget but no split candidate found; emitting as-is"
@@ -551,6 +569,7 @@ int SpatialPartitioner::recursiveBuild(const std::vector<std::uint32_t>& items, 
     const int cr = recursiveBuild(best->right, depth + 1, self);
     nodes[self].children.push_back(cl);
     nodes[self].children.push_back(cr);
+    refreshItemsFromChildren(self);
     return self;
 }
 
@@ -579,14 +598,35 @@ void SpatialPartitioner::subtreeItems(int node, std::vector<std::uint32_t>& out)
 
 bool SpatialPartitioner::verifyCoverage()
 {
+    // 手册 6.5 的不变量是"子节点**声明**的单元集合并 == 父节点声明的集合"。
+    // 注意不能拿子树的叶子集合来比：内部节点在三角形级切分后，它的 items 是
+    // "这一层切分出来的单元"，而子节点会继续往下切，叶子集合必然更大。
+    // 之前用 subtreeItems() 收集叶子集合，导致所有做过切分的节点都误报。
     bool ok = true;
     for (std::size_t i = 0; i < nodes.size(); ++i)
     {
         const PartitionNode& n = nodes[i];
         if (n.children.empty()) { continue; }
-        std::vector<std::uint32_t> childItems;
-        for (int c : n.children) { subtreeItems(c, childItems); }
-        std::vector<std::uint32_t> a = childItems;
+        std::vector<std::uint32_t> a;
+        for (int c : n.children)
+        {
+            if (c < 0 || static_cast<std::size_t>(c) >= nodes.size())
+            {
+                ok = false;
+                warnings.push_back("child index out of range " + std::to_string(c)
+                                   + " under parent " + std::to_string(i));
+                continue;
+            }
+            const PartitionNode& ch = nodes[c];
+            if (ch.items.empty())
+            {
+                ok = false;
+                warnings.push_back("empty child node " + std::to_string(c) +
+                                   " under parent " + std::to_string(i));
+                continue;
+            }
+            a.insert(a.end(), ch.items.begin(), ch.items.end());
+        }
         std::vector<std::uint32_t> b = n.items;
         std::sort(a.begin(), a.end());
         std::sort(b.begin(), b.end());
@@ -596,17 +636,8 @@ bool SpatialPartitioner::verifyCoverage()
         {
             ok = false;
             warnings.push_back("coverage mismatch at node " + std::to_string(i) +
-                               ": children have " + std::to_string(a.size()) +
+                               ": children declare " + std::to_string(a.size()) +
                                " units, node declares " + std::to_string(b.size()));
-        }
-        for (int c : n.children)
-        {
-            if (nodes[c].items.empty())
-            {
-                ok = false;
-                warnings.push_back("empty child node " + std::to_string(c) +
-                                   " under parent " + std::to_string(i));
-            }
         }
     }
     return ok;

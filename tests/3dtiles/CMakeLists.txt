@@ -36,7 +36,7 @@ add_executable(${TOOL_TEST_NAME}
 )
 
 # 调用根目录定义的函数，传入你的目标名称
-copy_osg_dependencies(${TOOL_NAME})
+copy_osg_dependencies(${TOOL_TEST_NAME})
 
 # target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
 

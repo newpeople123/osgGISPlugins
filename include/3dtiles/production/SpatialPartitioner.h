@@ -105,6 +105,9 @@ private:
 
     int recursiveBuild(const std::vector<std::uint32_t>& items, unsigned depth, int parent);
 
+    // 子节点建完后回填本节点的 items/bounds/负载（保证"子集合并 == 父集合"）
+    void refreshItemsFromChildren(int self);
+
     int _nodeCounter = 0;
 };
 

@@ -49,8 +49,15 @@ copy_osg_dependencies(${TOOL_NAME})
 
 # 4. 编译属性设置
 target_compile_features(${TOOL_NAME} PRIVATE cxx_std_17)
-# 启用并行定义
-target_compile_definitions(${TOOL_NAME} PRIVATE USE_TBB_PARALLEL=1)
+# 并行开关：手册 13.2 要求 TBB 开/关两种配置都能构建。
+# 默认跟随 OSGGISPLUGINS_USE_TBB（默认 ON）；关掉后走串行的 #else 分支。
+if (DEFINED OSGGISPLUGINS_USE_TBB)
+    if (OSGGISPLUGINS_USE_TBB)
+        target_compile_definitions(${TOOL_NAME} PRIVATE USE_TBB_PARALLEL=1)
+    endif()
+else()
+    target_compile_definitions(${TOOL_NAME} PRIVATE USE_TBB_PARALLEL=1)
+endif()
 
 # 5. 设置 IDE 分组 (使用单反斜杠或正斜杠，CMake 推荐正斜杠)
 source_group("include/3dtiles" FILES ${THREED_TILES_FILES_H})

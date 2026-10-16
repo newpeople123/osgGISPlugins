@@ -419,7 +419,9 @@ int main(int argc, char** argv)
 	const double scaleX = parseArgument(arguments, "-sx", 1.0);
 	const double scaleY = parseArgument(arguments, "-sy", 1.0);
 	const double scaleZ = parseArgument(arguments, "-sz", 1.0);
-	const double ratio = parseArgument(arguments, "-sr", 0.5);
+	// 帮助文本里写的是 -r，这里同时接受 -r 与 -sr（历史实现只读 -sr，
+	// 用户按帮助传入 -r 会被静默忽略。两个都读，-r 优先 / 文档口径一致）。
+	const double ratio = parseArgument(arguments, "-r", parseArgument(arguments, "-sr", 0.5));
 
 	double latitude = parseArgument(arguments, "-lat", 30.0);
 	double longitude = parseArgument(arguments, "-lng", 116.0);

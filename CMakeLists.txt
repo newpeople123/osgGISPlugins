@@ -160,8 +160,13 @@ endfunction()
 add_subdirectory(src)
 add_subdirectory(tools)
 
-# 仅在 Debug 模式下添加测试
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+# 测试：任何构建类型都能开。OSGGISPLUGINS_BUILD_TESTS 显式指定，
+# 未指定时 Debug 默认开、其它配置默认关（保留原行为）。
+option(OSGGISPLUGINS_BUILD_TESTS "Build unit tests" OFF)
+if (NOT DEFINED OSGGISPLUGINS_BUILD_TESTS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(OSGGISPLUGINS_BUILD_TESTS ON)
+endif()
+if (OSGGISPLUGINS_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
 

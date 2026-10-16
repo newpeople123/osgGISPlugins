@@ -72,6 +72,9 @@ namespace osgGISPlugins
             osg::ref_ptr<osg::Node> node = nullptr;
             osg::BoundingBox bb;
             unsigned int triangleCount = 0;
+            // 串行分支（USE_TBB_PARALLEL 关闭）会写这个字段，之前结构体里没有它，
+            // 导致关掉 TBB 就编译不过（手册 13.2 要求两种构建都要能过）。
+            unsigned int drawcallCount = 0;
         };
 
         void pushMatrix(const osg::Matrix& matrix);
