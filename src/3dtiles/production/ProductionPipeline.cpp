@@ -63,6 +63,47 @@ struct ClearTextureExportCacheVisitor : public osg::NodeVisitor
         if (osg::Geometry* g = d.asGeometry()) { clearTexture(g->getStateSet()); }
     }
 };
+
+// 剥离所有纹理属性（聚合代理超限的最后兜底：远处 LOD 无纹理是常规做法）
+struct StripTexturesVisitor : public osg::NodeVisitor
+{
+    StripTexturesVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    static void strip(osg::StateSet* ss)
+    {
+        if (!ss) { return; }
+        osg::StateSet::TextureAttributeList& tal = ss->getTextureAttributeList();
+        for (auto& unitList : tal)
+        {
+            for (auto& kv : unitList)
+            {
+                osg::StateSet::RefAttributePair& rap = kv.second;
+                if (rap.first.valid() && rap.first->getType() == osg::StateAttribute::TEXTURE)
+                {
+                    rap.first = osg::ref_ptr<osg::StateAttribute>();
+                }
+            }
+        }
+        // 顺带清掉纹理映射 uniform，避免导出端引用悬空纹理单元
+        osg::StateSet::UniformList& ul = ss->getUniformList();
+        for (auto& kv : ul)
+        {
+            if (kv.first.compare(0, 8, "texture_") == 0)
+            {
+                kv.second.first = osg::ref_ptr<osg::Uniform>();
+            }
+        }
+    }
+    void apply(osg::Geode& geode) override
+    {
+        strip(geode.getStateSet());
+        traverse(geode);
+    }
+    void apply(osg::Drawable& d) override
+    {
+        strip(d.getStateSet());
+        if (osg::Geometry* g = d.asGeometry()) { strip(g->getStateSet()); }
+    }
+};
 } // namespace
 #ifdef _WIN32
 #include <windows.h>
@@ -364,7 +405,8 @@ ProductionPipeline::ProductionPipeline(const ProductionProfile& profile)
 }
 
 ProductionPipeline::WriteOutcome
-ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri, bool isInstanceTile)
+ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
+                                 bool isInstanceTile, bool allowTextureDrop)
 {
     WriteOutcome out;
     if (!node) { out.error = "null node"; return out; }
@@ -462,6 +504,31 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri, boo
             }
             if (out.bytes <= _profile.budget.maxTileContentBytes) { break; }
         }
+    }
+
+    // 最后一道兜底：聚合代理（aggregate）携带整个子树的纹理，纹理数量大时
+    // 降采样到 64px 仍可能超限。此时剥离全部纹理只保留几何 —— 远处细节层
+    // 无纹理是 3D Tiles 的常规做法；通过 texturesDropped 上报，由调用方记
+    // warning，保证不静默缺内容。
+    if (out.bytes > _profile.budget.maxTileContentBytes && allowTextureDrop)
+    {
+        TRACE("stripTextures curBytes=" << out.bytes);
+        StripTexturesVisitor strip;
+        work->accept(strip);
+        ClearTextureExportCacheVisitor clr;
+        work->accept(clr);
+
+        if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
+        {
+            out.error = "writeNodeFile failed (texture strip): " + abs;
+            return out;
+        }
+        out.bytes = 0;
+        {
+            std::ifstream f(abs, std::ios::binary | std::ios::ate);
+            if (f.is_open()) { out.bytes = static_cast<std::uint64_t>(f.tellg()); }
+        }
+        if (out.bytes <= _profile.budget.maxTileContentBytes) { out.texturesDropped = true; }
     }
     (void)isInstanceTile;
     out.ok = true;
@@ -589,7 +656,8 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         const std::string relUri = std::string("tiles") + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
                                  + "t" + std::to_string(id) + ".b3dm";
         TRACE("writeContent pn=" << pn);
-        WriteOutcome wo = writeContent(content.get(), relUri, false);
+        // 聚合代理允许纹理剥离兜底（远处 LOD 常规做法，warning 记录不静默）
+        WriteOutcome wo = writeContent(content.get(), relUri, false, w.aggregate);
         TRACE("writeContent done");
         if (!wo.ok)
         {
@@ -597,6 +665,12 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         }
         else
         {
+            if (wo.texturesDropped)
+            {
+                _warnings.push_back("tile " + std::to_string(id) +
+                                    ": aggregate proxy textures dropped to fit budget (bytes=" +
+                                    std::to_string(wo.bytes) + ")");
+            }
             const bool overBudget = wo.bytes > _profile.budget.maxTileContentBytes;
             if (overBudget)
             {
