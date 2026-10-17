@@ -195,7 +195,7 @@ private:
         std::vector<FeatureId> featureOrder;
         std::string error;
     };
-    // allowTextureDrop：纹理降采样仍超限时剥离纹理重写（仅聚合代理启用）
+    // allowTextureDrop：纹理降采样仍超限时剥离纹理重写（仅内部代理瓦片启用）
     WriteOutcome writeContent(osg::Node* node, const std::string& relUri,
                               bool isInstanceTile, bool allowTextureDrop = false);
 

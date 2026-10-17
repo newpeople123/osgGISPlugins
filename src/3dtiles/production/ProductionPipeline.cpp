@@ -656,8 +656,10 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         const std::string relUri = std::string("tiles") + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
                                  + "t" + std::to_string(id) + ".b3dm";
         TRACE("writeContent pn=" << pn);
-        // 聚合代理允许纹理剥离兜底（远处 LOD 常规做法，warning 记录不静默）
-        WriteOutcome wo = writeContent(content.get(), relUri, false, w.aggregate);
+        // 内部代理瓦片（简化/聚合）允许纹理剥离兜底：它们是远景 LOD，
+        // 带着全子树纹理时降采样可能仍超限（如根节点 ~900 张纹理 28MB）；
+        // 剥离后只保留几何，warning 记录不静默。叶瓦片（原始几何）不启用。
+        WriteOutcome wo = writeContent(content.get(), relUri, false, w.isProxy);
         TRACE("writeContent done");
         if (!wo.ok)
         {
@@ -668,7 +670,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             if (wo.texturesDropped)
             {
                 _warnings.push_back("tile " + std::to_string(id) +
-                                    ": aggregate proxy textures dropped to fit budget (bytes=" +
+                                    ": proxy textures dropped to fit budget (bytes=" +
                                     std::to_string(wo.bytes) + ")");
             }
             const bool overBudget = wo.bytes > _profile.budget.maxTileContentBytes;
