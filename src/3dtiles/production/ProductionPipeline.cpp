@@ -6,6 +6,9 @@
 #include <osg/MatrixTransform>
 #include <osg/CoordinateSystemNode>
 #include <osg/CopyOp>
+#include <osg/Material>
+#include <osgdb_gltf/material/GltfMaterial.h>
+#include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgDB/WriteFile>
 #include <osgDB/FileUtils>
 #include <osgDB/ReadFile>
@@ -65,44 +68,51 @@ struct ClearTextureExportCacheVisitor : public osg::NodeVisitor
     }
 };
 
-// 剥离所有纹理属性（内部代理超限的最后兜底：远处 LOD 无纹理是常规做法）。
-// 注意：只允许作用在 StateSet 深拷贝出来的私有克隆上 —— 代理内容与源模型
-// 共享同一批 osg::StateSet（SourceModel::materialize 直接 setStateSet 复用），
-// 在共享对象上剥纹理会与并发读源模型的 worker 线程产生 ref_ptr 竞争。
-struct StripTexturesVisitor : public osg::NodeVisitor
+// 远景 LOD 代理去纹理：为每个节点/Drawable 构造私有 StateSet（SHALLOW
+// 拷贝容器，纹理属性清空，GltfMaterial 子类替换为只带 diffuse 的普通
+// osg::Material）。
+// 关键约束：绝不修改共享的原始 StateSet/Uniform/GltfMaterial —— 并行构建
+// 时 worker 还在读源模型，任何共享写都会破坏引用计数（v8-v10 段错误根因）。
+// 代理内容节点本身是 materialize 私有产物，替换其 stateSet 指针安全。
+struct FarLodTextureStripper : public osg::NodeVisitor
 {
-    StripTexturesVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
-    static void strip(osg::StateSet* ss)
+    FarLodTextureStripper() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    static osg::ref_ptr<osg::StateSet> makeTextureless(osg::StateSet* src)
     {
-        if (!ss) { return; }
-        osg::StateSet::TextureAttributeList& tal = ss->getTextureAttributeList();
-        for (auto& unitList : tal)
+        // 全新空 StateSet，不从 src 拷贝构造：SHALLOW_COPY 的拷贝构造会给
+        // 共享 Uniform addParent / 拷贝共享纹理属性的 ref_ptr，多 worker 并行
+        // 时对同一批共享对象的引用计数做非原子写（历史段错误根因）。
+        // 远景代理只需要一个材质副本：无纹理、无 Uniform、不共享任何属性。
+        osg::ref_ptr<osg::StateSet> ss = new osg::StateSet();
+        if (src)
         {
-            for (auto& kv : unitList)
+            if (osg::Material* mat =
+                    dynamic_cast<osg::Material*>(src->getAttribute(osg::StateAttribute::MATERIAL)))
             {
-                osg::StateSet::RefAttributePair& rap = kv.second;
-                if (rap.first.valid() && rap.first->getType() == osg::StateAttribute::TEXTURE)
-                {
-                    rap.first = osg::ref_ptr<osg::StateAttribute>();
-                }
+                // GltfMaterial 子类（glTF 专用字段挂在 StateSet 上）替换为
+                // 普通 osg::Material 副本，Osg2Gltf 走干净的 baseColorFactor 路径
+                osg::ref_ptr<osg::Material> plain =
+                    new osg::Material(*mat, osg::CopyOp::SHALLOW_COPY);
+                ss->setAttributeAndModes(plain.get(), osg::StateAttribute::ON);
             }
         }
+        return ss;
+    }
+    static void applyTo(osg::Node& n)
+    {
+        if (n.getStateSet()) { n.setStateSet(makeTextureless(n.getStateSet())); }
     }
     void apply(osg::Node& node) override
     {
-        strip(node.getStateSet());
+        applyTo(node);
         traverse(node);
     }
     void apply(osg::Geode& geode) override
     {
-        strip(geode.getStateSet());
+        applyTo(geode);
         traverse(geode);
     }
-    void apply(osg::Drawable& d) override
-    {
-        strip(d.getStateSet());
-        if (osg::Geometry* g = d.asGeometry()) { strip(g->getStateSet()); }
-    }
+    void apply(osg::Drawable& d) override { applyTo(d); }
 };
 } // namespace
 #ifdef _WIN32
@@ -406,7 +416,7 @@ ProductionPipeline::ProductionPipeline(const ProductionProfile& profile)
 
 ProductionPipeline::WriteOutcome
 ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
-                                 bool isInstanceTile, bool allowTextureDrop)
+                                 bool isInstanceTile)
 {
     WriteOutcome out;
     if (!node) { out.error = "null node"; return out; }
@@ -506,36 +516,10 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
         }
     }
 
-    // 最后一道兜底：内部代理瓦片（简化/聚合）携带整个子树的纹理，纹理数量大时
-    // 降采样到 64px 仍可能超限。此时剥离全部纹理只保留几何 —— 远处细节层
-    // 无纹理是 3D Tiles 的常规做法；通过 texturesDropped 上报，由调用方记
-    // warning，保证不静默缺内容。
-    //
-    // 关键：在 StateSet 深拷贝的克隆上剥离，绝不改动共享图。materialize 的
-    // 代理内容与源模型共享同一批 osg::StateSet（SourceModel.cpp 直接
-    // setStateSet 复用），在原图上剥纹理 = 并发改写 worker 线程正在读的
-    // 共享 ref_ptr（v8/v9 在此处确定性 0xC0000005）。
-    if (out.bytes > _profile.budget.maxTileContentBytes && allowTextureDrop)
-    {
-        TRACE("stripTextures curBytes=" << out.bytes);
-        osg::ref_ptr<osg::Node> stripped =
-            osg::clone(node, osg::CopyOp::DEEP_COPY_STATESETS);
-        StripTexturesVisitor strip;
-        stripped->accept(strip);
-        TRACE("stripTextures: clone+strip done, rewriting");
-
-        if (!osgDB::writeNodeFile(*stripped.get(), abs, _opt.writeOptions))
-        {
-            out.error = "writeNodeFile failed (texture strip): " + abs;
-            return out;
-        }
-        out.bytes = 0;
-        {
-            std::ifstream f(abs, std::ios::binary | std::ios::ate);
-            if (f.is_open()) { out.bytes = static_cast<std::uint64_t>(f.tellg()); }
-        }
-        if (out.bytes <= _profile.budget.maxTileContentBytes) { out.texturesDropped = true; }
-    }
+    // 说明：超限且不可再压的内节点代理不在这里剥纹理——写时剥离需要改动
+    // 与源模型共享的 StateSet（materialize 复用），并行构建下会破坏引用计数
+    // （v8-v10 段错误根因）。内节点代理的超预算问题在 processTileHeavy 里
+    // 以"构建时就建成无纹理版"解决，见 FarLodTextureStripper。
     (void)isInstanceTile;
     out.ok = true;
     return out;
@@ -608,6 +592,36 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         w.isProxy = true;
         w.aggregate = pr.aggregate;
         w.aggregateSources = pr.aggregateSources;
+
+        // 内节点代理大小预估：几何按目标三角形数近似，纹理取子树全部纹理字节
+        // （代理会携带子树的所有材质纹理，这是根/中层瓦片超限的主因）。
+        // 预估超限 → 构建时直接建成无纹理版（远景 LOD 无纹理是常规做法），
+        // 通过 w.texturesDropped 上报记 warning，不静默缺内容。
+        // 必须在构建后立刻去纹理且只动私有 StateSet——若留到写出阶段剥离，
+        // 会改动与源模型共享的 StateSet（v8-v10 段错误根因），见
+        // FarLodTextureStripper 注释。
+        std::uint64_t texBytes = 0;
+        std::uint64_t allBytes = 0;
+        for (std::uint32_t itemId : items)
+        {
+            if (itemId >= _prims.size()) { continue; }
+            const PrimRef& p = _prims[itemId];
+            allBytes += p.byteEstimate;
+            const std::uint64_t geoBytes =
+                p.vertexCount * 32ull + static_cast<std::uint64_t>(p.tris.size()) * 160ull;
+            texBytes += (p.byteEstimate > geoBytes) ? (p.byteEstimate - geoBytes) : 0ull;
+        }
+        const std::uint64_t proxyEstimate =
+            std::min<std::uint64_t>(allBytes,
+                static_cast<std::uint64_t>(_profile.budget.targetTrianglesPerTile) * 200ull
+                    + texBytes);
+        if (proxyEstimate > _profile.budget.maxTileContentBytes)
+        {
+            TRACE("proxy far-lod detexture pn=" << pn << " estimate=" << proxyEstimate);
+            FarLodTextureStripper stripper;
+            w.content->accept(stripper);
+            w.texturesDropped = true;
+        }
     }
 
     if (!w.content.valid()) { return w; }
@@ -648,6 +662,7 @@ ProductionPipeline::processTileHeavy(int pn, int id)
 // 主线程串行收尾：写出 + 状态聚合 + seam 校验。
 void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
 {
+    TRACE("finalize id=" << id << " begin pn=" << pn);
     if (!w.failure.empty())
     {
         _failures.push_back(w.failure);
@@ -662,10 +677,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         const std::string relUri = std::string("tiles") + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
                                  + "t" + std::to_string(id) + ".b3dm";
         TRACE("writeContent pn=" << pn);
-        // 内部代理瓦片（简化/聚合）允许纹理剥离兜底：它们是远景 LOD，
-        // 带着全子树纹理时降采样可能仍超限（如根节点 ~900 张纹理 28MB）；
-        // 剥离后只保留几何，warning 记录不静默。叶瓦片（原始几何）不启用。
-        WriteOutcome wo = writeContent(content.get(), relUri, false, w.isProxy);
+        WriteOutcome wo = writeContent(content.get(), relUri, false);
         TRACE("writeContent done");
         if (!wo.ok)
         {
@@ -673,10 +685,10 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         }
         else
         {
-            if (wo.texturesDropped)
+            if (w.texturesDropped)
             {
                 _warnings.push_back("tile " + std::to_string(id) +
-                                    ": proxy textures dropped to fit budget (bytes=" +
+                                    ": far-LOD proxy built without textures to fit budget (bytes=" +
                                     std::to_string(wo.bytes) + ")");
             }
             const bool overBudget = wo.bytes > _profile.budget.maxTileContentBytes;
@@ -717,6 +729,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
     _tiles[id].aggregate = w.aggregate;
     _tiles[id].aggregateSources = std::move(w.aggregateSources);
     if (w.aggregate) { ++_report.aggregateProxyCount; }
+    TRACE("finalize id=" << id << " state done");
 
     // 误差/统计聚合并入 tile 状态（与旧串行版一致：只有 hasContent 的
     // 瓦片才携带评估结果；超限/写出失败的瓦片误差字段保持默认值）
@@ -743,6 +756,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             }
         }
     }
+    TRACE("finalize id=" << id << " end");
 }
 
 int ProductionPipeline::buildB3dmTree(int rootPn)

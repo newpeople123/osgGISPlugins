@@ -171,6 +171,7 @@ private:
         bool isProxy = false;
         bool aggregate = false;
         bool leaf = false;
+        bool texturesDropped = false;  // 内节点代理预估超限，构建时即去纹理
         std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
         double measuredProxyErrorM = 0.0;
         double errorLowerM = 0.0;
@@ -188,16 +189,13 @@ private:
     // 写出内容并测量真实字节数
     struct WriteOutcome {
         bool ok = false;
-        bool texturesDropped = false;  // 聚合代理超限兜底：剥离了纹理
         std::uint64_t bytes = 0;
         unsigned triangles = 0;
         unsigned batchLength = 0;
         std::vector<FeatureId> featureOrder;
         std::string error;
     };
-    // allowTextureDrop：纹理降采样仍超限时剥离纹理重写（仅内部代理瓦片启用）
-    WriteOutcome writeContent(osg::Node* node, const std::string& relUri,
-                              bool isInstanceTile, bool allowTextureDrop = false);
+    WriteOutcome writeContent(osg::Node* node, const std::string& relUri, bool isInstanceTile);
 
     std::uint64_t _peakRss = 0;
 };

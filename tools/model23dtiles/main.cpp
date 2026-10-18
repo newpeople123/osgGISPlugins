@@ -25,6 +25,47 @@
 
 using namespace osgGISPlugins;
 
+// TEMP DEBUG: crash stack printer（定位剥纹理段错误用，问题闭环后删除）
+#ifdef _WIN32
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+static LONG WINAPI wbCrashHandler(EXCEPTION_POINTERS* info)
+{
+    // 不用 CRT（堆可能已损坏），纯 WinAPI 写文件
+    HANDLE h = CreateFileA("F:\\wb_3dtiles_out\\crash_stack.txt", GENERIC_WRITE,
+                           0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) { return EXCEPTION_EXECUTE_HANDLER; }
+    char line[256];
+    DWORD written = 0;
+    int len = wsprintfA(line, "exception code=0x%08lX addr=%p\r\n",
+                        (unsigned long)info->ExceptionRecord->ExceptionCode,
+                        info->ExceptionRecord->ExceptionAddress);
+    WriteFile(h, line, len, &written, NULL);
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+    SymInitialize(GetCurrentProcess(), NULL, TRUE);
+    void* stack[48];
+    USHORT n = CaptureStackBackTrace(0, 48, stack, NULL);
+    for (USHORT i = 0; i < n; ++i)
+    {
+        char buf[sizeof(SYMBOL_INFO) + 256];
+        SYMBOL_INFO* sym = (SYMBOL_INFO*)buf;
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen = 255;
+        DWORD64 off = 0;
+        DWORD64 addr = (DWORD64)stack[i];
+        if (SymFromAddr(GetCurrentProcess(), addr, &off, sym))
+            len = wsprintfA(line, "%2u %p %s+0x%lx\r\n", (unsigned)i, stack[i],
+                            sym->Name, (unsigned long)off);
+        else
+            len = wsprintfA(line, "%2u %p\r\n", (unsigned)i, stack[i]);
+        WriteFile(h, line, len, &written, NULL);
+    }
+    CloseHandle(h);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+// TEMP DEBUG END
+
 class CoordinateTransformVisitor :public osg::NodeVisitor
 {
 private:
@@ -379,6 +420,9 @@ void printUsage()
 
 int main(int argc, char** argv)
 {
+#ifdef _WIN32
+	SetUnhandledExceptionFilter(wbCrashHandler);  // TEMP DEBUG
+#endif
 	Utils::initConsole();
 	osg::setNotifyLevel(osg::NotifySeverity::NOTICE);
 

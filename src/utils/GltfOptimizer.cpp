@@ -897,6 +897,42 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 		osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
 		if (oldStateSet.valid())
 		{
+			// 远景 LOD 代理的 StateSet 已在构建时去纹理（FarLodTextureStripper）。
+			// 这类无纹理 StateSet 没有任何可图集化的纹理，克隆+替换毫无意义，
+			// 反而会触碰可能与共享对象纠缠的 Uniform 生命周期（历史段错误根因）。
+			// 所有纹理单元均无纹理属性时直接跳过。
+			bool hasTexture = false;
+			const osg::StateSet::TextureAttributeList& tal = oldStateSet->getTextureAttributeList();
+			for (const auto& unit : tal)
+			{
+				for (const auto& kv : unit)
+				{
+					// kv.second 是 RefAttributePair（kv.first 是 Type key）
+					if (kv.second.first.valid() && kv.second.first->asTexture())
+					{
+						hasTexture = true;
+						break;
+					}
+				}
+				if (hasTexture) break;
+			}
+			// GltfMaterial 自带的非 StateSet 纹理字段（normal/occlusion/emissive 等）
+			// 也要查：有它们时仍需走正常图集路径。
+			if (!hasTexture)
+			{
+				const osg::ref_ptr<osg::Material> osgMaterialProbe =
+					dynamic_cast<osg::Material*>(oldStateSet->getAttribute(osg::StateAttribute::MATERIAL));
+				const osg::ref_ptr<GltfMaterial> gltfMaterialProbe =
+					osgMaterialProbe.valid() ? dynamic_cast<GltfMaterial*>(osgMaterialProbe.get()) : nullptr;
+				if (gltfMaterialProbe.valid() && gltfMaterialHasTexture(gltfMaterialProbe))
+				{
+					hasTexture = true;
+				}
+			}
+			if (!hasTexture)
+			{
+				return;
+			}
 			osg::ref_ptr<osg::StateSet> stateSet = osg::clone(oldStateSet.get(), osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES | osg::CopyOp::DEEP_COPY_TEXTURES);
 			drawable.setStateSet(stateSet);
 			const osg::ref_ptr<osg::Material> osgMaterial = dynamic_cast<osg::Material*>(stateSet->getAttribute(osg::StateAttribute::MATERIAL));
