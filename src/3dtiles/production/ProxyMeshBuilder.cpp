@@ -283,12 +283,28 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         const unsigned aggTris = countTriangles(agg.get());
         if (agg.valid() && aggTris > 0)
         {
+            unsigned finalTris = aggTris;
+            if (aggTris > targetTriangles)
+            {
+                // 每 cell 各自 simplify 后的总和仍可能远超预算：cell 内实际
+                // 几何量 >> cell 配额时，锁边让收敛停在半路（lugouqiao_v11
+                // 实测 6 轮聚合全部卡在 ~50 万三角形）。聚合代理是远景低
+                // 精度内容，这里对聚合结果做一次不锁边的强简化兜底——
+                // cell 间边界不再保护（远景可见性可接受），误差由
+                // GeometryErrorEvaluator 如实复核。
+                const double forcedRatio = static_cast<double>(targetTriangles)
+                                         / static_cast<double>(aggTris);
+                Simplifier forced(forcedRatio, true, false,
+                                  static_cast<float>(diag * 0.1));
+                agg->accept(forced);
+                finalTris = countTriangles(agg.get());
+            }
             res.node = agg;
-            res.triangles = aggTris;
+            res.triangles = finalTris;
             res.aggregate = true;
             res.aggregateSources = sources;
-            res.appliedRatio = static_cast<double>(aggTris) / static_cast<double>(tris);
-            if (aggTris <= targetTriangles) { return res; }
+            res.appliedRatio = static_cast<double>(finalTris) / static_cast<double>(tris);
+            if (finalTris <= targetTriangles) { return res; }
         }
         cellSize *= 1.8;
     }

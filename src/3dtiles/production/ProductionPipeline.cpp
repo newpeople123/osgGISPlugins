@@ -582,10 +582,14 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         TRACE("proxy build pn=" << pn << " items=" << items.size());
         const ProxyResult pr = builder.build(items, _profile.budget.targetTrianglesPerTile,
                                              !_profile.strictIdentity);
-        if (!pr.node.valid())
+        // 注意：聚合 fallback 耗尽后 pr.node 仍是最后一次聚合结果（有效），
+        // failure 已置位。只检查 node.valid() 会让超限代理漏网到写出阶段
+        // （lugouqiao_v11 实测 7 个瓦片 14~50 万三角形漏过 selfValidate 之前的
+        // 全部检查，就是这个洞）。
+        if (!pr.node.valid() || !pr.failure.empty())
         {
             w.failure = "proxy generation failed for node " + std::to_string(pn)
-                      + ": " + pr.failure;
+                      + ": " + (pr.failure.empty() ? "invalid proxy node" : pr.failure);
             return w;
         }
         w.content = pr.node;
