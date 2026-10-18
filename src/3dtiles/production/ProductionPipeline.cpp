@@ -5,6 +5,7 @@
 #include <osg/Geometry>
 #include <osg/MatrixTransform>
 #include <osg/CoordinateSystemNode>
+#include <osg/CopyOp>
 #include <osgDB/WriteFile>
 #include <osgDB/FileUtils>
 #include <osgDB/ReadFile>
@@ -64,7 +65,10 @@ struct ClearTextureExportCacheVisitor : public osg::NodeVisitor
     }
 };
 
-// 剥离所有纹理属性（聚合代理超限的最后兜底：远处 LOD 无纹理是常规做法）
+// 剥离所有纹理属性（内部代理超限的最后兜底：远处 LOD 无纹理是常规做法）。
+// 注意：只允许作用在 StateSet 深拷贝出来的私有克隆上 —— 代理内容与源模型
+// 共享同一批 osg::StateSet（SourceModel::materialize 直接 setStateSet 复用），
+// 在共享对象上剥纹理会与并发读源模型的 worker 线程产生 ref_ptr 竞争。
 struct StripTexturesVisitor : public osg::NodeVisitor
 {
     StripTexturesVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
@@ -83,15 +87,11 @@ struct StripTexturesVisitor : public osg::NodeVisitor
                 }
             }
         }
-        // 顺带清掉纹理映射 uniform，避免导出端引用悬空纹理单元
-        osg::StateSet::UniformList& ul = ss->getUniformList();
-        for (auto& kv : ul)
-        {
-            if (kv.first.compare(0, 8, "texture_") == 0)
-            {
-                kv.second.first = osg::ref_ptr<osg::Uniform>();
-            }
-        }
+    }
+    void apply(osg::Node& node) override
+    {
+        strip(node.getStateSet());
+        traverse(node);
     }
     void apply(osg::Geode& geode) override
     {
@@ -506,19 +506,25 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
         }
     }
 
-    // 最后一道兜底：聚合代理（aggregate）携带整个子树的纹理，纹理数量大时
+    // 最后一道兜底：内部代理瓦片（简化/聚合）携带整个子树的纹理，纹理数量大时
     // 降采样到 64px 仍可能超限。此时剥离全部纹理只保留几何 —— 远处细节层
     // 无纹理是 3D Tiles 的常规做法；通过 texturesDropped 上报，由调用方记
     // warning，保证不静默缺内容。
+    //
+    // 关键：在 StateSet 深拷贝的克隆上剥离，绝不改动共享图。materialize 的
+    // 代理内容与源模型共享同一批 osg::StateSet（SourceModel.cpp 直接
+    // setStateSet 复用），在原图上剥纹理 = 并发改写 worker 线程正在读的
+    // 共享 ref_ptr（v8/v9 在此处确定性 0xC0000005）。
     if (out.bytes > _profile.budget.maxTileContentBytes && allowTextureDrop)
     {
         TRACE("stripTextures curBytes=" << out.bytes);
+        osg::ref_ptr<osg::Node> stripped =
+            osg::clone(node, osg::CopyOp::DEEP_COPY_STATESETS);
         StripTexturesVisitor strip;
-        work->accept(strip);
-        ClearTextureExportCacheVisitor clr;
-        work->accept(clr);
+        stripped->accept(strip);
+        TRACE("stripTextures: clone+strip done, rewriting");
 
-        if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
+        if (!osgDB::writeNodeFile(*stripped.get(), abs, _opt.writeOptions))
         {
             out.error = "writeNodeFile failed (texture strip): " + abs;
             return out;
