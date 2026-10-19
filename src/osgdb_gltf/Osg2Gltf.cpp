@@ -760,10 +760,12 @@ int Osg2Gltf::getOrCreateTexture(const osg::ref_ptr<osg::Texture> &osgTexture)
 	file.close();
 
 	gltfBufferView.target = TINYGLTF_TEXTURE_TARGET_TEXTURE2D;
-	gltfBufferView.name = filename;
+	// name 是发布产物里唯一带本地绝对路径的字段：既泄漏出盘目录，又让瓦片字节数随输出目录长度变化
+	const std::string textureName = osgDB::getSimpleFileName(filename);
+	gltfBufferView.name = textureName;
 	_model.bufferViews.push_back(gltfBufferView);
 
-	image.name = filename;
+	image.name = textureName;
 	image.mimeType = mimeType;
 	image.bufferView = bufferViewIndex; //_model.bufferViews.size() the only bufferView in this _model
 	_model.images.push_back(image);

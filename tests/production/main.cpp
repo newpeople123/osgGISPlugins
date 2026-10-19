@@ -1243,6 +1243,109 @@ void testInstancePosesSurvive()
           std::to_string(trsNodes));
 }
 
+// ---------------------------------------------------------------------------
+// A-42 回归：产物里不得出现本地绝对路径。两个泄漏口都是"路径当名字"：
+//   ① 纹理写进 <out>/textures 后，Osg2Gltf 把**完整输出路径**写进 GLB 的
+//      bufferView.name / image.name —— 这是随瓦片**分发出去**的；
+//   ② FBX 导入器用源文件绝对路径命名根节点，它顺着 nodePath 进 feature-manifest.json。
+// ①的另一种伤害是瓦片字节数随输出目录长度变化，跨目录的哈希根本没法比。
+// 这里只查 JSON 字符串字面量形态（"D:/…）：二进制 float 数据里裸的 X:/ 会大量误报，
+// 那种命中不能当证据（t03 曾被误判成 7 个瓦片泄漏）。
+namespace {
+
+bool hasQuotedAbsolutePath(const std::string& s)
+{
+    for (std::size_t i = 1; i + 3 < s.size(); ++i)
+    {
+        if (s[i] != '"') { continue; }
+        const char a = s[i + 1];
+        if (!((a >= 'A' && a <= 'Z') || (a >= 'a' && a <= 'z'))) { continue; }
+        if (s[i + 2] != ':') { continue; }
+        if (s[i + 3] == '/' || s[i + 3] == '\\') { return true; }
+    }
+    return false;
+}
+
+std::string readAll(const std::filesystem::path& p)
+{
+    std::ifstream in(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+} // namespace
+
+void testArtifactsCarryNoLocalPaths()
+{
+    std::cout << "[paths] published artifacts carry no absolute local paths" << std::endl;
+    Utils::registerFileAliases();
+
+    // 探测器自检：正例必须能被认出——否则"0 泄漏"可能只是谓词写坏了恒返回 false。
+    check(hasQuotedAbsolutePath(R"({"nodePath":"D:/secret_dir/a.fbx/x"})"),
+          "detector fires on a leaked posix-style path");
+    check(hasQuotedAbsolutePath(R"({"name":"E:\\dev\\x\\a.fbx"})"),
+          "detector fires on a leaked windows-style path");
+    check(!hasQuotedAbsolutePath(R"({"uri":"tiles/t0.b3dm","v":"1.2:/3"})"),
+          "detector ignores ordinary uri/numeric text");
+
+    // 根节点名故意用绝对路径：修复前它会原样进 manifest 的 nodePath。
+    osg::ref_ptr<osg::Group> root = new osg::Group;
+    root->setName("D:/secret_dir/asset_name.fbx");
+    const osg::Vec3d pos[3] = { osg::Vec3d(0.0, 0.0, 0.0),
+                                osg::Vec3d(7.0, 0.0, 0.0),
+                                osg::Vec3d(0.0, 9.0, 0.0) };
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+        mt->setMatrix(osg::Matrixd::translate(pos[i]));
+        mt->addChild(makeIdenticalQuadGeode("sign_" + std::to_string(i)).get());
+        root->addChild(mt.get());
+    }
+
+    ProductionProfile profile;
+    profile.budget.maxTrianglesPerTile = 12;
+    profile.budget.targetTrianglesPerTile = 8;
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_pipeline_no_local_paths";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    const bool ran = pipeline.run(root.get(), opt);
+    const bool fin = pipeline.finalize();
+    check(ran && fin, "fixture publishes", joinMessages(pipeline.failures()));
+    if (!fin) { return; }
+
+    const std::filesystem::path manifest = out / "feature-manifest.json";
+    check(std::filesystem::exists(manifest), "feature-manifest.json exists", manifest.string());
+    const std::string mf = readAll(manifest);
+    check(!hasQuotedAbsolutePath(mf),
+          "manifest leaks no absolute local path (nodePath keeps only the asset name)",
+          mf.substr(0, 240));
+    check(mf.find("asset_name.fbx") != std::string::npos,
+          "the asset name itself is still recorded, not silently dropped", mf.substr(0, 240));
+
+    unsigned tiles = 0, leaked = 0;
+    std::string firstLeak;
+    for (const auto& e : std::filesystem::directory_iterator(out / "tiles", ec))
+    {
+        if (!e.is_regular_file()) { continue; }
+        const std::string ext = e.path().extension().string();
+        if (ext != ".b3dm" && ext != ".i3dm" && ext != ".pnts" && ext != ".cmpt") { continue; }
+        ++tiles;
+        const std::string body = readAll(e.path());
+        if (hasQuotedAbsolutePath(body))
+        {
+            ++leaked;
+            if (firstLeak.empty()) { firstLeak = e.path().filename().string(); }
+        }
+    }
+    check(tiles > 0, "tiles were written to scan", std::to_string(tiles));
+    check(leaked == 0, "no tile embeds an absolute local path",
+          std::to_string(leaked) + " leaked, first=" + firstLeak);
+}
+
 
 
 int main(int argc, char** argv)
@@ -1300,6 +1403,7 @@ int main(int argc, char** argv)
     run("proxySkip", &testPipelineProxySkipDegrades);
     run("bounds", &testPipelineBoundsGate);
     run("instancePoses", &testInstancePosesSurvive);
+    run("noLocalPaths", &testArtifactsCarryNoLocalPaths);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();

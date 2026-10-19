@@ -8,6 +8,8 @@
 #include <osg/UserDataContainer>
 #include <osg/ValueObject>
 #include <osgDB/ReadFile>
+#include <osgDB/FileNameUtils>
+#include <cctype>
 #include <cmath>
 #include <algorithm>
 #include <unordered_map>
@@ -208,7 +210,7 @@ public:
     {
         const std::string saved = _path;
         if (!_path.empty()) { _path += "/"; }
-        _path += node.getName().empty() ? std::string("<unnamed>") : node.getName();
+        _path += simplifyNodeName(node);
         _stack.push_back(_currentParent);
         traverse(node);
         _currentParent = _stack.back();
@@ -217,6 +219,18 @@ public:
     }
 
 private:
+    // FBX/OSG 导入器把根节点命名成源文件的**绝对路径**，nodePath 会原样进
+    // feature-manifest.json，把操作者的本地目录和原始资产名一起交付出去。
+    static std::string simplifyNodeName(const osg::Node& node)
+    {
+        const std::string& name = node.getName();
+        if (name.empty()) { return std::string("<unnamed>"); }
+        const bool unixLike = name[0] == '/' || name[0] == '\\';
+        const bool windows = name.size() >= 3 && std::isalpha(static_cast<unsigned char>(name[0]))
+                             && name[1] == ':' && (name[2] == '/' || name[2] == '\\');
+        return (unixLike || windows) ? osgDB::getSimpleFileName(name) : name;
+    }
+
     void pushMatrix(const osg::Matrixd& m) { _stackM.push_back(_current); _current = m * _current; }
     void popMatrix() { if (!_stackM.empty()) { _current = _stackM.back(); _stackM.pop_back(); } }
 
