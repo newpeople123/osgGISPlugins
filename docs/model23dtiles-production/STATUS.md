@@ -46,6 +46,13 @@ node scripts/b3dm_extents.js <文件.b3dm|文件.i3dm> [...]
 node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
                                            # A-38 取证：逐 primitive 关联 POSITION/NORMAL/索引，
                                            # 报荒谬坐标与零长法线的 @count-k 相对下标与是否被索引引用
+node scripts/accessor_extents_scan.js <数据集|容器目录|tiles 目录> [...] [--abs 1e6]
+                                           # 全量逐 accessor 三条判据：声明 min/max vs 实算、
+                                           # POSITION 非有限分量、荒谬顶点 |coord|>阈值；
+                                           # b3dm 与 i3dm 分开计数（A-38 只可能在 b3dm，
+                                           # A-41 的烘焙错位只在 i3dm）。
+                                           # 与 b3dm_attr_probe 的分工：那个是单文件取证，
+                                           # 这个是可以进验收流程的批量判据（有退出码）
 node scripts/zero_normal_triage.js <数据集目录|文件> [...] [--rel 1e-6] [--eps 1e-9]
                                            # A-43 定性：零长法线按三角形面积分"退化/真隐患"。
                                            # 主判据是面积 > REL×该 primitive 中位面积（尺度无关），
@@ -279,9 +286,16 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    `proxyDroppedFeatureCount=0`、`maxTrianglesInTile=119840`（在 12 万硬上限内）、
    `maxContentBytes=3238136`、`maxDepth=18`、`aggregateProxyCount=122`、
    `nodesBoundLoose=332`、`nodesCertified=450`、`peakRssBytes=9.84 GB`、454 条 warning。
-   中盘与终盘独立扫描（自定义脚本，与 `b3dm_attr_probe.js` 同解析、100 % 覆盖，
-   1057 文件 / 2202 primitive）：**A-38 污染字节 0 命中、非有限坐标 0、量级离散 0、
-   声明 accessor min/max 与实数据逐 primitive 全等**——即这份产物**没有** A-38 签名；
+   终盘全量对账改用仓库工具 `scripts/accessor_extents_scan.js`（100 % 覆盖，
+   1057 文件 / 4404 个 VEC3 accessor，不再是一次性脚本）：**声明 accessor min/max
+   与实数据逐 accessor 全等、非有限坐标 0、`|coord|>1e6` 在 931 个 b3dm
+   （A-38 的作用面）上 0 命中，最大只有 4 337 m**；污染字节与量级离散那两条
+   仍是 `b3dm_attr_probe.js` / `evidence/a38-forensics.txt` 的口径，**0 命中**结论不变。
+   4 处 >1e6 命中全在 i3dm（`i1017/i1018`，最大 1.223e8 m），那是 **A-41 的实例烘焙错位**，
+   按 `--abs 1e4` 复扫得到 6 个 i3dm 文件，与下一段 A-41 记录的
+   "6 个瓦片烘焙坐标 >1e4、最坏 |v|=1.22e8 m"逐个对上。同一条判据在 **124 个数据集**（修复前后各一批）上实测
+   **声明≠实算 = 0**，唯一 A-38 命中仍是 `matrix_a34/t02` 的 3 个瓦片，
+   见 `evidence/accessor_extents-baseline.txt`。即这份产物**没有** A-38 签名；
    但有 **195 条被索引引用的零长度 NORMAL**（分布在 **26 个**瓦片，常以连续 3 顶点成组，
    如 `mesh0 v24/v25/v26`）。**口径注**：26 数的是"图元里含零法线的文件"；"真隐患"（落在
    非退化三角形上）那 55 条涉及 **19 个**文件。此前记录的"19 个文件"与本次 26 不是同一口径，
