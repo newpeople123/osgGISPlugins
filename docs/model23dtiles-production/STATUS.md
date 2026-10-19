@@ -367,6 +367,17 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    证据（`F:/wb_3dtiles_out/a41fix_t05`、`runs/matrix_a41fix2`），那次确实是全 0 位姿被修好了，
    但落的是错的帧——绝对帧 100 % 命中恰恰是相对帧 0 % 生效的签名。这两批产物已作废。
    **待办**：真实 FBX 用**修正后的 23:53 exe + 00:16 插件**重跑为 `lugouqiao_v17`（约 6 h）；
+   v17 落盘后要跑的验收电池（**逐条取 `$?` 再管道**，`| tail` 会把退出码盖成 `tail` 的 0——本轮踩过）：
+   `node scripts/i3dm_pose_check.js`（期望 126 个 i3dm / 1787 条实例位姿在**相对帧**全对上，
+   绝对帧比对必须 0 命中）、`node scripts/path_leak_scan.js`（期望 0）、
+   `node scripts/tileset_bounds.js`、`node scripts/check_manifest_assertions.js`、
+   `node scripts/accessor_extents_scan.js`（期望 b3dm >1e6 **和** i3dm >1e6 **都是 0**：
+   后者是 A-41 的签名，v15 实测 6 个 i3dm 命中）、
+   `node scripts/zero_normal_triage.js` + `zero_normal_tile_class.js`
+   （期望**仍是 ~195 条、同样签名**——A-43 已定性为源侧自带，**不是**回归信号，
+   见 `evidence/a43-source-side-fbx-probe.txt`）、
+   `bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17`（逐资产官方 validator，仍未做过），
+   再加 A-33 口径的展开三角形核对与 `aggregateProxies` 复核，最后写进 §6.2/PERFORMANCE。
    `lugouqiao_v16`（22:53 起，用的是"第 2 点为空操作"的 22:40 二进制）已**主动终止**，
    终止时只有 `.wb-staging/` 里 8 个半成品 b3dm，没有 `tiles/`、没有 `tileset.json`。
    **已发布/已归档的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
