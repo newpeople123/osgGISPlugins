@@ -187,10 +187,16 @@ Edge 会把剩下的虚拟时间补完才退出，实测一条 3 帧的命令卡
 
    修复后复跑实测（会话 `fa_t01_plane_curved`，2026-10-19 16:08 完成，
    `node scripts/va_paths.js fa_`）：69 帧 / 58 个帧名全部出图，
-   `cameraFinite=false` **0 帧**、`silhouette=0` **0 帧**，其中 12 个
-   `ax_*`（六轴正视，含 `up ∥ direction` 的 ±Z）帧中位剪影 65 674–819 868 px。
-   对照修复前的 `ax_t05_instances` / `ax_t08_big_coords`：同样 12 帧，
-   `cameraFinite=false` 12、空洞 12。10 条注册路径里 `lod-threshold` 在 t01
+   `silhouette=0` **0 帧**，其中 12 个 `ax_*`（六轴正视，含 `up ∥ direction` 的 ±Z）帧
+   中位剪影 65 674–819 868 px。**这一条只在 t01 上验过。**
+   此前这里写的"对照修复前的 `ax_t05_instances` / `ax_t08_big_coords`：同样 12 帧
+   `cameraFinite=false` 12、空洞 12"与产物对不上，已按实测更正：
+   `node scripts/va_summary.js ax_` → `ax_t05_instances` 12 帧 / 空洞 **6** / tooSmall **6**
+   / camBad **0**；`ax_t08_big_coords` 12 帧 / 空洞 12 / camBad **0**。NaN 的形态是
+   6/12 帧 `camera.lon|height = null` 且 `maxProj=1e6`，而 `cameraFinite` 判据字段
+   **漏报**（camBad 恒 0），所以别把它当相机健康的依据。t05/t08 的修复后六轴批次
+   **至今没有跑过**（盘上现存 ax_* 全是修复前批次，12 帧剪影全 0）。
+   10 条注册路径里 `lod-threshold` 在 t01
    上产生 0 帧不是漏跑——该数据集只有 1 个根瓦片且 `geometricError=0`，
    没有 refine 距离可采样（其它 9 条路径均有帧）。
 

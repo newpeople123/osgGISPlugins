@@ -425,10 +425,23 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     if (!node) { out.error = "null node"; return out; }
 
     osg::ref_ptr<osg::Node> work = node;
+    // 实例瓦片的位姿只能待在 i3dm 特征表里：把变换折进几何会 (a) **就地**改写 N 个
+    // 实例共享的同一份顶点数组（N 个矩阵连乘，A-41），(b) 让
+    // `createFeatureI3DMTableBinary` 只能从被复位成单位阵的 MatrixTransform 里
+    // decompose 出全 0 位姿。老路径 `I3DMTile::optimizeNode()` 正是为此把这几位
+    // 优化选项剔掉的（src/3dtiles/I3DMTile.cpp:5-12），生产路径漏了这一步。
+    unsigned optBits = _opt.gltfOptimizerOptions;
+    if (isInstanceTile)
+    {
+        optBits &= ~GltfOptimizer::FLATTEN_TRANSFORMS;
+        optBits &= ~GltfOptimizer::MERGE_TRANSFORMS;
+        optBits &= ~GltfOptimizer::FLATTEN_STATIC_TRANSFORMS;
+        optBits &= ~GltfOptimizer::FLATTEN_STATIC_TRANSFORMS_DUPLICATING_SHARED_SUBGRAPHS;
+    }
     // 纹理 / 材质优化（图集 + KTX2）
     GltfOptimizer optimizer;
     optimizer.setGltfTextureOptimizationOptions(_opt.textureOptions);
-    optimizer.optimize(work.get(), _opt.gltfOptimizerOptions);
+    optimizer.optimize(work.get(), optBits);
 
     // 每个 tile 写出前重建 tile-local batch index（手册 5.5 第 4 点）
     BatchIdVisitor biv;
@@ -511,7 +524,7 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
             topts.maxTextureAtlasWidth = std::min(topts.maxTextureAtlasWidth, static_cast<int>(cap));
             topts.maxTextureAtlasHeight = std::min(topts.maxTextureAtlasHeight, static_cast<int>(cap));
             optimizer2.setGltfTextureOptimizationOptions(topts);
-            optimizer2.optimize(work.get(), _opt.gltfOptimizerOptions);
+            optimizer2.optimize(work.get(), optBits);
 
             if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
             {
@@ -531,7 +544,6 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     // 与源模型共享的 StateSet（materialize 复用），并行构建下会破坏引用计数
     // （v8-v10 段错误根因）。内节点代理的超预算问题在 processTileHeavy 里
     // 以"构建时就建成无纹理版"解决，见 FarLodTextureStripper。
-    (void)isInstanceTile;
     out.ok = true;
     return out;
 }
@@ -952,6 +964,21 @@ int ProductionPipeline::buildInstanceTree()
             chunk = std::min(chunk, _profile.budget.maxTrianglesPerTile / protoTris);
         }
 
+        // 原型顶点在 `SourceModel` 里已按世界矩阵烘好（SourceModel.cpp:356
+        // `w = p * f.worldMatrix`），而 `SourceInstance::matrix` 存的是实例**自己**的
+        // 世界矩阵（SourceModel.cpp:557）。i3dm 特征表里的矩阵是直接乘在 GLB 几何上的，
+        // 所以必须是"相对原型"的那一个：world_baked · (inverse(protoWorld) · instWorld)
+        // = local · instWorld。直接用 instWorld 会把世界变换乘两遍。
+        osg::Matrixd pw = protoObj->worldMatrix;
+        osg::Matrixd invProto;
+        if (!pw.invert(invProto))
+        {
+            _failures.push_back("prototype " + std::to_string(proto)
+                                + " has a non-invertible world matrix; instance placement"
+                                  " cannot be expressed relative to the baked prototype");
+            continue;
+        }
+
         for (std::size_t start = 0; start < insts.size(); start += chunk)
         {
             const std::size_t end = std::min(insts.size(), start + chunk);
@@ -959,7 +986,7 @@ int ProductionPipeline::buildInstanceTree()
             for (std::size_t k = start; k < end; ++k)
             {
                 osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
-                mt->setMatrix(insts[k]->matrix);
+                mt->setMatrix(invProto * insts[k]->matrix);
                 // 每个实例一份 Geode（保留实例身份与属性）
                 osg::ref_ptr<osg::Geode> g = new osg::Geode;
                 for (unsigned c = 0; c < protoGeom->asGroup()->getNumChildren(); ++c)

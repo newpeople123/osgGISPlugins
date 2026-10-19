@@ -45,6 +45,9 @@ node scripts/b3dm_extents.js <文件.b3dm|文件.i3dm> [...]
 node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
                                            # A-38 取证：逐 primitive 关联 POSITION/NORMAL/索引，
                                            # 报荒谬坐标与零长法线的 @count-k 相对下标与是否被索引引用
+node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm> [--top 12]
+                                           # A-41 验收：i3dm 特征表 POSITION 是否落盘、逐条对得上
+                                           # feature-manifest 的实例平移（(x,-z,y)）、GLB 节点有无 TRS
 node scripts/check_page_js.js docs/visual-acceptance/index.html
                                            # 改页面后先做内联 script 语法校验
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]
@@ -96,7 +99,7 @@ python scripts/visual_capture.py --tileset <tileset.json> --out <dir>  # 视觉�
 > node 20 估算 32.5 MB ≈ 纯几何 6 倍）。历史三项见 bfa43a0：
 > 字节估算低估 4 倍、meshopt 因误差上限过宽不削减、代理只判三角形预算。
 
-### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— A-33 修复后复跑中
+### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 跑完但被 A-41 判废，v16 复跑中
 
 `lugouqiao_v11`（37d832c 时代二进制）真实失败：`selfValidate` 抓到 7 个瓦片
 12.2 万～50.8 万三角形超 120 000 硬限 → 按 14.17 拒绝发布（日志
@@ -209,6 +212,9 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    **11 个 rc=0**，其中 t08 大坐标 `errMax=1.06e7` 没有被误伤（① 的答案：正常数据集不误伤，
    但**只在对实例内容做了正确处理后**成立）；t05 仍被拒，这次是**真阳性**，拦到的正是
    下面第 5 条的 A-41（`tile 2 ... axis 1 ([2970.56,2972.56] vs source [-0.898,20.986] ±213.14)`）。
+   A-41 修好后再跑一次全矩阵（`runs/matrix_a41fix2`，exe 22:40）：**12/12 rc=0、
+   `limitViolations=0`**，t05 首次以"实例瓦片 + 2b 闸门"同时通过（`instanceTileCount=1`、
+   `instanceCount=299`、`src/occ 300/2`、`miss/drop 0/0`）。
    **闸门至今没有在 A-38 本人的污染样本上实测过**（127 次那 1 次无法复现，没有新鲜坏样本），
    所以 VALIDATION_REPORT §8b 关于 2b 对 A-38 的拦截仍然只是数值推演。真实 FBX
    （约 6 h）仍未用带闸 + 修好参考系的二进制跑过。
@@ -221,6 +227,11 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    （loose/certified）本身随变体跳，说明依赖的是遍历/完成次序而非几何。污染那次的
    t1/t2/t3 与 `fe354714…` 变体**逐字节相同**，而基线的 t5 与变体的 t3 是同一个文件
    （sha256 `3e0d68a79eacfa45…`）——变的是**几何→瓦片 id 的分配次序**，不是数值。
+   **本轮拿到第二个廉价样本**：`t09_cross_tile_object` 用 22:40 二进制单跑 8 次 →
+   `t0.b3dm` 3 个变体（6×`95b36adf74` / 1×`792a9422a0` / 1×`8e8f5da801`），矩阵内那次是
+   第 4 个（`maxBytes` 41152、`errMax` 331.62 而非 386.77）；**误差指标本身**也会随变体动，
+   且 6/8 次与上一版二进制逐字节相同 → 变体不绑二进制版本，A-41 的改动被排除为原因。
+   单轮 0.75 s，后续定位 A-40 请用它而不是 t02。
    复现与逐配置哈希对比见 AUDIT A-40 / `evidence/a38-forensics.txt` §5/§7/§8/§9。
 3. **A-38 的写入方仍未定位**。已测到形态（个别内部槽装着旧数据/零值，三个瓦片是
    同一条尾巴的拷贝）。本轮读码把整类"按 size 构造后漏填"的写法排除：
@@ -251,8 +262,11 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    真实面积 36～55 条（阈值随尺度在 1e-8～1e-9 之间摆动，判别力弱，见
    `scripts/zero_normal_triage.js`）。官方 validator 会**逐条**报 `is not of unit length: 0`。
    **仍未做**：官方 validator 逐资产跑一遍、A-33 口径的 i3dm 展开三角形核对、
-   `aggregateProxies` 复核，以及下面第 5 条 A-41 对这份产物的影响评估，再写进 §6.2/PERFORMANCE。
-5. **A-41（本轮新发现，阻断级，未修）**：i3dm 的**每实例位姿全部丢失**，原型几何被同组
+   `aggregateProxies` 复核，再写进 §6.2/PERFORMANCE。
+   **已完成并有结论的一项**：A-41 对这份产物的影响评估 = **全废**。`scripts/i3dm_pose_check.js`
+   实测 126/126 个 i3dm 瓦片 POSITION 全 0、1787 条实例位姿 0 命中、原型 `|v|` 被累乘到
+   1.22e8 m；这份产物作为"可发布数据集"已经不成立，下面两项待办只对**修复后的 v16** 有意义。
+5. **A-41（本轮新发现，阻断级）已修**：i3dm 的**每实例位姿全部丢失**，原型几何被同组
    N 个实例矩阵**就地累乘**。`ProductionPipeline.cpp:963-972` 让 N 个 `MatrixTransform`
    共享同一份原型 drawable；`GltfOptimizer.cpp:549-554` 的 `FlattenTransformsVisitor`
    用 `TransformAttributeFunctor` **就地**改这份共享数组，随后 `GltfOptimizer.cpp:563-565`
@@ -263,8 +277,36 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    root `geometricError` 抬到 7.65e7 m（注意与报告字段 `tilesetGeometricError=8857.99`
    是两个不同的量，别再混用）。机制已做**定量证伪检验**：t05 的 299 个矩阵纯平移，
    平移之和 (273.09, 2956.73, −1788.77) 与出盘偏移 (273.09, 1788.78, 2956.72) 逐项相等
-   （仅 Y-up `(x,−z,y)` 轴序差）。**后果**：任何带实例的数据集在修好前都发不出来
-   （2b 闸门会拦），已发布的 i3dm 资产全部不可信。修法见 AUDIT A-41"修法"段：
-   实例瓦片必须"一份局部原型几何 + 特征表逐实例位姿"，且 GLB 节点不能再带 TRS（否则双变换）。
+   （仅 Y-up `(x,−z,y)` 轴序差）。
+   **修法（exe 22:40）**两处：实例瓦片把 `FLATTEN_TRANSFORMS` / `MERGE_TRANSFORMS` /
+   `FLATTEN_STATIC_TRANSFORMS(_DUPLICATING_SHARED_SUBGRAPHS)` 四个位从优化选项里屏蔽掉
+   （与遗留 `I3DMTile.cpp:5-12` 同一处置），并把矩阵改成**相对原型**的
+   `invProto * insts[k]->matrix`（原型世界矩阵已烘进几何，`SourceModel.cpp:356`），
+   原型世界矩阵不可逆时显式失败而不是静默错位。
+   **验收（新增 `scripts/i3dm_pose_check.js`）**：t05 修复后 **299/299** 条 POSITION 非零，
+   与 manifest 实例平移按 `(x,−z,y)` **逐条**最近邻全命中（残差最大 **7.8e-6 m**，float32
+   舍入级），GLB 节点带 TRS = **0**（不再双变换），原型 `|v|` 从污染态 2972.56 m 回到
+   **89.56 m**；`test_production` **130/130**；12 资产矩阵 12/12 rc=0。
+   同一脚本对**修复前**产物必须判 FAIL——已在 `matrix_a34/t05`（0/299 命中、POSITION 全 0、
+   原型 `|v|` 最大 2972.56 m）和 `lugouqiao_v15`（126/126 POSITION 全 0、1787 条 0 命中、
+   原型 `|v|` 最大 **1.22e8 m**）上验证过，探测器不是空跑。
+   **待办**：真实 FBX 用 22:40 二进制重跑（`lugouqiao_v16`，约 6 h）；
+   **已发布的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
+   `.i3dm` 的产物），VALIDATION_REPORT S3 的 PASS 口径已按此改写。
+6. **`cmake --build build --config Release` 在 HEAD 不是绿的**：`test_3dtiles` 目标有
+   **98 个既有** `std::filesystem` 编译错误（C2039/C3083/C2660，与本轮改动无关，
+   在 `F:/wb_3dtiles_out/build_a41fix.log` 里改动之前就已存在）。生产构建与单测请**指定目标**：
+   `cmake --build build --config Release --target model23dtiles test_production -j 8`（exit 0）。
+   `test_3dtiles` 的修复本身是一条独立的未闭合项。
+7. **视觉验收文档与产物不符，本轮已就地更正（§4/§1c 之外新发现的第二条）**：
+   VALIDATION_REPORT §4 与 `docs/visual-acceptance/README.md` 都写过
+   "修复前 `ax_t05_instances`/`ax_t08_big_coords` 各 12 帧 `cameraFinite=false` 12、空洞 12；
+   修复后同样 12 帧空洞 0（中位剪影 65 674–819 868 px）"。用 `va_summary.js ax_` 复核：
+   `ax_t05_instances` = 12 帧 / 空洞 **6** / tooSmall **6** / camBad **0**，
+   `ax_t08_big_coords` = 12 帧 / 空洞 12 / camBad **0**，且 12 帧剪影全 0——
+   现存 `ax_*` **全是修复前批次**，"修复后 0 空洞"与 65 674–819 868 px 实际出自
+   `fa_t01_plane_curved`（只有 t01）。两个后果：① t05/t08 的修复后六轴验收**从未做过**；
+   ② `cameraFinite` 判据字段在 `camera.lon|height = null` 时仍报 camBad=0，是**漏报**，
+   必须先修采集页再谈重跑。加上 A-41 之后所有 i3dm 截图都是错版，视觉验收整批重做。
 
 

@@ -127,8 +127,55 @@ matrix_a34 本体 + 追加 `node .workbuddy/a38_rate/drive.js 30` 的 3 配置 �
 的污染产物；**追加 90 次里 0 次重现污染顶点**，污染字节全库扫描（58 133 个文件）也只命中
 那 3 个瓦片。一条重要修正：`WB_JOBS=4` 跑出的变体哈希与旧"只有 `WB_PROXY_DEBUG` 第 3 跑"
 的那个 `fe354714…` **完全相同**，所以"变体绑调试开关""并行度不是变量（n=6 串行）"两条旧
-结论都作废——变体既不绑调试开关也不绑并行度。产物不逐位一致这件事按 **AUDIT A-40** 单列，
-逐配置/逐瓦片哈希对比见 `evidence/a38-forensics.txt` §5/§7/§8/§9。
+结论都作废——变体既不绑调试开关也不绑并行度。**本轮又拿到第二个、且 0.75 s 一轮的样本**：
+`t09_cross_tile_object` 用 22:40 二进制单跑 8 次 → `t0.b3dm` 落在 3 个变体上
+（6×`95b36adf74` / 1×`792a9422a0` / 1×`8e8f5da801`），而嵌在 `matrix_a41fix2` 里那次是
+**第 4 个**变体（`maxBytes` 41152、`errMax` 331.62 而不是 386.77）——**误差指标本身**也随变体动。
+6/8 次与上一版（22:14）二进制逐字节相同，所以"矩阵之间 t09 变了"不能算成 A-41 改动的后果，
+而且 t09 的 `instanceTileCount=0` 根本不进那条代码路径。产物不逐位一致这件事按 **AUDIT A-40**
+单列，逐配置/逐瓦片哈希对比见 `evidence/a38-forensics.txt` §5/§7/§8/§9。
+
+## 1c. 当前权威矩阵 `matrix_a41fix2`（2b 闸门生效 + A-41 修复，二进制 22:40）
+
+```bash
+cmake --build build --config Release --target model23dtiles test_production -j 8
+bash scripts/run_matrix.sh E:/dev/C++/osgGISPlugins-gpt/test_assets \
+                           E:/dev/C++/osgGISPlugins-gpt/docs/model23dtiles-production/runs/matrix_a41fix2
+node scripts/collect_matrix.js <同一个 outDir>
+node scripts/i3dm_pose_check.js <outDir>/t05_instances     # A-41 位姿验收
+```
+
+结果 **12/12 rc=0、`limitViolations=0`**（`runs/matrix_a41fix2/`）。这一轮与 §1/§1b 的
+差别是**口径**而不是列数：`selfValidate` 的 2b 参考系已改成"全部 `_model.objects` aabb
+的并集"（A-41 记录的两条实测），且 i3dm 位姿第一次进入验收。
+
+| 资产 | rc | 耗时 s | 峰值 MiB | tiles | 最大字节 | 最大三角形 | errMax | cert/loose | inst | src/occ | miss/drop |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| t01_plane_curved | 0 | 0.04 | 16.4 | 1 | 77 184 | 3 042 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
+| t02_thin_features | 0 | 0.30 | 33.2 | 7 | 42 808 | 572 | 40.35 | 3/1 | 0 | 54/162 | 0/0 |
+| t03_giant_single_mesh | 0 | 262.24 | 149.6 | 7 | 1 162 032 | 34 296 | 131.27 | 0/3 | 0 | 1/4 | 0/0 |
+| t04_many_objects | 0 | 66.88 | 154.2 | 127 | 1 143 360 | 14 400 | 317.14 | 63/59 | 0 | 1202/8414 | 0/0 |
+| **t05_instances** | **0** | 0.02 | 18.1 | 4 | 24 712 | 3 588 | 0.00 | 0/0 | **1** | 300/2 | 0/0 |
+| t06_nonuniform | 0 | 2.59 | 126.1 | 31 | 193 624 | 2 412 | 754.27 | 13/13 | 0 | 203/1015 | 0/0 |
+| t07_zero_axis | 0 | 0.02 | 16.4 | 1 | 60 016 | 2 404 | 0.00 | 0/0 | 0 | 2/2 | 0/0 |
+| t08_big_coords | 0 | 0.74 | 51.7 | 7 | 59 080 | 720 | **10 633 297.47** | 3/3 | 0 | 62/186 | 0/0 |
+| t09_cross_tile_object | 0 | 0.75 | 40.7 | 7 | 41 152 | 492 | 331.62 | 3/2 | 0 | 43/129 | 0/0 |
+| t10_material_heavy | 0 | 0.56 | 55.9 | 7 | 40 184 | 480 | 123.29 | 3/3 | 0 | 42/126 | 0/0 |
+| t11_sparse_outlier | 0 | 1.80 | 81.8 | 15 | 146 768 | 1 824 | 5643.16 | 7/6 | 0 | 154/616 | 0/0 |
+| t12_big_texture | 0 | 1.86 | 232.3 | 1 | 510 440 | 6 962 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
+
+三条必须一起读：
+
+1. **t05 是这一轮的实质变化**：`instanceTileCount=1` 且 `i3dm_pose_check` 判
+   **299/299 条实例位姿落盘、与 manifest 逐条对上（残差最大 7.8e-6 m）、GLB 节点 TRS=0**
+   → PASS。§1/§1b 里的 t05 虽然 rc=0，但位姿全是 0（A-41），那两份产物按"格式通过、内容作废"读。
+2. **t08 大坐标 `errMax=1.06e7` 没有被 2b 误伤**——闸门对"合法但量级离谱"的资产放行，
+   对 A-41 那种"内容离开源范围"才拒（gate-only 那轮 t05 的 rc=3 就是真阳性）。
+   ① "正常数据集不因 2b 误伤"这一条到现在为止的证据是 12 个合成资产，
+   真实 FBX 只在 v16 之后才算验过。
+3. **t09 与 §1/§1b 不可比**：它落在 A-40 的第 4 个变体上（见 §1b 末段），
+   `maxBytes/errMax/cert-loose` 都会随变体动。本表列的是这一次运行的实测值，
+   不是该资产的稳定值。
 
 ## 2. 扩展场景（矩阵缺口补齐）
 
@@ -140,14 +187,20 @@ matrix_a34 本体 + 追加 `node .workbuddy/a38_rate/drive.js 30` 的 3 配置 �
 |---|---|---|
 | S1 | `-tf ktx2` 全链路：KTX magic 校验 + b3dm 内引用全为 .ktx2 + validator | PASS |
 | S2 | `-mb 4096` 超硬限：报 597 条明确 ERROR，**outputDir 零文件残留**（14.16/14.17） | PASS |
-| S3 | 实例瓦片格式：内容文件 magic = `i3dm` | PASS |
+| S3 | 实例瓦片格式：内容文件 magic = `i3dm` | PASS（**仅容器 magic**）；"每实例位姿落盘"这一子项 2026-10-16 产物为 **FAIL**，代码已修、**场景尚未重采集** |
 | S4 | 常规 b3dm + BATCH_LENGTH 一致性（validator BATCH 检查） | PASS |
 
 > S3 的 PASS **只覆盖容器 magic**（文件头是 `i3dm`）。"每个实例的位姿有没有落盘"这一项
 > 历史上从未验收过，本轮实测发现它**是坏的**：v15 的 126/126 个 i3dm 瓦片特征表 POSITION
 > 全为 0，实例位姿全部丢失，且原型几何被同组实例矩阵就地累乘到最大 1.22e8 m——见 AUDIT
-> **A-41**（阻断级，未修）。§1 矩阵与 §2 扩展场景里凡涉及实例资产的结论，都只在
-> "计数/格式"口径上成立，不能读成"实例渲染正确"。
+> **A-41**（阻断级，22:40 二进制已修）。修好之后新增验收工具
+> `node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm>`，它把特征表 POSITION 逐条与
+> `feature-manifest.json` 的实例平移按 `(x,−z,y)` 对集合：t05 修复后 **299/299 命中、残差最大
+> 7.8e-6 m**、GLB 节点 TRS=0、原型 span 回到 2.00 m；同一工具对 `matrix_a34/t05` 判
+> 0/299、对 `lugouqiao_v15` 判 126/126 全 0（exit 1），所以这不是一个"永远 PASS"的检查。
+> §1 矩阵与 §2 扩展场景里凡涉及实例资产的结论，都只在"计数/格式"口径上成立，
+> 不能读成"实例渲染正确"；S1–S4 表格本身是 2026-10-16 的产物，**S3 的位姿子项必须重跑
+> 才能改成 PASS**（见 STATUS 未闭合第 5 条）。
 
 > BLOCKED（2026-10-19）：本机 `python` 是 Windows Store 占位程序，S1–S4 的自动化
 > 采集器 `run_extra_scenarios.py` 无法重跑（`rc=49`、零输出）。上表是 2026-10-16
@@ -267,18 +320,40 @@ node scripts/va_paths.js <sessionFilter>                                        
   `tileStates`、`env.gpuRenderer`）；
 - `full_t02` 的 4 个 `tooSmall` 全是 `lod-threshold` 路径贴在 refine 距离 ±6 %
   上的帧：薄特征在那个距离投影不到 20 px，按口径不能判空洞；
-- `fa_t01` 的 12 个 `ax_*`（六轴正视）帧是相机 NaN 缺陷（`up ∥ direction` 时
-  Cesium 重算 `right` 得 NaN 并污染后续所有帧）的阳性对照：修复前
-  `ax_t05_instances` / `ax_t08_big_coords` 各 12 帧里 `cameraFinite=false` 12、
-  空洞 12；修复后同样 12 帧 `cameraFinite=false` 0、空洞 0
-  （中位剪影 65 674–819 868 px）。
+- 相机 NaN 缺陷（`up ∥ direction` 时 Cesium 重算 `right` 得 NaN 并污染后续所有帧）的
+  阳性对照**实测只覆盖 t01 一个数据集**：`fa_t01_plane_curved`（69 帧、空洞 0，12 个
+  `ax_*` 帧中位剪影 65 674–819 868 px）。
+  **本节此前把这张表的适用范围与数值都写宽了**。原文"修复前 `ax_t05_instances` /
+  `ax_t08_big_coords` 各 12 帧 `cameraFinite=false` 12、空洞 12；修复后同样 12 帧
+  `cameraFinite=false` 0、空洞 0（中位剪影 65 674–819 868 px）"，与当前产物对不上：
+  `node scripts/va_summary.js ax_` 实测 `ax_t05_instances` = 12 帧 / 空洞 **6** /
+  tooSmall **6** / camBad **0**，`ax_t08_big_coords` = 12 帧 / 空洞 12 / camBad **0**；
+  NaN 在这批记录里的形态是 6/12 帧 `camera.lon|height = null` + `maxProj=1e6`，
+  **不是** `cameraFinite=false` 计数。而"修复后…空洞 0、中位剪影 65 674–819 868 px"
+  那两个数出自 `fa_t01_plane_curved`，**属于 t01、不属于 t05/t08**。
+  所以：t05/t08 的"六轴修复后视觉验收"**未做**，不能引用为已通过；
+  `cameraFinite` 这个判据字段本身也漏报了 NaN（camBad=0 而相机确实是 null），
+  属于采集页的判据缺陷，记在下面的未做项里一起补。
 - `t01` 的 `lod-threshold` 路径产生 0 帧不是漏跑：该数据集只有 1 个根瓦片且
   `geometricError=0`，没有 refine 距离可采样。
+- **A-41 对本节的约束（重要）**：即便补跑 t05 的视觉验收，"空洞/coverage"判据也
+  **验不出实例位姿**。判据看的是"投影视锥里有没有几何"，而 A-41 的症状是 299 个实例被叠到
+  **同一个位置**——画面照样有几何、剪影照样非零，空洞判据天然通过。所以本节里 t05/任何
+  i3dm 资产的"无空洞"只证明**能渲染**，不证明**渲染得对**；位姿正确性由 §2 S3 的
+  `scripts/i3dm_pose_check.js` 负责（逐实例位置，不看画面）。
+  现存所有 t05/t08/longxiang/v15 的视觉批次都产自**修复前**的数据集，画面本身即 A-41
+  的错版，这些截图不得作为"实例渲染正确"的证据引用。
 
 尚未完成（不是缺陷，是本机 CPU 被 335 MB 转换占住）：用最终二进制把
 13 个数据集 × 10 条路径的整批扫一遍（`bash scripts/visual_sweep.sh`，
 一条命令含起服务和汇总）。当前三列结论分别来自修复前后不同批次，
 表里已注明路径条数差异。
+新增两项（本轮复核产物时发现，见上面 §4 的更正段）：① `ax_t05_instances` /
+`ax_t08_big_coords` 的**修复后**六轴批次要重跑——现存只有修复前批次，而此前文档
+把它们当成了"修复后 0 空洞"的证据；② 采集页的 `cameraFinite` 判据在相机为
+`null` 时仍报 `camBad=0`，这个漏报要先修（否则任何"相机健康"结论都不可信），
+修完再谈重跑。两项都必须用 **A-41 修复后的二进制**产出的数据集做，
+旧截图（含 `full_longxiang`、`mx_*`、`d_*`）都是 A-41 错版，不能续用。
 
 环境限定：headless Edge 只能拿到 SwiftShader 软件 WebGL
 （`env.gpuRenderer` 每条记录里都如实带着），**人眼级接缝/LOD_POP 主观判定
@@ -508,6 +583,11 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
 
 ## 9. 验证结论
 
+- **实例位姿（A-41，本轮新增口径）**：代码已修（22:40 二进制），`matrix_a41fix2` 的 t05
+  以 `scripts/i3dm_pose_check.js` 逐条对上 manifest 实例平移（299/299、残差 ≤7.8e-6 m、
+  GLB 无节点 TRS）；同一工具对 `matrix_a34/t05` 与 `lugouqiao_v15` 判 exit 1。
+  **结论只到合成资产**：真实 FBX 的 i3dm 位姿要等 `lugouqiao_v16` 跑完才算验过，
+  在此之前**任何带 `.i3dm` 的既有产物一律不可发布**（v15、longxiang*、matrix_a34 等）。
 - 结构合法性：12 资产 + 真实 FBX + cmpt 探针在**官方** OGC validator 下
   上一批产物 `numErrors=0`（§7），但同日复跑 `matrix_a34` 的 t02 报 3 个
   zero-length-normal ERROR（§1b/§7）——**"0 error"不是不变量**，缺陷按 A-38 记，
