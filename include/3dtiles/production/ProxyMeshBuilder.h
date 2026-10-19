@@ -44,10 +44,13 @@ private:
     // 按目标三角形数简化（每个 drawable 独立，锁边界），返回实际比例
     double simplifyNode(osg::Node* node, unsigned targetTriangles, double targetErrorMeters) const;
 
-    // 空间聚类聚合代理
+    // 空间聚类聚合代理：按 cell 抽稀源 feature 后生成低面代理
+    // mergeIntoSingleDrawable=true 时把同材质几何并成一个 drawable（drawcall 更少），
+    // false 时保留 feature 级几何（顶点不重合，简化行为更可预期）
     osg::ref_ptr<osg::Node> buildAggregate(const std::vector<std::uint32_t>& items,
                                            double cellSize,
-                                           std::map<FeatureId, std::vector<FeatureId>>& sources) const;
+                                           std::map<FeatureId, std::vector<FeatureId>>& sources,
+                                           bool mergeIntoSingleDrawable) const;
 
     const SourceModel& _model;
     const std::vector<PrimRef>& _prims;
