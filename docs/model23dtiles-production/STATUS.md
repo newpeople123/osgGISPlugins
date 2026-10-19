@@ -65,6 +65,14 @@ node scripts/zero_normal_tile_class.js <数据集目录>
                                            # A-43 取证：含零法线的瓦片对上 report 的
                                            # isProxy/isLeaf/aggregate/errorStatus——面积分档
                                            # 回答不了"是谁产生的"，这一条才能
+node scripts/fbx_source_normals_probe.js <模型.fbx> [--detail N]
+                                           # A-43 源侧定性：**裸读源 FBX**（按属性名找 Normals、
+                                           # encoding==1 时先 inflate）数零长度法线，再按同 mesh 的
+                                           # PolygonVertexIndex 真实负下标边界归面。回答的是
+                                           # 上面三条都回答不了的那个岔口："源里就有，还是我们写出
+                                           # 时变 0 的"——不需要动构建。三重自检（解压长度精确相等 /
+                                           # 非零向量里的非单位数 / 角点数==PVI 元素数）任一不过
+                                           # 就别信统计数；含内容摘要去重（instance 拷贝会重复计数）
 node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm> [--top 12]
                                            # A-41 验收：i3dm 特征表 POSITION 是否落盘、逐条对得上
                                            # inverse(原型世界)·实例世界 的 (x,-z,y) 置换（**不是**
@@ -306,7 +314,17 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    重扫同一份 v15：**退化 140 / 非退化 55**；按瓦片类别关联 report 后
    **代理 134 / `EXACT_LEAF` 叶瓦片 61 / 聚合代理 24**——4 个叶瓦片各 3 条全落在非退化三角形上，
    所以**不是简化器独有的**；值确定且跨 LOD 同签名，所以**不像 A-38 那一族**。
-   源侧还是写出侧，要等能不动构建就能判别的口子（见 A-43 的实验设计）。
+   **源侧还是写出侧这一岔口本轮已判掉，而且没动构建**：新增
+   `scripts/fbx_source_normals_probe.js` 裸读**源** FBX 的法线数组（`encoding==1` 必须先 inflate，
+   不解压直接数会得出"24.7 万个零"那种荒谬数），实测这份 335 MB 源文件里有
+   **63 个零角点 / 21 个整面全零三角形**（按 `PolygonVertexIndex` 的真实负下标边界归面，
+   不是"3 角点/面"假设；散落单角点 0），按内容去重只有 **7 个** mesh 带零（原始 36 个数组里
+   29 个是逐字节相同的 instance 拷贝）。最硬的一条是两条不相干读路径撞上同一组数：
+   源侧某数组 14 454 角点 = **4 818** 面、1 个整面全零 ↔ 产物 `i952`/`t162`/`t166` 的
+   `#mesh0` 各自"该图元三角形 4 818、零法线 3 条"。据此 A-43 定级**低**（源数据缺陷 + 忠实透传），
+   处置改为写出时把这类零法线**重算为其所在非退化三角形的面法线**（邻接平均在这里没有可用的
+   非零邻居），**不按拒绝发布处理**；证据 `evidence/a43-source-side-fbx-probe.txt`。
+   本条只定**成因层面**，没有做逐顶点归因（需要 mesh 级源↔产物 id 映射，未做）。
    官方 validator 会**逐条**报 `is not of unit length: 0`。
    **仍未做**：官方 validator 逐资产跑一遍、A-33 口径的 i3dm 展开三角形核对、
    `aggregateProxies` 复核，再写进 §6.2/PERFORMANCE。
