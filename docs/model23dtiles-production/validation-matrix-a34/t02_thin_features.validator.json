@@ -1,0 +1,216 @@
+{
+  "date": "2026-10-19T10:00:32.639Z",
+  "numErrors": 3,
+  "numWarnings": 0,
+  "numInfos": 4,
+  "issues": [
+    {
+      "type": "CONTENT_VALIDATION_ERROR",
+      "path": "tiles/t0.b3dm",
+      "message": "tiles/t0.b3dm caused validation errors",
+      "severity": "ERROR",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_ERROR",
+          "path": "tiles/t0.b3dm",
+          "message": "Content tiles/t0.b3dm caused validation errors",
+          "severity": "ERROR",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 234..236 is not of unit length: 0.",
+              "severity": "ERROR"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 246..248 is not of unit length: 0.",
+              "severity": "ERROR"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 258..260 is not of unit length: 0.",
+              "severity": "ERROR"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_ERROR",
+      "path": "tiles/t4.b3dm",
+      "message": "tiles/t4.b3dm caused validation errors",
+      "severity": "ERROR",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_ERROR",
+          "path": "tiles/t4.b3dm",
+          "message": "Content tiles/t4.b3dm caused validation errors",
+          "severity": "ERROR",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 114..116 is not of unit length: 0.",
+              "severity": "ERROR"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 126..128 is not of unit length: 0.",
+              "severity": "ERROR"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 138..140 is not of unit length: 0.",
+              "severity": "ERROR"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_ERROR",
+      "path": "tiles/t6.b3dm",
+      "message": "tiles/t6.b3dm caused validation errors",
+      "severity": "ERROR",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_ERROR",
+          "path": "tiles/t6.b3dm",
+          "message": "Content tiles/t6.b3dm caused validation errors",
+          "severity": "ERROR",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 24..26 is not of unit length: 0.",
+              "severity": "ERROR"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 36..38 is not of unit length: 0.",
+              "severity": "ERROR"
+            },
+            {
+              "type": "CONTENT_VALIDATION_ERROR",
+              "path": "/meshes/1/primitives/0/attributes/NORMAL",
+              "message": "Vector3 at accessor indices 48..50 is not of unit length: 0.",
+              "severity": "ERROR"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t5.b3dm",
+      "message": "tiles/t5.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t5.b3dm",
+          "message": "Content tiles/t5.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t1.b3dm",
+      "message": "tiles/t1.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t1.b3dm",
+          "message": "Content tiles/t1.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t3.b3dm",
+      "message": "tiles/t3.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t3.b3dm",
+          "message": "Content tiles/t3.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t2.b3dm",
+      "message": "tiles/t2.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t2.b3dm",
+          "message": "Content tiles/t2.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

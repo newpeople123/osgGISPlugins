@@ -47,9 +47,11 @@ CPU 抢占比例不固定——耗时列只作量级参考，静默机器复测�
 表中「最大字节」是工具报告的估算值（`200 B/tri + 48 B/vert + 纹理/8`）；
 发布闸 `selfValidate` 是对**落盘文件实测**的，两者不一致时以实测为准并由
 `finalizeTileFromWork` / `selfValidate` 判失败或降级（A-31）。
-t08/t09/t12 的最大字节与上一轮差 16～88 B：同一二进制内**逐文件 md5 完全一致**
-（`runs/det_t08_{1,2}`，两次独立运行 tile 目录 md5 相同），差异来自二进制本身
-（本轮额外带 `needsTextureless` 判据），不是划分不确定。
+t08/t09/t12 的最大字节与上一轮差 16～88 B：差异来自二进制本身（本轮额外带
+`needsTextureless` 判据）。当时据此写的"同一二进制内逐文件 md5 完全一致
+（`runs/det_t08_{1,2}`，两次独立运行 tile 目录 md5 相同）"**已被 §1b 的复跑推翻**：
+样本=2 的串行轻载不足以保证可复现，同一二进制同一输入 36 次复跑里有 1 次整棵瓦片树
+变化（AUDIT A-40）。t08 那两次恰好相同，不代表"划分确定"。
 
 对比 Phase 0 基线（同一资产集，BASELINE.md §5）：
 
@@ -61,6 +63,68 @@ t08/t09/t12 的最大字节与上一轮差 16～88 B：同一二进制内**逐�
 | 父子 geometricError 差恒 0.1 | 是 | 无（测量误差自底向上聚合） |
 | tileset 误差 = root×1.5 | 是 | 无 |
 | 远景代理整簇丢失（A-27） | 12 个占用 cell 只剩 6 个有几何 | 全覆盖，`proxyDroppedFeatureCount=0` |
+
+## 1b. 复跑 `matrix_a34`（A-33/A-34/A-35 落地后，二进制 15:47:04）
+
+```bash
+bash scripts/run_matrix.sh E:/dev/C++/osgGISPlugins-gpt/test_assets \
+                           E:/dev/C++/osgGISPlugins-gpt/docs/model23dtiles-production/runs/matrix_a34
+node scripts/collect_matrix.js <同一个 outDir>
+bash scripts/run_validator.sh <同一个 outDir> \
+     E:/dev/C++/osgGISPlugins-gpt/docs/model23dtiles-production/validation-matrix-a34
+```
+
+结果 **12/12 发布**、`limitViolations=0`（`runs/matrix_a34/`，原始 stdout
+`runs/matrix_a34.log`）。与 §1 的 `matrix_final` 是**同一资产集、不同二进制**：
+这一轮带上了 A-33（i3dm 三角形预算）、A-34（聚合代理身份映射）、A-35（占用数
+单一口径），所以只列变化列，其余列见 §1：
+
+| 资产 | 耗时 s | 峰值 MiB | 最大字节 | 最大三角形 | cert/loose | agg代理 | warn |
+|---|---|---|---|---|---|---|---|
+| t01_plane_curved | 0.03 | 19.2 | 77 184 | 3 042 | 0/0 | 0 | 0 |
+| t02_thin_features | 2.21 | 47.6 | 42 840 | 572 | 1/3 | 0 | 0 |
+| t03_giant_single_mesh | 104.07 | 154.6 | 1 162 032 | 34 296 | 0/3 | 3 | 3 |
+| t04_many_objects | 33.06 | 154.2 | 1 143 360 | 14 400 | 63/59 | 0 | 0 |
+| t05_instances | 0.03 | 21.2 | 24 704 | **3 588** | 0/0 | 0 | 0 |
+| t06_nonuniform | 3.05 | 140.3 | 193 624 | 2 412 | 13/13 | 0 | 0 |
+| t07_zero_axis | 0.02 | 16.4 | 60 016 | 2 404 | 0/0 | 0 | 0 |
+| t08_big_coords | 0.85 | 57.7 | 59 080 | 720 | 3/3 | 0 | 0 |
+| t09_cross_tile_object | 0.85 | 55.4 | 41 120 | 492 | 3/3 | 0 | 0 |
+| t10_material_heavy | 0.59 | 59.1 | 40 184 | 480 | 3/3 | 0 | 0 |
+| t11_sparse_outlier | 1.93 | 85.5 | 146 768 | 1 824 | 7/6 | 0 | 0 |
+| t12_big_texture | 2.04 | 234.3 | 510 432 | 6 962 | 0/0 | 0 | 0 |
+
+**这一轮真正被测到的东西**（不是"报告说做了"，是从产物里读出来的）：
+
+| 断言 | 实测 |
+|---|---|
+| A-33 i3dm 瓦片按**展开**三角形计数并受预算约束 | `t05/i2.i3dm` 报 `triangles=3588` = 原型 12 三角形 × 299 实例，≤ 120 000 硬限；上一轮这里报的是 12 |
+| A-34 聚合代理身份映射可查 | `manifest.aggregateProxies` 在 t03 有 **3 个瓦片 / 7 条 BATCHID→源 feature**（`tiles/t0、t1、t4`），其余 11 个资产为 0 —— 与 `report.aggregateProxyCount`（t03=3，其余 0）**逐个对得上** |
+| A-35 占用数单一口径 | 12/12 资产 `report.manifestOccurrences == manifest.occurrenceCount`（例如 t04 8414/8414、t06 1015/1015、t11 616/616） |
+| A-28 源身份覆盖 | 12/12 `featuresMissingFromLeaves=0`、`proxyDroppedFeatureCount=0` |
+
+**外部验证**：`validation-matrix-a34/` 12 个 tileset 合计 **3 error / 1 warning**。
+唯一 1 warning 是 t12 的 KTX2/`KHR_texture_basisu`（validator 自带 glTF schema 早于
+该扩展，见 §7）；**3 个 error 全在 t02**，路径 `/meshes/1/primitives/0/attributes/NORMAL`、
+`Vector3 at accessor indices 234..236 / 246..248 / 258..260 is not of unit length: 0`——
+即 **A-38 的产物缺陷**，与 §7 里"14/14 零 error"（上一轮 `validation/`，同一
+validator 0.6.1，t02 报 0/0）对照，坐实 A-38 是间歇缺陷。t02 的 2.21 s / 47.6 MiB /
+`errMax=5.8e24` / `cert:loose=1:3` 全部是这个顶点的下游症状（正常值应是 0.30 s /
+32.5 MiB / ≈23 m）。
+
+> **这一轮的"12/12 发布"不能当作 A-36～A-38 发布闸的验收证据**：产物由 15:47 的
+> 二进制写出，而 1b（有限性/父覆盖子）与 2b（源范围）都在那之后才写进源码，
+> 当时还没编译进 `Release/model23dtiles.exe`。t02 被发布恰恰证明**旧二进制没有
+> 这道闸**；带闸的二进制对真实数据的实测还欠着（见 §8b 末尾与 STATUS 待办）。
+
+**可复现性（本轮新增，§1 的原结论据此修正）**：同一二进制、同一 `t02` 输入共得到
+37 份产物（30 次默认并行滑窗 = 5 串行 + 12 进程并发 `WB_JOBS=32` + 3 次
+`WB_PROXY_DEBUG=1` + 10 串行；6 次 `WB_JOBS=1`；加 matrix_a34 本体的那一次）。
+35 份 `tiles/*.b3dm` **逐字节相同**，1 份整棵树变了（7 个瓦片字节数全不同、
+`nodesBoundLoose` 1→3、峰值 RSS 34.4→47.3 MiB），1 份就是 A-38 的污染产物；
+36 次复跑里**没有**重现污染顶点，污染字节全库扫描（58 133 个文件）也只命中那 3 个
+瓦片。产物不逐位一致这件事按 **AUDIT A-40** 单列，逐瓦片哈希对比见
+`evidence/a38-forensics.txt` §5/§7/§8。
 
 ## 2. 扩展场景（矩阵缺口补齐）
 
@@ -331,6 +395,15 @@ bash scripts/run_validator.sh F:/wb_3dtiles_out/cmpt_probe
 
 **14/14 `numErrors=0`**，包括真实 FBX 数据集和 cmpt 混合容器探针。
 
+> **复跑口径更新（同日 18:00Z+，报告目录 `validation-matrix-a34/`）**：同一
+> validator 对 `runs/matrix_a34/` 的 12 个资产跑出的不是 0——t02 报 **3 个 ERROR**
+> （`/meshes/1/primitives/0/attributes/NORMAL`，`Vector3 at accessor indices
+> 234..236 / 246..248 / 258..260 is not of unit length: 0`），其余 11 个资产 0 error，
+> t12 仍是那条 KTX2 warning。也就是说"14/14 零 error"对**上一批产物**成立，但
+> **不能**读成"产物永远不会触发它"：这条 error 正是 AUDIT A-38 那个污染顶点的
+> 独立佐证，同一资产同一二进制既能 0 error 也能 3 error，说明缺陷是间歇的。
+> 官方 validator 因此从"通过过一次"降级为"每轮必跑、且必须逐资产看错误条数"。
+
 warning 全部同源、且不成立为缺陷：validator 自带的 glTF schema 早于
 `KHR_texture_basisu`，对 `mimeType: image/ktx2` 报
 `Invalid value "image/ktx2"` / `Image format not recognized`
@@ -407,10 +480,28 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
 "父不覆盖子"。是独立的 node 回扫器对同一批真实产物报 0 才把根因定位到检查代码，
 没有把这笔账算到产品上（详见 AUDIT A-37 的踩坑记录）。
 
+**源范围拒绝（A-38，2b）与它的取证工具**：1b 的三条检查对这个缺陷全部放行——
+污染值是**有限**的、父盒与子盒同源所以"父覆盖子"成立。于是补 2b：有内容的瓦片其
+`contentBounds` 必须落在**源模型范围 ± 0.5×源对角线**内，越界即拒绝发布。
+取证工具 `node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm>` 逐 primitive
+关联 POSITION/NORMAL/索引并按 `@count-k` 相对下标报位置，用它 + 官方 validator
+把 A-38 从"随机堆损坏"收窄成"一份被多个瓦片共享的顶点尾巴里，个别槽位装着另一份
+数据"（完整测量与仍未定位的部分见 AUDIT A-38/A-40）。
+
+> **2b 的实测边界**：① 没有合成单测——`contentBounds`/`_model.bounds` 是私有
+> 构建期状态，测试无注入点；② 没有在真实数据上跑过一次拦截——写出 `matrix_a34`
+> 的二进制（15:47）还没有 2b。因此"2b 会拒掉 t08/t02 那种越界"目前是数值推演
+> （6.555e10 ≫ 源 ±50 m + slack 87 m），不是实测记录。带闸二进制的真实数据实测
+> 记在 STATUS 待办里，不能用本节文字代替。（注意 2b 比的是**源模型自身**的范围，
+> 所以 t08_big_coords 那种"源坐标本来就大"的数据集不会被误伤，它的越界判据是
+> 相对源尺度而非绝对值。）
+
 ## 9. 验证结论
 
 - 结构合法性：12 资产 + 真实 FBX + cmpt 探针在**官方** OGC validator 下
-  `numErrors=0`（§7），内发布闸 `selfValidate` 同样全 0 error；
+  上一批产物 `numErrors=0`（§7），但同日复跑 `matrix_a34` 的 t02 报 3 个
+  zero-length-normal ERROR（§1b/§7）——**"0 error"不是不变量**，缺陷按 A-38 记，
+  内发布闸 `selfValidate` 对那批产物同样全 0 error（当时还没有 2b）；
 - 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 127 个内容瓦片
   最大 2.17 MiB，矩阵 12/12 违例 0；实例瓦片的三角形预算见 §6.2 的 A-33；
 - 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 145 feature；

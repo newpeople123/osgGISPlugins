@@ -21,8 +21,9 @@ VALIDATION_REPORT.md / PERFORMANCE_REPORT.md（均在 `docs/model23dtiles-produc
 
 ```bash
 bash scripts/wb_build.sh model23dtiles     # 构建 Release 工具
-bash scripts/wb_build.sh test_production   # 构建单元测试（当前 118 断言）
+bash scripts/wb_build.sh test_production   # 构建单元测试（当前 130 断言）
 ./Release/test_production.exe              # 跑单元测试
+./Release/test_production.exe bounds       # 只跑包围体发布闸用例（A-36/A-37）
 ./Release/test_production.exe pipelineCoverage   # 只跑端到端覆盖不变量用例
 ./Release/test_production.exe proxySkip    # 只跑远景代理降级/失败关闭用例
 bash scripts/run_matrix.sh [assetsDir] [outDir]  # 12 资产回归矩阵（bash+node，本机无 python）
@@ -39,6 +40,11 @@ node scripts/check_manifest_assertions.js <数据集|容器目录> [...]
                                            # report ↔ manifest ↔ tileset 三文件一致性断言
 node scripts/tileset_bounds.js <数据集|容器目录> [...]
                                            # 回扫 tileset.json：NaN/负半轴/非法 geometricError/父盒覆盖子盒
+node scripts/b3dm_extents.js <文件.b3dm|文件.i3dm> [...]
+                                           # 读 GLB accessor min/max，核对 tileset 盒与真实写出的几何
+node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
+                                           # A-38 取证：逐 primitive 关联 POSITION/NORMAL/索引，
+                                           # 报荒谬坐标与零长法线的 @count-k 相对下标与是否被索引引用
 node scripts/check_page_js.js docs/visual-acceptance/index.html
                                            # 改页面后先做内联 script 语法校验
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]
@@ -116,12 +122,25 @@ t05_instances：4 个瓦片里 i3dm 是 `i2.i3dm`），正好对上 v14 日志�
 `overBytes || overTris`，超限时删除暂存文件并报出实测字节/三角形/实例数，
 同时补上此前漏记的 `_report.maxTrianglesInTile`。
 
-`lugouqiao_v15` 用修复后的二进制复跑（输出仍写 `lugouqiao_v14/` 目录以复用
-内容寻址的 KTX2 纹理缓存，`exportImage` 命中即跳过重编码）。
+`lugouqiao_v15` 用修复后的二进制复跑，实测命令行
+`Release/model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx
+-o F:/wb_3dtiles_out/lugouqiao_v15`（15:47 起）。输出目录是**新建的 `lugouqiao_v15/`**，
+不是 v14：471 个 `.ktx2` 在 15:47–15:48 一分钟内就位，文件名与 `lugouqiao_v14/textures/`
+里的 471 个**完全同名**（图像哈希命名，零差集）——按内容寻址的缓存命中与"等价重编码
+足够快"这两种解释从产物上分不开，所以这里只记录可观测事实；此后 3 h 只在瓦片构建里
+惰性新增 34 个（16:43 起散布到 19:08）。`.wb-staging/` 建于 16:00，即纹理阶段约 13 分钟
+结束、真正开始写盘。
 
 > 失败目录里残留 `textures/` 不是清理漏洞：缓存路径由
 > `tools/model23dtiles/main.cpp:704-711` 只在**空目录**时删除，因为可能是
 > 用户共享的缓存；这些 `.ktx2` 按图像哈希命名，重跑直接命中。
+
+**跑到一半的实测（19:08，尚未结束）**：`lugouqiao_v15/.wb-staging/tiles/` 已落
+551 个 `.b3dm`（此刻约 7 个/分钟），全部是主树瓦片、还没有 i3dm；逐 accessor
+扫描 `maxTriangles = 34 847`（t50，硬限 120 000）、`maxBytes = 3 084 040`（t386）、
+`|x|>1e6` 的荒谬顶点 **0 命中**（A-38 探针在真实 FBX 上没有发现）。进程累计
+CPU 32 699 s / 墙钟 12 060 s ≈ 2.7 核，说明并行窗口在正常工作而不是卡死。
+i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须等跑完。
 
 
 ## BLOCKED
@@ -178,3 +197,31 @@ t05_instances：4 个瓦片里 i3dm 是 `i2.i3dm`），正好对上 v14 日志�
   VALIDATION_REPORT §8。踩坑：b3dm 头 28 B 但 **i3dm 头 32 B**（多一个
   `glTFFormat`），且 GLB 起点还要加 feature/batch 四张表的长度，
   按固定 28 B 偏移解析 `mixed.cmpt` 会偏 4 B 而报 "not a GLB"。
+
+## 未闭合（写在这里，不靠记忆）
+
+1. **带 2b 闸的二进制从未在真实数据上跑过**。A-36/A-37 的 1b 与 A-38 的 2b 在
+   `matrix_a34` 那次转换**之后**才写进源码，`Release/model23dtiles.exe`（15:47:04）
+   里没有它们；A-39 的 `appendElements` 类型守卫同批未编译。等 `lugouqiao_v15`
+   释放 exe 锁后 `bash scripts/wb_build.sh model23dtiles` 重建，再拿 t02 + 真实
+   FBX 各跑一次，验证：① 正常数据集不因 2b 误伤（尤其 t08 大坐标）；② 若污染复现，
+   2b 必须在拒绝里报出轴号与数值。**在此之前 VALIDATION_REPORT §8b 关于 2b 的
+   拦截只是数值推演**。
+2. **A-40 产物不逐位一致**（t02 共 37 份产物：35 份逐字节相同，1 份整棵瓦片树变化
+   ——`nodesBoundLoose` 1→3、峰值 RSS 34.4→47.3 MiB，1 份就是 A-38 的污染产物）。
+   本轮实测把"两者同根"从推测变成观测：污染那次的 t1/t2/t3 与树变体**逐字节相同**，
+   而基线的 t5 与变体的 t3 是同一个文件（sha256 `3e0d68a79eacfa45…`）——变的是
+   **几何→瓦片 id 的分配次序**，不是数值。复现与逐瓦片哈希对比见 AUDIT A-40 /
+   `evidence/a38-forensics.txt` §5/§7/§8。
+3. **A-38 的写入方仍未定位**。已测到形态（个别槽位装着旧数据/回收字节，
+   三个瓦片是同一条尾巴的拷贝）；已排除 `Simplifier::remapArray`、
+   `materialize` 的长度守卫、加载器有限性守卫。污染字节拿全库扫（仓库 + 输出盘
+   58 133 个文件）只命中那 3 个瓦片，36 次复跑 0 次重现。下一步从
+   `ProxyMeshBuilder::mergeGeometries` 缺少的 `nrm->size()==pos->size()`
+   守卫（`ProxyMeshBuilder.cpp:361`）查起，并顺着"换槽位"这条线索查瓦片 id
+   分配/结果收集是否按完成次序而非稳定键。
+4. **`lugouqiao_v15` 结果待验收**（15:47 起跑，19:08 时已落 551 个 `.b3dm`、
+   仍在跑，约 7 个/分钟；主树阶段最大 prim 34 847 三角形、荒谬顶点 0）：
+   完成后按 A-33 口径核对 i3dm 展开三角形、`featuresMissingFromLeaves`、
+   `aggregateProxies` 与官方 validator 逐资产错误条数，再写进 §6.2/PERFORMANCE。
+
