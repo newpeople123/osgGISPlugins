@@ -50,3 +50,7 @@ test_production_result.txt
 
 # 视觉验收截图（体积大，capture.json 已足够审计）
 docs/visual-acceptance/runs/*/shots/
+docs/visual-acceptance/runs/**/*.png
+
+# 本地 CesiumJS 1.119 副本（视觉验收页用，见 docs/visual-acceptance/README.md）
+vendor/

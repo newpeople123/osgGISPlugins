@@ -29,8 +29,25 @@
     8 lod-threshold  每个 LOD 切换阈值附近来回移动
     9 texture-zoom   KTX2 纹理不同缩放 / mipmap 级别
 -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium/Widgets/widgets.css">
-<script src="https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium/Cesium.js"></script>
+<!--
+  Cesium 版本固定 1.119。默认官方 CDN；验收机器没有外网时用
+  ?cesiumBase=<同一 1.119 版本的 Build/Cesium 根> 指向本地/内网副本
+  （见 README「离线复跑」）。用 document.write 是为了保持解析顺序：
+  后面的内联脚本在 Cesium.js 加载完成前不能执行。
+-->
+<script>
+(function () {
+  var DEFAULT_BASE = "https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium";
+  var base = new URLSearchParams(location.search).get("cesiumBase") || DEFAULT_BASE;
+  var okAbs = /^(https?:)?\/\//.test(base);
+  var okSameOrigin = base.charAt(0) === "/" && base.charAt(1) !== "/";
+  if ((!okAbs && !okSameOrigin) || /["'<>\\\s]/.test(base)) { base = DEFAULT_BASE; }
+  base = base.replace(/\/+$/, "");
+  window.CESIUM_BASE_URL = base + "/";
+  document.write('<link rel="stylesheet" href="' + base + '/Widgets/widgets.css">');
+  document.write('<script src="' + base + '/Cesium.js"><\/script>');
+})();
+</script>
 <style>
   :root {
     --bg: #1b1f24;
@@ -52,6 +69,12 @@
            overflow-y: auto; padding: 12px; box-sizing: border-box; }
   body.capturing #panel, body.capturing #hud, body.capturing .cesium-viewer-toolbar,
   body.capturing .cesium-viewer-bottom { display: none !important; }
+  /* 批量截图模式：画布必须是手册 15 节规定的 1280x720，不受窗口/滚动条影响 */
+  body.shotmode #panel, body.shotmode #hud, body.shotmode .cesium-viewer-toolbar,
+  body.shotmode .cesium-viewer-bottom { display: none !important; }
+  html.shotmode, body.shotmode { width: 1280px; height: 720px; overflow: hidden; }
+  body.shotmode #app, body.shotmode #cesiumContainer {
+    width: 1280px !important; height: 720px !important; inset: auto; left: 0; top: 0; }
   h1 { font-size: 15px; margin: 0 0 4px; }
   h2 { font-size: 12px; margin: 16px 0 6px; color: var(--accent);
        text-transform: uppercase; letter-spacing: .06em; }
@@ -169,6 +192,38 @@ var qs = new URLSearchParams(location.search);
 if (qs.get("fov"))  FOV_DEG = parseFloat(qs.get("fov"));
 if (qs.get("sse"))  SSE_PX = parseFloat(qs.get("sse"));
 
+// 批量截图时把页面异常也回传给 /va-report，否则无头模式下错误只能靠猜。
+function reportError(where, err) {
+  if (qs.get("all") !== "1") return;
+  try {
+    fetch("/va-report", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "error", session: qs.get("session") || "session",
+        where: where, message: String(err && err.message || err),
+        stack: String((err && err.stack) || "").slice(0, 1500), at: new Date().toISOString() })
+    }).catch(function () {});
+  } catch (e) {}
+}
+window.addEventListener("error", function (ev) { reportError("window.error", ev.error || ev.message); });
+window.addEventListener("unhandledrejection", function (ev) { reportError("unhandledrejection", ev.reason); });
+
+// Cesium 的瓦片内容加载失败只写 console（不抛到 window），所以批量截图时必须把
+// console.error/warn 也回传，否则"i3dm/KTX2 一个像素都没画"这类缺陷没有任何线索。
+var consoleTail = [];
+(function () {
+  ["error", "warn"].forEach(function (lvl) {
+    var orig = console[lvl];
+    console[lvl] = function () {
+      var msg = Array.prototype.slice.call(arguments).map(function (a) {
+        try { return typeof a === "string" ? a : JSON.stringify(a); }
+        catch (e) { return String(a); }
+      }).join(" ").slice(0, 600);
+      consoleTail.push(lvl + ": " + msg);
+      if (consoleTail.length > 200) consoleTail.shift();
+      return orig.apply(console, arguments);
+    };
+  });
+})();
+
 Cesium.Ion.defaultAccessToken = ""; // 只用 3D Tiles，不需要 ion
 
 var viewer = new Cesium.Viewer("cesiumContainer", {
@@ -194,6 +249,17 @@ var canvas = viewer.scene.canvas;
 
 var scene = viewer.scene;
 scene.globe = undefined;
+// ?flat=1：关掉天空/雾、用中性灰背景。材质没配好时模型是纯黑的，
+// 黑底会把"几何没画"和"画了但是黑的"混成一回事，灰底能区分开。
+if (qs.get("flat") === "1") {
+  scene.backgroundColor = Cesium.Color.fromCssColorString("#808080");
+  if (scene.skyBox) scene.skyBox.show = false;
+  if (scene.sun) scene.sun.show = false;
+  if (scene.moon) scene.moon.show = false;
+  if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
+  if (scene.fog) scene.fog.enabled = false;
+  scene.highDynamicRange = false;
+}
 scene.skyAtmosphere = new Cesium.SkyAtmosphere(); // 保留天空，便于判断"内容丢失"
 scene.fog = new Cesium.Fog();
 scene.highDynamicRange = false;
@@ -264,20 +330,28 @@ var tileset = null;
 var sphere = null;     // tileset boundingSphere（所有相机路径的基准）
 var tileTree = [];     // 扁平化后的 tile 数组，含 uri / parent 链 / geometricError
 
+// CesiumJS 1.119 的 tile 没有 contentUrl / level：URI 取 _contentHeader.uri，
+// 退化时用 _contentResource.url；层级自己按树深算。
+function tileUri(t) {
+  var u = "";
+  try { if (t._contentHeader && t._contentHeader.uri) u = String(t._contentHeader.uri); } catch (e) {}
+  if (!u) { try { if (t._contentResource && t._contentResource.url) u = String(t._contentResource.url); } catch (e) {} }
+  if (!u) { try { if (t.contentUrl) u = String(t.contentUrl); } catch (e) {} }
+  return u.replace(/\?.*$/, "").replace(/^.*[\\/]/, "");
+}
+
 function flattenTiles(root) {
   var out = [];
-  (function walk(t, parentPath, parentIdx) {
+  (function walk(t, parentPath, parentIdx, level) {
     if (!t) return;
-    var uri = "";
-    try { uri = t.contentUrl ? t.contentUrl.replace(/^.*[\\/]/, "") : ""; } catch (e) {}
     var idx = out.length;
     out.push({
-      tile: t, uri: uri, path: parentPath + (parentPath ? " -> " : "") + idx,
-      parent: parentIdx, geometricError: t.geometricError, level: t.level
+      tile: t, uri: tileUri(t), path: parentPath + (parentPath ? " -> " : "") + idx,
+      parent: parentIdx, geometricError: t.geometricError, level: level
     });
     var kids = t.children || [];
-    for (var i = 0; i < kids.length; i++) walk(kids[i], parentPath + (parentPath ? "." : "") + idx, idx);
-  })(root, "", -1);
+    for (var i = 0; i < kids.length; i++) walk(kids[i], parentPath + (parentPath ? "." : "") + idx, idx, level + 1);
+  })(root, "", -1, 0);
   return out;
 }
 
@@ -319,21 +393,37 @@ function refineDistance(geometricError) {
 }
 
 // 以 sphere 为基准的相机摆放：给定方向单位向量与距离倍数
+//
+// 不直接写 camera.position/direction/up/right：那样要自己保证 up 与 direction 不正交
+// 退化，一旦某帧出现 up ∥ direction（例如沿 ±Z 正视），Cesium 内部用旧基重算
+// right 会得到 NaN，之后所有帧的相机都是 NaN（实测整条 axis-sweep 全空）。
+// 这里改成自己构造一组正交基（+Z 指向相机方向）交给 lookAtTransform，
+// 姿态由 Cesium 保证合法，且相机位置精确等于 center + dir*dist。
+function viewFrame(dirCart, center) {
+  var z = Cesium.Cartesian3.normalize(dirCart, new Cesium.Cartesian3());
+  var ref = Math.abs(z.z) < 0.95 ? Cesium.Cartesian3.UNIT_Z : Cesium.Cartesian3.UNIT_X;
+  var x = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.cross(ref, z, new Cesium.Cartesian3()), new Cesium.Cartesian3());
+  var y = Cesium.Cartesian3.cross(z, x, new Cesium.Cartesian3());
+  var m = new Cesium.Matrix4();
+  Cesium.Matrix4.setColumn(m, 0, x, m);
+  Cesium.Matrix4.setColumn(m, 1, y, m);
+  Cesium.Matrix4.setColumn(m, 2, z, m);
+  Cesium.Matrix4.setColumn(m, 3, new Cesium.Cartesian4(center.x, center.y, center.z, 1), m);
+  return m;
+}
+
+function aimAt(center, dirCart, dist) {
+  camera.lookAtTransform(viewFrame(dirCart, center),
+      new Cesium.HeadingPitchRange(0, 0, dist));
+  scene.requestRender();
+}
+
 function placeCamera(dirUnit, distMul, opts) {
   opts = opts || {};
   var dir = Cesium.Cartesian3.normalize(dirUnit, new Cesium.Cartesian3());
-  var dist = sphere.radius * distMul;
-  var pos = Cesium.Cartesian3.add(sphere.center,
-      Cesium.Cartesian3.multiplyByScalar(dir, dist, new Cesium.Cartesian3()),
-      new Cesium.Cartesian3());
-  camera.position = pos;
-  var up = opts.up || Cesium.Cartesian3.clone(Cesium.Cartesian3.UNIT_Z);
-  camera.direction = Cesium.Cartesian3.normalize(
-      Cesium.Cartesian3.subtract(sphere.center, pos, new Cesium.Cartesian3()),
-      new Cesium.Cartesian3());
-  if (opts.up) camera.up = Cesium.Cartesian3.normalize(opts.up, new Cesium.Cartesian3());
-  camera.right = Cesium.Cartesian3.cross(camera.direction, camera.up, new Cesium.Cartesian3());
-  scene.requestRender();
+  if (opts.dir2) dir = Cesium.Cartesian3.normalize(opts.dir2, new Cesium.Cartesian3());
+  aimAt(sphere.center, dir, sphere.radius * distMul);
 }
 
 function settle() {
@@ -474,8 +564,12 @@ PATHS["lod-threshold"] = {
       if (seen[key]) continue;
       seen[key] = 1;
       var label = "ge_" + ge.toFixed(1).replace(/\./g, "p");
-      f.push({ name: label + "_below", dir: [1, 0.3, 0.5], dist: d * 1.06 });
-      f.push({ name: label + "_above", dir: [1, 0.3, 0.5], dist: d * 0.94 });
+      // dist 走 center 分支＝绝对米数（placeCamera 的 dist 是"半径倍数"，
+      // 直接传绝对距离会被再乘一次 sphere.radius，相机跑到几百 km 外）。
+      f.push({ name: label + "_below_" + Math.round(d * 1.06) + "m",
+               center: sphere.center, dir: [1, 0.3, 0.5], dist: d * 1.06 });
+      f.push({ name: label + "_above_" + Math.round(d * 0.94) + "m",
+               center: sphere.center, dir: [1, 0.3, 0.5], dist: d * 0.94 });
     }
     return f;
   }
@@ -497,59 +591,85 @@ PATHS["texture-zoom"] = {
   }
 };
 
+// 轴向正视：沿 ±X/±Y/±Z 六个坐标轴方向各看两帧（3R / 1.3R）。
+// 其余 9 条路径都绕 Z（上）轴转，对"法线是水平方向"的扁平/零厚度资产
+// （t01 曲面平板、t07 零轴、t12 大纹理平板）永远是侧视，退化到零面积三角形
+// → 一个像素都不剩，会被误判成空洞。这组帧专门补这个覆盖缺口。
+PATHS["axis-sweep"] = {
+  title: "六轴正视扫描",
+  desc: "沿 ±X/±Y/±Z 六个方向正视，覆盖水平法线的扁平资产",
+  frames: function () {
+    var dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    var names = ["px", "nx", "py", "ny", "pz", "nz"];
+    var f = [];
+    for (var i = 0; i < dirs.length; i++) {
+      // dir 必须是三元数组：applyFrame 按下标取值，传 Cartesian3 对象会得到
+      // new Cartesian3(undefined,undefined,undefined) → 整组帧相机 NaN。
+      f.push({ name: "ax_" + names[i], dir: dirs[i], dist: 3 });
+      f.push({ name: "ax_" + names[i] + "_near", dir: dirs[i], dist: 1.3 });
+    }
+    return f;
+  }
+};
+
 var PATH_ORDER = ["far-to-near", "near-to-far", "orbit", "oblique-high", "oblique-low",
-                  "seam-pan", "feature-approach", "lod-threshold", "texture-zoom"];
+                  "seam-pan", "feature-approach", "lod-threshold", "texture-zoom",
+                  "axis-sweep"];
 
 // ---------------------------------------------------------------------------
 // 相机帧执行
 // ---------------------------------------------------------------------------
 function applyFrame(fr) {
   if (fr.center) {
-    var dir = Cesium.Cartesian3.normalize(new Cesium.Cartesian3(1, 0.25, 0.5),
-        new Cesium.Cartesian3());
-    var pos = Cesium.Cartesian3.add(fr.center,
-        Cesium.Cartesian3.multiplyByScalar(dir, fr.dist, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3());
-    camera.position = pos;
-    camera.direction = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.subtract(fr.center, pos, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3());
-    camera.up = Cesium.Cartesian3.normalize(Cesium.Cartesian3.UNIT_Z, new Cesium.Cartesian3());
-    camera.right = Cesium.Cartesian3.cross(camera.direction, camera.up, new Cesium.Cartesian3());
+    // dist 在这个分支里是"绝对米数"（feature-approach / lod-threshold 用）
+    var d = fr.dir ? new Cesium.Cartesian3(fr.dir[0], fr.dir[1], fr.dir[2])
+        : new Cesium.Cartesian3(1, 0.25, 0.5);
+    aimAt(new Cesium.Cartesian3(fr.center.x, fr.center.y, fr.center.z), d, fr.dist);
   } else if (fr.pos) {
-    camera.position = fr.pos;
-    camera.direction = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.subtract(sphere.center, fr.pos, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3());
-    camera.up = Cesium.Cartesian3.normalize(Cesium.Cartesian3.UNIT_Z, new Cesium.Cartesian3());
-    camera.right = Cesium.Cartesian3.cross(camera.direction, camera.up, new Cesium.Cartesian3());
+    var dir = Cesium.Cartesian3.subtract(fr.pos, sphere.center, new Cesium.Cartesian3());
+    aimAt(sphere.center, dir, Cesium.Cartesian3.distance(fr.pos, sphere.center));
   } else {
     placeCamera(new Cesium.Cartesian3(fr.dir[0], fr.dir[1], fr.dir[2]), fr.dist);
   }
   scene.requestRender();
 }
 
+// 每帧把整棵树的加载状态抄一份下来：sil=0 时能立刻分清是
+// "内容没请求/请求失败" 还是 "内容已就绪但没画进帧"。
+function tileStates() {
+  if (!tileset) return [];
+  var out = [];
+  (function walk(t, path) {
+    if (!t) return;
+    var c = null;
+    try { c = t.content; } catch (e) {}
+    out.push({
+      p: path,
+      uri: tileUri(t) || null,
+      state: typeof t.state === "number" ? t.state : String(t.state),
+      ready: !!(t.contentReady || (c && c.ready)),
+      hasContent: !!c,
+      cmds: c && typeof c._commandsLength === "number" ? c._commandsLength : null,
+      ge: t.geometricError,
+      sel: t.selected === true || t.isVisible === true || t.done === true || t.renderable === true
+    });
+    var k = t.children || [];
+    for (var i = 0; i < k.length; i++) walk(k[i], path + "." + i);
+  })(tileset._root, "0");
+  return out;
+}
+
 function currentTiles() {
+  // 本帧真正被 Cesium 选中的 tile（REPLACE 下父不可见、子可见是常态，所以整棵树都要走）
   if (!tileset) return [];
   var vis = [];
   var stack = [tileset._root];
   while (stack.length) {
     var t = stack.pop();
     if (!t) continue;
-    var isVisible = true;
-    try {
-      var bs = t.boundingSphere;
-      var cull = scene._frustumCommands ? null : null;
-      var planes = scene._frustumCommands ? null : (scene.camera ? scene.camera.frustum : null);
-    } catch (e) {}
-    // Cesium 自己的可见性判定
-    var vis2 = true;
-    try { vis2 = t.isVisible !== false; } catch (e) {}
-    if (vis2) {
-      vis.push(t);
-      var kids = t.children || [];
-      for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
-    }
+    if (t.isVisible === true) vis.push(t);
+    var kids = t.children || [];
+    for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
   }
   return vis;
 }
@@ -559,8 +679,7 @@ function refreshTileList() {
   if (!tileset) { el.textContent = "—"; return; }
   var vis = currentTiles();
   var lines = vis.slice(0, 40).map(function (t) {
-    var uri = "";
-    try { uri = t.contentUrl ? t.contentUrl.replace(/^.*[\\/]/, "") : "(no content)"; } catch (e) {}
+    var uri = tileUri(t) || "(no content)";
     var ge = (typeof t.geometricError === "number") ? t.geometricError.toFixed(2) : "?";
     return uri + "  ge=" + ge;
   });
@@ -740,6 +859,30 @@ var initUrl = qs.get("tileset") || "";
 document.getElementById("tilesetUrl").value = initUrl;
 if (initUrl) {
   loadTileset(initUrl).then(function () {
+    if (qs.get("dbv") === "1") { tileset.debugShowBoundingVolume = true; tileset.debugColorizeTiles = true; }
+    // 软件渲染 / 无环境贴图时 PBR 可能整片涂黑，用 ?lm= 切换光照模型排查：
+    // blinn / knightshad 走经典逐像素光照，不依赖 IBL。
+    var lm = qs.get("lm");
+    if (lm && Cesium.LightModel) {
+      tileset.lightModel = lm === "blinn" ? Cesium.LightModel.BLINN_PHONG
+                       : lm === "knight" ? Cesium.LightModel.KNIGHTSHAD
+                       : Cesium.LightModel.PBR;
+      scene.light = new Cesium.SunLight({ intensity: 3.0 });
+    }
+    if (qs.get("fit") === "1") {
+      viewer.zoomTo(tileset, new Cesium.HeadingPitchRange(0, -0.5, 0), 120)
+        .then(function () { return settle(); }).catch(function () {});
+    }
+    if (qs.get("all") === "1") {
+      document.title = "VA_RUNNING";
+      captureAll({
+        session: qs.get("session") || "session",
+        paths: (qs.get("paths") || "").split(",").filter(function (s) { return s; }),
+        maxFrames: parseInt(qs.get("maxFrames") || "0", 10),
+        report: qs.get("report") || "/va-report"
+      }).catch(function () {});
+      return;
+    }
     var p = qs.get("path");
     if (p && PATHS[p]) runPath(p);
   });
@@ -749,10 +892,346 @@ document.getElementById("loadBtn").addEventListener("click", function () {
 });
 
 // ---------------------------------------------------------------------------
+// 无头批量截图（本机 python 不可用，visual_capture.py 无法执行 → 用
+// msedge --headless 驱动本页，见 scripts/visual_capture.sh / STATUS.md B-5）
+// ---------------------------------------------------------------------------
+function shotNow() {
+  // requestRenderMode 下必须显式 requestRender()，否则 scene.render() 会复用上一帧
+  // 缓存的命令列表：切换 tileset.show / debugColorizeTiles 后画面不变，
+  // 于是"开/关差值"恒为 0（这个坑曾把整批截图误判成"几何没画"）。
+  // 只渲染一次：早先这里成对调用两次，每帧 10 次全画布软件渲染 → 6 次；
+  // 若"开/关差值"与剪影不一致，summary.metricMismatch 会抓到（不能悄悄采信）。
+  scene.requestRender();
+  scene.render();
+  return Promise.resolve(canvas.toDataURL("image/png"));
+}
+
+function imgOf(url) {
+  return new Promise(function (resolve, reject) {
+    var im = new Image();
+    im.onload = function () { resolve(im); };
+    im.onerror = function () { reject(new Error("png decode failed")); };
+    im.src = url;
+  });
+}
+
+// 几何占比：同一相机帧"显示 tileset / 隐藏 tileset"的差异像素。
+// 0 表示该帧没有任何几何被画出来（远景空洞 / 代理缺内容都逃不掉这个判据）。
+function safeName(s) { return String(s).replace(/[^\w.-]/g, "_"); }
+
+// 灰底剪影：批量截图统一用中性灰底（见 applyCaptureEnv），因此"不是背景色"的
+// 像素就是被画出来的几何。这个判据不依赖两帧差值，天空/时间动画不会污染它，
+// 并且能顺带给出几何自身的亮度——把"没进帧"和"进了帧但是纯黑"彻底分开。
+var CAPTURE_BG_RGB = [128, 128, 128];
+
+// 该帧里 tileset 外接球投影到屏幕上的半径（px）。用来把"确实该看得见却是空的"
+// 和"模型本来就只占几个像素"区分开——后者 sil=0 是合理的，不能算空洞。
+function projectedRadiusPx() {
+  var d = Cesium.Cartesian3.distance(camera.positionWC, sphere.center);
+  if (!(d > sphere.radius)) return 1e6;      // 相机在球内：整个模型铺满视野
+  var tanHalf = Math.tan(Cesium.Math.toRadians(FOV_DEG) / 2);
+  return (sphere.radius / d) / tanHalf * (VIEWPORT.height / 2);
+}
+
+// 根外接球常常被离群部件/大坐标撑得远大于真实内容（t05 内容 1 m 而根球 1.7 km），
+// 拿根球判"该看得见"会误报空洞。这里改用"有内容的那些 tile 自身外接球"的最大投影。
+function contentProjectedRadiusPx() {
+  var tanHalf = Math.tan(Cesium.Math.toRadians(FOV_DEG) / 2);
+  var best = 0;
+  for (var i = 0; i < tileTree.length; i++) {
+    var t = tileTree[i];
+    if (!t.uri) continue;
+    var bs = t.tile.boundingSphere;
+    if (!bs || !bs.radius) continue;
+    var d = Cesium.Cartesian3.distance(camera.positionWC, bs.center);
+    var r = d > bs.radius ? (bs.radius / d) / tanHalf * (VIEWPORT.height / 2) : 1e6;
+    if (r > best) best = r;
+  }
+  return best;
+}
+
+// 一帧的全部像素度量：剪影（主判据）+ 剪影内亮度 + 剪影内颜色散布（纹理是否
+// 真贴上）+ 同相机"显示/隐藏 tileset"的开关联动差值（交叉校验）。
+//
+// 这四样原本各写一个函数、各自 imgOf(PNG) + getImageData 扫一遍 92 万像素：
+// 软件渲染下每帧多花 20~30 s，一批 70 帧根本跑不完（实测 t02 每帧 90 s）。
+// 合并成一次解码、一次循环，度量定义保持逐字不变，历史数字仍可比。
+function analyzeFrame(urlOn, urlOff) {
+  return Promise.all([imgOf(urlOn), imgOf(urlOff)]).then(function (imgs) {
+    var c = document.createElement("canvas");
+    c.width = imgs[0].width; c.height = imgs[0].height;
+    var x = c.getContext("2d", { willReadFrequently: true });
+    x.drawImage(imgs[0], 0, 0);
+    var da = x.getImageData(0, 0, c.width, c.height).data;
+    x.drawImage(imgs[1], 0, 0);
+    var db = x.getImageData(0, 0, c.width, c.height).data;
+
+    var W = c.width, H = c.height, total = W * H;
+    var sil = 0, sbox = [1e9, 1e9, -1, -1], lumSum = 0, lumMax = 0;
+    var sr = 0, sg = 0, sb = 0, sr2 = 0, sg2 = 0, sb2 = 0, chroma = 0;
+    var bright = 0;
+    var cov = 0, cbox = [1e9, 1e9, -1, -1];
+
+    for (var p = 0; p < total; p++) {
+      var i = p * 4;
+      var r = da[i], g = da[i + 1], b = da[i + 2];
+      if (Math.abs(r - CAPTURE_BG_RGB[0]) + Math.abs(g - CAPTURE_BG_RGB[1])
+          + Math.abs(b - CAPTURE_BG_RGB[2]) > 6) {
+        sil++;
+        var px = p % W, py = (p / W) | 0;
+        if (px < sbox[0]) sbox[0] = px;
+        if (px > sbox[2]) sbox[2] = px;
+        if (py < sbox[1]) sbox[1] = py;
+        if (py > sbox[3]) sbox[3] = py;
+        var L = 0.299 * r + 0.587 * g + 0.114 * b;
+        lumSum += L; if (L > lumMax) lumMax = L;
+        sr += r; sg += g; sb += b;
+        sr2 += r * r; sg2 += g * g; sb2 += b * b;
+        if (Math.max(r, g, b) - Math.min(r, g, b) > 24) chroma++;
+      }
+      if (r > 12 || g > 12 || b > 12) bright++;
+      if (Math.abs(r - db[i]) > 3 || Math.abs(g - db[i + 1]) > 3
+          || Math.abs(b - db[i + 2]) > 3) {
+        cov++;
+        var qx = p % W, qy = (p / W) | 0;
+        if (qx < cbox[0]) cbox[0] = qx;
+        if (qx > cbox[2]) cbox[2] = qx;
+        if (qy < cbox[1]) cbox[1] = qy;
+        if (qy > cbox[3]) cbox[3] = qy;
+      }
+    }
+
+    var sd = 0;
+    if (sil) {
+      [[sr, sr2], [sg, sg2], [sb, sb2]].forEach(function (pair) {
+        var m = pair[0] / sil; sd += Math.max(0, pair[1] / sil - m * m);
+      });
+    }
+    return {
+      silhouette: { px: sil, fraction: +(sil / total).toFixed(5), bbox: sil ? sbox : null,
+                    lumAvg: sil ? +(lumSum / sil).toFixed(1) : 0, lumMax: Math.round(lumMax),
+                    viewport: W + "x" + H },
+      colorSpread: { n: sil, sd: +Math.sqrt(sd).toFixed(1),
+                     chromaFraction: sil ? +(chroma / sil).toFixed(4) : 0 },
+      bright: { brightFraction: +(bright / total).toFixed(4) },
+      coverage: { px: cov, fraction: +(cov / total).toFixed(5), bbox: cov ? cbox : null,
+                  viewport: W + "x" + H }
+    };
+  });
+}
+
+// 批量截图期间的固定环境：常量灰底 + 关天空/雾/HDR。
+// 天空与大气随时间渐变，会把背景变化混进"开/关差值"和颜色直方图里。
+function applyCaptureEnv() {
+  scene.backgroundColor = Cesium.Color.fromCssColorString("rgb(128,128,128)");
+  if (scene.skyBox) scene.skyBox.show = false;
+  if (scene.sun) scene.sun.show = false;
+  if (scene.moon) scene.moon.show = false;
+  if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
+  if (scene.fog) scene.fog.enabled = false;
+  scene.highDynamicRange = false;
+  scene.requestRender();
+}
+
+// 无头模式没有真实 vsync，rAF 可能根本不触发：用 setTimeout 自己驱动渲染，
+// 直到瓦片全部加载完（或超时）。每帧都 requestRender()，否则 requestRenderMode
+// 下 scene.render() 只是把上一帧缓存重画一遍，tilesLoaded 永远不会推进。
+// 本帧还有多少个"已请求但未就绪"的内容
+function pendingTiles() {
+  if (!tileset) return 0;
+  var n = 0;
+  (function walk(t) {
+    if (!t) return;
+    var c = null;
+    try { c = t.content; } catch (e) {}
+    if (c && !t.contentReady && !c.ready) n++;
+    var k = t.children || [];
+    for (var i = 0; i < k.length; i++) walk(k[i]);
+  })(tileset._root);
+  return n;
+}
+
+// 等待本帧内容落地后出图。
+// 上限必须按"渲染次数"算，不能按时间：headless 的 --virtual-time-budget 会虚拟化
+// Date.now()，"等 8 秒"实测变成每帧 ~500 次全画布软件渲染（t02 每帧 90 s、
+// 整批 70 帧根本跑不完）。tileset.tilesLoaded 也不可靠（7 个 tile 全 ready
+// 仍恒为 false），所以只看"未就绪内容数归零"。
+// settleIters 会随记录上报：贴着上限走的帧说明还在等内容，不能当成产品缺陷。
+var lastSettleIters = 0;
+function settleShot() {
+  return new Promise(function (resolve) {
+    var iter = 0;
+    function done() { lastSettleIters = iter; resolve(); }
+    function step() {
+      try { scene.requestRender(); scene.render(); } catch (e) { done(); return; }
+      iter++;
+      if ((iter >= 2 && pendingTiles() === 0) || iter >= 12) { done(); return; }
+      setTimeout(step, 16);
+    }
+    setTimeout(step, 16);
+  });
+}
+
+var captureRunning = false;
+function captureAll(opt) {
+  opt = opt || {};
+  if (!tileset) return Promise.reject(new Error("tileset 未加载"));
+  var session = opt.session || "session";
+  var report = opt.report || "/va-report";
+  var paths = (opt.paths && opt.paths.length) ? opt.paths : PATH_ORDER;
+  var maxFrames = opt.maxFrames || 0;
+  var records = [];
+  captureRunning = true;
+  document.body.classList.add("capturing");
+  var t0 = Date.now();
+
+  function pick(frames) {
+    if (!maxFrames || maxFrames >= frames.length) return frames;
+    var out = [], last = frames.length - 1;
+    for (var k = 0; k < maxFrames; k++) out.push(frames[Math.round(k * last / Math.max(1, maxFrames - 1))]);
+    return out;
+  }
+  function post(body) {
+    return fetch(report, { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) }).then(function (r) { return r.text(); });
+  }
+
+  var chain = Promise.resolve();
+  document.body.classList.add("shotmode");
+  document.documentElement.classList.add("shotmode");
+  viewer.resize();
+  applyCaptureEnv();
+  var canvasInfo = { width: canvas.width, height: canvas.height,
+                     dpr: window.devicePixelRatio, want: VIEWPORT.width + "x" + VIEWPORT.height };
+  paths.forEach(function (name) {
+    if (!PATHS[name]) return;
+    var frames = pick(PATHS[name].frames());
+    chain = chain.then(function () {
+      return frames.reduce(function (prev, f, i) {
+        return prev.then(function () {
+          applyFrame(f);
+          window.__VA_CURRENT_PATH__ = name;
+          window.__VA_CURRENT_FRAME__ = f.name;
+          return settleShot().then(function () {
+            refreshTileList();
+            return shotNow().then(function (urlOn) {
+              // 不再截 debugColorizeTiles 帧：该调试色只作用于新建的绘制命令，
+              // 缓存内容不会重着色（实测"剪影 24 万像素但色簇 0"），
+              // 软件渲染下每帧多一次全分辨率出图 + 解码的代价不值。
+              // 瓦片是否真被画出来以 silhouette + tileStates 为准。
+              tileset.show = false;
+              return shotNow().then(function (urlOff) {
+                tileset.show = true;
+                var c = camera.positionCartographic;
+                  var p = camera.positionWC, dv = camera.directionWC;
+                  var camOk = [p.x, p.y, p.z, dv.x, dv.y, dv.z].every(isFinite);
+                  var projPx = projectedRadiusPx();
+                  var cprojPx = contentProjectedRadiusPx();
+                  var vis = currentTiles().map(function (t) {
+                    return { uri: tileUri(t), geometricError: t.geometricError };
+                  });
+                return analyzeFrame(urlOn, urlOff).then(function (rs) {
+                  var cov = rs.coverage, bright = rs.bright,
+                      sil = rs.silhouette, cs = rs.colorSpread;
+                  var rec = {
+                    kind: "shot", session: session, path: name, frame: f.name,
+                    index: i, total: frames.length,
+                    file: safeName(name) + "_" + (i < 10 ? "0" : "") + i + "_" + safeName(f.name) + ".png",
+                    camera: { lon: +Cesium.Math.toDegrees(c.longitude).toFixed(6),
+                              lat: +Cesium.Math.toDegrees(c.latitude).toFixed(6),
+                              height: +c.height.toFixed(2) },
+                    visibleCount: vis.length, visibleTiles: vis.slice(0, 60),
+                    tileStates: tileStates().slice(0, 80),
+                    coverage: cov, silhouette: sil, bright: bright,
+                    projectedRadiusPx: +projPx.toFixed(1),
+                    cameraFinite: camOk,
+                    contentProjectedRadiusPx: +cprojPx.toFixed(1),
+                    settleIters: lastSettleIters,
+                    colorSpread: cs,
+                    canvas: canvasInfo,
+                    tilesetUrl: document.getElementById("tilesetUrl").value,
+                    env: ENV
+                  };
+                  records.push({ path: name, frame: f.name, index: i,
+                                 visibleCount: vis.length, coverage: cov.px,
+                                 silhouette: sil.px, silLumAvg: sil.lumAvg,
+                                 projPx: +projPx.toFixed(1), cprojPx: +cprojPx.toFixed(1),
+                                 spread: cs.sd, camOk: camOk, settleIters: lastSettleIters,
+                                 chroma: cs.chromaFraction,
+                                 bright: bright.brightFraction,
+                                 camera: rec.camera, file: rec.file });
+                  return post(Object.assign({ dataUrl: urlOn }, rec));
+                });
+              });
+            });
+          }).catch(function (e) {
+            reportError("frame:" + name + "/" + f.name, e);
+            records.push({ path: name, frame: f.name, index: i,
+                           error: String(e && e.message || e) });
+          });
+        });
+      }, Promise.resolve());
+    });
+  });
+
+  return chain.then(function () {
+    document.body.classList.remove("capturing");
+    captureRunning = false;
+    // 空洞判据用灰底剪影（不依赖两帧差值）；差值指标作为交叉校验，
+    // 两者不一致说明出帧链路有问题，单独记下来而不是悄悄采信其中一个。
+    // sil=0 只有在"该看得见"时才算缺陷：以"有内容的 tile 自身外接球投影半径"为准
+    // （根球会被离群部件撑大，用它判会误报）。
+    var holes = records.filter(function (r) { return r.silhouette === 0 && r.cprojPx > 20; });
+    var tooSmall = records.filter(function (r) { return r.silhouette === 0 && r.cprojPx <= 20; });
+    var flat = records.filter(function (r) {
+      return r.silhouette > 2000 && r.chroma < 0.01 && r.spread < 3;
+    });
+    var mismatch = records.filter(function (r) {
+      return r.silhouette !== undefined && r.coverage !== undefined
+          && Math.abs(r.silhouette - r.coverage) > 0.02 * 1280 * 720;
+    });
+    var dark = records.filter(function (r) { return r.silhouette > 0 && r.silLumAvg < 3; });
+    var failed = records.filter(function (r) { return r.error; });
+    var summary = { kind: "done", session: session, shots: records.length,
+                    seconds: +((Date.now() - t0) / 1000).toFixed(1),
+                    failedFrames: failed.length,
+                    errors: failed.map(function (f) { return f.path + "/" + f.frame + ": " + f.error; }),
+                    zeroCoverageFrames: holes.length,
+                    holes: holes.map(function (h) { return h.path + "/" + h.frame; }),
+                    tooSmallToJudge: tooSmall.map(function (h) { return h.path + "/" + h.frame; }),
+                    flatFrames: flat.map(function (h) { return h.path + "/" + h.frame; }),
+                    metricMismatch: mismatch.map(function (h) { return h.path + "/" + h.frame; }),
+                    darkFrames: dark.map(function (h) { return h.path + "/" + h.frame; }),
+                    console: consoleTail.slice(-40),
+                    records: records };
+    return post(summary).then(function () {
+      window.__VA_SUMMARY__ = summary;
+      var pre = document.getElementById("vaSummary");
+      if (!pre) {
+        pre = document.createElement("pre");
+        pre.id = "vaSummary";
+        pre.style.cssText = "position:fixed;left:0;bottom:0;margin:0;font:11px/1.3 monospace;"
+                          + "background:#000;color:#0f0;max-height:40%;overflow:auto;z-index:9999";
+        document.body.appendChild(pre);
+      }
+      pre.textContent = "VA_SUMMARY " + JSON.stringify(summary, null, 1);
+      document.title = "VA_DONE shots=" + records.length + " zeroCoverage=" + holes.length;
+      return summary;
+    });
+  }, function (e) {
+    document.body.classList.remove("capturing");
+    captureRunning = false;
+    document.title = "VA_FAIL " + e;
+    throw e;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 自动化接口：Playwright / 人工都通过 window.__VA__ 驱动
 // ---------------------------------------------------------------------------
 window.__VA__ = {
-  version: "1.0",
+  version: "1.1",
   cesiumVersion: CESIUM_VERSION,
   info: function () { return ENV; },
   load: function (url) { return loadTileset(url); },
@@ -770,9 +1249,7 @@ window.__VA__ = {
   },
   visibleTiles: function () {
     return currentTiles().map(function (t) {
-      var uri = "";
-      try { uri = t.contentUrl ? t.contentUrl.replace(/^.*[\\/]/, "") : ""; } catch (e) {}
-      return { uri: uri, geometricError: t.geometricError, level: t.level,
+      return { uri: tileUri(t), geometricError: t.geometricError,
                refineDistance: refineDistance(t.geometricError || 0) };
     });
   },
@@ -783,6 +1260,7 @@ window.__VA__ = {
     });
   },
   screenshot: shotDataUrl,
+  captureAll: captureAll,
   pick: pickCenter,
   camera: function () {
     var c = camera.positionCartographic;
