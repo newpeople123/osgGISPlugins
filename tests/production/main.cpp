@@ -29,6 +29,8 @@
 #include <cstdlib>
 #include <limits>
 #include <filesystem>
+#include <algorithm>
+#include <cstring>
 #include <map>
 #include <set>
 #include <string>
@@ -1032,6 +1034,216 @@ void testPipelineBoundsGate()
           "a plain valid tile reports no bounding-volume failure");
 }
 
+// ---------------------------------------------------------------------------
+// A-41 回归：i3dm 的**每实例位姿**必须逐条落进二进制特征表。
+// 过去的失效方式很隐蔽：N 个 MatrixTransform 共享同一份原型 drawable，折变换优化
+// 用 TransformAttributeFunctor **就地**把 N 个矩阵连乘到这份共享数组上，再把矩阵复位
+// 成单位阵，于是 `createFeatureI3DMTableBinary` 只能 decompose 出全 0 位姿——
+// 容器仍是合法 i3dm、validator 0 error、画面也有几何，只有实例位置是空的。
+// 所以本用例断言的是三件当时**同时**成立才会通过的事：
+//   ① 特征表 POSITION 逐条等于 inverse(原型世界) · 实例世界 的平移（Y-up 轴序）
+//   ② GLB 里的原型几何仍只在它自己的局部尺度内（没有被连乘搬走）
+//   ③ GLB 节点不带 TRS（位姿只能在特征表里，否则渲染时双变换）
+// ①是后来才补上的：原型几何已按世界矩阵烘好，特征表若直接写实例世界矩阵，
+// 就等于把世界变换乘两遍——位姿看着齐全（299/299 非零）却整体偏移一个原型平移，
+// 只有拿"相对原型"的数值去比才暴露得出来。
+namespace {
+
+osg::ref_ptr<osg::Geode> makeIdenticalQuadGeode(const std::string& name)
+{
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    geode->setName(name);
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    // 每个 Geode 各自一份数组、数值完全相同：这就是签名分组要认的"重复实例"
+    pos->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
+    pos->push_back(osg::Vec3(1.0f, 0.0f, 0.0f));
+    pos->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
+    pos->push_back(osg::Vec3(0.0f, 1.0f, 0.0f));
+    osg::ref_ptr<osg::DrawElementsUInt> idx =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    idx->push_back(0); idx->push_back(1); idx->push_back(2);
+    idx->push_back(0); idx->push_back(2); idx->push_back(3);
+    geom->setVertexArray(pos.get());
+    geom->addPrimitiveSet(idx.get());
+    geode->addDrawable(geom.get());
+    return geode;
+}
+
+std::uint32_t readU32(const std::vector<char>& b, std::size_t at)
+{
+    std::uint32_t v = 0;
+    std::memcpy(&v, b.data() + at, sizeof(v));
+    return v;
+}
+
+float readF32(const std::vector<char>& b, std::size_t at)
+{
+    float v = 0.0f;
+    std::memcpy(&v, b.data() + at, sizeof(v));
+    return v;
+}
+
+struct I3dmParsed
+{
+    bool ok = false;
+    nlohmann::json ft;          // 特征表 JSON
+    std::size_t ftBin = 0;      // 二进制特征表起点
+    nlohmann::json glb;         // GLB 的 asset JSON
+    std::size_t glbBin = 0;     // GLB BIN chunk 起点
+};
+
+I3dmParsed parseI3dm(const std::vector<char>& b)
+{
+    I3dmParsed r;
+    if (b.size() < 32 || std::memcmp(b.data(), "i3dm", 4) != 0) { return r; }
+    // i3dm 头 32 B：ftj@12 ftb@16 btj@20 btb@24 gltfFormat@28（b3dm 是 28 B 头）
+    const std::size_t ftj = readU32(b, 12), ftb = readU32(b, 16);
+    const std::size_t btj = readU32(b, 20), btb = readU32(b, 24);
+    r.ft = nlohmann::json::parse(b.data() + 32, b.data() + 32 + ftj);
+    r.ftBin = 32 + ftj;
+    const std::size_t glbOff = 32 + ftj + ftb + btj + btb;
+    if (glbOff + 20 > b.size() || std::memcmp(b.data() + glbOff, "glTF", 4) != 0) { return r; }
+    const std::size_t jsonLen = readU32(b, glbOff + 12);
+    r.glb = nlohmann::json::parse(b.data() + glbOff + 20, b.data() + glbOff + 20 + jsonLen);
+    r.glbBin = glbOff + 12 + 8 + jsonLen + 8;
+    r.ok = true;
+    return r;
+}
+
+} // namespace
+
+void testInstancePosesSurvive()
+{
+    std::cout << "[i3dm] per-instance poses survive write-out" << std::endl;
+    Utils::registerFileAliases();
+
+    // 平移三轴都不为零且互不相同：任何"连乘"或"丢位姿"都会改变这个集合。
+    // proto 故意也带一个非零平移，用来验证特征表里的矩阵是**相对原型**的。
+    const osg::Vec3d off[5] = {
+        osg::Vec3d(1.0, 2.0, 3.0),    // 原型
+        osg::Vec3d(10.0, 3.0, -4.0),
+        osg::Vec3d(-7.0, 2.5, 6.0),
+        osg::Vec3d(100.0, -11.0, 13.0),
+        osg::Vec3d(-30.0, 40.0, -50.0),
+    };
+    const unsigned kInst = 4;   // 除原型以外的实例数
+
+    osg::ref_ptr<osg::Group> root = new osg::Group;
+    for (unsigned i = 0; i < 5; ++i)
+    {
+        osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+        mt->setMatrix(osg::Matrixd::translate(off[i]));
+        mt->addChild(makeIdenticalQuadGeode("lamp_" + std::to_string(i)).get());
+        root->addChild(mt.get());
+    }
+
+    ProductionProfile profile;
+    profile.budget.maxTrianglesPerTile = 12;
+    profile.budget.targetTrianglesPerTile = 8;
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_pipeline_instance_poses";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    const bool ran = pipeline.run(root.get(), opt);
+    const bool fin = pipeline.finalize();
+    check(ran && fin, "instanced fixture builds and publishes",
+          joinMessages(pipeline.failures()));
+    check(pipeline.report().instanceTileCount == 1,
+          "exactly one i3dm tile published",
+          std::to_string(pipeline.report().instanceTileCount));
+    check(pipeline.report().instanceCount == kInst,
+          "the 4 non-prototype copies are registered as instances",
+          std::to_string(pipeline.report().instanceCount));
+
+    std::filesystem::path tile;
+    for (const auto& e : std::filesystem::directory_iterator(out / "tiles", ec))
+    {
+        if (e.path().extension() == ".i3dm") { tile = e.path(); }
+    }
+    check(!tile.empty(), "an .i3dm content file exists on disk", tile.string());
+    if (tile.empty()) { return; }
+
+    std::ifstream in(tile, std::ios::binary);
+    const std::vector<char> buf((std::istreambuf_iterator<char>(in)),
+                                std::istreambuf_iterator<char>());
+    const I3dmParsed r = parseI3dm(buf);
+    check(r.ok, "content file parses as i3dm with a GLB");
+    if (!r.ok) { return; }
+
+    check(r.ft.contains("INSTANCES_LENGTH") && r.ft["INSTANCES_LENGTH"] == kInst,
+          "feature table declares every instance", r.ft.dump());
+    check(r.ft.contains("POSITION") && r.ft["POSITION"].contains("byteOffset"),
+          "feature table carries a POSITION column", r.ft.dump());
+    if (!r.ft.contains("POSITION")) { return; }
+
+    const std::size_t po = r.ft["POSITION"]["byteOffset"];
+    unsigned nz = 0, exact = 0;
+    for (unsigned i = 0; i < kInst; ++i)
+    {
+        const std::size_t at = r.ftBin + po + static_cast<std::size_t>(i) * 12;
+        const osg::Vec3d rel = off[i + 1] - off[0];
+        // OSG→glTF 的 Y-up 轴序换算：(x, y, z) -> (x, -z, y)
+        const double want[3] = { rel.x(), -rel.z(), rel.y() };
+        double got[3] = { want[0] - 1e9, want[1] - 1e9, want[2] - 1e9 };
+        double maxAbs = 0.0;
+        for (int c = 0; c < 3; ++c)
+        {
+            got[c] = readF32(buf, at + static_cast<std::size_t>(c) * 4);
+            maxAbs = std::max(maxAbs, std::abs(got[c]));
+        }
+        if (maxAbs > 0.0f) { ++nz; }
+        if (std::abs(got[0] - want[0]) < 1e-3 && std::abs(got[1] - want[1]) < 1e-3
+            && std::abs(got[2] - want[2]) < 1e-3)
+        { ++exact; }
+        else
+        {
+            std::cout << "  instance " << i << " got (" << got[0] << "," << got[1] << ","
+                      << got[2] << ") want (" << want[0] << "," << want[1] << ","
+                      << want[2] << ")" << std::endl;
+        }
+    }
+    check(nz == kInst, "no instance position collapsed to zero",
+          std::to_string(nz) + "/" + std::to_string(kInst));
+    check(exact == kInst, "every instance position equals inverse(prototype) * instance",
+          std::to_string(exact) + "/" + std::to_string(kInst));
+
+    // ② 原型几何只能待在自己的尺度里。这里的顶点已按原型世界矩阵烘好（平移
+    //    (1,2,3)，四边形占 1×1），所以任何一轴的量级都不该超过 3；被 4 个实例
+    //    矩阵就地连乘时会平移到 |v|≈72（纯平移不改跨度，所以必须看绝对位置）。
+    double geoMaxAbs = 0.0;
+    for (const auto& mesh : r.glb.value("meshes", nlohmann::json::array()))
+        for (const auto& prim : mesh.value("primitives", nlohmann::json::array()))
+        {
+            const int ai = prim.value("attributes", nlohmann::json::object())
+                               .value("POSITION", -1);
+            if (ai < 0 || !r.glb.contains("accessors")) { continue; }
+            const nlohmann::json& acc = r.glb["accessors"][ai];
+            for (const double v : acc.value("min", nlohmann::json::array()))
+            { geoMaxAbs = std::max(geoMaxAbs, std::abs(v)); }
+            for (const double v : acc.value("max", nlohmann::json::array()))
+            { geoMaxAbs = std::max(geoMaxAbs, std::abs(v)); }
+        }
+    check(geoMaxAbs > 0.0 && geoMaxAbs <= 3.0 + 1e-6,
+          "prototype geometry stays at its own scale (not multiplied by instance matrices)",
+          "maxAbs=" + std::to_string(geoMaxAbs));
+
+    // ③ 位姿只能有一份：GLB 节点带 TRS 就会与特征表双变换
+    unsigned trsNodes = 0;
+    for (const auto& nd : r.glb.value("nodes", nlohmann::json::array()))
+    {
+        if (nd.contains("translation") || nd.contains("rotation")
+            || nd.contains("scale") || nd.contains("matrix")) { ++trsNodes; }
+    }
+    check(trsNodes == 0, "no per-node TRS competes with the feature table",
+          std::to_string(trsNodes));
+}
+
+
 
 int main(int argc, char** argv)
 {
@@ -1087,6 +1299,7 @@ int main(int argc, char** argv)
     run("pipelineCoverage", &testPipelineLeafCoverageInvariant);
     run("proxySkip", &testPipelineProxySkipDegrades);
     run("bounds", &testPipelineBoundsGate);
+    run("instancePoses", &testInstancePosesSurvive);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();

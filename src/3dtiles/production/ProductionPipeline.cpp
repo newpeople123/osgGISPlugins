@@ -971,7 +971,10 @@ int ProductionPipeline::buildInstanceTree()
         // = local · instWorld。直接用 instWorld 会把世界变换乘两遍。
         osg::Matrixd pw = protoObj->worldMatrix;
         osg::Matrixd invProto;
-        if (!pw.invert(invProto))
+        // osg::Matrixd::invert 是 `this = inverse(rhs)`，不是 `rhs -> 写入 this`
+        // 的 const 版本：方向写反时 invProto 会停在单位阵上，实例位姿静默变成
+        // 绝对世界平移（= 双变换），且不会报错。
+        if (!invProto.invert(pw))
         {
             _failures.push_back("prototype " + std::to_string(proto)
                                 + " has a non-invertible world matrix; instance placement"
