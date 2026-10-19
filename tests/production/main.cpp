@@ -311,8 +311,6 @@ void testFeatureManifest()
     std::vector<FeatureId> t1{20, 40};
     mapper.addTile("tiles/t0.b3dm", t0, false);
     mapper.addTile("tiles/t1.b3dm", t1, true);
-    check(mapper.occurrenceCount() == 5, "occurrence count",
-          std::to_string(mapper.occurrenceCount()));
 
     // manifest 只登记 SourceModel 里出现过的 feature，所以这里要真的有这些对象
     SourceModel model;
@@ -329,6 +327,24 @@ void testFeatureManifest()
         model.objects.push_back(o);
         model.featureToObject[fid] = static_cast<unsigned>(model.objects.size() - 1);
     }
+    // 计数只算能回查到源 feature 的条目，manifest 与 conversion-report 同一函数
+    check(mapper.sourceOccurrenceCount(model) == 5, "occurrence count",
+          std::to_string(mapper.sourceOccurrenceCount(model)));
+    // 落不到源 feature 上的条目（代理身份）不进计数：删掉 40 这个对象后
+    // t1 里的那一条就不该被算进"源出现次数"
+    {
+        SourceModel partial;
+        for (FeatureId fid : {10, 20, 30})
+        {
+            SourceObject o;
+            o.globalFeatureId = fid;
+            partial.objects.push_back(o);
+            partial.featureToObject[fid] = static_cast<unsigned>(partial.objects.size() - 1);
+        }
+        check(mapper.sourceOccurrenceCount(partial) == 4, "unmapped batch entries excluded",
+              std::to_string(mapper.sourceOccurrenceCount(partial)));
+    }
+
     const json js = mapper.manifestJson(model);
     const std::string jsText = js.dump();
     check(jsText.find("\"20\"") != std::string::npos, "feature 20 present in manifest");
@@ -339,6 +355,10 @@ void testFeatureManifest()
           && f20.find("tiles/t1.b3dm") != std::string::npos,
           "cross-tile feature 20 has occurrences in both tiles");
     check(js["occurrenceCount"].get<std::size_t>() == 5, "manifest occurrence count");
+    // 手册 17 节要求"代理 ID → 源 feature 集合"可查：mapper 侧只保证字段存在
+    // 且是对象（内容由 ProductionPipeline::writeManifest 按 tileUri 填入）
+    check(js.contains("aggregateProxies") && js["aggregateProxies"].is_object(),
+          "manifest carries an aggregateProxies object");
     const std::vector<std::string> errs = mapper.validate();
     check(errs.empty(), "mapper validates", errs.empty() ? std::string() : errs.front());
 }
@@ -703,6 +723,45 @@ void testPipelineLeafCoverageInvariant()
     check(pipeline.report().featuresMissingFromLeaves == 0, "coverage hole counter stays zero");
     check(std::filesystem::exists(out / "tileset.json", ec), "tileset.json published");
     check(std::filesystem::exists(out / "conversion-report.json", ec), "report published");
+
+    // manifest.aggregateProxies 必须给每个"发布了内容的聚合代理"一条按 tileUri
+    // 索引的映射，key 只能指向真实发布出去的瓦片（手册 17 节：从代理 ID 反查
+    // 源 ID 集合）。降级成无内容的代理不带这个 key——它的 aggregateSources
+    // 仍然非空（ProxyMeshBuilder 建的时候就填了），少了 hasContent 这道闸就会
+    // 往 manifest 里写一个空字符串 key。
+    {
+        std::ifstream mf(out / "feature-manifest.json", std::ios::binary);
+        nlohmann::json man;
+        const bool parsed = mf.is_open() && (mf >> man).good();
+        check(parsed, "feature-manifest.json published and parses",
+              parsed ? "ok" : (out / "feature-manifest.json").string());
+        const nlohmann::json& agg = man["aggregateProxies"];
+        unsigned aggPublished = 0, emptyKeys = 0;
+        for (const ProductionTile& t : pipeline.tiles())
+        {
+            if (t.aggregate && t.hasContent && !t.aggregateSources.empty()) { ++aggPublished; }
+        }
+        // 夹具必须真的产出聚合代理，否则下面所有断言都是空断言
+        check(aggPublished >= 1, "fixture really publishes aggregate proxy tiles",
+              std::to_string(aggPublished));
+        check(agg.is_object() && agg.size() == aggPublished,
+              "aggregateProxies has exactly one entry per published aggregate tile",
+              std::to_string(agg.is_object() ? agg.size() : 0) + "/"
+              + std::to_string(aggPublished));
+        for (const auto& kv : agg.items())
+        {
+            if (kv.key().empty()) { ++emptyKeys; continue; }
+            bool ok = false;
+            for (const ProductionTile& t : pipeline.tiles())
+            {
+                if (t.uri == kv.key()) { ok = t.hasContent && t.aggregate && !t.aggregateSources.empty(); }
+            }
+            check(ok, "aggregateProxies key is a published aggregate tile", kv.key());
+            check(!kv.value().empty(), "aggregate entry carries a non-empty source set", kv.key());
+        }
+        check(emptyKeys == 0, "no content-less proxy leaks an empty aggregateProxies key",
+              std::to_string(emptyKeys));
+    }
 
     // 失败关闭：硬字节上限压到不可能满足时，必须拒绝产出，而不是在输出目录里
     // 留下一个"看着成功其实缺件"的 tileset（手册 14.17）。

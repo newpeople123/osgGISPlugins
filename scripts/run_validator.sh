@@ -28,11 +28,18 @@ fi
 [ -f "$VMAIN" ] || { echo "validator not installed: $VMAIN"; exit 3; }
 
 mkdir -p "$OUT"
+# 两种形态都收：容器目录（下面每个子目录一个数据集）或数据集目录本身
+if [ -f "$SRC/tileset.json" ]; then
+  LIST="$SRC"
+else
+  LIST="$(printf '%s\n' "$SRC"/*/)"
+fi
 printf '%-28s %8s %8s %8s  %s\n' tileset errors warnings infos report
 fail=0
-for ts in "$SRC"/*/tileset.json; do
+for d in $LIST; do
+  ts="${d%/}/tileset.json"
   [ -f "$ts" ] || continue
-  name=$(basename "$(dirname "$ts")")
+  name=$(basename "${d%/}")
   rep="$OUT/$name.validator.json"
   node "$VMAIN" -t "$(cygpath -w "$ts" 2>/dev/null || echo "$ts")" \
        -r "$(cygpath -w "$rep" 2>/dev/null || echo "$rep")" >"$OUT/$name.validator.log" 2>&1

@@ -1,0 +1,33 @@
+
+| dataset | tiles | aggProxies | aggBuilt | aggSkipped | maxTris/tile | occurrences | 断言 |
+|---|---|---|---|---|---|---|---|
+| longxiang_covfix | 127 | 0 | 10 | 0 | 34675 | 571 | FAIL |
+| t01_plane_curved | 1 | 0 | 0 | 0 | 3042 | 1 | PASS |
+| t02_thin_features | 7 | 0 | 0 | 0 | 572 | 162 | PASS |
+| t03_giant_single_mesh | 7 | 0 | 3 | 0 | 34296 | 4 | FAIL |
+| t04_many_objects | 127 | 0 | 0 | 0 | 14400 | 8414 | PASS |
+| t05_instances | 2 | 0 | 0 | 0 | 12 | 2 | PASS |
+| t06_nonuniform | 31 | 0 | 0 | 0 | 2412 | 1015 | PASS |
+| t07_zero_axis | 1 | 0 | 0 | 0 | 2404 | 2 | PASS |
+| t08_big_coords | 7 | 0 | 0 | 0 | 720 | 186 | PASS |
+| t09_cross_tile_object | 7 | 0 | 0 | 0 | 492 | 129 | PASS |
+| t10_material_heavy | 7 | 0 | 0 | 0 | 480 | 126 | PASS |
+| t11_sparse_outlier | 15 | 0 | 0 | 0 | 1824 | 616 | PASS |
+| t12_big_texture | 1 | 0 | 0 | 0 | 6962 | 1 | PASS |
+  FAIL longxiang_covfix: occurrence mismatch: report=623 manifest=571
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t0.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t1.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t17.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t19.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t20.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t48.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t61.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t62.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t73.b3dm
+  FAIL longxiang_covfix: no aggregateProxies entry for tiles/t74.b3dm
+  FAIL t03_giant_single_mesh: occurrence mismatch: report=11 manifest=4
+  FAIL t03_giant_single_mesh: no aggregateProxies entry for tiles/t0.b3dm
+  FAIL t03_giant_single_mesh: no aggregateProxies entry for tiles/t1.b3dm
+  FAIL t03_giant_single_mesh: no aggregateProxies entry for tiles/t4.b3dm
+
+datasets=13  failures=2

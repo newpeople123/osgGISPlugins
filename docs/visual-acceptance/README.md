@@ -185,6 +185,15 @@ Edge 会把剩下的虚拟时间补完才退出，实测一条 3 帧的命令卡
    所有帧**——实测整条 `axis-sweep` 60 帧全空、且症状出现在别的路径之后，
    极难归因。`viewFrame()` 自己构造正交基（+Z 指向相机方向）交给 Cesium。
 
+   修复后复跑实测（会话 `fa_t01_plane_curved`，2026-10-19 16:08 完成，
+   `node scripts/va_paths.js fa_`）：69 帧 / 58 个帧名全部出图，
+   `cameraFinite=false` **0 帧**、`silhouette=0` **0 帧**，其中 12 个
+   `ax_*`（六轴正视，含 `up ∥ direction` 的 ±Z）帧中位剪影 65 674–819 868 px。
+   对照修复前的 `ax_t05_instances` / `ax_t08_big_coords`：同样 12 帧，
+   `cameraFinite=false` 12、空洞 12。10 条注册路径里 `lod-threshold` 在 t01
+   上产生 0 帧不是漏跑——该数据集只有 1 个根瓦片且 `geometricError=0`，
+   没有 refine 距离可采样（其它 9 条路径均有帧）。
+
 ## 环境说明（BLOCKED 项）
 
 本机没有物理显示输出与独显，headless Edge 走 SwiftShader 软件 WebGL

@@ -35,6 +35,16 @@
 | A-23 | CLI 文档写 `-r`，代码读 `-sr` | `tools/model23dtiles/main.cpp:314 / 414` | CONFIRMED | — | 低 |
 | A-24 | 相对输出路径被 CWD 切换吞掉 | `tools/model23dtiles/main.cpp:462` | CONFIRMED（已实测） | — | 中 |
 | A-25 | `BoundingVolume::box` 重复 push_back 未清空 | `src/3dtiles/BoundingVolume.cpp:43` | CONFIRMED | 12.1 | 中 |
+| A-26 | `Simplifier` 遇到多 primitiveSet 直接 return；空代理路径清空顶点数组 | `include/utils/Simplifier.h`、`src/utils/Simplifier.cpp` | FIXED（单测复现） | 7.2/7.3 | 高 |
+| A-27 | 聚合代理「每 cell 只留第一个 feature」整簇丢失；`meshopt_simplifySloppy` 写穿目的缓冲 | `src/3dtiles/production/ProxyMeshBuilder.cpp` | FIXED（单测复现） | 7.5/9.5 | 高 |
+| A-28 | `selfValidate` 无源身份覆盖不变量；叶写出失败只记 warning；无端到端管线用例 | `ProductionPipeline.cpp:1222` | FIXED | 9.5/17 | 高 |
+| A-29 | 聚合代理 `_BATCHID` 身份退化为位置索引，冒充真实源 feature | `ProductionPipeline.cpp:446-455` | FIXED | 8.1/5.4 | 高 |
+| A-30 | 代理预算把纹理字节当硬约束，纹理密集模型的聚合 fallback 永不收敛 | `ProxyMeshBuilder.cpp::build` | FIXED（真实 FBX 复现） | 7.3/10.2 | 高 |
+| A-31 | 远景代理建不出达标几何时判整批失败，大模型永远无法发布 | `ProductionPipeline.cpp:692` | FIXED | 7.3/14.17 | 高 |
+| A-32 | 手册 §3 的"树深 ≤ 48"只是报告值，发布闸不检查 | `ProductionPipeline.cpp::selfValidate` | FIXED | 3/17 | 中 |
+| A-33 | i3dm 实例瓦片不做三角形预算：块大小只按实例个数切，超限瓦片静默入库 | `ProductionPipeline.cpp::buildInstanceTree:903-950` | FIXED（真实 FBX 复现） | 3/7.3/17 | 高 |
+| A-34 | `manifest.aggregateProxies` 恒为空：代理 ID → 源 feature 集合无可查通路，登记接口是死代码 | `ProductionPipeline.cpp::writeManifest:1277-1296` | FIXED | 8.1/17 | 高 |
+| A-35 | `report.manifestOccurrences` 与 `manifest.occurrenceCount` 两套定义，同一数据集两个数 | `TileFeatureMapper.cpp::sourceOccurrenceCount:45` | FIXED | 8.1/17 | 中 |
 
 ---
 
@@ -306,6 +316,284 @@ endif()
 ### A-25 `BoundingVolume::box` 重复 push_back 未清空　**CONFIRMED**
 `BoundingVolume.cpp:43` 起连续 12 次 `push_back`，但 `computeBox()` 从不 `clear()`。
 同一 `BoundingVolume` 对象被复用一次就会变成 24 元素非法数组。
+
+---
+
+### A-26 `Simplifier` 多 primitiveSet 直接放弃简化 + 空代理清空顶点　**FIXED**
+`src/utils/Simplifier.cpp`（旧实现整段在头文件里）
+
+旧 `simplifyMesh()` 在 `geom.getNumPrimitiveSets() != 1` 时 `return`。合并后的
+几何（`ProxyMeshBuilder` 按属性签名把同材质几何并成一个 drawable）天然携带多个
+primitiveSet，于是**远景代理完全不简化**，硬预算永远达不到；同时旧
+`simplifyPrimitiveSet()` 在 `destination->size()==0` 时把 vertex array、法线、
+UV 全部 `setVertexArray(nullptr)`，产出零三角形代理瓦片。
+
+**复现**：`test_production simplifier`（多 pset 几何必须真的降面且属性/索引不
+错位）。
+**修复**：逐个 pset 简化后按所有 pset 的顶点并集做一次统一重映射；支持
+`DrawElementsUInt/UShort/UByte` 与 `DrawArrays`；目标小于一个三角形时跳过该
+pset，绝不清空几何（`dst.size()<3` 直接退回原索引）。
+**验证**：单测 71/71、矩阵 12/12。
+
+---
+
+### A-27 聚合代理整簇丢失 + `meshopt_simplifySloppy` 写穿缓冲　**FIXED**
+`src/3dtiles/production/ProxyMeshBuilder.cpp::buildAggregate`
+
+旧聚合 fallback 在每个 occupied cell 里只物化「第一个」源 feature。当 cell 尺寸
+大于 feature 间距时，一整簇对象从远景 LOD 上消失；实测 12 个占用 cell 只剩 6 个
+有几何，双向 Hausdorff 上界 497 m（约 4 个 cell 的整块空洞），而误差与预算检查
+全部通过——**这类缺陷在平均误差上是隐形的**（手册 9.5 明确点出）。
+另一侧：`meshopt_simplifySloppy` 在重复顶点/非流形输入上可能返回**多于输入**的索引
+数（实测往 704 元素的目的地写了 1272 个索引 → 堆溢出，是当时随机段错误之一）。
+
+**复现**：`test_production proxyAggregate`（断言每个占用 cell 都有代理三角形 +
+误差必须在 cell 尺度内）。
+**修复**：聚合改为「按 cell 抽稀 feature」——Morton 序（`cellSize/8` 量子）跨轴
+交错取样，三角形按 cell 面数占比分配配额；目的缓冲按 `src.size()*2+16` 预留并夹断；
+sloppy 被拒绝时同步截断 `dst`（旧代码会残留整段零索引）。
+**实测**：12/12 cell 全覆盖，误差 lower=130 m / cellDiag=176 m，代理 92 三角形
+（目标 120）。
+
+---
+
+### A-28 `selfValidate` 缺少源身份覆盖不变量　**FIXED**
+`src/3dtiles/production/ProductionPipeline.cpp::selfValidate`
+
+自校验只查 URI 存在、字节/三角形硬限、`geometricError` 单调，**没有任何一条保证
+「每个 source feature 都还存在于某个叶瓦片」**（手册 9.5/17）。叠加两个洞：
+叶瓦片写出失败只记 warning（`hasContent=false` 但流程继续），以及此前**没有任何
+用例跑过完整管线**——所以 A-27 只有在真实 FBX 上才可能被发现。
+
+**修复**（手册 14.17：宁可不出数据集）：
+1. 叶瓦片必须带内容且三角形 > 0，否则按「丢失 N 个源 feature」判失败；叶写出失败
+   从 warning 升级为 failure（代理写出失败仍可被子树覆盖，保持 warning）；
+2. 覆盖核对使用分区单元表推出的 `sourceScope`（`globalFeatureId` 去重），源 feature
+   全集未被叶集合覆盖即失败，计数写入 `report.featuresMissingFromLeaves`；
+3. 聚合代理必须登记 `proxyFeatureId -> 源集合`、禁止出现在叶层、映射越界即失败；
+   被抽稀掉的 feature 数写入 `report.proxyDroppedFeatureCount` 并记 warning；
+4. `conversion-report.json` 改到自校验之后落盘，逐瓦片新增 `sourceFeatures` 字段。
+
+**复现/验证**：新增首个端到端用例 `test_production pipelineCoverage`——合成 8×8
+网格断言 64 个源 feature 全部落在叶瓦片；对照实验（临时抹掉一个覆盖记录）得到
+`selfValidate: 1 source features are absent from every leaf tile` 且
+`finalize()` 拒绝发布、输出目录里没有 `tileset.json`，证明该闸非空转。
+
+---
+
+### A-29 聚合代理的 batch 身份冒充真实源 feature　**FIXED**
+`ProductionPipeline::writeContent`
+
+`featureOrder` 由 Geode 名字回查 `_model.objects`；`proxy_cluster_<id>` 查不到就退化成
+「按出现顺序的位置索引」。于是聚合代理的第 i 个 batch 顶着真实源 feature id `i`
+进入 manifest——手册 8.1/5.4 明令禁止「把聚合几何当作其中某个源对象的真实几何」。
+
+**修复**：`proxy_cluster_` 前缀直接解析出 `proxyFeatureId`（`0xF0000000+` 段），
+与 `aggregateSources` 的键一致；只有真源对象才走名字回查。
+
+---
+
+### A-30 纹理字节被当成代理的硬预算，纹理密集模型聚合 fallback 永不收敛　**FIXED**
+`src/3dtiles/production/ProxyMeshBuilder.cpp::build`
+
+`estimateContentBytes()` 把「几何 + 内嵌 KTX2 纹理」合成一个数，然后拿它去卡
+`maxTileContentBytes`（8 MiB 硬限）。对**叶瓦片**（必须带材质）正确；对**内节点
+远景代理**错误——代理本来就可以建成无纹理版（`FarLodTextureStripper`，常规 LOD
+做法），把纹理算成绑定约束等于要求「几何 + 全部纹理」也挤进 8 MiB。
+
+实测 `longxiang.fbx`（123 张纹理）：node 20 估算 32 515 174 B，是纯几何的约 6 倍；
+所有 sizeFactors × merge 组合都因此被拒，聚合循环走完 5×2 轮仍无一被接受，最后
+报 `proxy still over budget after aggregate fallback` → 整个数据集不发布。
+降采样（`estimateBytesSplit` 的纹理项按 /8 折算）也救不了：纹理项主导时，
+削减三角形根本不改变它。
+
+**修复**：预算判据拆成 `BytesSplit{geo, tex}`。
+1. 绑定约束是 **geo 字节**（identity 早返回、身份保持代理接受、聚合接受三处同改）；
+2. 聚合的 3 轮收敛按**实测 geo bytes/tri** 反推目标面数（静态 200 B/tri 仍偏乐观：
+   t03 根代理 41 943 面 = geo 9.58 MB）；
+3. `ProxyResult::needsTextureless` 成为契约：几何达标但 `geo+tex` 超限时置位，
+   由 `processTileHeavy` 剥纹理并记 `far-LOD proxy built without textures to fit
+   budget` warning，不再让调用方各自重复预估。
+
+**验证**：`longxiang.fbx` 端到端 rc=0、0 error、129 瓦片、最大内容瓦片 2 226 920 B
+（8 MiB 的 26.5 %）、`featuresMissingFromLeaves=0`、`proxyDroppedFeatureCount=0`，
+93.4 s / 峰值 2 401 MiB；矩阵 12/12 rc=0、单测当时 71/71（A-31 用例落地后为 82/82，见 STATUS.md）（见 §1/§3 与 STATUS.md）。
+
+---
+
+### A-31 远景代理不达标就判整批失败，大模型永远出不了数据集　**FIXED**
+`ProductionPipeline::finalizeTileFromWork`
+
+A-30 之前为了让超限代理不再漏网（commit 37d832c），`processTileHeavy` 在
+`pr.failure` 非空时直接置 `w.failure`，收尾函数把它原样推进 `_failures`
+→ `finalize()` 丢弃 staging → 整个数据集不发布。对**叶**正确（源件真丢）；
+对**内节点**错误：内节点代理只是远景 LOD 表示，它的子树仍然覆盖同一份
+source scope，REPLACE 语义下「无 content、直接细化到子节点」是合法瓦片。
+实测 `lugouqiao_v11`（335 MB）有 7 个内节点代理超过 120 000 面硬限，
+按旧逻辑等于宣布这个模型永远无法生产。
+
+**修复**：把失败按 `w.leaf` 分流。
+- 叶 → 仍然 `_failures`（数据丢失，手册 14.17 优先于可用性）；
+- 内节点 → `_warnings` + 新计数 `report.proxySkippedCount`，该节点保持
+  `hasContent=false`，`geometricError` 由 `max(measuredProxyError, maxChild)`
+  自然回落到子树值（`ProductionPipeline.cpp:1024`），根到叶单调性校验照过。
+
+LOD 空洞因此变成**可观测指标**而不是静默降级：`proxySkippedCount` 与
+`featuresMissingFromLeaves` / `proxyDroppedFeatureCount` 一起进报告，
+前者=远景退化，后两者=真丢件，绝不混为一谈。
+
+同一个洞在**写盘后**还有一份：`finalizeTileFromWork` 用实测字节判超限
+（旧代码只看 `maxTileContentBytes`，连 120 000 面硬限都没查），超限就
+`_failures.push_back` → 整批报废。现在按叶/内节点分流，且内节点超限时
+**把刚写进 `.wb-staging` 的超限文件删掉**（`std::filesystem::remove`），
+产物里绝不残留一个"没人引用但确实超限"的瓦片；叶超限仍然判失败，
+因为删叶 = 丢源 feature。`selfValidate` 的聚合映射检查也同步跳过
+`hasContent=false` 的降级代理，避免把"该层无内容"误记成"抽稀丢失"。
+降级节点的身份/覆盖范围改为在函数入口就落账（原先在末尾，早退路径拿不到），
+这样报告与自检看到的 `sourceScope` 不是"只有成功瓦片才有范围"。
+
+**验证**：`test_production proxySkip`（合成 8×8 网格、64 对象 512 面，
+`strictIdentity + lockSeamBorder`，硬限 150 面、代理目标 100 面）实测：
+根节点代理覆盖全部 512 面、压不到 100 面目标，`strictIdentity` 下即判失败
+→ 走内节点降级分支，
+warning 原文 `proxy generation failed for node 0: strictIdentity: proxy
+exceeds triangle budget, failing -> tile carries no far-LOD content,
+children still cover 64 source features`，`proxySkippedCount=1`、
+15 个瓦片中 14 个有内容、`maxTrianglesInTile=96`、
+`featuresMissingFromLeaves=0`、`tileset.json` 正常发布且**不引用** `t0.b3dm`，
+`tiles/` 目录里也确实没有 `t0.b3dm`。同一用例的反向对照把
+`maxTreeDepth` 压到 1（512 面在该深度装不下）→ `finalize()=false`、
+输出目录里没有 `tileset.json`，证明失败关闭没被降级逻辑顺手绕过。
+写盘后的那份判据是防御网：本用例里构建期先失败，所以
+`over-budget far-LOD file removed` 文案没被触发——它兜的是"估算达标但
+实测超限"（估算器本身只是估算，见 VALIDATION_REPORT §1 注），
+不能为了凑文案去伪造一个超限代理。单测合计 **82/82 通过**。
+
+---
+
+### A-32 树深硬限（48）不在发布闸内　**FIXED**
+`ProductionPipeline::selfValidate`
+
+手册 §3 把「深度 ≤ 48」列为不可自动放宽的硬限。已有两处相关代码都**不核对最终
+产物**：`ProductionProfile.cpp:78` 只保证 profile 里声明的值在 [1,48]
+（防止有人把上限调大），`SpatialPartitioner.cpp:397` 只让分区递归在该深度停止，
+`report.maxDepth` 则纯粹是事后统计值。也就是说**发布闸从不检查写出来的
+tileset 到底有多深**——一旦某条路径（实例子树、b3dm 子树、结构预分配）绕过了
+分区器的深度判断，超深树照样能出盘。
+
+**修复**：`selfValidate` 新增 3b，用 `_tiles[].children` 显式栈走一遍
+（不用递归，避免超深树自身栈溢出），`deepest > maxTreeDepth` 即记
+`selfValidate: tree depth N exceeds hard limit 48 (deepest tile M)` 并拒绝发布。
+字节/三角形两条硬限在同一个函数里本来就有（第 1/2 项），树深补齐后
+手册 §3 四条限制里工具侧可判的三条都在闸内；
+「每瓦片 ≤ 24 个 glTF primitive」目前只有分区侧 `Load::prim`（源图元去重计数）
+参与切分决策，写出后的 glTF primitive 数没有回读核对——该缺口记 STATUS.md B-9，
+需要读回 b3dm 头才能闭合，留待外部 validator（B-3）一起做。
+
+**验证（诚实口径）**：3b 是**负向防护网**，没有正向触发用例——要让它报错，
+需要一棵实际深度 > `maxTreeDepth` 的树，而分区器本来就在该深度收口
+（512 面场景最多到深度 3）。能超深的只有绕过分区器判断的路径（实例子树、
+结构预分配），目前没有这种场景，所以无法在不伪造树的前提下给出 PASS 证据。
+已实测的证据只有两条：闸的实现是显式栈遍历（自身不会因超深递归崩掉）、
+12 资产矩阵 + `longxiang.fbx` 的 `report.maxDepth` 全部 ≤ 48（见
+VALIDATION_REPORT §1/§6）。反向对照用的是分区器在 `maxTreeDepth=1` 时
+"仍然超硬预算"的失败路径，能证明**深度约束失效会让数据集出不了盘**，
+但它命中的是 `partition:` 失败而不是 3b 本身。
+
+> 后续（2026-10-19）：B-3 已解除（官方 validator 14/14 `numErrors=0`，见
+> VALIDATION_REPORT §7），但它**不核对每瓦片 glTF primitive 数**，所以 A-32 段里
+> 留给"外部 validator"的那一半缺口由新脚本 `scripts/glb_prims.js` 补上：
+> 读回 341 个内容文件，`mesh.primitives` 最大 11 ≤ 24、i3dm 展开三角形
+> 最大 3 588 ≤ 120 000，0 违例（B-9 解除，见 VALIDATION_REPORT §8）。
+
+---
+
+### A-33 i3dm 实例瓦片不做三角形预算，超限瓦片静默入库　**FIXED**
+`ProductionPipeline::buildInstanceTree`
+
+手册 §3 把「单瓦片 ≤ 120 000 三角形」列为不可自动放宽的硬限。b3dm 通路
+（`finalizeTileFromWork`）有 `overBytes || overTris` 双判据，实例瓦片通路只有
+`wo.bytes <= maxTileContentBytes` **一条**，`_tiles[].triangles` 因此可以在超限
+状态下被登记成有效内容；`selfValidate` 到发布前才第一次发现，于是整批报废。
+
+`lugouqiao_v11` 失败时把原因写成"内节点远景代理放不下"（A-31 的口径）是**误判**：
+带 A-31 降级 + A-30 geo/tex 分账的二进制复跑（`lugouqiao_v14`，471 行日志）
+仍然失败，14 条 ERROR 全在 `selfValidate: tile N has X triangles` 这一类，
+且 N ∈ {954, 955, 1014, 1038, 1039, 1042, 1043}——远景代理的 WARNING 只到
+tile 928，i3dm 瓦片 id 排在主树之后（实测 t05_instances：4 个瓦片里 i3dm 是
+`i2.i3dm`），说明这批全是实例瓦片，而且**构建期一条告警都没有**。
+
+根因是量纲错配：实例块大小只按 `maxInstancesPerTile`（默认 512）切，
+glTF 侧 accessor 是共享的所以**字节不超**，但运行时按实例数展开绘制，
+真实三角形数 = 实例数 × 原型三角形数。实测最高 507 822 面，是硬限的 4.2 倍。
+
+**修复**（`ProductionPipeline.cpp:918-950`）：把原型解析/物化提到实例区间循环
+之外，用 `ProxyMeshBuilder::countTriangles(protoGeom)` 反推块大小
+`chunk = min(maxInstancesPerTile, maxTrianglesPerTile / protoTris)`；
+原型单体就超限时显式失败（`prototype N has X triangles ... even as a single
+instance`，不静默丢实例）；写盘后的门槛改成与 b3dm 一致的
+`overBytes || overTris`，超限时删除暂存文件并报出实测字节/三角形/实例数/原型面数；
+顺带补上此前漏记的 `_report.maxTrianglesInTile`（实例瓦片过去不进三角形统计）。
+
+**验证**：`lugouqiao_v15`（同输入、同 profile，纹理缓存复用）
+——见 STATUS.md「真实 FBX 端到端」与 `F:\wb_3dtiles_out\lugouqiao_v15.log`。
+单元测试 84/84 通过（A-34/A-35 的 manifest 断言并入后 118/118）；实例预算收敛后 `t05_instances` 的
+`maxTrianglesInTile` 从"只统计 b3dm 的 12"变为含实例瓦片的真实值。
+
+---
+
+### A-34 `manifest.aggregateProxies` 恒为空，代理身份无可查通路　**FIXED**
+`ProductionPipeline::writeManifest`
+
+手册 17 节要求「聚合代理显式使用代理 ID + 源 ID 集合映射」。
+`TileFeatureMapper::addAggregateTile` 就是为此写的，但**全仓库没有调用点**：
+代理簇是简化阶段（`ProxyMeshBuilder`）算出来直接回传到
+`ProductionTile.aggregateSources` 的，mapper 侧根本看不到，
+于是 `manifestJson` 里那一路 `agg` 永远是空数组。
+`longxiang_covfix` 实测：`conversion-report.json` 报
+`aggregateProxyCount=10`，同数据集 `feature-manifest.json` 的
+`aggregateProxies` 是 `{}` —— 用户拿不到任何代理身份映射。
+
+**修复**：删掉死 API（`addAggregateTile` / `_aggregateSources` /
+`manifestJson` 里的空 `agg`），由 `writeManifest` 按 `tileUri` 从
+`_tiles[].aggregateSources` 填入真实映射
+（`{ "tiles/tN.b3dm": { "<proxyFeatureId>": [sourceFeatureId, ...] } }`），
+mapper 侧保留 `"aggregateProxies": {}` 占位以稳定 manifest schema。
+单测新增契约断言：manifest 必须带 `aggregateProxies` 对象。
+
+**复验工具**：`node scripts/check_manifest_assertions.js <数据集|容器目录>`。
+修复前实测记录见 `evidence/assertions-before-a34.txt`（13 个数据集里 2 个 FAIL：
+longxiang 的 11 个聚合瓦片全部缺 `aggregateProxies` 条目，t03 缺 3 个）。
+
+**测试覆盖与变异测试**：`testPipelineLeafCoverageInvariant` 新增 6 条固定断言 +
+每个聚合瓦片 2 条（夹具实测 `aggPublished>=1`，所以不是空断言），用例总数
+84 → **118**。写盘闸 `hasContent` 那一条做过变异测试：去掉它 118 条全过——
+说明现有夹具走不到"降级但仍带 aggregateSources"这一支（构建期降级在
+`w.aggregate` 赋值之前就 `return` 了），能走到的只有"估算达标但实测超限"
+那条防御分支。该条按防御网保留并在代码注释里注明未被夹具覆盖，
+不据此声称已有测试证明。
+
+---
+
+### A-35 同一数据集两套"出现次数"定义，report 与 manifest 数字不一致　**FIXED**
+`TileFeatureMapper::sourceOccurrenceCount`
+
+`conversion-report.json` 的 `manifestOccurrences` 走
+`TileFeatureMapper::occurrenceCount()`（所有 batch 条目），
+`feature-manifest.json` 的 `occurrenceCount` 在 `manifestJson` 里另算一份，
+只统计 `features.contains(key)` 的条目——落到代理身份上的条目被
+`continue` 跳过。`longxiang_covfix` 实测 **report 623 / manifest 571**，
+差的 52 条正是聚合代理条目（A-29 之后代理不再冒充源 feature，所以它们
+本就不该算"源出现次数"）。两个数各自都不算错，但放在一起就是可验证的自相矛盾。
+
+**修复**：统一成 `sourceOccurrenceCount(const SourceModel&)` 一个定义，
+`manifestJson` 与 `_report.manifestOccurrences` 都调它；删除无模型参数的
+`occurrenceCount()`。单测 `testFeatureManifest` 增补负向断言：把某个 feature
+从 SourceModel 里摘掉后，它在 batch 表里的条目不再计入源出现次数（5 → 4）。
+
+**复验工具**：同一个脚本的第 1 条断言就是 `report.manifestOccurrences ==
+manifest.occurrenceCount`；修复前 longxiang 实测 623 / 571 不一致
+（`evidence/assertions-before-a34.txt`）。
 
 ---
 

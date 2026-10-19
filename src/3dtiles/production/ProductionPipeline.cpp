@@ -919,22 +919,40 @@ int ProductionPipeline::buildInstanceTree()
     {
         const FeatureId proto = kv.first;
         const std::vector<const SourceInstance*>& insts = kv.second;
-        const unsigned chunk = _profile.budget.maxInstancesPerTile;
+        // 原型几何（局部坐标）：同一原型的实例在 glTF 里共用一份 accessor
+        const SourceObject* protoObj = _model.objectOf(proto);
+        if (!protoObj) { continue; }
+        std::vector<std::uint32_t> protoItems;
+        for (std::uint32_t i = 0; i < _model.prims.size(); ++i)
+        {
+            if (_model.prims[i].globalFeatureId == proto) { protoItems.push_back(i); }
+        }
+        if (protoItems.empty()) { continue; }
+        osg::ref_ptr<osg::Node> protoGeom = _model.materialize(protoItems, true);
+        if (!protoGeom.valid()) { continue; }
+
+        // i3dm 的 accessor 只存一份，但运行时按实例数展开绘制：
+        // 真实三角形数 = 实例数 x 原型三角形数。分块只看实例个数会让
+        // "低模原型 x 512 个实例"直接冲过 12 万硬上限（实测 lugouqiao：
+        // 字节没超、三角面 507822），写盘前必须按原型体积收敛块大小。
+        const unsigned protoTris = ProxyMeshBuilder::countTriangles(protoGeom.get());
+        if (protoTris > _profile.budget.maxTrianglesPerTile)
+        {
+            _failures.push_back("prototype " + std::to_string(proto) + " has "
+                                + std::to_string(protoTris) + " triangles, over hard limit "
+                                + std::to_string(_profile.budget.maxTrianglesPerTile)
+                                + " even as a single instance");
+            continue;
+        }
+        unsigned chunk = _profile.budget.maxInstancesPerTile;
+        if (protoTris > 0)
+        {
+            chunk = std::min(chunk, _profile.budget.maxTrianglesPerTile / protoTris);
+        }
+
         for (std::size_t start = 0; start < insts.size(); start += chunk)
         {
             const std::size_t end = std::min(insts.size(), start + chunk);
-            // 原型几何（局部坐标）+ 每个实例一个 MatrixTransform
-            const SourceObject* protoObj = _model.objectOf(proto);
-            if (!protoObj) { continue; }
-            std::vector<std::uint32_t> protoItems;
-            for (std::uint32_t i = 0; i < _model.prims.size(); ++i)
-            {
-                if (_model.prims[i].globalFeatureId == proto) { protoItems.push_back(i); }
-            }
-            if (protoItems.empty()) { continue; }
-            osg::ref_ptr<osg::Node> protoGeom = _model.materialize(protoItems, true);
-            if (!protoGeom.valid()) { continue; }
-
             osg::ref_ptr<osg::Group> group = new osg::Group;
             for (std::size_t k = start; k < end; ++k)
             {
@@ -964,7 +982,9 @@ int ProductionPipeline::buildInstanceTree()
             const std::string relUri = std::string("tiles") + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
                                      + "i" + std::to_string(childId) + ".i3dm";
             WriteOutcome wo = writeContent(group.get(), relUri, true);
-            if (wo.ok && wo.bytes <= _profile.budget.maxTileContentBytes)
+            const bool overBytes = wo.bytes > _profile.budget.maxTileContentBytes;
+            const bool overTris = wo.triangles > _profile.budget.maxTrianglesPerTile;
+            if (wo.ok && !overBytes && !overTris)
             {
                 _tiles[childId].hasContent = true;
                 _tiles[childId].uri = std::string("tiles/") + "i" + std::to_string(childId) + ".i3dm";
@@ -981,11 +1001,24 @@ int ProductionPipeline::buildInstanceTree()
                 _report.instanceCount += static_cast<unsigned>(end - start);
                 _tiles[rootId].children.push_back(childId);
                 _report.maxContentBytes = std::max(_report.maxContentBytes, wo.bytes);
+                _report.maxTrianglesInTile = std::max(_report.maxTrianglesInTile, wo.triangles);
             }
             else if (wo.ok)
             {
-                _failures.push_back("instance tile " + std::to_string(childId) + " over hard budget: "
-                                    + std::to_string(wo.bytes) + " bytes");
+                // 实例瓦片是叶子：删掉等于丢实例，只能显式失败关闭发布（手册 7.3 / 14.17）
+                const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+                std::error_code ec;
+                std::filesystem::remove(abs, ec);
+                _failures.push_back("instance tile " + std::to_string(childId)
+                                    + " over hard budget: "
+                                    + std::to_string(wo.bytes) + " bytes / "
+                                    + std::to_string(wo.triangles) + " triangles ("
+                                    + std::to_string(end - start) + " x prototype "
+                                    + std::to_string(protoTris) + " triangles), limit "
+                                    + std::to_string(_profile.budget.maxTileContentBytes)
+                                    + " bytes / "
+                                    + std::to_string(_profile.budget.maxTrianglesPerTile)
+                                    + " triangles");
             }
             else
             {
@@ -1153,7 +1186,7 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     }
     _report.errorMean = (n > 0) ? sum / n : 0.0;
     TRACE("stats: occurrenceCount");
-    _report.manifestOccurrences = static_cast<unsigned>(_mapper.occurrenceCount());
+    _report.manifestOccurrences = static_cast<unsigned>(_mapper.sourceOccurrenceCount(_model));
 
     TRACE("stats: mapper.validate");
     for (const std::string& e : _mapper.validate()) { _failures.push_back("featureMapper: " + e); }
@@ -1243,9 +1276,33 @@ bool ProductionPipeline::writeTilesetJson(const std::string& path) const
 
 bool ProductionPipeline::writeManifest(const std::string& path) const
 {
+    json m = _mapper.manifestJson(_model);
+
+    // 聚合代理的"代理 ID → 源 feature 集合"只存在于 ProductionTile 上
+    // （ProxyMeshBuilder 直接回传），mapper 侧的 addAggregateTile 通路没人调用，
+    // 所以修复前 manifest.aggregateProxies 恒为 {}（AUDIT A-34：longxiang 报
+    // aggregateProxyCount=10 而 manifest 一个条目都没有）。这里按 tileUri 补齐。
+    json agg = json::object();
+    for (const ProductionTile& t : _tiles)
+    {
+        // hasContent 这一条与 selfValidate 同口径：A-31 降级节点没有 tileUri，
+        // 它的 scope 由后代瓦片覆盖，不该往 manifest 里塞一个空字符串 key。
+        // 构建期降级路径会在 aggregateSources 赋值之前就 return，所以现有夹具
+        // 走不到这一支（去掉它做变异测试，118 条断言仍全过）；能走到的是
+        // "估算达标但实测超限"那条防御分支，留着是防 manifest 结构被污染。
+        if (!t.hasContent || !t.aggregate || t.aggregateSources.empty()) { continue; }
+        json perTile = json::object();
+        for (const auto& kv : t.aggregateSources)
+        {
+            perTile[std::to_string(kv.first)] = kv.second;
+        }
+        agg[t.uri] = perTile;
+    }
+    m["aggregateProxies"] = agg;
+
     std::ofstream f(path, std::ios::binary);
     if (!f.is_open()) { return false; }
-    f << _mapper.manifestJson(_model).dump(2);
+    f << m.dump(2);
     f.close();
     return true;
 }

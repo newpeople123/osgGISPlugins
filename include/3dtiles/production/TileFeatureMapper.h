@@ -7,6 +7,8 @@
 //   * globalFeatureId -> 源节点 / 父节点 / 原始属性
 //   * 该 feature 出现在哪些 tile URI 的哪个 localBatchId
 //   * 聚合代理的 proxyFeatureId 代表的源 feature 集合
+//     （这一项由 ProductionPipeline::writeManifest 从 ProductionTile.aggregateSources
+//      填入：代理簇是简化阶段算出来的，mapper 看不到）
 #include "3dtiles/production/SourceModel.h"
 #include <nlohmann/json.hpp>
 #include <map>
@@ -36,10 +38,6 @@ public:
     // 按 node 里 Geode 的顺序登记（必须与 BatchIdVisitor 的编号顺序一致）
     void addTile(const std::string& uri, const std::vector<FeatureId>& featuresInOrder, bool isProxy);
 
-    // 聚合代理：每个 cluster 一个 proxyFeatureId
-    void addAggregateTile(const std::string& uri,
-                          const std::vector<std::pair<FeatureId, std::vector<FeatureId>>>& clusters);
-
     void addInstanceTile(const std::string& uri,
                          const std::vector<FeatureId>& prototypeFeatures,
                          const std::vector<std::uint32_t>& instanceIds);
@@ -50,12 +48,13 @@ public:
     // 自检：_BATCHID 落在 [0, batchLength)、batchLength == entries.size()
     std::vector<std::string> validate() const;
 
+    // 能落到源 feature 上的 batch 条目数（manifest 与 conversion-report 共用）
+    std::size_t sourceOccurrenceCount(const SourceModel& model) const;
+
     const std::vector<TileFeatureRecord>& records() const { return _records; }
-    std::size_t occurrenceCount() const;
 
 private:
     std::vector<TileFeatureRecord> _records;
-    std::map<FeatureId, std::vector<FeatureId>> _aggregateSources;
 };
 
 } // namespace production

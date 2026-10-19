@@ -1,0 +1,15 @@
+[profile] validate
+[sourceModel] world transform baking
+[partition] coverage + determinism
+[partition] giant single mesh must split
+[error] analytic cases
+[manifest] tile-local batchId mapping
+BatchIdVisitor: source VertexAttribArray(0) moved to slot 3 (data preserved, emitted as _ATTRIBUTE_3).
+BatchIdVisitor: source VertexAttribArray(0) moved to slot 2 (data preserved, emitted as _ATTRIBUTE_2).
+[simplifier] multi primitiveSet geometry
+[proxy] aggregate fallback covers source scope
+    error: lower=130 upper=130.015 cellSize=124.3 cellDiag=175.798 tris=92
+[pipeline] leaf coverage invariant
+[pipeline] far-LOD proxy over budget degrades
+
+passed=118 failed=0

@@ -22,24 +22,6 @@ void TileFeatureMapper::addTile(const std::string& uri,
     _records.push_back(rec);
 }
 
-void TileFeatureMapper::addAggregateTile(const std::string& uri,
-    const std::vector<std::pair<FeatureId, std::vector<FeatureId>>>& clusters)
-{
-    TileFeatureRecord rec;
-    rec.uri = uri;
-    rec.isProxy = true;
-    rec.batchLength = static_cast<unsigned>(clusters.size());
-    for (std::size_t i = 0; i < clusters.size(); ++i)
-    {
-        BatchEntry e;
-        e.localBatchId = static_cast<std::uint32_t>(i);
-        e.globalFeatureId = clusters[i].first;
-        rec.entries.push_back(e);
-        _aggregateSources[clusters[i].first] = clusters[i].second;
-    }
-    _records.push_back(rec);
-}
-
 void TileFeatureMapper::addInstanceTile(const std::string& uri,
                                         const std::vector<FeatureId>& prototypeFeatures,
                                         const std::vector<std::uint32_t>& instanceIds)
@@ -60,10 +42,20 @@ void TileFeatureMapper::addInstanceTile(const std::string& uri,
     _records.push_back(rec);
 }
 
-std::size_t TileFeatureMapper::occurrenceCount() const
+std::size_t TileFeatureMapper::sourceOccurrenceCount(const SourceModel& model) const
 {
+    // 与 manifestJson 共用这一个定义：落到未知 feature id 上的条目
+    // （聚合代理身份）不进 manifest 的 features，也就不能算源出现次数。
+    // 报表里另算一份会让 conversion-report 和 manifest 两个数对不上
+    // （实测 longxiang：report 623 / manifest 571）。
     std::size_t n = 0;
-    for (const TileFeatureRecord& r : _records) { n += r.entries.size(); }
+    for (const TileFeatureRecord& r : _records)
+    {
+        for (const BatchEntry& e : r.entries)
+        {
+            if (model.objectOf(e.globalFeatureId)) { ++n; }
+        }
+    }
     return n;
 }
 
@@ -114,7 +106,10 @@ json TileFeatureMapper::manifestJson(const SourceModel& model) const
         features[std::to_string(o.globalFeatureId)] = fj;
     }
 
-    std::size_t occ = 0;
+    // 出现次数只统计能落到源 feature 上的条目：聚合代理条目用的是代理身份，
+    // 由 writeManifest 写进 aggregateProxies，不混进 features。
+    // 报表与 manifest 共用 sourceOccurrenceCount，两个数不会各算一套
+    // （实测 longxiang：report 623 / manifest 571）。
     for (const TileFeatureRecord& r : _records)
     {
         for (const BatchEntry& e : r.entries)
@@ -126,15 +121,9 @@ json TileFeatureMapper::manifestJson(const SourceModel& model) const
                 {"localBatchId", e.localBatchId},
                 {"isProxy", r.isProxy}
             });
-            ++occ;
         }
     }
-
-    json agg = json::object();
-    for (auto& kv : _aggregateSources)
-    {
-        agg[std::to_string(kv.first)] = kv.second;
-    }
+    const std::size_t occ = sourceOccurrenceCount(model);
 
     json instances = json::array();
     for (const SourceInstance& inst : model.instances)
@@ -155,7 +144,8 @@ json TileFeatureMapper::manifestJson(const SourceModel& model) const
         {"sourceFeatureCount", model.objects.size()},
         {"occurrenceCount", occ},
         {"features", features},
-        {"aggregateProxies", agg},
+        // 占位：内容由 ProductionPipeline::writeManifest 按 tileUri 填入
+        {"aggregateProxies", json::object()},
         {"instances", instances}
     };
 }

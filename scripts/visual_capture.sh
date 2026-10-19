@@ -6,7 +6,7 @@
 # 用法: bash scripts/visual_capture.sh <session> <tileset-url> [paths] [maxFrames] [port]
 #   session     产物目录名 docs/visual-acceptance/runs/<session>/
 #   tileset-url 相对验收页的路径，或 http://127.0.0.1:PORT/... 绝对地址
-#   paths       逗号分隔，默认全部 9 条
+#   paths       逗号分隔，默认全部 10 条（见 index.html 里注册的 PATHS）
 #   maxFrames   每条路径抽帧数（0=全帧）
 #   port        静态服务器端口，默认 8080
 set -u

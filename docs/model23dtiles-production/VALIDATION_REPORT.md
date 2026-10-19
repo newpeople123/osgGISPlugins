@@ -1,34 +1,55 @@
 # VALIDATION_REPORT.md — 验证报告
 
-所有数据均为本机实测（2026-10-16，`prod/model23dtiles-production` 分支），
-不包含推断或估算值。运行环境：Windows 11 / MSVC 19.44 / OSG 3.6.5 / TBB。
+所有数据均为本机实测（§1/§3/§5/§6 复测于 2026-10-19，HEAD `ee6499e`；
+§2/§4 标注为 2026-10-16 及以前），不包含推断或估算值。
+运行环境：Windows 10 19045 / MSVC 14.44 / OSG 3.6.5 / TBB。
 
 ## 1. 测试矩阵（手册 14 节，12 资产回归）
 
-命令：
+命令（本机 `python`/`python3` 是 Windows Store 占位程序，`rc=49` 且无任何输出，
+`scripts/run_matrix.py` 无法执行 → BLOCKED；改用**仓库内** bash+node 采集器，
+逐资产跑同一命令行并读工具自己写出的 `conversion-report.json`）：
 
 ```bash
-python scripts/gen_test_assets.py test_assets
-python scripts/run_matrix.py --out docs/model23dtiles-production/runs/p2_regress_atomic
+bash scripts/wb_build.sh model23dtiles
+bash scripts/run_matrix.sh E:/dev/C++/osgGISPlugins-gpt/test_assets \
+                           E:/dev/C++/osgGISPlugins-gpt/docs/model23dtiles-production/runs/matrix_final
+node scripts/collect_matrix.js <同一个 outDir>     # 汇总硬限/误差/覆盖计数
 ```
 
-结果 **12/12 PASS**（判定依据：conversion-report.json 的 errors==0 且
-tilesetWritten==true；退出码在本环境被宿主改写，不作判据）：
+结果 **12/12 发布**（判定依据：`errors==0` 且 `tileset.json` 落盘；退出码在本环境
+被宿主改写，不作判据）。§3 硬限违例 **0**（2026-10-19 12:26，最终二进制
+12:22:48，产物 `docs/model23dtiles-production/runs/matrix_final/`，
+原始逐资产 stdout 见 `runs/matrix_final.log`、汇总表 `runs/matrix_final_table.txt`）：
 
-| 资产 | 结果 | 耗时 s | 峰值 MiB | tiles | 深度 | 内容文件 | validator errors |
-|---|---|---|---|---|---|---|---|
-| t01_plane_curved | PASS | 1.53 | 21.6 | 1 | 0 | 1 | 0 |
-| t02_thin_features | PASS | 1.94 | 33.9 | 7 | 2 | 7 | 0 |
-| t03_giant_single_mesh | PASS | 113.13 | 93.1 | 3 | 1 | 3 | 0 |
-| t04_many_objects | PASS | 67.53 | 77.3 | 127 | 6 | 127 | 0 |
-| t05_instances | PASS | 2.05 | 22.7 | 4 | 2 | 2 | 0 |
-| t06_nonuniform | PASS | 14.71 | 38.9 | 31 | 4 | 31 | 0 |
-| t07_zero_axis | PASS | 1.23 | 21.6 | 1 | 0 | 1 | 0 |
-| t08_big_coords | PASS | 3.20 | 36.8 | 7 | 2 | 7 | 0 |
-| t09_cross_tile_object | PASS | 3.09 | 37.8 | 7 | 2 | 7 | 0 |
-| t10_material_heavy | PASS | 3.19 | 37.1 | 7 | 2 | 7 | 0 |
-| t11_sparse_outlier | PASS | 7.67 | 38.6 | 15 | 3 | 15 | 0 |
-| t12_big_texture | PASS | 3.34 | 235.8 | 1 | 0 | 1 | 0 |
+| 资产 | rc | 耗时 s | 峰值 MiB | tiles | 深度 | 内容 | 最大字节 | 最大三角形 | 源feature/出现 | miss/drop | 代理降级 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| t01_plane_curved | 0 | 0.02 | 16.4 | 1 | 0 | 1 | 77 184 | 3 042 | 1/1 | 0/0 | 0 |
+| t02_thin_features | 0 | 0.30 | 32.5 | 7 | 2 | 7 | 42 808 | 572 | 54/162 | 0/0 | 0 |
+| t03_giant_single_mesh | 0 | 99.00 | 148.2 | 7 | 2 | 7 | 1 162 032 | 34 296 | 1/11 | 0/0 | 0 |
+| t04_many_objects | 0 | 27.49 | 146.9 | 127 | 6 | 127 | 1 143 360 | 14 400 | 1202/8414 | 0/0 | 0 |
+| t05_instances | 0 | 0.02 | 18.0 | 4 | 2 | 2 | 24 704 | 12 | 300/2 | 0/0 | 0 |
+| t06_nonuniform | 0 | 2.71 | 132.3 | 31 | 4 | 31 | 193 624 | 2 412 | 203/1015 | 0/0 | 0 |
+| t07_zero_axis | 0 | 0.02 | 16.3 | 1 | 0 | 1 | 60 016 | 2 404 | 2/2 | 0/0 | 0 |
+| t08_big_coords | 0 | 0.79 | 56.7 | 7 | 2 | 7 | 59 080 | 720 | 62/186 | 0/0 | 0 |
+| t09_cross_tile_object | 0 | 0.79 | 54.5 | 7 | 2 | 7 | 41 152 | 492 | 43/129 | 0/0 | 0 |
+| t10_material_heavy | 0 | 0.56 | 55.7 | 7 | 2 | 7 | 40 184 | 480 | 42/126 | 0/0 | 0 |
+| t11_sparse_outlier | 0 | 1.73 | 81.4 | 15 | 3 | 15 | 146 768 | 1 824 | 154/616 | 0/0 | 0 |
+| t12_big_texture | 0 | 1.82 | 232.2 | 1 | 0 | 1 | 510 432 | 6 962 | 1/1 | 0/0 | 0 |
+
+「代理降级」= `proxySkippedCount`（A-31）：12 个资产的远景代理都在预算内，
+所以这一列全 0；该计数由 §3 的 `proxySkip` 用例负责非零验证，不在此列制造。
+本轮 `t03 99.00 s` 比上一轮（`ee6499e` 二进制，`F:\wb_3dtiles_out\matrix_texless`）
+的 117.94 s 快，是因为这两个数都在与 335 MB 真实 FBX 转换**并发**的环境里测的，
+CPU 抢占比例不固定——耗时列只作量级参考，静默机器复测见 PERFORMANCE_REPORT §1。
+`miss/drop` = `featuresMissingFromLeaves` / `proxyDroppedFeatureCount`（A-28 新增
+的源身份覆盖不变量，全 0 即"没有任何部件在远景 LOD 上消失"）。
+表中「最大字节」是工具报告的估算值（`200 B/tri + 48 B/vert + 纹理/8`）；
+发布闸 `selfValidate` 是对**落盘文件实测**的，两者不一致时以实测为准并由
+`finalizeTileFromWork` / `selfValidate` 判失败或降级（A-31）。
+t08/t09/t12 的最大字节与上一轮差 16～88 B：同一二进制内**逐文件 md5 完全一致**
+（`runs/det_t08_{1,2}`，两次独立运行 tile 目录 md5 相同），差异来自二进制本身
+（本轮额外带 `needsTextureless` 判据），不是划分不确定。
 
 对比 Phase 0 基线（同一资产集，BASELINE.md §5）：
 
@@ -36,14 +57,16 @@ tilesetWritten==true；退出码在本环境被宿主改写，不作判据）：
 |---|---|---|
 | box 负半轴 | t07 实测出现 | 无（validator 0 error） |
 | 父子包围盒不覆盖 | 48/6/2/3/1 个 ERROR | 0（double 精度 + 相对容差） |
-| 巨型单网格不切分 | t03 134k 三角形 1 个 tile | 切成 3 tiles（对象/三角形级） |
+| 巨型单网格不切分 | t03 134k 三角形 1 个 tile | 切成 7 tiles（对象/图元/三角形级） |
 | 父子 geometricError 差恒 0.1 | 是 | 无（测量误差自底向上聚合） |
 | tileset 误差 = root×1.5 | 是 | 无 |
+| 远景代理整簇丢失（A-27） | 12 个占用 cell 只剩 6 个有几何 | 全覆盖，`proxyDroppedFeatureCount=0` |
 
 ## 2. 扩展场景（矩阵缺口补齐）
 
 命令：`python scripts/run_extra_scenarios.py`
-结果 **4/4 PASS**（`docs/model23dtiles-production/runs/extra_scenarios/summary.json`）：
+结果 **4/4 PASS**（`docs/model23dtiles-production/runs/extra_scenarios/summary.json`，
+2026-10-16 实测）：
 
 | 场景 | 内容 | 结果 |
 |---|---|---|
@@ -52,14 +75,34 @@ tilesetWritten==true；退出码在本环境被宿主改写，不作判据）：
 | S3 | 实例瓦片格式：内容文件 magic = `i3dm` | PASS |
 | S4 | 常规 b3dm + BATCH_LENGTH 一致性（validator BATCH 检查） | PASS |
 
+> BLOCKED（2026-10-19）：本机 `python` 是 Windows Store 占位程序，S1–S4 的自动化
+> 采集器 `run_extra_scenarios.py` 无法重跑（`rc=49`、零输出）。上表是 2026-10-16
+> 的真实产物，未重新生成，因此**不包含**此后 A-26…A-31 改动的回归覆盖；
+> 该缺口由 §1 矩阵（12 资产，含 `-tf ktx2` 默认链路）+ §3 单测共同承担。
+> 恢复命令：安装真实 Python 3 后执行
+> `python scripts/run_extra_scenarios.py`。
+> cmpt（混合实例容器）场景仍未触发：需要"同瓦片既有 b3dm 又有 i3dm"的输入，
+> 现有 12 资产与 4 个 FBX 样本都不产生该形态（手册 8.4 允许，非缺陷）。
+
 ## 3. 单元测试
 
 ```bash
 bash scripts/wb_build.sh test_production
-./Release/test_production.exe
+./Release/test_production.exe            # 全部
+./Release/test_production.exe pipeline   # 只跑端到端覆盖用例
+./Release/test_production.exe proxySkip  # 只跑远景代理降级 + 失败关闭用例
 ```
 
-**44/44 通过**（`test_production_result.txt`）：
+**82/82 通过**（2026-10-19 12:16:54，HEAD `ee6499e` + A-31/A-32 工作树，
+`test_production_result.txt` 同步落盘，防退出阶段丢缓冲）：
+
+> 当前工作树（A-33 i3dm 三角形预算 + A-34/A-35 manifest 断言并入）实测
+> **118/118 通过**（2026-10-19 16:34，`bash scripts/wb_build.sh test_production
+> && ./Release/test_production.exe`；逐用例标题的完整日志落在
+> `evidence/test_production-118.txt`，`test_production_result.txt` 只有末行计数，
+> 它是 `tests/production/main.cpp:916` 自己 truncate 写的，别把 stdout 重定向到同名文件）。
+> 新增的是 `testPipelineLeafCoverageInvariant` 里按 tileUri 反查聚合代理身份的一组断言，
+> 详见 AUDIT A-34「测试覆盖与变异测试」。
 - ProductionProfile 硬上限校验（超限抛异常）
 - SourceModel 世界变换烘焙正确性
 - 分区器 coverage + 确定性（同一输入两次划分结果一致）
@@ -67,73 +110,259 @@ bash scripts/wb_build.sh test_production
 - 误差求值器解析用例（同面=0 / 平行偏移 0.5m / 单侧为空=保守上界）
 - feature manifest 跨瓦片回查
 - **BatchIdVisitor 回归**：属性 0 占用→搬到空闲槽并写 `_ATTRIBUTE_<n>`；
-  属性 0 空闲→直接写 _BATCHID；二次处理→不再搬动（本轮新发现并修复的缺陷）
+  属性 0 空闲→直接写 _BATCHID；二次处理→不再搬动
+- **Simplifier 多 primitiveSet 回归**（A-26）：合并几何必须真降面且属性/索引不错位，
+  绝不清空 vertex array
+- **聚合代理覆盖回归**（A-27）：每个占用 cell 都要有代理三角形，且误差在
+  单个 cell 尺度内（旧行为 lower=497 m 的整块空洞）
+- **端到端管线覆盖不变量**（A-28，首个跑完整 `run()+finalize()` 的用例）：
+  合成 8×8 网格断言 64 个源 feature 全部落在叶瓦片且 `tileset.json` 发布；
+  对照组用不可能的字节硬限断言 `finalize()` 返回 false 且输出目录**不留**
+  `tileset.json`（失败关闭非空转，另用注入单个覆盖缺口的实验验证过该闸会报
+  `1 source features are absent from every leaf tile`）
+- **远景代理降级 + 失败关闭**（A-31，`proxySkip`）：合成 8×8 网格（64 对象 512 面）、
+  `strictIdentity + lockSeamBorder`、硬限 150 面 / 代理目标 100 面。实测根代理压不到
+  目标 → `proxySkippedCount=1`，该节点 `hasContent=false`、产物目录与 `tileset.json`
+  都不含 `t0.b3dm`，其余 14 个瓦片正常发布、`maxTrianglesInTile=96`、
+  `featuresMissingFromLeaves=0`、warning 原文记录"children still cover 64 source
+  features"（手册"不能静默缺内容"）。对照组把 `maxTreeDepth` 压到 1 →
+  `finalize()=false` 且不留 `tileset.json`。
+  写盘后实测超限那条分支（会删除超限文件）是"估算达标但实测超限"的防御网，
+  本用例命中的是构建期分支，没有为该文案伪造超限代理，见 AUDIT A-31 验证段。
+
 
 ## 4. 视觉验收（手册 15 节）
 
+采集工具是无头 Edge + 验收页，不是 python 脚本（本机 `python` 是 Store 存根，
+见 STATUS B-5；`scripts/visual_capture.py` 已废弃）：
+
 ```bash
-python scripts/visual_capture.py \
-    --tileset <tileset.json> --out docs/visual-acceptance/runs/<name>
+bash scripts/visual_capture.sh <session> <tileset-url> [paths] [maxFrames] [port]  # 单数据集
+bash scripts/visual_sweep.sh                                                     # 13 个数据集 × 10 条路径
+node scripts/va_summary.js <sessionFilter>                                       # 会话级汇总
+node scripts/va_paths.js <sessionFilter>                                         # 逐相机路径明细
 ```
 
-实测（t02 资产，CesiumJS 1.119 + Chromium 156 headless + SwiftShader WebGL）：
+页面注册了 10 条固定相机路径（`docs/visual-acceptance/index.html` 的 `PATHS`），
+每帧落 PNG + 一条 JSONL 记录，判据口径见 `docs/visual-acceptance/README.md`
+「每帧量化度量」：投影半径 ≤20 px 的帧没资格判空洞，记 `tooSmall`。
 
-- 9 条相机路径全部执行：**53 帧 / 53 张截图**，1280×720；
-- **console errors: 0，page errors: 0**；
-- 每帧记录相机经纬高、可见 tile URI、geometricError；
-- 截图目录：`docs/visual-acceptance/runs/t02_thin_features/shots/`。
+实测（CesiumJS 1.119 + 无头 Edge + SwiftShader 软件 WebGL，1280×720）：
 
-环境限定：headless Chromium 只能拿到 SwiftShader 软件 WebGL，
-**人眼级接缝/LOD_POP 判定需在有物理 GPU 的机器上复跑**（命令见
-`docs/visual-acceptance/README.md`），该项标 BLOCKED-VISUAL。
+| 会话 | 数据集 | 帧 | 出图 | 空洞 | 判不了 | cameraFinite=false | 报错 |
+|---|---|---|---|---|---|---|---|
+| `fa_t01_plane_curved` | t01（10 条路径全跑） | 69 | 69 | 0 | 0 | 0 | 0 |
+| `full_t02` | t02_thin_features（9 条路径） | 34 | 30 | 0 | 4 | 0 | 0 |
+| `full_longxiang` | longxiang_covfix（9 条路径） | 34 | 34 | 0 | 0 | 0 | 0 |
 
-## 5. 逐资产误差实测（conversion-report.json 摘录）
+- 截图目录 `docs/visual-acceptance/runs/<会话>/`，每个会话另有 `summary.json`
+  与 `manifest.jsonl`（逐帧相机经纬高、可见 tile URI、geometricError、
+  `tileStates`、`env.gpuRenderer`）；
+- `full_t02` 的 4 个 `tooSmall` 全是 `lod-threshold` 路径贴在 refine 距离 ±6 %
+  上的帧：薄特征在那个距离投影不到 20 px，按口径不能判空洞；
+- `fa_t01` 的 12 个 `ax_*`（六轴正视）帧是相机 NaN 缺陷（`up ∥ direction` 时
+  Cesium 重算 `right` 得 NaN 并污染后续所有帧）的阳性对照：修复前
+  `ax_t05_instances` / `ax_t08_big_coords` 各 12 帧里 `cameraFinite=false` 12、
+  空洞 12；修复后同样 12 帧 `cameraFinite=false` 0、空洞 0
+  （中位剪影 65 674–819 868 px）。
+- `t01` 的 `lod-threshold` 路径产生 0 帧不是漏跑：该数据集只有 1 个根瓦片且
+  `geometricError=0`，没有 refine 距离可采样。
 
-| 资产 | errMax (m) | errMean (m) | certified | boundLoose |
-|---|---|---|---|---|
-| t04_many_objects | 317.14 | — | 63 | 59 |
-| t02_thin_features | — | — | — | — |
-| t08_big_coords | 10633297（大坐标量纲，符合预期） | — | — | — |
+尚未完成（不是缺陷，是本机 CPU 被 335 MB 转换占住）：用最终二进制把
+13 个数据集 × 10 条路径的整批扫一遍（`bash scripts/visual_sweep.sh`，
+一条命令含起服务和汇总）。当前三列结论分别来自修复前后不同批次，
+表里已注明路径条数差异。
 
-注：t03/t04 的绝对数值大是因为测试资产场景尺度大（数百米）且叶层保留全量源
-几何时父代理误差本来就到场景量级；`certified` 表示上界含真实采样；
-`boundLoose` 表示未采样面片用了保守全局上界（手册 9.3 允许）。
+环境限定：headless Edge 只能拿到 SwiftShader 软件 WebGL
+（`env.gpuRenderer` 每条记录里都如实带着），**人眼级接缝/LOD_POP 主观判定
+需在有物理 GPU 的机器上复跑**（命令见 `docs/visual-acceptance/README.md`），
+该项标 BLOCKED-VISUAL；软件渲染的每帧耗时也不得当性能数据上报。
 
-## 6. 真实 FBX 端到端（B-1 解除，2026-10-16）
+## 5. 逐资产误差实测（conversion-report.json，2026-10-19 复测）
 
-输入：`D:\BaiduNetdiskDownload\longxiang.fbx`（66 MB，123 张纹理）。
+`rel%` = 误差 / 根瓦片包围盒对角线 × 100（由 `tileset.json` 的 `boundingVolume.box`
+实测算出，不是估计）。绝对值单独看没有意义，必须按场景量纲归一。
 
+| 资产 | 对角线 (m) | errMax (m) | errP95 (m) | errMean (m) | rel errMax% | rel p95% | certified | boundLoose |
+|---|---|---|---|---|---|---|---|---|
+| t01_plane_curved | 141.5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| t02_thin_features | 142.4 | 40.35 | 40.00 | 13.03 | 28.33 | 28.08 | 3 | 1 |
+| t03_giant_single_mesh | 565.8 | 131.27 | 75.46 | 54.21 | 23.20 | 13.34 | 0 | 3 |
+| t04_many_objects | 568.6 | 317.14 | 264.92 | 81.92 | 55.77 | 46.60 | 63 | 59 |
+| t05_instances | 3 469 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| t06_nonuniform | 2 000 | 754.27 | 556.35 | 75.64 | 37.71 | 27.81 | 13 | 13 |
+| t07_zero_axis | 89.5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| t08_big_coords | 1.606e+7 | 1.607e+7 | 1.393e+7 | 4.591e+6 | **100.03** | 86.72 | 3 | 3 |
+| t09_cross_tile_object | 1 241 | 386.77 | 308.13 | 136.03 | 31.16 | 24.82 | 3 | 3 |
+| t10_material_heavy | 279.5 | 123.29 | 97.40 | 34.31 | 44.10 | 34.84 | 3 | 3 |
+| t11_sparse_outlier | 5 692 | 5 643.16 | 5 640.41 | 1 132.52 | **99.14** | 99.09 | 7 | 6 |
+| t12_big_texture | 169.7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+判读与如实说明：
+- `certified` 表示上界含真实采样；`boundLoose` 表示未采样面片用了保守全局上界
+  （手册 9.3 允许）；
+- 顶层 `errorMax` 是**根代理**的误差，即"远景 LOD 完全不渲染源几何时的偏差"，
+  3D Tiles 语义下它等于根 `geometricError`，量纲本来就到场景尺度；细化到
+  `maximumScreenSpaceError = 4.0` 阈值以内才会渲染叶层全量源几何；
+- **t08（rel 100 %）与 t11（rel 99 %）不是可以忽略的"量纲放大"**：t11 是专门
+  设计的稀疏离群资产，根代理无法用聚合抽稀表达一个孤立的远处部件，误差就
+  等于"到该部件的距离"≈整个包围盒；t08 是大坐标资产，同一现象。二者结构
+  合法、覆盖不变量 0 缺口、细化阈值仍受 SSE 控制，但**远景是否出现可感知的
+  部件瞬现（pop-in）必须靠真实 GPU 人眼验收**，本机只有 SwiftShader
+  软件 WebGL → 该项记 STATUS.md B-6，标 BLOCKED-VISUAL，不写"符合预期"；
+- 其余 10 个资产 rel errMax ≤ 56 %，与场景量级一致。
+
+
+## 6. 真实 FBX 端到端（输出到 F 盘）
+
+### 6.1 longxiang.fbx（66 MB，123 张纹理）— 2026-10-19 复测，HEAD `ee6499e`
+
+```bash
+cd Release && ./model23dtiles.exe -sp \
+  -i "D:/BaiduNetdiskDownload/longxiang.fbx" -o F:/wb_3dtiles_out/longxiang_covfix
 ```
-Release/model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/longxiang.fbx -o out_test/longxiang
+
+**结果：`errors=0` 且 `tileset.json` 发布**（产物 129 瓦片 + 85 张 KTX2 纹理，
+`F:\wb_3dtiles_out\longxiang_covfix\`，日志 `longxiang_covfix.log` 3 524 行）。
+
+| 指标 | 实测值 | 2026-10-16 旧值（commit bfa43a0） |
+|---|---|---|
+| tiles / 内容瓦片 | 129 / 127（深度 12） | 69 / 67（深度 11） |
+| 单瓦片最大内容字节 | 2 226 920（8 MiB 的 26.5 % ✓） | 7.91 MiB（贴硬限） |
+| 单瓦片最大三角形 | 34 675（≤ 120 000 ✓） | 74 434 |
+| 源 feature / manifest 出现 | 145 / 623 | 145 / 1 013 |
+| **叶覆盖缺口** `featuresMissingFromLeaves` | **0** | 无此指标 |
+| **代理抽稀丢失** `proxyDroppedFeatureCount` | **0** | 无此指标 |
+| 聚合代理 / 实例瓦片 | 10 / 6（instanceCount 10） | — / 6 |
+| 误差 max / p95 / mean | 168.37 m / 100.51 m / 15.10 m | 168.4 / 78.4 / 19.7 m |
+| 误差状态 | certified 58 / boundLoose 41 | 30 / 23 |
+| KTX2 纹理（hash 去重） | 85 个 / 14.1 MiB | 186 个 / 31.6 MB |
+| 耗时 / 峰值 RSS | 93.4 s / 2 401 MiB | 629.9 s / 650 MiB |
+
+三点如实说明（都不是"看起来更好"的数字）：
+1. 瓦片数 69→129、最大瓦片 7.91 MiB→2.17 MiB：A-30 之后预算判据只卡几何字节，
+   聚合代理能在硬限内收敛，分区器因此可以按更小的目标继续切，不再出现贴边瓦片；
+2. manifest 出现次数 1 013→623：切分更细 → 同一 feature 被复制进更少的祖先瓦片；
+   源 feature 集合不变（145），覆盖不变量仍为 0 缺口；
+3. **峰值 RSS 650 MiB→2 401 MiB** 是本轮改动带来的内存回退，耗时则从 629.9 s
+   降到 93.4 s（远景代理不再因纹理超限反复整轮白跑）。内存回退尚未定位到
+   单一分配点，记 STATUS.md B-7 跟踪，PERFORMANCE_REPORT.md 如实并列两组数字。
+
+该模型历史上暴露并修复的缺陷：commit bfa43a0 的三项（字节估算低估 4 倍、
+`meshopt_simplify` 因误差上限过宽不削减、代理只判三角形预算），以及本轮的
+A-30（纹理字节被当硬约束导致聚合 fallback 永不收敛）。
+
+### 6.2 其余真实 FBX
+
+| 输入 | 大小 | 状态 | 证据 |
+|---|---|---|---|
+| `20240529卢沟桥分洪枢纽.fbx` | 335 MB | 进行中（`lugouqiao_v14`） | A-31 之前 7 个内节点代理超 120 000 面 → 整批判失败；`lugouqiao_v11.log` 是失败关闭的真实证据 |
+| `芜湖水厂总装.fbx` | 132 MB | 未跑 | 命令同 6.1 |
+| `jianzhu+tietu.FBX` | 433 MB | 历史产物 `jianzhu_tietu_v5`（旧二进制，不含 A-26…A-31） | 需用当前 HEAD 复跑 |
+
+## 7. OGC 3D Tiles Validator（官方，B-3 已解除）
+
+不是自研等价校验，是 CesiumGS 官方 `3d-tiles-validator@0.6.1`：
+
+```bash
+# 第二个参数是报告目录，缺省 docs/model23dtiles-production/validation
+bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_texless
+bash scripts/run_validator.sh F:/wb_3dtiles_out/longxiang_covfix
+bash scripts/run_validator.sh F:/wb_3dtiles_out/cmpt_probe
 ```
 
-**结果：0 ERROR，validator errors=0**（188 条 FILES warnings 是纹理经 glTF
-内部 URI 引用、validator 的 FILES 检查未解析 glTF 内部引用所致，非产物缺陷）。
+脚本内含本机踩过的安装坑（写进脚本而不是让人重踩）：validator 依赖链里的
+`sharp@0.32` 用 prebuild-install 从 **github.com** 拉 libvips，本机 github 不可达 →
+先 `npm i --ignore-scripts` 装 validator，再从 registry 装 `sharp@0.33.5`
+并覆盖三处嵌套的 `node_modules/*/node_modules/sharp`。
 
-| 指标 | 实测值 |
-|---|---|
-| tiles / 内容瓦片 | 69 / 67（深度 11） |
-| 单瓦片最大内容字节 | 7.91 MiB（≤ 8 MiB 硬上限 ✓） |
-| 单瓦片最大三角形 | 74 434（≤ 120 000 ✓） |
-| feature 数 / manifest occurrences | 145 / 1 013 |
-| 误差 max / p95 / mean | 168.4 m / 78.4 m / 19.7 m（场景 ~600 m 尺度） |
-| 误差状态 | certified 30 / boundLoose 23 |
-| 实例 | instanceTileCount 6 / instanceCount 10 |
-| 纹理（hash 去重 KTX2） | 186 个 / 31.6 MB |
-| 耗时 / 峰值 RSS | 629.9 s / 650 MiB |
+结果（2026-10-19 实测，报告与原始 stdout 全在
+`docs/model23dtiles-production/validation/`）：
 
-该模型此前暴露并修复的三个缺陷（commit bfa43a0）：
-1. 内容字节估算低估 ~4 倍（36 vs 实测 116–242 B/三角形）→ 分区器不切分；
-2. 大节点 `meshopt_simplify` 因误差上限宽松而完全不削减（133k→133k）→ sloppy 兜底；
-3. 代理简化只判三角形预算漏掉字节预算 → 双预算判据。
+| 数据集 | errors | warnings | infos |
+|---|---|---|---|
+| t01_plane_curved | 0 | 0 | 1 |
+| t02_thin_features | 0 | 0 | 7 |
+| t03_giant_single_mesh | 0 | 0 | 7 |
+| t04_many_objects | 0 | 0 | 127 |
+| t05_instances | 0 | 0 | 0 |
+| t06_nonuniform | 0 | 0 | 31 |
+| t07_zero_axis | 0 | 0 | 1 |
+| t08_big_coords | 0 | 0 | 7 |
+| t09_cross_tile_object | 0 | 0 | 7 |
+| t10_material_heavy | 0 | 0 | 7 |
+| t11_sparse_outlier | 0 | 0 | 15 |
+| t12_big_texture | 0 | 1 | 0 |
+| longxiang_covfix（真实 FBX） | 0 | 81 | 40 |
+| cmpt_probe/tileset.json（`mixed.cmpt`） | 0 | 0 | 0 |
 
-修复后回归：12 资产矩阵 12/12 PASS（t03 输出 5.69→4.29 MB），单测 44/44。
+**14/14 `numErrors=0`**，包括真实 FBX 数据集和 cmpt 混合容器探针。
 
-## 7. 验证结论
+warning 全部同源、且不成立为缺陷：validator 自带的 glTF schema 早于
+`KHR_texture_basisu`，对 `mimeType: image/ktx2` 报
+`Invalid value "image/ktx2"` / `Image format not recognized`
+（longxiang 81 条 = 85 张 KTX2 里去重后仍被逐图引用的部分，t12 1 条）。
+CesiumJS 1.119 侧同一批 `.ktx2` 在 §4 的截图链路里实际解码并贴上了纹理
+（判据 `colorSpread.chromaFraction`，见 `docs/visual-acceptance/README.md`）。
+升级 validator 依赖链里的 glTF schema 才会消掉这批 warning，本轮不为此改动产物。
 
-- 结构合法性：12 资产 + 4 场景 + 真实 FBX validator 全 0 error；
-- 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 67 瓦片全部 ≤8 MiB；
-- 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 145 feature / 1013 occurrences；
+## 8. 写盘后回读核对（B-9 已解除）
+
+手册 §3 有四条硬限，工具内发布闸只覆盖字节 / 三角形 / 树深三条，
+「每瓦片 ≤ 24 个 glTF primitive」过去只有分区侧的**估算**参与切分决策，
+没人读回真实产物。新增 `scripts/glb_prims.js`：从 `tileset.json` 取全部
+`content.uri`，剥 b3dm / i3dm 外壳（**b3dm 头 28 B，i3dm 头 32 B**，多一个
+`glTFFormat`；GLB 起点 = 头 + feature/batch 四张表长度之和，实测 `mixed.cmpt`
+的 b3dm 因表占 260 B，GLB 落在 288 而不是固定 28），解析 GLB 的 JSON chunk，
+统计 `mesh.primitives` 之和与 accessor 面数；i3dm 再乘 feature table 的
+`INSTANCES_LENGTH` 得到运行时真实绘制量。cmpt 也能拆开逐内层瓦片判定。
+
+```bash
+node scripts/glb_prims.js docs/model23dtiles-production/runs/matrix_final/t0* \
+                            docs/model23dtiles-production/runs/matrix_final/t1* \
+                            F:/wb_3dtiles_out/longxiang_covfix F:/wb_3dtiles_out/cmpt_probe
+```
+
+结果 **341 个内容文件、0 违例、0 解析失败**（上限 prims=24 / expandedTriangles=120 000）：
+
+| dataset | tiles | max prims/tile | max tris（去重） | max tris（实例展开） | 展开合计 tris |
+|---|---|---|---|---|---|
+| t01_plane_curved | 1 | 1 | 3 042 | 3 042 | 3 042 |
+| t02_thin_features | 7 | 2 | 572 | 572 | 1 716 |
+| t03_giant_single_mesh | 7 | 1 | 34 296 | 34 296 | 235 845 |
+| t04_many_objects | 127 | 2 | 14 400 | 14 400 | 100 800 |
+| t05_instances | 2 | 1 | 12 | **3 588** | 3 600 |
+| t06_nonuniform | 31 | 2 | 2 412 | 2 412 | 12 060 |
+| t07_zero_axis | 1 | 2 | 2 404 | 2 404 | 2 404 |
+| t08_big_coords | 7 | 2 | 720 | 720 | 2 160 |
+| t09_cross_tile_object | 7 | 2 | 492 | 492 | 1 476 |
+| t10_material_heavy | 7 | 2 | 480 | 480 | 1 440 |
+| t11_sparse_outlier | 15 | 2 | 1 824 | 1 824 | 7 296 |
+| t12_big_texture | 1 | 1 | 6 962 | 6 962 | 6 962 |
+| longxiang_covfix（真实 FBX） | 127 | 11 | 34 675 | 34 675 | 737 115 |
+| cmpt_probe（`mixed.cmpt`） | 1 | 1 | 12 | 3 588 | 3 600 |
+
+三点读法：
+1. **硬限核对全部通过**，而且是**读回真实产物**得到的，不是工具自报；
+   b3dm 的"去重"列与 `conversion-report.json` 的 `maxTrianglesInTile` 逐个相等
+   （t01 3 042 / t03 34 296 / t04 14 400 / longxiang 34 675 …），
+   说明写出器与统计口径没有分叉；
+2. t05 的 `i2.i3dm` 去重只有 12 面、实例展开 3 588 面（feature table 里
+   `INSTANCES_LENGTH=299`）——这两列的差就是 A-33 的量纲错配本身。
+   硬限必须按展开列判；旧二进制只看字节，才会让 lugouqiao 的 507 822 面
+   实例瓦片静默入库；
+3. `cmpt_probe` 一行同时验证了容器拆解与 i3dm 展开口径。
+
+## 9. 验证结论
+
+- 结构合法性：12 资产 + 真实 FBX + cmpt 探针在**官方** OGC validator 下
+  `numErrors=0`（§7），内发布闸 `selfValidate` 同样全 0 error；
+- 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 127 个内容瓦片
+  最大 2.17 MiB，矩阵 12/12 违例 0；实例瓦片的三角形预算见 §6.2 的 A-33；
+- 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 145 feature / 623 occurrences，
+  且 `featuresMissingFromLeaves=0` / `proxyDroppedFeatureCount=0`；
+  `aggregateProxies` 补全后可由源 feature 反查代理 ID 与其代表的源集合；
 - 视觉链路：CesiumJS 加载渲染真实出图，自动化 0 错误；
-- 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、官方 3d-tiles-validator
-  （BLOCKED B-3，需 npm 网络）。
+- 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、Python 采集器（BLOCKED B-5）、
+  lugouqiao/芜湖水厂端到端、longxiang 内存回退（B-7）、
+  写盘后 glTF primitive 数回读（B-9）。

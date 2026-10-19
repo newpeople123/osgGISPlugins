@@ -268,3 +268,59 @@ Release/model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/longxiang.fbx -o out_te
 | SPEC | **是** | box 半轴为负；root→leaf refine=ADD 语义错误 |
 | VISUAL | BLOCKED | 见 B-4 |
 | PERF | **是** | 整份几何重复 3 份；退出码崩溃 |
+
+---
+
+## 10. 复核基线（Phase 0 re-check，2026-10-19，HEAD `ee6499e`）
+
+§1～§6 是 2026-10-15 在**改造前代码**上测出的历史基线，仍然有效、不改写；
+本节记录"当前分支状态 + 当前构建/测试基线"，后续任何回归都以此处为准。
+
+```
+$ git status --short --branch
+## prod/model23dtiles-production          （仍不推送远端；未被跟踪文件为
+                                            历史会话遗留脚本/日志，本任务只
+                                            精确 add 自己的文件）
+$ git log --oneline -6
+ee6499e 代理字节预算拆成 geo/tex 两本账：纹理不再是远景代理的硬约束（A-30）
+1fd1fbe 聚合代理按字节硬限反推面数配额并整体不锁边挤压，修 t03 巨型单网格回归
+245b717 补上源身份覆盖不变量：A-27 那类"误差不变但部件消失"从此无处藏身
+6ab22c4 重写预算驱动简化器与聚合代理：修掉 A-26 多 primitiveSet 不简化、A-27 空代理
+37d832c 修复超限代理漏网：检查proxy failure + 聚合fallback不锁边强简化兜底
+cf5d010 修复远景LOD代理确定性段错误：构建时去纹理+atlas跳过无纹理StateSet
+```
+
+主分支基线提交链：`a53d419`（Phase 0）→ `d18175e` → `2c3d597` → `dcda2a9`
+→ `0d8bf02` → `bfa43a0` → 本轮 4 个 commit。
+
+### 10.1 构建与测试基线
+
+| 项 | 命令 | 2026-10-19 实测 |
+|---|---|---|
+| Release 工具 | `bash scripts/wb_build.sh model23dtiles` | 成功（CMake 4.4.3 + VS 17 2022 / MSVC 14.44；`cl` 不在 PATH，由 wb_build.sh 注入 vcvars） |
+| 单元测试 | `bash scripts/wb_build.sh test_production && ./Release/test_production.exe` | **passed=71 failed=0**（历史基线 44 断言；A-31/A-32 并入后 82，A-33/34/35 并入后 **118/118**，见 VALIDATION_REPORT §3） |
+| 12 资产矩阵 | bash+node 采集器（见 VALIDATION_REPORT §1 命令） | **12/12 发布，§3 硬限违例 0**，`featuresMissingFromLeaves=0`、`proxyDroppedFeatureCount=0` |
+| 真实 FBX | `Release/model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/longxiang.fbx -o F:/wb_3dtiles_out/longxiang_covfix` | 0 error、129 tiles、93.4 s / 2 401 MiB（见 VALIDATION_REPORT §6.1） |
+
+### 10.2 与 2026-10-15 基线的环境差异（影响可复现性）
+
+- **Python 不可用（新增 B-5）**：`python`/`python3` 解析到
+  `C:\Users\hdec\AppData\Local\Microsoft\WindowsApps\python.exe`（Store 占位程序），
+  `python -c "print(1)"` 退出码 49、零输出。因此 `run_matrix.py`、
+  `run_extra_scenarios.py`、`tileset_tool.py`、`visual_capture.py` 本轮全部
+  无法执行；矩阵改用等价的 bash+node 采集（同一命令行、同一指标来源
+  `conversion-report.json`），S1–S4 四场景与截图仍是 2026-10-16 的历史产物。
+- 宿主改写退出码：`model23dtiles.exe` 正常发布产物时退出码仍可能被改写
+  （历史实测 `0xC0000409`），因此**判据只用 `errors==0` + `tileset.json` 是否落盘**，
+  与 §4 当时的记法一致。
+- 内存：本机 127 GiB，`longxiang` 峰值 2.4 GiB 不构成风险，但换小内存机器
+  需按 §10.1 的 RSS 值预留。
+
+### 10.3 仍未闭环的项（详见 STATUS.md BLOCKED）
+
+B-4 真机 GPU 人眼验收、B-5 Python、B-6 t08/t11 远景部件瞬现、
+B-7 longxiang 内存回退（335 MB 的 lugouqiao 实测工作集 5.5 GiB 以上，见
+PERFORMANCE_REPORT §6.4）、B-8 cmpt 混合实例场景（`mixed.cmpt` 探针 0/0/0 已过，
+生产写出器仍输出兄弟 b3dm/i3dm 子树，仓库内无 cmpt 写出器）。
+~~B-3 外部官方 validator~~ 已闭环：`bash scripts/run_validator.sh <dir>` 实测
+14/14 个 tileset `numErrors=0`（VALIDATION_REPORT §7）。
