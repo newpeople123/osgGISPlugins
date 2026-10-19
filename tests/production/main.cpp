@@ -21,6 +21,7 @@
 #include <osg/Array>
 #include <osg/PrimitiveSet>
 #include <osg/ComputeBoundsVisitor>
+#include <osgDB/ReadFile>
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -725,6 +726,110 @@ void testPipelineLeafCoverageInvariant()
 
 } // namespace
 
+// A-31：内节点远景代理超硬限时必须"降级为无内容 + 计数"，而不是让整批数据集
+// 报废；叶超限仍然判失败（14.17）。
+// 构造方式：strictIdentity 关掉聚合兜底，把代理目标面数压到这套网格压不到的
+// 程度（贴边四边形只能塌缩掉一部分内部边），内节点代理必然报
+// "proxy exceeds triangle budget" → 走 w.failure 降级分支。
+// 写盘后实测超限的那条分支（同一个函数里，会再删掉超限文件）是防御网，
+// 兜"估算达标但实测超限"，本用例命中的是构建期分支，不为此伪造数据。
+void testPipelineProxySkipDegrades()
+{
+    std::cout << "[pipeline] far-LOD proxy over budget degrades" << std::endl;
+    Utils::registerFileAliases();
+
+    // 512 个源三角形、8 三角形/对象：分区后叶瓦片 64 面、中层代理 96 面（都
+    // 达标），根代理要覆盖全部 512 面、压不到 100 面目标，于是只有根这一层
+    // 远景 LOD 降级为"无内容"，叶与中层照常发布。
+    ProductionProfile profile;
+    profile.strictIdentity = true;              // 禁止聚合 fallback 兜底
+    profile.lockSeamBorder = true;              // 开边界三角形删不动
+    profile.budget.maxTrianglesPerTile = 150;
+    profile.budget.targetTrianglesPerTile = 100;
+
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_pipeline_proxyskip";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    // 64 个对象 × 4 quad × 2 三角形 = 512 个源三角形
+    (void)pipeline.run(makeGrid(8, 8, 1.0, 4).get(), opt);
+    const bool fin = pipeline.finalize();
+
+    check(fin, "dataset still publishes when only far-LOD proxies are over budget",
+          joinMessages(pipeline.failures()));
+    check(pipeline.report().proxySkippedCount >= 1, "skipped-proxy counter is non-zero",
+          std::to_string(pipeline.report().proxySkippedCount));
+
+    std::set<FeatureId> leafScope;
+    unsigned publishedContent = 0, skippedInternal = 0, overBudgetContent = 0;
+    for (const ProductionTile& t : pipeline.tiles())
+    {
+        if (t.isLeaf) { leafScope.insert(t.sourceScope.begin(), t.sourceScope.end()); }
+        if (t.hasContent)
+        {
+            ++publishedContent;
+            if (t.triangles > profile.budget.maxTrianglesPerTile) { ++overBudgetContent; }
+        }
+        else if (!t.isLeaf && !t.children.empty() && !t.sourceScope.empty())
+        {
+            ++skippedInternal;
+            // 超限文件必须已从产物里删掉：留一个"没人引用但确实超限"的瓦片
+            // 同样违反手册 7.3
+            const std::filesystem::path p = out / "tiles"
+                / ("t" + std::to_string(t.id) + ".b3dm");
+            check(!std::filesystem::exists(p, ec),
+                  "over-budget proxy file removed from published output", p.string());
+        }
+    }
+    check(overBudgetContent == 0, "no published tile exceeds the triangle hard limit",
+          std::to_string(overBudgetContent));
+    check(skippedInternal >= 1, "some internal nodes really degraded to content-less",
+          std::to_string(skippedInternal));
+    {
+        bool explained = false;
+        for (const std::string& w : pipeline.warnings())
+        {
+            if (w.find("carries no far-LOD content") != std::string::npos
+                || w.find("over-budget far-LOD file removed") != std::string::npos)
+            {
+                explained = true;
+                break;
+            }
+        }
+        check(explained, "the degradation is explained in warnings, not silently dropped",
+              std::to_string(pipeline.warnings().size()) + " warnings");
+    }
+    check(pipeline.report().featuresMissingFromLeaves == 0,
+          "degrading a proxy loses no source feature");
+    check(leafScope.size() == pipeline.report().sourceFeatureCount,
+          "leaf tiles still cover the whole source registry",
+          std::to_string(leafScope.size()) + "/"
+          + std::to_string(pipeline.report().sourceFeatureCount));
+    check(std::filesystem::exists(out / "tileset.json", ec), "tileset.json published");
+
+    // 反向对照：把树深硬限压到 1 层——512 个源三角形在这个深度下无论如何
+    // 都装不进预算，分区器只能在 maxTreeDepth 处报"仍然超硬预算"。
+    // 此时必须失败关闭、一个瓦片产物都不留（手册 3 / 14.17）。
+    ProductionProfile unsplittable = profile;
+    unsplittable.budget.maxTreeDepth = 1;
+    const std::filesystem::path out2 =
+        std::filesystem::temp_directory_path() / "wb_pipeline_leaffailclosed";
+    std::filesystem::remove_all(out2, ec);
+    ProductionPipeline rejecting(unsplittable);
+    ProductionPipeline::Options opt2;
+    opt2.outputDir = out2.string();
+    (void)rejecting.run(makeGrid(8, 8, 1.0, 4).get(), opt2);
+    check(!rejecting.finalize(), "a dataset that cannot fit the budget at leaf level is a hard failure",
+          joinMessages(rejecting.failures()));
+    check(!std::filesystem::exists(out2 / "tileset.json", ec),
+          "failed dataset leaves no tileset behind");
+}
+
+
 int main(int argc, char** argv)
 {
     std::string filter;
@@ -743,6 +848,7 @@ int main(int argc, char** argv)
     run("simplifier", &testSimplifierMultiplePrimitiveSets);
     run("proxyAggregate", &testProxyAggregateCoversSourceScope);
     run("pipelineCoverage", &testPipelineLeafCoverageInvariant);
+    run("proxySkip", &testPipelineProxySkipDegrades);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();

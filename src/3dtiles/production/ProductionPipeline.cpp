@@ -641,7 +641,7 @@ ProductionPipeline::processTileHeavy(int pn, int id)
             std::min<std::uint64_t>(allBytes,
                 static_cast<std::uint64_t>(_profile.budget.targetTrianglesPerTile) * 200ull
                     + texBytes);
-        if (proxyEstimate > _profile.budget.maxTileContentBytes)
+        if (pr.needsTextureless || proxyEstimate > _profile.budget.maxTileContentBytes)
         {
             TRACE("proxy far-lod detexture pn=" << pn << " estimate=" << proxyEstimate);
             FarLodTextureStripper stripper;
@@ -689,9 +689,30 @@ ProductionPipeline::processTileHeavy(int pn, int id)
 void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
 {
     TRACE("finalize id=" << id << " begin pn=" << pn);
+    // 身份与覆盖范围先落账：即使这个瓦片随后降级成"无内容"，它覆盖的源
+    // feature 范围仍然要能被报告和自检看到（A-31 的"子树仍然覆盖"不能只
+    // 活在 warning 文案里）。
+    const std::size_t scopeCount = w.sourceScope.size();
+    _tiles[id].isProxy = w.isProxy;
+    _tiles[id].aggregateSources = std::move(w.aggregateSources);
+    _tiles[id].sourceScope = std::move(w.sourceScope);
+
     if (!w.failure.empty())
     {
-        _failures.push_back(w.failure);
+        // 叶失败 = 源 feature 真丢，判整个数据集失败（手册 14.17）。
+        // 内节点代理失败不是丢数据：子树仍然覆盖同一 source scope，REPLACE 下
+        // "无内容、直接细化"是合法瓦片。硬要发布一个超限远景代理违反手册 7.3，
+        // 但因远景代理放不下就废掉整批数据（lugouqiao 335 MB 实测）也不是取舍。
+        // 所以这里降级为 warning + 计数，让调用方看得见 LOD 空洞。
+        if (w.leaf)
+        {
+            _failures.push_back(w.failure);
+            return;
+        }
+        _warnings.push_back(w.failure + " -> tile carries no far-LOD content, children "
+                            "still cover " + std::to_string(scopeCount)
+                            + " source features");
+        ++_report.proxySkippedCount;
         return;
     }
 
@@ -710,10 +731,10 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             // 叶瓦片写出失败 = 这批源 feature 在整个数据集里彻底消失，
             // 只记 warning 会产出一个"看起来成功其实缺件"的数据集（手册 1.1）。
             // 代理写出失败不丢数据（子树仍然覆盖同一 source scope）。
-            if (isLeaf && !w.sourceScope.empty())
+            if (isLeaf && scopeCount > 0)
             {
                 _failures.push_back("leaf tile " + std::to_string(id) + " write failed: "
-                                    + wo.error + " (" + std::to_string(w.sourceScope.size())
+                                    + wo.error + " (" + std::to_string(scopeCount)
                                     + " source features would be lost)");
             }
             else
@@ -729,15 +750,38 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
                                     ": far-LOD proxy built without textures to fit budget (bytes=" +
                                     std::to_string(wo.bytes) + ")");
             }
-            const bool overBudget = wo.bytes > _profile.budget.maxTileContentBytes;
-            if (overBudget)
+            const bool overBytes = wo.bytes > _profile.budget.maxTileContentBytes;
+            const bool overTris = wo.triangles > _profile.budget.maxTrianglesPerTile;
+            if (overBytes || overTris)
             {
-                // 手册 7.3：不允许输出超限瓦片
-                _failures.push_back("tile " + std::to_string(id) + " content " +
-                                    std::to_string(wo.bytes) + " bytes exceeds hard limit " +
-                                    std::to_string(_profile.budget.maxTileContentBytes) +
-                                    " (triangles=" + std::to_string(wo.triangles) + ")");
-                _tiles[id].hasContent = false;
+                const std::string why = std::string(overBytes ? "bytes=" : "triangles=")
+                    + std::to_string(overBytes ? wo.bytes : static_cast<std::uint64_t>(wo.triangles))
+                    + " > " + std::to_string(overBytes ? _profile.budget.maxTileContentBytes
+                                                       : _profile.budget.maxTrianglesPerTile);
+                if (isLeaf)
+                {
+                    // 手册 7.3：不允许输出超限瓦片；叶超限 = 分区器没能把它切开，
+                    // 删掉又等于丢源 feature，只能判失败（14.17 失败关闭）。
+                    _failures.push_back("tile " + std::to_string(id) + " content " + why
+                                        + " (bytes=" + std::to_string(wo.bytes)
+                                        + ", triangles=" + std::to_string(wo.triangles) + ")");
+                    _tiles[id].hasContent = false;
+                }
+                else
+                {
+                    // 内节点超限只是"这一层远景代理没做好"，子树仍覆盖同一
+                    // source scope：删掉刚写进暂存区的超限文件，退化为无内容
+                    // 内节点（A-31），既不违反 7.3 也不报废整批数据。
+                    const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+                    std::error_code ec;
+                    std::filesystem::remove(abs, ec);
+                    _warnings.push_back("tile " + std::to_string(id) + ": proxy content " + why
+                                        + " -> over-budget far-LOD file removed, children still cover "
+                                        + std::to_string(scopeCount) + " source features"
+                                        + (ec ? " (file removal failed: " + ec.message() + ")" : ""));
+                    ++_report.proxySkippedCount;
+                    _tiles[id].hasContent = false;
+                }
             }
             else
             {
@@ -763,10 +807,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
                             "children still cover the source scope");
     }
 
-    _tiles[id].isProxy = w.isProxy;
     _tiles[id].aggregate = w.aggregate;
-    _tiles[id].aggregateSources = std::move(w.aggregateSources);
-    _tiles[id].sourceScope = std::move(w.sourceScope);
     if (w.aggregate) { ++_report.aggregateProxyCount; }
     TRACE("finalize id=" << id << " state done");
 
@@ -1348,6 +1389,35 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
     };
     checkGe(_root);
 
+    // 3b) 树深硬上限（手册 §3：深度 ≤ 48，且这条限制不允许被自动放宽）。
+    //     maxDepth 只有报告值、发布闸不检查的话，一个失控的分区递归照样能出盘。
+    {
+        std::vector<std::pair<int, unsigned>> stack;
+        stack.push_back(std::make_pair(_root, 0u));
+        unsigned deepest = 0;
+        int deepestTile = _root;
+        while (!stack.empty())
+        {
+            const int idx = stack.back().first;
+            const unsigned d = stack.back().second;
+            stack.pop_back();
+            if (idx < 0 || static_cast<std::size_t>(idx) >= _tiles.size()) { continue; }
+            if (d > deepest) { deepest = d; deepestTile = idx; }
+            for (int c : _tiles[idx].children)
+            {
+                stack.push_back(std::make_pair(c, d + 1));
+            }
+        }
+        if (deepest > _profile.budget.maxTreeDepth)
+        {
+            _failures.push_back("selfValidate: tree depth " + std::to_string(deepest)
+                                + " exceeds hard limit "
+                                + std::to_string(_profile.budget.maxTreeDepth)
+                                + " (deepest tile " + std::to_string(deepestTile) + ")");
+            ok = false;
+        }
+    }
+
     // 4) 源身份覆盖（手册 9.5 / 17："REPLACE 子树完整覆盖其 source scope"）
     //    这类缺陷在 Hausdorff 数值上是隐形的：被丢掉的小簇紧贴邻近表面时
     //    双向距离仍然很小，平均误差一切正常但业务部件已经消失。只能按
@@ -1407,6 +1477,13 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
             _failures.push_back("selfValidate: leaf tile " + std::to_string(t.id)
                                 + " uses an aggregate proxy; leaves must keep object identity");
             ok = false;
+        }
+        if (!t.hasContent)
+        {
+            // 被降级的远景代理（A-31：超预算文件已删除、该层无内容）不写任何
+            // batch id，既没有身份冒充风险，也不该把它的 scope 记成"抽稀丢失"
+            // ——真实细节仍在后代叶瓦片里。
+            continue;
         }
         if (t.aggregateSources.empty())
         {

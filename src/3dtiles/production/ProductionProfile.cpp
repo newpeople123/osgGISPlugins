@@ -115,6 +115,7 @@ json ConversionReport::toJson() const
         {"manifestOccurrences", manifestOccurrences},
         {"featuresMissingFromLeaves", featuresMissingFromLeaves},
         {"proxyDroppedFeatureCount", proxyDroppedFeatureCount},
+        {"proxySkippedCount", proxySkippedCount},
         {"warnings", warnings},
         {"errors", errors}
     };
