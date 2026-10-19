@@ -20,6 +20,9 @@ struct ProxyResult {
     osg::ref_ptr<osg::Node> node;
     bool identity = false;         // 未做简化（原样几何）
     bool aggregate = false;        // 使用了聚合代理
+    // 几何本身达标、带上子树纹理才超字节：内节点代理本来就该建成无纹理版
+    // （远景 LOD 常规做法）。由调用方据此剥纹理，不再各自重复预估。
+    bool needsTextureless = false;
     unsigned triangles = 0;
     unsigned vertices = 0;
     double appliedRatio = 1.0;
