@@ -233,8 +233,16 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    0 次重现**（累计 127 次仅 1 次），没有新鲜污染产物可差分。
    `mergeGeometries` 缺的 `nrm->size()==pos->size()` 守卫（`ProxyMeshBuilder.cpp:361`）
    仍是独立隐患，但本例 `aggregateProxyCount=0`，聚合路径没走，不是这里的解释。
-4. **`lugouqiao_v15` 结果待验收**（15:47 起跑，19:08 时已落 551 个 `.b3dm`、
-   仍在跑，约 7 个/分钟；主树阶段最大 prim 34 847 三角形、荒谬顶点 0）：
+4. **`lugouqiao_v15` 结果待验收**（15:47 起跑，19:08 时已落 551 个 `.b3dm`，
+   20:19 时 `.wb-staging/tiles/` 已有 **804 个 `.b3dm`（0 个 i3dm）**、仍在跑）：
+   中盘扫描（自定义脚本，与 `b3dm_attr_probe.js` 同解析、100 % 覆盖：
+   1 792 个 POSITION / 1 792 个 NORMAL accessor 全 float 全扫）报
+   **A-38 污染字节 0 命中、`|x|>1e6` 或非有限 POSITION 0 个、非有限 NORMAL 0 个、
+   零长度 NORMAL 186 个**。186 条要留意：可能全是简化器留下的**退化三角形**
+   （法线本来就是 0），也可能是 A-38 同族的**跨数组快照**问题在真实数据上的表现；
+   官方 validator 会**逐条**报 `is not of unit length: 0`，所以完成后必须分
+   **referenced vs. unreferenced** 才能定它的性质（探针 `--all` 会打这个）。
    完成后按 A-33 口径核对 i3dm 展开三角形、`featuresMissingFromLeaves`、
-   `aggregateProxies` 与官方 validator 逐资产错误条数，再写进 §6.2/PERFORMANCE。
+   `aggregateProxies`、官方 validator 逐资产错误条数 + 零长度 NORMAL 是否被引用，
+   再写进 §6.2/PERFORMANCE。
 
