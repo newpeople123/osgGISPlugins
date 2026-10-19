@@ -46,6 +46,18 @@ node scripts/b3dm_extents.js <文件.b3dm|文件.i3dm> [...]
 node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
                                            # A-38 取证：逐 primitive 关联 POSITION/NORMAL/索引，
                                            # 报荒谬坐标与零长法线的 @count-k 相对下标与是否被索引引用
+node scripts/zero_normal_triage.js <数据集目录|文件> [...] [--rel 1e-6] [--eps 1e-9]
+                                           # A-43 定性：零长法线按三角形面积分"退化/真隐患"。
+                                           # 主判据是面积 > REL×该 primitive 中位面积（尺度无关），
+                                           # 绝对阈值 --eps 只作对照列，两档一起打印
+node scripts/make_zero_norm_fixture.js <out.b3dm>
+                                           # A-43 阳性对照：造一个已知答案的最小 b3dm
+                                           # （真隐患 3 / 退化 2 / 合计 5），用来证明上面那把尺子
+                                           # 不是恒返回 0；配 --rel 1e12、--eps 1e12 验单调
+node scripts/zero_normal_tile_class.js <数据集目录>
+                                           # A-43 取证：含零法线的瓦片对上 report 的
+                                           # isProxy/isLeaf/aggregate/errorStatus——面积分档
+                                           # 回答不了"是谁产生的"，这一条才能
 node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm> [--top 12]
                                            # A-41 验收：i3dm 特征表 POSITION 是否落盘、逐条对得上
                                            # inverse(原型世界)·实例世界 的 (x,-z,y) 置换（**不是**
@@ -268,15 +280,24 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    中盘与终盘独立扫描（自定义脚本，与 `b3dm_attr_probe.js` 同解析、100 % 覆盖，
    1057 文件 / 2202 primitive）：**A-38 污染字节 0 命中、非有限坐标 0、量级离散 0、
    声明 accessor min/max 与实数据逐 primitive 全等**——即这份产物**没有** A-38 签名；
-   但有 **195 条被索引引用的零长度 NORMAL**（分布在 19 个文件，常以连续 3 顶点成组，
-   如 `mesh0 v24/v25/v26`），按三角形面积分档：退化三角形 140～159 条、
-   真实面积 36～55 条（阈值随尺度在 1e-8～1e-9 之间摆动，判别力弱，见
-   `scripts/zero_normal_triage.js`）。官方 validator 会**逐条**报 `is not of unit length: 0`。
+   但有 **195 条被索引引用的零长度 NORMAL**（分布在 **26 个**瓦片，常以连续 3 顶点成组，
+   如 `mesh0 v24/v25/v26`）。**口径注**：26 数的是"图元里含零法线的文件"；"真隐患"（落在
+   非退化三角形上）那 55 条涉及 **19 个**文件。此前记录的"19 个文件"与本次 26 不是同一口径，
+   未回溯确认它当年按哪一档数。定级已单独立项为 **A-43**：本轮把 `scripts/zero_normal_triage.js`
+   的主判据从绝对面积阈值（1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，判别力不足）改成
+   `面积 > REL × 该 primitive 中位面积`，绝对阈值降为对照列，并用新增的
+   `scripts/make_zero_norm_fixture.js`（已知答案：真隐患 3 / 退化 2）做阳性对照。
+   重扫同一份 v15：**退化 140 / 非退化 55**；按瓦片类别关联 report 后
+   **代理 134 / `EXACT_LEAF` 叶瓦片 61 / 聚合代理 24**——4 个叶瓦片各 3 条全落在非退化三角形上，
+   所以**不是简化器独有的**；值确定且跨 LOD 同签名，所以**不像 A-38 那一族**。
+   源侧还是写出侧，要等能不动构建就能判别的口子（见 A-43 的实验设计）。
+   官方 validator 会**逐条**报 `is not of unit length: 0`。
    **仍未做**：官方 validator 逐资产跑一遍、A-33 口径的 i3dm 展开三角形核对、
    `aggregateProxies` 复核，再写进 §6.2/PERFORMANCE。
    **已完成并有结论的一项**：A-41 对这份产物的影响评估 = **全废**。`scripts/i3dm_pose_check.js`
    实测 126/126 个 i3dm 瓦片 POSITION 全 0、1787 条实例位姿 0 命中、原型 `|v|` 被累乘到
-   1.22e8 m；这份产物作为"可发布数据集"已经不成立，下面两项待办只对**修复后的 v16** 有意义。
+   1.22e8 m；这份产物作为"可发布数据集"已经不成立，上面几项待办只对**修复后的 v17** 有意义
+   （v16 在写出阶段终止，盘上没有 `tileset.json`，见 A-41 记录）。
 5. **A-41（本轮新发现，阻断级）已修，但分两段生效**（flatten 掩码 exe 22:40 / 相对帧 exe 23:53）：
    i3dm 的**每实例位姿全部丢失**，原型几何被同组
    N 个实例矩阵**就地累乘**。`ProductionPipeline.cpp:963-972` 让 N 个 `MatrixTransform`

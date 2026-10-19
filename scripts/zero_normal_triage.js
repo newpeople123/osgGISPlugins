@@ -2,11 +2,15 @@
 //
 // 官方 3d-tiles-validator 只报 `is not of unit length: 0`，不告诉你那个面是不是退化的，
 // 所以单看条数无法判断严重性。这里按三角形面积把每个零长度法线归类：
-//   - 只出现在面积≈0 的三角形上 -> DEGENERATE（良性，简化器留下的退化面）
-//   - 出现在任一面积>0 的三角形上 -> REAL-AREA（真隐患，法线本该算得出）
-// 面积用两条边叉积的模（= 平行四边形面积，2× 三角形面积），阈值 1e-9。
+//   - 只落在退化三角形上     -> 良性（常见来源：简化器留下的退化面）
+//   - 落在任一非退化三角形上 -> 真隐患（法线本该算得出）
+// "退化"给两个判据：**主判据**是面积 > REL × 该 primitive 自身的中位面积（尺度无关，
+// 默认 REL=1e-6）；**对照**是旧的绝对阈值 EPS（默认 1e-9）。两者都打印，因为绝对阈值
+// 跨尺度会翻转结论：lugouqiao_v15 那批在 1e-8～1e-9 之间摆动时，"真隐患"一档给过
+// 36～55 条、"退化"一档给过 140～159 条（两档合计恒为 195），判别力不足以定级。
+// 面积用两条边叉积的模（= 平行四边形面积，2× 三角形面积）。
 //
-// 用法: node scripts/zero_normal_triage.js <数据集目录|文件> [--eps 1e-9]
+// 用法: node scripts/zero_normal_triage.js <数据集目录|文件> [...] [--eps 1e-9] [--rel 1e-6]
 const fs = require('fs');
 const path = require('path');
 
@@ -51,10 +55,12 @@ function indexList(buf, binOff, json, acc) {
 
 const epsArg = process.argv.indexOf('--eps');
 const EPS = epsArg > 0 ? Number(process.argv[epsArg + 1]) : 1e-9;
+const relArg = process.argv.indexOf('--rel');
+const REL = relArg > 0 ? Number(process.argv[relArg + 1]) : 1e-6;
 const files = [];
 for (const a of process.argv.slice(2)) {
-    if (a === '--eps') { continue; }
-    if (/^[0-9.e-]+$/.test(a)) { continue; }        // --eps 的值
+    if (a === '--eps' || a === '--rel') { continue; }
+    if (/^[0-9.e-]+$/.test(a)) { continue; }        // 选项的值
     if (!fs.existsSync(a)) { console.log('missing: ' + a); continue; }
     if (fs.statSync(a).isDirectory()) {
         const dir = fs.existsSync(path.join(a, 'tiles')) ? path.join(a, 'tiles') : a;
@@ -64,13 +70,14 @@ for (const a of process.argv.slice(2)) {
     } else { files.push(a); }
 }
 if (!files.length) {
-    console.log('usage: node scripts/zero_normal_triage.js <datasetDir|file> [...] [--eps 1e-9]');
+    console.log('usage: node scripts/zero_normal_triage.js <datasetDir|file> [...] [--eps 1e-9] [--rel 1e-6]');
     process.exit(2);
 }
 
-let nZero = 0, degenerate = 0, realArea = 0, noIndex = 0;
+let nZero = 0, relDeg = 0, relReal = 0, absDeg = 0, absReal = 0, noIndex = 0;
 const byFile = new Map();
 const byVertex = new Map();
+const byPrim = [];
 
 for (const file of files) {
     const buf = fs.readFileSync(file);
@@ -101,27 +108,43 @@ for (const file of files) {
                     const b = pBase + i * pStride;
                     return [buf.readFloatLE(b), buf.readFloatLE(b + 4), buf.readFloatLE(b + 8)];
                 };
-                const onRealAreaTri = new Set();
+                const tris = [];
                 for (let i = 0; i + 2 < idx.length; i += 3) {
-                    const a = P(idx[i]), c = P(idx[i + 1]), e = P(idx[i + 2]);
-                    const u = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-                    const v = [e[0] - a[0], e[1] - a[1], e[2] - a[2]];
-                    const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-                    if (Math.hypot(cr[0], cr[1], cr[2]) > EPS) {
-                        onRealAreaTri.add(idx[i]); onRealAreaTri.add(idx[i + 1]); onRealAreaTri.add(idx[i + 2]);
-                    }
+                    const v = [idx[i], idx[i + 1], idx[i + 2]];
+                    const p0 = P(v[0]), p1 = P(v[1]), p2 = P(v[2]);
+                    const u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+                    const w = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+                    const cr = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+                    tris.push({ v, area: Math.hypot(cr[0], cr[1], cr[2]) });
                 }
+                // 面积用叉积模（= 2× 三角形面积）。中位面积给"退化"定一个与本
+                // primitive 尺度相符的相对阈值：绝对阈值跨尺度没有判别力，同一批
+                // 产物在 1e-8 / 1e-9 之间会给出完全不同的结论（实测过）。
+                const areasSorted = tris.map((x) => x.area).sort((x, y) => x - y);
+                const medArea = areasSorted.length ? areasSorted[areasSorted.length >> 1] : 0;
+                const maxArea = areasSorted.length ? areasSorted[areasSorted.length - 1] : 0;
+                const onRealTri = (test) => {
+                    const s = new Set();
+                    for (const a of tris) { if (test(a.area)) { s.add(a.v[0]); s.add(a.v[1]); s.add(a.v[2]); } }
+                    return s;
+                };
+                const relSet = onRealTri((ar) => ar > REL * medArea);
+                const absSet = onRealTri((ar) => ar > EPS);
                 for (const z of zeros) {
                     nZero++;
                     if (!idx.length) { noIndex++; continue; }      // DrawArrays：无从归属
-                    if (onRealAreaTri.has(z)) {
-                        realArea++;
-                        const rel = path.basename(file);
-                        byFile.set(rel, (byFile.get(rel) || 0) + 1);
-                        const key = 'mesh' + meshIdx + ' v' + z;
-                        byVertex.set(key, (byVertex.get(key) || 0) + 1);
-                    } else {
-                        degenerate++;
+                    const rel = relSet.has(z), abs = absSet.has(z);
+                    if (rel) { relReal++; } else { relDeg++; }
+                    if (abs) { absReal++; } else { absDeg++; }
+                    if (rel || abs) {
+                        const name = path.basename(file);
+                        if (rel) {
+                            byFile.set(name, (byFile.get(name) || 0) + 1);
+                            const key = 'mesh' + meshIdx + ' v' + z;
+                            byVertex.set(key, (byVertex.get(key) || 0) + 1);
+                        }
+                        byPrim.push({ name, mesh: meshIdx, z, medArea, maxArea,
+                                      rel, abs, primTris: tris.length, primVerts: zeros.length });
                     }
                 }
             }
@@ -130,14 +153,26 @@ for (const file of files) {
     });
 }
 
-console.log('files=' + files.length + '  eps=' + EPS.toExponential(0));
+console.log('files=' + files.length + '  rel=' + REL.toExponential(0)
+    + '×本 primitive 中位面积  eps(abs)=' + EPS.toExponential(0));
 console.log('零长度 NORMAL 顶点 = ' + nZero);
-console.log('  只出现在退化(面积≈0)三角形上 = ' + degenerate + '   -> 良性');
-console.log('  出现在某个非退化三角形上     = ' + realArea + '   -> 真隐患（法线本该算得出）');
+console.log('  [主判据·相对中位面积] 只落在退化三角形 = ' + relDeg
+    + ' | 落在非退化三角形 = ' + relReal + '   -> 后者是真隐患（法线本该算得出）');
+console.log('  [对照·绝对面积阈值]   只落在退化三角形 = ' + absDeg + ' | 非退化 = ' + absReal);
 console.log('  无索引图元(DrawArrays)无法归属 = ' + noIndex);
-if (byFile.size) {
-    console.log('受影响文件 ' + byFile.size + ' 个:');
-    for (const [k, v] of [...byFile].sort((a, b) => b[1] - a[1]).slice(0, 20)) { console.log('  ' + k + ': ' + v); }
-    console.log('顶点签名（按出现次数）:');
+if (byPrim.length) {
+    const uniq = new Map();
+    for (const p of byPrim) {
+        const k = p.name + '#mesh' + p.mesh;
+        if (!uniq.has(k)) { uniq.set(k, { z: 0, p }); }
+        const e = uniq.get(k); e.z++;
+    }
+    console.log('真隐患涉及文件 ' + byFile.size + ' 个、primitive ' + uniq.size + ' 个（按主判据）:');
+    for (const [k, v] of [...uniq].slice(0, 12)) {
+        console.log('  ' + k + '  零法线顶点=' + v.z + '  该图元三角形=' + v.p.primTris
+            + '  中位面积=' + v.p.medArea.toExponential(2) + '  最大面积=' + v.p.maxArea.toExponential(2)
+            + '  绝对阈值下' + (v.p.abs ? '同样命中' : '判为退化'));
+    }
+    console.log('顶点签名（相对判据，按出现次数）:');
     for (const [k, v] of [...byVertex].sort((a, b) => b[1] - a[1]).slice(0, 15)) { console.log('  ' + k + ' x' + v); }
 }

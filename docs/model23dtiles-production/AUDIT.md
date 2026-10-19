@@ -53,6 +53,7 @@
 
 | A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` / `buildInstanceTree` | FIXED（两段分开修：flatten 掩码 22:40 生效；"相对原型"那半在 22:40 是**空操作**——`pw.invert(invProto)` 把方向写反，23:53 才真正生效。验收口径同时从"命中绝对平移"改到相对帧。v15/v16 与所有 22:40 产物一律作废） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
 | A-42 | 发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` **分发出去**：lugouqiao_v15 实测 **691/1057** 个瓦片带 `F:/wb_3dtiles_out/lugouqiao_v15\textures\…`）；FBX 导入器用源文件绝对路径命名根节点，顺着 `nodePath` 进 `feature-manifest.json`（同数据集 **2729** 处 `D:/BaiduNetdiskDownload/…fbx/…`）。副作用更难查：name 进 GLB JSON chunk → 同一输入、同一代码，t12 的 `t0.b3dm` 在不同输出目录下出现过 510432/510440/510344/510304/510296 五个尺寸，**以前把这类差异算成 A-40 的噪声** | `Osg2Gltf.cpp::getTexture` + `SourceModel.cpp::SourceModelVisitor::apply(Node&)` | FIXED（exe 00:12 + 插件 00:16：两处只留文件名；`path_leak_scan.js` 复扫 `matrix_a42fix` **0/213 瓦片、0/36 json**；两个长度差 40 字符的目录产出 sha256 相同；`test_production` 150/150。**`osgdb_gltf` 是 MODULE 插件，按目标构建不会重建它**） | —（手册未列：交付物含本地路径） | 中（分发物带操作者目录结构；并污染"逐字节可复现"这一验收口径） |
+| A-43 | 产物里有零长度 NORMAL：`lugouqiao_v15` 实测 **195 个顶点 / 26 个瓦片**，其中 **55 个落在非退化三角形上**（法线本该算得出）。旧判据用绝对面积阈值，1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，无法定级 | FBX 导入器的源法线 **或** `Osg2Gltf`/`GltfOptimizer` 的 NORMAL 写出通路（未定，判别要动构建） | OPEN（本轮补齐尺子：主判据改尺度相对 `REL×中位面积`、绝对阈值降为对照列，`make_zero_norm_fixture.js` 做阳性对照；已排除"简化器独有"（4 个 `EXACT_LEAF` 瓦片各 3 条全在非退化面上）与"A-38 同族"（值确定、跨 LOD 同签名）；源侧结论待 `WB_DUMP_SOURCE` 或 v17 复扫） | —（手册未列：非单位法线） | 待定（低～中：可渲染，局部 shading 异常 + validator 逐条告警；不建议按"拒绝发布"处理） |
 
 ---
 
@@ -1122,3 +1123,55 @@ osg::Texture 文件名，不是 GLB 里的 `name`）不受影响，且全仓没�
 不在 `model23dtiles` 的依赖图里。第一次只 `--target model23dtiles test_production` 构建，
 `Release/osgdb_gltf.dll` 还停在 22:14，重跑 t12 得到"泄漏没变"，几乎把已修好的代码判成没修。
 插件目录共四个：`osgdb_gltf` / `osgdb_fbx` / `osgdb_ktx` / `osgdb_webp`。
+
+---
+
+### A-43 产物里有零长度 NORMAL，一部分落在非退化三角形上　**OPEN（判据与证据本轮补齐，定级待源侧结论）**
+
+**现象**：官方 3D Tiles validator 会对每条这样的法线报 `is not of unit length: 0`，
+但不告诉调用方那个三角形是不是退化的，所以"报了多少条"本身没有严重性信息。
+`lugouqiao_v15` 实测 **195 个零长度 NORMAL 顶点，分布在 26 个瓦片**（1057 个分发文件，≈2.5 %）。
+旧判据（面积 > 绝对阈值 1e-9 才算非退化）**没有判别力**：阈值在 1e-8 ↔ 1e-9 之间摆动时
+"真隐患"一档在 36 与 55 之间跳，据此无法定级——这是本轮开这条审计项的直接原因。
+
+**先把尺子修对（本轮只改测量，没动生产代码）**：
+- `scripts/zero_normal_triage.js` 的**主判据**改成尺度无关的相对阈值
+  `面积 > REL × 该 primitive 自身的中位面积`（默认 `--rel 1e-6`）；绝对阈值 `--eps` 降级为
+  **对照列**，两档同时打印，翻转时一眼能看见。
+- **阳性对照**（新增 `scripts/make_zero_norm_fixture.js`，生成一个两图元最小 b3dm：
+  一个面积 100 的三角形三条法线全零 + 一个面积为 0 的退化三角形两条法线全零）：
+  实测 `零法线 5 / 主判据真隐患 3 / 退化 2`，且 `--rel 1e12` → 真隐患 **0**、
+  `--eps 1e12` → 对照档 **0**（两判据互相独立、随阈值单调）。
+  **没有这个对照之前，"0 条"完全可能只是判据写坏了恒返回 false。**
+- 反向确认：矩阵 12 个资产 + `longxiang_a42` 全部 **0 条**——合成资产不产生这个形态。
+
+**实测分档**（`lugouqiao_v15` 全量 1057 文件，扫一遍 2.1 s）：
+
+| 口径 | 结果 |
+|---|---|
+| 按三角形面积（主判据） | 退化 **140** / 非退化 **55**（这 55 条涉及 **19 个**文件；注意口径：26 = 含任何零法线的文件，19 = 含"真隐患"零法线的文件。旧记录写的"19 个文件"未回溯确认按哪一档）；绝对阈值 `--eps 1e-9` 档给出**同样的 140/55**（这份资产的尺度刚好让 1e-9 够用） |
+| 按瓦片类别（关联 `conversion-report.json`） | 代理瓦片 **134** / `EXACT_LEAF` 叶瓦片 **61** / 聚合代理 **24** |
+| 顶点签名 | `mesh0 v24/v25/v26` 在 **6 个**瓦片里以同样下标重复出现（同一份原型几何被多个 LOD 复用） |
+
+**证据**：`docs/model23dtiles-production/evidence/zero_normals-lugouqiao_v15.txt`
+（顶部就是复现命令，内含阳性对照、阈值单调性、v15 全量分档与逐文件类别）。
+类别关联用新脚本 `scripts/zero_normal_tile_class.js <数据集目录>`，
+它把含零法线的瓦片与 `conversion-report.json` 的 `isProxy`/`isLeaf`/`aggregate`/`errorStatus` 对上。
+
+**已排除**：
+- **不是简化器独有的**：`t162`/`t166`/`t699`/`t716` 是 `EXACT_LEAF`（未经简化的源几何拷贝），
+  各自 3 条零法线**全部落在非退化三角形上**，简化路径根本没碰过它们。
+- **不像 A-38 那一族**：A-38 的形态是"槽里装着别的数据、值随分配器状态变"；这里是干净的 0，
+  并且**跨瓦片、跨 LOD 完全确定**（同一 `v24/v25/v26` 签名在 6 个文件里逐字对得上）。
+
+**待定级的原因（不是偷懒）**：剩下两条候选——① FBX 导入器（smoothing group 本来就给 0 法线，
+管线只是忠实透传）；② OSG→glTF 的 NORMAL 写出通路（`Osg2Gltf`/`GltfOptimizer`，
+属 A-38/A-39 排查过的同一带）。判别需要能读到**源侧**法线的口子，而两条都要动构建，
+`lugouqiao_v17` 正在跑（构建会撞 post-build 拷贝，MSB3073），本轮不做。实验设计：
+① 加 `WB_DUMP_SOURCE` 把加载后的源 POSITION/NORMAL/索引落盘，逐条对上这 55 个顶点；
+② 或在 v17 上复扫——若仍是 195 条、同样的 `v24/v25/v26` 签名，再排除一次随机性。
+
+**处置倾向（未动手，理由先记）**：源侧带的 0 法线**不该触发拒绝发布**——数据可渲染，
+只是那几面光照异常，且 validator 只会逐条告警；但也不该原样交付。候选修法是在写出时把
+零长度法线按**邻接非退化三角形的面积加权平均**重算。要先拿到 ① 的结论，才决定改写出侧
+还是导入侧，否则可能把源数据的锅修在错误的层上。

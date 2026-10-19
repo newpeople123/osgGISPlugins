@@ -1,0 +1,111 @@
+# A-43 零长度 NORMAL 分档实测（2026-10-20 01:25）
+# 复现命令（全部用仓库内脚本，无需临时件）：
+#   node scripts/make_zero_norm_fixture.js %TEMP%/zn.b3dm && node scripts/zero_normal_triage.js %TEMP%/zn.b3dm
+#   node scripts/zero_normal_triage.js F:/wb_3dtiles_out/lugouqiao_v15
+#   node scripts/zero_normal_tile_class.js F:/wb_3dtiles_out/lugouqiao_v15
+
+## 1. 阳性对照（已知答案：零法线 5 / 真隐患 3 / 退化 2）
+files=1  rel=1e-6×本 primitive 中位面积  eps(abs)=1e-9
+零长度 NORMAL 顶点 = 5
+  [主判据·相对中位面积] 只落在退化三角形 = 2 | 落在非退化三角形 = 3   -> 后者是真隐患（法线本该算得出）
+  [对照·绝对面积阈值]   只落在退化三角形 = 2 | 非退化 = 3
+  无索引图元(DrawArrays)无法归属 = 0
+真隐患涉及文件 1 个、primitive 1 个（按主判据）:
+  zn_ctl.b3dm#mesh0  零法线顶点=3  该图元三角形=1  中位面积=1.00e+2  最大面积=1.00e+2  绝对阈值下同样命中
+顶点签名（相对判据，按出现次数）:
+  mesh0 v0 x1
+  mesh0 v1 x1
+  mesh0 v2 x1
+
+## 2. 阈值单调性（证明两判据互相独立、不是恒阳）
+[--rel 1e12 -> 主判据档归零]
+  [主判据·相对中位面积] 只落在退化三角形 = 5 | 落在非退化三角形 = 0   -> 后者是真隐患（法线本该算得出）
+  [对照·绝对面积阈值]   只落在退化三角形 = 2 | 非退化 = 3
+[--eps 1e12 -> 对照档归零，主判据不动]
+  [对照·绝对面积阈值]   只落在退化三角形 = 5 | 非退化 = 0
+  无索引图元(DrawArrays)无法归属 = 0
+
+## 3. 反向确认：合成资产与 longxiang_a42 均 0 条
+零长度 NORMAL 顶点 = 0
+  [主判据·相对中位面积] 只落在退化三角形 = 0 | 落在非退化三角形 = 0   -> 后者是真隐患（法线本该算得出）
+  [对照·绝对面积阈值]   只落在退化三角形 = 0 | 非退化 = 0
+  无索引图元(DrawArrays)无法归属 = 0
+零长度 NORMAL 顶点 = 0
+  [主判据·相对中位面积] 只落在退化三角形 = 0 | 落在非退化三角形 = 0   -> 后者是真隐患（法线本该算得出）
+  [对照·绝对面积阈值]   只落在退化三角形 = 0 | 非退化 = 0
+  无索引图元(DrawArrays)无法归属 = 0
+
+## 4. lugouqiao_v15 全量 1057 分发文件
+files=1057  rel=1e-6×本 primitive 中位面积  eps(abs)=1e-9
+零长度 NORMAL 顶点 = 195
+  [主判据·相对中位面积] 只落在退化三角形 = 140 | 落在非退化三角形 = 55   -> 后者是真隐患（法线本该算得出）
+  [对照·绝对面积阈值]   只落在退化三角形 = 140 | 非退化 = 55
+  无索引图元(DrawArrays)无法归属 = 0
+真隐患涉及文件 19 个、primitive 19 个（按主判据）:
+  i952.i3dm#mesh0  零法线顶点=3  该图元三角形=4818  中位面积=6.47e-5  最大面积=7.85e-1  绝对阈值下同样命中
+  i956.i3dm#mesh0  零法线顶点=3  该图元三角形=4818  中位面积=6.55e-5  最大面积=7.85e-1  绝对阈值下同样命中
+  i957.i3dm#mesh0  零法线顶点=3  该图元三角形=4818  中位面积=6.53e-5  最大面积=7.85e-1  绝对阈值下同样命中
+  t126.b3dm#mesh0  零法线顶点=2  该图元三角形=28017  中位面积=5.37e-5  最大面积=1.52e+5  绝对阈值下同样命中
+  t141.b3dm#mesh0  零法线顶点=2  该图元三角形=29954  中位面积=3.57e-4  最大面积=7.10e+3  绝对阈值下同样命中
+  t158.b3dm#mesh0  零法线顶点=3  该图元三角形=29288  中位面积=1.78e-5  最大面积=1.60e+1  绝对阈值下同样命中
+  t160.b3dm#mesh0  零法线顶点=3  该图元三角形=21736  中位面积=2.51e-6  最大面积=1.24e+0  绝对阈值下同样命中
+  t162.b3dm#mesh0  零法线顶点=3  该图元三角形=4818  中位面积=6.46e-5  最大面积=7.85e-1  绝对阈值下同样命中
+  t163.b3dm#mesh0  零法线顶点=3  该图元三角形=22608  中位面积=7.21e-6  最大面积=1.60e+1  绝对阈值下同样命中
+  t164.b3dm#mesh0  零法线顶点=3  该图元三角形=9024  中位面积=2.23e-4  最大面积=1.60e+1  绝对阈值下同样命中
+  t166.b3dm#mesh0  零法线顶点=3  该图元三角形=4818  中位面积=6.46e-5  最大面积=7.85e-1  绝对阈值下同样命中
+  t685.b3dm#mesh0  零法线顶点=3  该图元三角形=25730  中位面积=1.81e-4  最大面积=6.18e+0  绝对阈值下同样命中
+顶点签名（相对判据，按出现次数）:
+  mesh0 v24 x6
+  mesh0 v25 x6
+  mesh0 v26 x6
+  mesh0 v960 x2
+  mesh0 v961 x2
+  mesh0 v962 x2
+  mesh0 v1664 x1
+  mesh0 v1665 x1
+  mesh0 v184 x1
+  mesh0 v2881 x1
+  mesh0 v2554 x1
+  mesh0 v2555 x1
+  mesh0 v2556 x1
+  mesh0 v14481 x1
+  mesh0 v14482 x1
+
+## 5. 按瓦片类别关联 conversion-report.json
+| file | 零法线 | isProxy | isLeaf | aggregate | triangles | errorStatus |
+| t0.b3dm | 20 | true | false | true | 5278 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t551.b3dm | 20 | true | false | false | 12776 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t552.b3dm | 20 | true | false | false | 8380 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t553.b3dm | 20 | false | true | false | 2176 | EXACT_LEAF |
+| t57.b3dm | 20 | true | false | false | 31796 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t69.b3dm | 20 | true | false | false | 24528 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t70.b3dm | 20 | false | true | false | 3370 | EXACT_LEAF |
+| i952.i3dm | 3 | false | true | false | 9636 | NOT_EVALUATED |
+| i956.i3dm | 3 | false | true | false | 115632 | NOT_EVALUATED |
+| i957.i3dm | 3 | false | true | false | 19272 | NOT_EVALUATED |
+| t158.b3dm | 3 | true | false | false | 29288 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t160.b3dm | 3 | true | false | false | 21736 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t162.b3dm | 3 | false | true | false | 9870 | EXACT_LEAF |
+| t163.b3dm | 3 | true | false | false | 22608 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t164.b3dm | 3 | true | false | false | 9024 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t166.b3dm | 3 | false | true | false | 6144 | EXACT_LEAF |
+| t685.b3dm | 3 | true | false | false | 25730 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t697.b3dm | 3 | true | false | false | 16206 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t698.b3dm | 3 | true | false | false | 13456 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t699.b3dm | 3 | false | true | false | 7652 | EXACT_LEAF |
+| t708.b3dm | 3 | true | false | false | 17743 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t709.b3dm | 3 | true | false | false | 13668 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t710.b3dm | 3 | true | false | false | 7174 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t716.b3dm | 3 | false | true | false | 5918 | EXACT_LEAF |
+| t126.b3dm | 2 | true | false | true | 28017 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+| t141.b3dm | 2 | true | false | true | 29954 | CERTIFIED_BOUND_WITHIN_TOLERANCE |
+
+files=26  zeros=195  代理瓦片=134  叶瓦片=61  聚合代理=24  report 未标=0
+
+## 6. 六个 EXACT_LEAF 叶瓦片逐文件（未经简化的源几何；t553/t70 全在退化档，t162/t166/t699/t716 全在非退化档）
+t553     [主判据·相对中位面积] 只落在退化三角形 = 20 | 落在非退化三角形 = 0   -> 后者是真隐患（法线本该算得出）
+t70      [主判据·相对中位面积] 只落在退化三角形 = 20 | 落在非退化三角形 = 0   -> 后者是真隐患（法线本该算得出）
+t162     [主判据·相对中位面积] 只落在退化三角形 = 0 | 落在非退化三角形 = 3   -> 后者是真隐患（法线本该算得出）
+t166     [主判据·相对中位面积] 只落在退化三角形 = 0 | 落在非退化三角形 = 3   -> 后者是真隐患（法线本该算得出）
+t699     [主判据·相对中位面积] 只落在退化三角形 = 0 | 落在非退化三角形 = 3   -> 后者是真隐患（法线本该算得出）
+t716     [主判据·相对中位面积] 只落在退化三角形 = 0 | 落在非退化三角形 = 3   -> 后者是真隐患（法线本该算得出）
