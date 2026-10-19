@@ -1,0 +1,23 @@
+
+| dataset | 父不覆盖子 | NaN box | 负半轴 | 非法 geometricError | 示例(深度/轴/超出) |
+|---|---|---|---|---|---|
+| cmpt_probe | 0 | 0 | 0 | 0 | - |
+| longxiang | 0 | 0 | 0 | 0 | - |
+| longxiang_covfix | 0 | 0 | 0 | 0 | - |
+| longxiang_par | 0 | 0 | 0 | 0 | - |
+| repro_strip_t12 | 0 | 0 | 0 | 0 | - |
+| wuhu_v1 | 0 | 0 | 0 | 0 | - |
+| t01_plane_curved | 0 | 0 | 0 | 0 | - |
+| t02_thin_features | 0 | 0 | 0 | 0 | - |
+| t03_giant_single_mesh | 0 | 0 | 0 | 0 | - |
+| t04_many_objects | 0 | 0 | 0 | 0 | - |
+| t05_instances | 0 | 0 | 0 | 0 | - |
+| t06_nonuniform | 0 | 0 | 0 | 0 | - |
+| t07_zero_axis | 0 | 0 | 0 | 0 | - |
+| t08_big_coords | 0 | 0 | 0 | 0 | - |
+| t09_cross_tile_object | 0 | 0 | 0 | 0 | - |
+| t10_material_heavy | 0 | 0 | 0 | 0 | - |
+| t11_sparse_outlier | 0 | 0 | 0 | 0 | - |
+| t12_big_texture | 0 | 0 | 0 | 0 | - |
+
+datasets=18  父不覆盖子合计=0  有问题的数据集=0

@@ -37,6 +37,8 @@ node scripts/va_summary.js [sessionFilter] # 汇总 runs/*/summary.json（帧数
 node scripts/va_paths.js [sessionFilter]  # 逐相机路径明细（空洞/判不了/cameraFinite=false）
 node scripts/check_manifest_assertions.js <数据集|容器目录> [...]
                                            # report ↔ manifest ↔ tileset 三文件一致性断言
+node scripts/tileset_bounds.js <数据集|容器目录> [...]
+                                           # 回扫 tileset.json：NaN/负半轴/非法 geometricError/父盒覆盖子盒
 node scripts/check_page_js.js docs/visual-acceptance/index.html
                                            # 改页面后先做内联 script 语法校验
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]

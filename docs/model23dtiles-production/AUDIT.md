@@ -42,9 +42,13 @@
 | A-30 | 代理预算把纹理字节当硬约束，纹理密集模型的聚合 fallback 永不收敛 | `ProxyMeshBuilder.cpp::build` | FIXED（真实 FBX 复现） | 7.3/10.2 | 高 |
 | A-31 | 远景代理建不出达标几何时判整批失败，大模型永远无法发布 | `ProductionPipeline.cpp:692` | FIXED | 7.3/14.17 | 高 |
 | A-32 | 手册 §3 的"树深 ≤ 48"只是报告值，发布闸不检查 | `ProductionPipeline.cpp::selfValidate` | FIXED | 3/17 | 中 |
-| A-33 | i3dm 实例瓦片不做三角形预算：块大小只按实例个数切，超限瓦片静默入库 | `ProductionPipeline.cpp::buildInstanceTree:903-950` | FIXED（真实 FBX 复现） | 3/7.3/17 | 高 |
-| A-34 | `manifest.aggregateProxies` 恒为空：代理 ID → 源 feature 集合无可查通路，登记接口是死代码 | `ProductionPipeline.cpp::writeManifest:1277-1296` | FIXED | 8.1/17 | 高 |
+| A-33 | i3dm 实例瓦片不做三角形预算：块大小只按实例个数切，超限瓦片静默入库 | `ProductionPipeline.cpp::buildInstanceTree:903-1015` | FIXED（真实 FBX 复现） | 3/7.3/17 | 高 |
+| A-34 | `manifest.aggregateProxies` 恒为空：代理 ID → 源 feature 集合无可查通路，登记接口是死代码 | `ProductionPipeline.cpp::writeManifest:1277-1300` | FIXED | 8.1/17 | 高 |
 | A-35 | `report.manifestOccurrences` 与 `manifest.occurrenceCount` 两套定义，同一数据集两个数 | `TileFeatureMapper.cpp::sourceOccurrenceCount:45` | FIXED | 8.1/17 | 中 |
+| A-36 | `boxJson` 把 NaN 半轴折成 0、未初始化包围盒折成全零盒：坏 bounds 被"洗白"成 schema 合法的 tileset，发布闸不看 bounds | `ProductionPipeline.cpp::boxJson:180-199` | CLOSED（发布闸 + `bounds` 单测） | 12.1/17 | 高 |
+| A-37 | "父包围盒覆盖子包围盒"只在历史 bug 注释里提过，代码里没有任何检查点（当年靠外部回扫发现） | `ProductionPipeline.cpp::selfValidate` | CLOSED（发布闸 + 逐轴越界单测 + 18 数据集回扫） | 12.1/17 | 中 |
+| A-38 | 产物里偶发单个荒谬顶点（矩阵 t02：X=6.555e10 / Z=4.474e27），源模型里没有、44 次复跑不复现；有限性与父覆盖子都拦不住（父盒同样被污染） | `ProductionPipeline.cpp::selfValidate` 2b | OPEN（根因未定位）+ CLOSED（发布闸改为拒绝出盘） | 12.1/17 | 高 |
+| A-39 | `ProxyMeshBuilder::appendElements` 用**源**数组类型 `static_cast` **目标**数组，属性类型不一致时按错误步长写（堆越界） | `ProxyMeshBuilder.cpp::appendElements` | CLOSED（显式拒绝 dst/src 类型不一致；实测现存分组不会触发，属加固） | 5.3 | 中 |
 
 ---
 
@@ -594,6 +598,121 @@ longxiang 的 11 个聚合瓦片全部缺 `aggregateProxies` 条目，t03 缺 3 
 **复验工具**：同一个脚本的第 1 条断言就是 `report.manifestOccurrences ==
 manifest.occurrenceCount`；修复前 longxiang 实测 623 / 571 不一致
 （`evidence/assertions-before-a34.txt`）。
+
+---
+
+### A-36 `boxJson` 把 NaN / 未初始化包围盒折成零，坏 bounds 能"洗白"出盘　**CLOSED**
+`ProductionPipeline::boxJson` / `selfValidate` 1b
+
+手册 17 节把"NaN bounds 为零"列为验收门槛，但当时发布链路上**没有任何一处**
+检查包围盒：`boxJson` 里 `std::max(0.0, nan)` 返回 `0.0`（`std::max` 的
+`a<b` 语义遇到 NaN 恒为 false），未初始化的 `osg::BoundingBox` 又整支返回
+12 个 0。也就是说源数据一旦出现非有限顶点，产物不会报错，而是得到一个
+**贴着原点的零尺寸盒**——JSON 完全合法、validator 也挑不出毛病，
+但 Cesium 拿它做视锥剔除会把整棵子树剔掉。
+
+**修复**：`selfValidate` 增补 1b——逐个瓦片检查序列化后的
+`boundingVolume.box` 12 个数全部有限、半轴非负、`geometricError` 是有限非负数，
+任一条不满足即拒绝发布（不是记 warning）。
+
+**测试**：`testPipelineBoundsGate`（`bounds`，12 条断言，
+`evidence/test_production-130.txt`）。这里有一条必须如实记下的边界：
+**JSON 表示不了非有限数**。`inf`/`NaN` 没有合法字面量，`1e999` 这类溢出在解析期
+就抛 `json.exception.out_of_range.406`（nlohmann 不折成 `inf`），反向 `dump()`
+把非有限 double 写成 `null`。所以管线内部的 NaN 到磁盘上只可能以 `null` 出现，
+用例断的是完整链条（NaN 半轴 → `null` → 发布闸拒绝），而 `std::isfinite`
+那几条在合成数据里无法被触发——它们防的是别的写入者（手写 tileset、上游工具）。
+第一版用例正是踩了这个坑：`is >> json` 抛出未捕获异常 → `terminate()` →
+进程静默消失，全量计数从 129 掉到 71，看起来像"用例互相干扰"。harness 现在
+逐用例 try/catch + `test_production_progress.txt`（有 `>> name` 没 `<< name`
+就是崩在中途），这类"少跑了但没人报错"再也不可能被读成绿灯。
+
+---
+
+### A-37 "父盒覆盖子盒"在代码里没有检查点　**CLOSED**
+`ProductionPipeline::selfValidate` 1b
+
+`boxJson` 的注释里写着历史 bug"t04/t05/t06/t08/t10/t11 都报过 child box not
+covered"（float 中心舍入让 `center-half` 与 `min` 差出 1e-5），修法是全程
+double。但**这条约束本身没有留在代码里**，只有注释——改回去也不会有任何检查
+失败。本轮把它写成发布闸：对每个父子对按三条轴检查
+`|Δcenter| + hChild <= hParent + eps`（eps 取父半轴的 1e-6 相对容差）。
+
+回扫工具 `node scripts/tileset_bounds.js <目录>` 对既有 **18 个数据集**实测
+父不覆盖子 0、NaN box 0、负半轴 0、非法 geometricError 0
+（`evidence/tileset_bounds-before-a37.txt`）。所以这不是修一个已经发生的缺陷，
+而是把该项从"只能靠外部工具回扫"变成"发布前自校验拦截"。
+
+> 记一句踩坑：这条检查第一次实现时把半轴下标写成 `b[4]`/`b[8]`（以为盒布局是
+> `cx,cy,cz` 后每轴 `center,half` 交替），合成夹具立刻报 23 条"父不覆盖子"。
+> 独立写的 node 回扫器对同一批真实产物报 0，才把根因定位到检查本身——
+> 盒布局是 `[cx,cy,cz, hx,0,0, 0,hy,0, 0,0,hz]`，半轴在 3/7/11。
+> 两个互相独立的实现对照，是这次没把一个假缺陷写进产品记录的原因。
+
+**测试**：同一 `bounds` 用例覆盖这条——三轴同时"紧贴"父盒内壁（等号情形，
+`eps` 不能太紧否则误伤）必须放行，X/Y/Z 各自单独越界必须拒绝且**报对轴号**。
+轴号断言是这条用例的主要价值：半轴下标写错时 Y/Z 的越界会被读成半轴 0 而
+静默放行，上面那个踩坑只有靠"逐轴单独越界 + 校验报出的轴号"才拦得住。
+
+---
+
+### A-38 偶发单个荒谬顶点：有限性/父子覆盖都放行，根因未定位　**根因 OPEN / 发布闸 CLOSED**
+`ProductionPipeline::selfValidate` 2b
+
+矩阵数据集 `t02_thin_features`（`runs/matrix_a34/`，源是 ±50 m 的薄片网格）
+一次运行产出 7 个瓦片，其中 **t0/t4/t6 三个**带同一个顶点，实测值三处完全一致：
+
+```
+b3dm POSITION accessor max = [6.555e+10, 5.000e+1, 4.474e+27]   （其余 4 个瓦片 max ≈ 45）
+tileset.json 根节点 geometricError = 5.825846101672932e+24      （正常应 ≈ 23 m）
+```
+
+也就是说这不是"精度差一点"，是一个被索引引用、数量级 1e27 的顶点，几何、包围盒、
+SSE 全部被它顶穿，而 JSON 依然 schema 合法、Cesium 只会表现成"远景永远在细化"。
+
+**A-36/A-37 的新闸拦不住它**：值是**有限**的；父盒和子盒是从同一份污染数据算出来的，
+"父覆盖子"照样成立。所以补 2b——每个有内容的瓦片，其 `contentBounds` 必须落在
+**源模型范围 ± 0.5×源对角线**内。放宽量给到源尺度的一半，是因为远景代理的顶点
+确实会被简化器移动；但任何真实输出都不可能被移动出源模型尺度这个量级
+（本例 6.555e10 vs 源 ±50 m + slack≈87 m，超出 8 个数量级）。
+
+**根因线索（本轮新测出，别丢掉）**：`tileset.json` 里同一批瓦片的盒在 X 轴是
+6.555e10，但 **Z 轴仍然是正常值**（根盒 Z max=5.000e+1，t4/t6 子盒 Z max=3.015e+1），
+而 b3dm 的 accessor 统计里 Z 是 4.474e27。两个污染分量出现在**不同阶段**：
+X 的那一份在包围盒计算之前就在，Z 的那一份是包围盒算完之后、序列化时才出现的。
+即"写盘用的 float 数组"和"算 bounds 用的数组"不是同一份状态。这把怀疑面从
+加载器/分区器收窄到**构建后期到 glTF 序列化之间**的数组生命周期。
+
+已排除（都做过实验，不是推测）：加载器的有限性守卫、`materialize` 出的新数组 +
+索引范围守卫、单线程分区（关掉并行仍然复现过一次）、`Simplifier` 的顶点重映射
+守卫。另记录一处**尚未触发**的隐患：`ProxyMeshBuilder::appendElements` 在
+`mergeGeometries` 里用 *源* 数组类型去 `static_cast` *目标* 数组，属性类型不同
+时会按错误步长写；本例 `aggregateProxyCount=0`，该路径没被走到，所以不能拿来
+当 A-38 的解释（但该 cast 本身应当修）。
+
+**证据边界（如实说）**：2b 目前**没有**合成单测——`contentBounds`/`_model.bounds`
+是私有构建期状态，测试没有注入点，为了"覆盖率高"而伪造一个能被触发的分支是没
+意义的。也没有复现样本可供端到端实测：同一夹具复跑 44 次全部干净。因此 2b 对
+本例的拦截是**按数值推演必然触发**（X 轴），不是实测记录。根因未定位前，这条
+按手册 14.17 的口径处理：宁可拒绝发布，不可出一个能过 validator 但不可渲染的数据集。
+
+---
+
+### A-39 `appendElements` 按源类型 cast 目标数组　**CLOSED（加固）**
+`ProxyMeshBuilder.cpp::appendElements:217`
+
+`mergeGeometries` 的合并分组靠 `AttrSig`（法线/UV/颜色/逐顶点属性的**类型**参与
+签名）保证同组属性类型一致，而 `appendElements` 只按 `src->getType()` 分支、
+把 `dst` 也按同一类型 `static_cast`。类型一旦不一致就按错误步长写 —— 那不是
+"属性丢了"，是堆越界写。
+
+现存调用链不会触发：位置走 `dynamic_cast<const osg::Vec3Array*>`（不匹配就跳过
+整个几何），其余属性的 dst 由 `cloneEmpty(group.front() 的同类数组)` 生成，签名
+又约束了类型一致。**所以 A-39 不是 A-38 的解释**，我把它单列是因为这类
+"前提写在另一个文件里"的 cast 迟早会被下一个调用方踩到。现在显式
+`dst->getType() != src->getType()` 就返回 false，调用方原有的
+`if (!appendElements(...)) { nrm = nullptr; }` 语义把它降级成"该属性不进合并
+几何"，是丢属性而不是写坏内存。
 
 ---
 

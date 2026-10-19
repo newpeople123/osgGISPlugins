@@ -91,16 +91,28 @@ bash scripts/wb_build.sh test_production
 ./Release/test_production.exe            # 全部
 ./Release/test_production.exe pipeline   # 只跑端到端覆盖用例
 ./Release/test_production.exe proxySkip  # 只跑远景代理降级 + 失败关闭用例
+./Release/test_production.exe bounds     # 只跑包围体发布闸用例
 ```
 
 **82/82 通过**（2026-10-19 12:16:54，HEAD `ee6499e` + A-31/A-32 工作树，
 `test_production_result.txt` 同步落盘，防退出阶段丢缓冲）：
 
-> 当前工作树（A-33 i3dm 三角形预算 + A-34/A-35 manifest 断言并入）实测
-> **118/118 通过**（2026-10-19 16:34，`bash scripts/wb_build.sh test_production
-> && ./Release/test_production.exe`；逐用例标题的完整日志落在
-> `evidence/test_production-118.txt`，`test_production_result.txt` 只有末行计数，
-> 它是 `tests/production/main.cpp:916` 自己 truncate 写的，别把 stdout 重定向到同名文件）。
+> 当前工作树（A-33 i3dm 三角形预算 + A-34/A-35 manifest 断言 + A-36/A-37 包围体
+> 发布闸单测并入）实测 **130/130 通过**（2026-10-19 17:51，
+> `bash scripts/wb_build.sh test_production && ./Release/test_production.exe`；
+> 逐用例标题与逐用例计数落在 `evidence/test_production-130.txt`，
+> `test_production_result.txt` 只有末行计数，它是 `tests/production/main.cpp`
+> 自己 truncate 写的，别把 stdout 重定向到同名文件）。
+> 上一档 118/118 的证据保留在 `evidence/test_production-118.txt`。
+>
+> **harness 的一次真 bug**：加进包围体用例后全量跑一度只报 71 条、后来干脆
+> 中途没输出。原因不是"用例互相干扰"，而是 `is >> json` 解析 `1e999` 会抛
+> `json.exception.out_of_range.406`（nlohmann 不把溢出折成 +inf），异常穿出用例
+> 函数 → `terminate()` → 进程直接没了，stdout 块缓冲的计数一起丢。现在 main 的
+> 每个用例外面包了 try/catch 并记 `TERMINATE` 兜底，另外逐用例进度写
+> `test_production_progress.txt`：**任何一条用例崩溃都会留下 `>> name` 而没有
+> `<< name`**，再也不会出现"少了几十条但没人报错"。用例本身改成 NaN→`null`
+> 的真实序列化路径（JSON 里根本没有 inf/NaN 字面量，见 AUDIT A-36）。
 > 新增的是 `testPipelineLeafCoverageInvariant` 里按 tileUri 反查聚合代理身份的一组断言，
 > 详见 AUDIT A-34「测试覆盖与变异测试」。
 - ProductionProfile 硬上限校验（超限抛异常）
@@ -129,6 +141,27 @@ bash scripts/wb_build.sh test_production
   `finalize()=false` 且不留 `tileset.json`。
   写盘后实测超限那条分支（会删除超限文件）是"估算达标但实测超限"的防御网，
   本用例命中的是构建期分支，没有为该文案伪造超限代理，见 AUDIT A-31 验证段。
+- **包围体发布闸**（A-36/A-37，`bounds`，12 条断言）：合成 4×4 网格只 `run()`
+  不 `finalize()`（暂存内容文件必须留在盘上，`selfValidate` 的 URI 检查才真实），
+  然后把临时 tileset 交给 `selfValidate` 逐条探针。覆盖：三轴同时紧贴父盒内壁
+  必须放行（`eps` 是 1e-6 相对容差，等号不能误伤）、X/Y/Z 各自单独越界必须**报对
+  轴号**、负半轴拒绝、NaN 半轴序列化后拒绝、几何合法时零命中。
+  探针只统计包围体类失败，否则 URI/预算/覆盖检查会把"闸有没有生效"淹成"总共
+  报了几条"。
+
+## 3b. 包围体发布闸的边界：JSON 装不下非有限值
+
+第一版用例想用 `[0,0,0,1e999,...]` 直接喂一个 +inf 半轴给 `selfValidate`，结果
+解析阶段就抛 `json.exception.out_of_range.406`。这不是闸的漏洞，是 JSON 的性质：
+
+- `inf`/`NaN` 没有合法字面量，`1e999` 这类溢出 nlohmann 直接抛异常，不折成 `inf`；
+- 反过来 `dump()` 会把非有限 double 写成 `null`。
+
+所以管线内部产生的 NaN/inf 到磁盘上只会以 `null` 出现，`readBox` 的
+`is_number()` 检查正好拦住它——用例因此改成断言真实链条：
+NaN 半轴 → `dump()` 出 `null` → 解析回来 → 发布闸拒绝。`selfValidate` 里
+`std::isfinite` 那几条不再能被合成数据触发，它防的是**别的写入者**（手写
+tileset、上游工具）；这条限制如实记录，不假装单测覆盖到了。
 
 
 ## 4. 视觉验收（手册 15 节）
@@ -353,14 +386,40 @@ node scripts/glb_prims.js docs/model23dtiles-production/runs/matrix_final/t0* \
    实例瓦片静默入库；
 3. `cmpt_probe` 一行同时验证了容器拆解与 i3dm 展开口径。
 
+## 8b. 包围体发布闸（A-36 / A-37）
+
+`boundingVolume.box` 此前**不在任何发布检查里**：`boxJson` 会把 NaN 半轴经
+`std::max(0.0, nan)` 折成 0、把未初始化包围盒折成 12 个 0，产物 schema 完全合法、
+外部 validator 也挑不出错，但 Cesium 用一个塌到原点的零尺寸盒做视锥剔除会把
+整棵子树剔掉。手册 17 节明确要求"NaN bounds 为零 / 无错误 bounds 剔除"。
+
+```bash
+node scripts/tileset_bounds.js F:/wb_3dtiles_out F:/wb_3dtiles_out/matrix_texless
+```
+
+回扫既有 **18 个数据集**（输出存 `evidence/tileset_bounds-before-a37.txt`）：
+NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0**。
+据此把两条检查写进 `selfValidate` 1b（有限性 + 三轴覆盖关系，违例即拒绝发布），
+而不是留在注释里。
+
+实现过程里检查本身错过一次：第一版把半轴下标写成 `b[4]/b[8]`（盒布局其实是
+`[cx,cy,cz, hx,0,0, 0,hy,0, 0,0,hz]`，半轴在 3/7/11），合成夹具当场报 23 条
+"父不覆盖子"。是独立的 node 回扫器对同一批真实产物报 0 才把根因定位到检查代码，
+没有把这笔账算到产品上（详见 AUDIT A-37 的踩坑记录）。
+
 ## 9. 验证结论
 
 - 结构合法性：12 资产 + 真实 FBX + cmpt 探针在**官方** OGC validator 下
   `numErrors=0`（§7），内发布闸 `selfValidate` 同样全 0 error；
 - 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 127 个内容瓦片
   最大 2.17 MiB，矩阵 12/12 违例 0；实例瓦片的三角形预算见 §6.2 的 A-33；
-- 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 145 feature / 623 occurrences，
-  且 `featuresMissingFromLeaves=0` / `proxyDroppedFeatureCount=0`；
+- 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 145 feature；
+  **注意** `longxiang_covfix` 是 A-35 修复前的产物，它的
+  `report.manifestOccurrences=623` 与 `manifest.occurrenceCount=571` 那对
+  不一致的数字正是 A-35 的现场（差的 52 条是聚合代理条目，本就不该算源出现次数），
+  不是可接受的现状；新二进制复跑后两个数必须由 `sourceOccurrenceCount` 同出一个定义
+  （`node scripts/check_manifest_assertions.js` 第 1 条断言）；
+  `featuresMissingFromLeaves=0` / `proxyDroppedFeatureCount=0`；
   `aggregateProxies` 补全后可由源 feature 反查代理 ID 与其代表的源集合；
 - 视觉链路：CesiumJS 加载渲染真实出图，自动化 0 错误；
 - 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、Python 采集器（BLOCKED B-5）、

@@ -24,6 +24,10 @@
 #include <osgDB/ReadFile>
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <exception>
+#include <cstdlib>
+#include <limits>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -889,13 +893,187 @@ void testPipelineProxySkipDegrades()
 }
 
 
+// ---------------------------------------------------------------------------
+// A-36 / A-37：包围体发布闸（selfValidate 1b）。
+// 这里验的是检查本身：非法包围盒必须拒绝发布，合法紧贴盒必须放行。
+// 三轴都要有越界用例——第一版实现把半轴下标写成 b[4]/b[8]（盒布局其实是
+// [cx,cy,cz, hx,0,0, 0,hy,0, 0,0,hz]，半轴在 3/7/11），Y/Z 轴的越界被读成
+// 半轴 0 而静默放行，同时在真实数据上随时可能反过来误伤。
+// ---------------------------------------------------------------------------
+void testPipelineBoundsGate()
+{
+    std::cout << "[bounds] bounding-volume release gate" << std::endl;
+    Utils::registerFileAliases();
+
+    ProductionProfile profile;
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_pipeline_bounds";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    // 只 run()，不 finalize()：finalize 会把暂存目录搬走，而 selfValidate 的
+    // URI 检查需要暂存目录里真实存在的内容文件。
+    const bool ran = pipeline.run(makeGrid(4, 4, 1.0).get(), opt);
+    check(ran, "bounds gate fixture builds", joinMessages(pipeline.failures()));
+
+    std::string uri;
+    for (const ProductionTile& t : pipeline.tiles())
+    {
+        if (t.hasContent) { uri = t.uri; break; }
+    }
+    check(!uri.empty(), "fixture has a content tile to point the probe tileset at");
+
+    auto box = [](double cx, double cy, double cz, double hx, double hy, double hz) {
+        return nlohmann::json::array({cx, cy, cz,
+                                      hx, 0.0, 0.0,
+                                      0.0, hy, 0.0,
+                                      0.0, 0.0, hz});
+    };
+    auto probe = [&pipeline](const nlohmann::json& root) -> std::vector<std::string>
+    {
+        nlohmann::json ts;
+        ts["asset"]["version"] = "1.0";
+        ts["root"] = root;
+        const std::filesystem::path p =
+            std::filesystem::temp_directory_path() / "wb_bounds_probe.json";
+        std::ofstream f(p, std::ios::trunc);
+        f << ts.dump();
+        f.close();
+        // 只统计包围体类失败：其它检查（URI、预算、覆盖）对本次探针同样会说话，
+        // 混在一起就把"闸有没有生效"变成了"总共报了几条"。
+        const std::size_t before = pipeline.failures().size();
+        pipeline.selfValidate(p.string());
+        std::vector<std::string> hits;
+        for (std::size_t i = before; i < pipeline.failures().size(); ++i)
+        {
+            const std::string& m = pipeline.failures()[i];
+            if (m.find("boundingVolume") != std::string::npos
+                || m.find("child box not covered") != std::string::npos
+                || m.find("geometricError is not") != std::string::npos)
+            {
+                hits.push_back(m);
+            }
+        }
+        return hits;
+    };
+    auto leafRoot = [&uri](const nlohmann::json& b, double ge) {
+        nlohmann::json t;
+        t["boundingVolume"]["box"] = b;
+        t["geometricError"] = ge;
+        t["refine"] = "REPLACE";
+        t["content"]["uri"] = uri;
+        return t;
+    };
+    auto nestedRoot = [&box, &uri](const nlohmann::json& childBox) {
+        nlohmann::json child;
+        child["boundingVolume"]["box"] = childBox;
+        child["geometricError"] = 5.0;
+        child["refine"] = "REPLACE";
+        nlohmann::json root;
+        root["boundingVolume"]["box"] = box(0.0, 0.0, 0.0, 10.0, 10.0, 10.0);
+        root["geometricError"] = 100.0;
+        root["refine"] = "REPLACE";
+        root["content"]["uri"] = uri;
+        root["children"] = nlohmann::json::array({ child });
+        return root;
+    };
+
+    // 合法：三轴同时"紧贴"父盒内壁（|Δc| + hChild == hParent），
+    // 容差取父半轴的 1e-6 相对值，所以等号必须放行。
+    check(probe(nestedRoot(box(5.0, 4.0, 3.0, 5.0, 6.0, 7.0))).empty(),
+          "child tightly inscribed in parent on all three axes is accepted");
+
+    // 每一条轴单独越界都必须被抓住，并且报出正确的轴号。
+    const double over[3][6] = {
+        { 6.0, 0.0, 0.0, 5.0, 1.0, 1.0 },   // X：|6|+5 > 10
+        { 0.0, 6.0, 0.0, 1.0, 5.0, 1.0 },   // Y：只有读 3/7/11 才会发现
+        { 0.0, 0.0, 6.0, 1.0, 1.0, 5.0 },   // Z
+    };
+    for (int a = 0; a < 3; ++a)
+    {
+        const auto hits = probe(nestedRoot(box(over[a][0], over[a][1], over[a][2],
+                                               over[a][3], over[a][4], over[a][5])));
+        const bool rightAxis = hits.size() == 1
+            && hits[0].find("on axis " + std::to_string(a)) != std::string::npos;
+        check(rightAxis, "child overflowing parent on one axis is rejected on that axis",
+              hits.empty() ? "no failure reported" : joinMessages(hits));
+    }
+
+    // 非法几何值
+    check(!probe(leafRoot(box(0.0, 0.0, 0.0, -1.0, 10.0, 10.0), 10.0)).empty(),
+          "negative half-axis is rejected");
+    check(!probe(leafRoot(nlohmann::json::array({ 0.0, 0.0, 0.0,
+                                                 nlohmann::json::value_t::null, 0.0, 0.0,
+                                                 0.0, 10.0, 0.0, 0.0, 0.0, 10.0 }),
+                          10.0)).empty(),
+          "a box washed out of NaN (JSON null) is rejected");
+    {
+        // NaN/inf 半轴在 JSON 里没有合法字面量：nlohmann 把它们 dump 成 null，
+        // 再解析回来就是"box 里混进非数字元素"。这条用例跑通整条洗白链——
+        // 序列化必须把 NaN 暴露成 null，发布闸必须拒绝，而不是当 0 放行（A-36）。
+        nlohmann::json b = nlohmann::json::array({ 0.0, 0.0, 0.0,
+            std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0,
+            0.0, 10.0, 0.0, 0.0, 0.0, 10.0 });
+        const std::string text = b.dump();
+        check(text.find("null") != std::string::npos,
+              "a non-finite half-axis serializes out of JSON as null", text);
+        nlohmann::json back;
+        std::istringstream is(text);
+        is >> back;
+        check(!probe(leafRoot(back, 10.0)).empty(),
+              "a NaN half-axis serialized as JSON null is rejected");
+    }
+    check(!probe(leafRoot(box(0.0, 0.0, 0.0, 10.0, 10.0, 10.0), -1.0)).empty(),
+          "negative geometricError is rejected");
+    check(probe(leafRoot(box(0.0, 0.0, 0.0, 10.0, 10.0, 10.0), 10.0)).empty(),
+          "a plain valid tile reports no bounding-volume failure");
+}
+
+
 int main(int argc, char** argv)
 {
     std::string filter;
     if (argc > 1) { filter = argv[1]; }
+    // 逐用例落盘：本环境进程退出阶段会异常中断，块缓冲的 stdout 只能看到
+    // 表头、看不到"哪个用例死掉、死了之前过了几条"。这里每行立即 flush。
+    std::ofstream progress("test_production_progress.txt", std::ios::trunc);
+    // 崩溃定位用：本环境退出码不可信，异常/中止只在 stderr 里留下痕迹才能归因
+    std::set_terminate([]() {
+        std::cerr << "TERMINATE: " << std::flush;
+        const auto e = std::current_exception();
+        if (!e) { std::cerr << "no active exception (abort / fastfail)" << std::endl; }
+        else
+        {
+            try { std::rethrow_exception(e); }
+            catch (const std::exception& ex) { std::cerr << "exception: " << ex.what() << std::endl; }
+            catch (...) { std::cerr << "unknown exception object" << std::endl; }
+        }
+        std::cerr.flush();
+        std::_Exit(3);
+    });
     auto run = [&](const char* name, void (*fn)()) {
         if (!filter.empty() && std::string(name).find(filter) == std::string::npos) { return; }
-        fn();
+        const int p0 = g_passed;
+        const int f0 = g_failed;
+        if (progress.is_open()) { progress << ">> " << name << std::endl; }
+        try
+        {
+            fn();
+        }
+        catch (const std::exception& ex)
+        {
+            ++g_failed;
+            std::cerr << "  EXCEPTION in " << name << ": " << ex.what() << std::endl;
+            if (progress.is_open()) { progress << "!! exception: " << ex.what() << std::endl; }
+        }
+        if (progress.is_open())
+        {
+            progress << "<< " << name << " checks=" << (g_passed - p0 + g_failed - f0)
+                     << " failed=" << (g_failed - f0) << std::endl;
+        }
     };
     run("profile", &testProfileValidation);
     run("sourceModel", &testSourceModelBaking);
@@ -908,14 +1086,16 @@ int main(int argc, char** argv)
     run("proxyAggregate", &testProxyAggregateCoversSourceScope);
     run("pipelineCoverage", &testPipelineLeafCoverageInvariant);
     run("proxySkip", &testPipelineProxySkipDegrades);
+    run("bounds", &testPipelineBoundsGate);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();
-    // 同时落盘：本环境下进程退出阶段可能异常结束，std::cout 的块缓冲会被丢掉
+    // 同时落盘：崩溃/异常中断时块缓冲的 stdout 会被丢掉，只有文件里的那行能
+    // 说明"跑到哪一步、过了几条"（历史上一次未捕获的 json 异常就是这样把
+    // 58 条用例静默吞掉的，见 test_production_progress.txt）
     {
         std::ofstream f("test_production_result.txt", std::ios::trunc);
         f << "passed=" << g_passed << " failed=" << g_failed << "\n";
     }
-    // 注意：本环境下进程退出码会被宿主改写，因此以文件 + stdout 双通道输出
     return g_failed == 0 ? 0 : 1;
 }

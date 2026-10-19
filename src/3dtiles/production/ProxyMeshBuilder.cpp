@@ -217,6 +217,10 @@ AttrSig signatureOf(osg::Geometry* g)
 bool appendElements(osg::Array* dst, const osg::Array* src)
 {
     if (!dst || !src) { return false; }
+    // 分支按 src 类型走，却把 dst 也按该类型 cast：dst 不同步长就错，写出去是
+    // 堆越界。调用方用签名分组保证同类型，但这条保证是隐式的、跨函数的，
+    // 这里显式拒绝，别让它变成一个"只在别的文件里成立"的前提（A-39）。
+    if (dst->getType() != src->getType()) { return false; }
 #define OSGGIS_APPEND_CASE(ARRTYPE, ENUMVAL)                              \
     if (src->getType() == osg::Array::ENUMVAL)                             \
     {                                                                     \

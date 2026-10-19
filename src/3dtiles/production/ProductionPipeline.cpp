@@ -15,7 +15,9 @@
 #include <fstream>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <map>
 #include <future>
 #include <iterator>
@@ -1410,6 +1412,105 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
         }
     }
 
+    // 1b) 序列化后的包围体与 geometricError 必须是有限值，且父盒覆盖子盒。
+    //     boxJson 会把 NaN 半轴 std::max(0.0, nan) 折成 0、把未初始化的包围盒
+    //     折成全零盒——NaN 就这样被静默"洗白"成一份 schema 合法的 tileset，
+    //     而 Cesium 用一个塌成原点的盒做视锥剔除会把整个子树剔掉（手册 17：
+    //     NaN bounds 为零 / 错误 bounds 剔除）。父覆盖子历史上因 float 中心
+    //     舍入在 t04/t05/t06/t08/t10/t11 报过 child box not covered，改成
+    //     double 之后不再触发，这里是那条回归的守门人。
+    {
+        auto readBox = [](const json& t, double* out) -> bool {
+            if (!t.contains("boundingVolume") || !t["boundingVolume"].is_object()) { return false; }
+            const json& bv = t["boundingVolume"];
+            if (!bv.contains("box") || !bv["box"].is_array() || bv["box"].size() != 12) { return false; }
+            for (int i = 0; i < 12; ++i)
+            {
+                if (!bv["box"][i].is_number()) { return false; }
+                out[i] = bv["box"][i].get<double>();
+            }
+            return true;
+        };
+        std::function<void(const json&, const double*, int)> checkGeom =
+            [&](const json& t, const double* parent, int depth)
+        {
+            double b[12];
+            if (!readBox(t, b))
+            {
+                _failures.push_back("selfValidate: tile at depth " + std::to_string(depth)
+                                    + " has no 12-number boundingVolume.box");
+                ok = false;
+            }
+            else
+            {
+                for (int i = 0; i < 12; ++i)
+                {
+                    if (!std::isfinite(b[i]))
+                    {
+                        _failures.push_back("selfValidate: boundingVolume.box["
+                                            + std::to_string(i) + "] is not finite at depth "
+                                            + std::to_string(depth));
+                        ok = false;
+                        break;
+                    }
+                }
+                if (b[3] < 0.0 || b[7] < 0.0 || b[11] < 0.0)
+                {
+                    _failures.push_back("selfValidate: negative half-axis in boundingVolume.box "
+                                        "at depth " + std::to_string(depth));
+                    ok = false;
+                }
+                if (parent)
+                {
+                    // 轴向对齐盒：|中心差| + 子半轴 <= 父半轴（留 1e-6 相对容差）
+                    const double eps = 1e-6 * std::max(1.0, std::max(parent[3],
+                                                     std::max(parent[7], parent[11])));
+                    // 盒布局 [cx,cy,cz, hx,0,0, 0,hy,0, 0,0,hz]：第 i 轴的
+                    // 中心在 i、半轴在 3+4i（不是 3+i，也不是 i*4）。
+                    const int ci[3] = { 0, 1, 2 };
+                    const int hi[3] = { 3, 7, 11 };
+                    for (int a = 0; a < 3; ++a)
+                    {
+                        const double cChild = b[ci[a]];
+                        const double cPar = parent[ci[a]];
+                        const double hChild = b[hi[a]];
+                        const double hPar = parent[hi[a]];
+                        if (std::abs(cChild - cPar) + hChild > hPar + eps)
+                        {
+                            _failures.push_back(std::string("selfValidate: child box not covered by parent "
+                                                "on axis ") + std::to_string(a)
+                                                + " at depth " + std::to_string(depth)
+                                                + " (|dc|=" + std::to_string(std::abs(cChild - cPar))
+                                                + " hChild=" + std::to_string(hChild)
+                                                + " hPar=" + std::to_string(hPar) + ")");
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (t.contains("geometricError"))
+            {
+                const double ge = t["geometricError"].is_number() ? t["geometricError"].get<double>()
+                                                                  : std::numeric_limits<double>::quiet_NaN();
+                if (!std::isfinite(ge) || ge < 0.0)
+                {
+                    _failures.push_back("selfValidate: geometricError is not a finite non-negative "
+                                        "number at depth " + std::to_string(depth));
+                    ok = false;
+                }
+            }
+            if (t.contains("children") && t["children"].is_array())
+            {
+                for (const json& c : t["children"]) { checkGeom(c, b, depth + 1); }
+            }
+        };
+        if (parsed.contains("root") && parsed["root"].is_object())
+        {
+            checkGeom(parsed["root"], nullptr, 0);
+        }
+    }
+
     // 2) 每个瓦片的字节预算（写盘后实测）
     for (const ProductionTile& t : _tiles)
     {
@@ -1426,6 +1527,52 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
                                 + std::to_string(t.triangles) + " triangles, over hard limit "
                                 + std::to_string(_profile.budget.maxTrianglesPerTile));
             ok = false;
+        }
+    }
+
+    // 2b) 内容顶点必须留在源模型范围内（A-38）。有限性/覆盖关系都拦不住
+    //     "有限但荒谬"的包围盒：matrix_a34/t02 实测一个被索引引用的顶点是
+    //     (6.55e10, -1.2e-8, 4.47e27)，JSON 合法、父盒照样盖住子盒，但
+    //     geometricError 被顶到 5.8e24 m、整棵树的可渲染性没了意义。
+    //     放宽量取源对角线的一半：远景代理的顶点会被简化器移动，但任何
+    //     真实输出都不可能被移动出源模型尺度这个量级。
+    osg::BoundingBox srcFrame;
+    double srcSlack = 0.0;
+    if (_model.bounds.valid())
+    {
+        srcFrame = _model.bounds;
+        srcSlack = 0.5 * (osg::Vec3d(srcFrame._max) - osg::Vec3d(srcFrame._min)).length();
+    }
+    for (const ProductionTile& t : _tiles)
+    {
+        if (!t.hasContent || !srcFrame.valid() || !t.contentBounds.valid()) { continue; }
+        const osg::BoundingBox& cb = t.contentBounds;
+        const double lo[3] = { cb.xMin(), cb.yMin(), cb.zMin() };
+        const double hi[3] = { cb.xMax(), cb.yMax(), cb.zMax() };
+        const double slo[3] = { srcFrame.xMin(), srcFrame.yMin(), srcFrame.zMin() };
+        const double shi[3] = { srcFrame.xMax(), srcFrame.yMax(), srcFrame.zMax() };
+        for (int a = 0; a < 3; ++a)
+        {
+            if (!std::isfinite(lo[a]) || !std::isfinite(hi[a]))
+            {
+                _failures.push_back("selfValidate: tile " + std::to_string(t.id)
+                                    + " content bounds are not finite on axis "
+                                    + std::to_string(a));
+                ok = false;
+                break;
+            }
+            if (lo[a] < slo[a] - srcSlack || hi[a] > shi[a] + srcSlack)
+            {
+                _failures.push_back("selfValidate: tile " + std::to_string(t.id)
+                                    + " content bounds leave the source model extent on axis "
+                                    + std::to_string(a) + " ([" + std::to_string(lo[a]) + ", "
+                                    + std::to_string(hi[a]) + "] vs source ["
+                                    + std::to_string(slo[a]) + ", " + std::to_string(shi[a])
+                                    + "] +-" + std::to_string(srcSlack)
+                                    + "): garbage vertex or wrong coordinate frame");
+                ok = false;
+                break;
+            }
         }
     }
 

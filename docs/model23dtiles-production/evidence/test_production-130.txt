@@ -1,0 +1,48 @@
+# test_production.exe 全量用例（A-36/A-37 包围体发布闸单测之后）
+# 构建：Release / 2026-10-19 17:50 二进制
+# 命令：./test_production.exe  （无过滤，全 12 个用例）
+# 退出码：0
+
+## stdout
+[profile] validate
+[sourceModel] world transform baking
+[partition] coverage + determinism
+[partition] giant single mesh must split
+[error] analytic cases
+[manifest] tile-local batchId mapping
+BatchIdVisitor: source VertexAttribArray(0) moved to slot 3 (data preserved, emitted as _ATTRIBUTE_3).
+BatchIdVisitor: source VertexAttribArray(0) moved to slot 2 (data preserved, emitted as _ATTRIBUTE_2).
+[simplifier] multi primitiveSet geometry
+[proxy] aggregate fallback covers source scope
+    error: lower=130 upper=130.015 cellSize=124.3 cellDiag=175.798 tris=92
+[pipeline] leaf coverage invariant
+[pipeline] far-LOD proxy over budget degrades
+[bounds] bounding-volume release gate
+
+passed=130 failed=0
+
+## 逐用例计数（test_production_progress.txt）
+>> profile
+<< profile checks=3 failed=0
+>> sourceModel
+<< sourceModel checks=4 failed=0
+>> partition
+<< partition checks=7 failed=0
+>> giant
+<< giant checks=7 failed=0
+>> error
+<< error checks=9 failed=0
+>> manifest
+<< manifest checks=8 failed=0
+>> batchid
+<< batchid checks=8 failed=0
+>> simplifier
+<< simplifier checks=7 failed=0
+>> proxyAggregate
+<< proxyAggregate checks=8 failed=0
+>> pipelineCoverage
+<< pipelineCoverage checks=46 failed=0
+>> proxySkip
+<< proxySkip checks=11 failed=0
+>> bounds
+<< bounds checks=12 failed=0
