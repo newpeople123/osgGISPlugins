@@ -104,7 +104,7 @@ std::uint64_t estimateContentBytes(osg::Node* node)
 } // namespace
 
 double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
-                                      double targetErrorMeters) const
+                                      double targetErrorMeters, bool lockBorders) const
 {
     const unsigned before = countTriangles(node);
     if (before == 0 || targetTriangles >= before) { return 1.0; }
@@ -128,7 +128,7 @@ double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
         const double ratio = static_cast<double>(targetTriangles)
                            / static_cast<double>(std::max<unsigned>(after, 1u));
         // 第 0 步保形（非 sloppy），后续用 sloppy 强行逼近目标
-        Simplifier simplifier(ratio, step > 0, _profile.lockSeamBorder,
+        Simplifier simplifier(ratio, step > 0, lockBorders,
                               static_cast<float>(err));
         node->accept(simplifier);
         const unsigned now = countTriangles(node);
@@ -137,7 +137,7 @@ double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
             OSG_NOTICE << "[simplify] step=" << step << " " << after << " -> " << now
                        << " target=" << targetTriangles << " ratio=" << ratio
                        << " err=" << err << " diag=" << diag
-                       << " lock=" << _profile.lockSeamBorder << std::endl;
+                       << " lock=" << lockBorders << std::endl;
         }
         const bool stalled = (now >= after);
         after = now;
@@ -376,7 +376,8 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
     const std::vector<std::uint32_t>& items,
     double cellSize,
     std::map<FeatureId, std::vector<FeatureId>>& sources,
-    bool mergeIntoSingleDrawable) const
+    bool mergeIntoSingleDrawable,
+    unsigned triangleBudget) const
 {
     // 按空间体素把对象聚合；每个被占用的 cell 生成一个低面代理 + 新 proxyFeatureId
     std::map<Cell, std::vector<std::uint32_t>> cells;
@@ -469,9 +470,12 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
     // （实测 864 索引的 cell 返回 0 且 result_error=1.0，整个 cell 直接消失）。
     for (CellEntry& e : entries)
     {
+        const unsigned budget = std::min(_profile.budget.targetTrianglesPerTile,
+                                         triangleBudget > 0 ? triangleBudget
+                                                    : _profile.budget.targetTrianglesPerTile);
         const unsigned quota = std::max<unsigned>(
             1u, static_cast<unsigned>(std::ceil(
-                    static_cast<double>(_profile.budget.targetTrianglesPerTile)
+                    static_cast<double>(budget)
                   * static_cast<double>(e.triangles) / static_cast<double>(allTris))));
 
         const std::size_t n = e.units.size();
@@ -567,7 +571,8 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
         // 回退到未简化的保留单元，绝不允许 cell 整体消失
         if (countTriangles(cellGeode.get()) > quota)
         {
-            simplifyNode(cellGeode.get(), quota, static_cast<double>(cellSize) * 0.05);
+            simplifyNode(cellGeode.get(), quota, static_cast<double>(cellSize) * 0.05,
+                         _profile.lockSeamBorder);
             if (countTriangles(cellGeode.get()) == 0) { attach(false); }
         }
         const unsigned trisAfter = countTriangles(cellGeode.get());
@@ -641,7 +646,8 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         osg::ref_ptr<osg::Node> attempt = _model.materialize(_prims, items, true);
         if (attempt.valid())
         {
-            bestRatio = simplifyNode(attempt.get(), targetTriangles, targetErrorMeters);
+            bestRatio = simplifyNode(attempt.get(), targetTriangles, targetErrorMeters,
+                                     _profile.lockSeamBorder);
             best = attempt;
             bestTris = countTriangles(attempt.get());
         }
@@ -679,6 +685,12 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
     // cell 尺寸与是否合并几何都会影响最终面数下限（每个非空 cell 至少保留
     // 一个源 feature 的最小几何），所以按"更细 → 更粗"两种方向各试一轮。
     const double sizeFactors[] = { 1.0, 0.5, 0.25, 2.0, 4.0 };
+    // 字节硬限按编码后字节判，估算器近似 200 B/tri，所以聚合目标还要再过一道
+    // 字节折算上限，否则"达到三角形目标但仍然超字节"会整轮白跑。
+    const unsigned byteTriCap =
+        static_cast<unsigned>(_profile.budget.maxTileContentBytes / 200ull);
+    const unsigned aggTarget = (byteTriCap > 0 && byteTriCap < targetTriangles)
+                             ? byteTriCap : targetTriangles;
     unsigned lastAggTris = 0;
     std::string lastReason;
     for (double factor : sizeFactors)
@@ -688,20 +700,44 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         {
             const bool merge = (mode == 1);
             std::map<FeatureId, std::vector<FeatureId>> sources;
-            osg::ref_ptr<osg::Node> agg = buildAggregate(items, cellSize, sources, merge);
-            const unsigned aggTris = countTriangles(agg.get());
+            osg::ref_ptr<osg::Node> agg = buildAggregate(items, cellSize, sources, merge, aggTarget);
+            unsigned aggTris = countTriangles(agg.get());
             lastAggTris = aggTris;
             if (!agg.valid() || aggTris == 0 || sources.empty())
             {
                 lastReason = "aggregate produced no geometry";
                 continue;
             }
-            const std::uint64_t estBytes = estimateContentBytes(agg.get());
+            std::uint64_t estBytes = estimateContentBytes(agg.get());
+            // 字节估算含顶点与纹理项，纯按 200 B/tri 折算的静态上限偏乐观
+            // （t03_giant_single_mesh 根代理实测 41943 面 / 9.58 MB）。这里按
+            // 当前实测 bytes/tri 反推目标面数，最多收敛 3 轮。
+            // 不锁边：聚合代理已经不代表任何单个源对象，cell 间缝合没有意义；
+            // 锁边时"单个巨型 mesh 被切成多 cell"会让每格全是开边界，meshopt
+            // 一点都压不动。
+            for (int round = 0;
+                 round < 3 && (aggTris > aggTarget
+                               || estBytes > _profile.budget.maxTileContentBytes);
+                 ++round)
+            {
+                const double bytesPerTri = std::max(1.0,
+                    static_cast<double>(estBytes) / static_cast<double>(std::max<unsigned>(aggTris, 1u)));
+                unsigned want = static_cast<unsigned>(
+                    static_cast<double>(_profile.budget.maxTileContentBytes) * 0.92 / bytesPerTri);
+                want = std::min(want, aggTarget);
+                if (want == 0 || want >= aggTris) { want = aggTris / 2; }
+                if (want == 0) { break; }
+                simplifyNode(agg.get(), want, cellSize * 0.1, false);
+                aggTris = countTriangles(agg.get());
+                estBytes = estimateContentBytes(agg.get());
+                lastAggTris = aggTris;
+                if (aggTris == 0) { break; }
+            }
             if (proxyDebug())
             {
                 OSG_NOTICE << "[proxydbg] aggregate factor=" << factor << " merge=" << merge
                            << " aggTris=" << aggTris << " bytes=" << estBytes
-                           << " target=" << targetTriangles << std::endl;
+                           << " target=" << aggTarget << std::endl;
             }
             if (aggTris > targetTriangles)
             {
