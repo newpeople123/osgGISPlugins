@@ -2,7 +2,11 @@
 // 逐 i3dm 瓦片核对三件事：
 //   1) 特征表 POSITION 有没有非零值（A-41 签名：全 0）
 //   2) GLB 节点是否还带 TRS（带 = flatten 没屏蔽干净，会与特征表双变换）
-//   3) POSITION 集合能否对上 feature-manifest.json 的实例平移（glTF Y-up 轴序 (x,-z,y)）
+//   3) POSITION 集合能否对上 feature-manifest.json 的 **inverse(原型世界)·实例世界**
+//      平移（glTF Y-up 轴序 (x,-z,y)）
+// 第 3 条的口径本身踩过坑：原型几何已按世界矩阵烘好，特征表若写实例的**绝对**世界
+// 平移就是双变换，而"逐条命中绝对平移"当时被判成 PASS。所以这里把绝对口径只作为
+// 诊断信息打印，判定一律按相对帧。
 // 用法: node scripts/i3dm_pose_check.js <runDir|tile.i3dm> [--top 12]
 const fs = require('fs');
 const path = require('path');
@@ -83,13 +87,72 @@ function collect(target) {
     return out.sort();
 }
 
-function manifestTranslations(dir) {
+// OSG 行向量约定、内存按行主序铺开：平移在 [12..14]，最后一列是 [3],[7],[11],[15]
+function mat4Mul(a, b) {
+    const o = new Array(16);
+    for (let r = 0; r < 4; ++r)
+        for (let c = 0; c < 4; ++c) {
+            let s = 0;
+            for (let k = 0; k < 4; ++k) s += a[r * 4 + k] * b[k * 4 + c];
+            o[r * 4 + c] = s;
+        }
+    return o;
+}
+
+// 高斯-约当 + 部分主元；奇异矩阵返回 null（相对帧无法定义，必须显式失败）
+function mat4Inverse(m) {
+    const a = new Array(32).fill(0);
+    for (let r = 0; r < 4; ++r) {
+        for (let c = 0; c < 4; ++c) a[r * 8 + c] = m[r * 4 + c];
+        a[r * 8 + 4 + r] = 1;
+    }
+    for (let col = 0; col < 4; ++col) {
+        let piv = col;
+        for (let r = col + 1; r < 4; ++r)
+            if (Math.abs(a[r * 8 + col]) > Math.abs(a[piv * 8 + col])) piv = r;
+        if (Math.abs(a[piv * 8 + col]) < 1e-14) return null;
+        if (piv !== col)
+            for (let c = 0; c < 8; ++c) {
+                const t = a[col * 8 + c]; a[col * 8 + c] = a[piv * 8 + c]; a[piv * 8 + c] = t;
+            }
+        const d = a[col * 8 + col];
+        for (let c = 0; c < 8; ++c) a[col * 8 + c] /= d;
+        for (let r = 0; r < 4; ++r) {
+            if (r === col) continue;
+            const f = a[r * 8 + col];
+            if (f === 0) continue;
+            for (let c = 0; c < 8; ++c) a[r * 8 + c] -= f * a[col * 8 + c];
+        }
+    }
+    const o = new Array(16);
+    for (let r = 0; r < 4; ++r) for (let c = 0; c < 4; ++c) o[r * 4 + c] = a[r * 8 + 4 + c];
+    return o;
+}
+
+// OSG → glTF Y-up：(x, y, z) -> (x, -z, y)
+const perm = t => [t[12], -t[14], t[13]];
+
+// 期望集合：rel = inverse(原型世界) · 实例世界（特征表里真正该写的矩阵）
+// 同时保留绝对口径，只用作诊断——命中绝对平移正是双变换的特征。
+function manifestExpectations(dir) {
     const f = path.join(dir, 'feature-manifest.json');
     if (!fs.existsSync(f)) return null;
     const m = JSON.parse(fs.readFileSync(f, 'utf8'));
-    if (!Array.isArray(m.instances)) return null;
-    // OSG 行向量约定的列主 4x4：平移在 [12..14]；glTF Y-up 置换 (x,y,z) -> (x,-z,y)
-    return m.instances.map(i => { const t = i.transform || i.matrix; return [t[12], -t[14], t[13]]; });
+    if (!Array.isArray(m.instances) || !m.instances.length) return null;
+    const rel = [], abs = [];
+    let missingProto = 0, singular = 0;
+    for (const it of m.instances) {
+        const inst = it.transform || it.matrix;
+        if (!Array.isArray(inst) || inst.length !== 16) continue;
+        abs.push(perm(inst));
+        const proto = it.prototypeTransform;
+        if (!Array.isArray(proto) || proto.length !== 16) { ++missingProto; continue; }
+        const inv = mat4Inverse(proto);
+        if (!inv) { ++singular; continue; }
+        rel.push(perm(mat4Mul(inv, inst)));
+    }
+    return { rel, abs, n: m.instances.length, missingProto, singular,
+             schema: m.schema };
 }
 
 const argv = process.argv.slice(2);
@@ -125,22 +188,36 @@ for (const f of files) {
 
 const box = (mn, mx) => `[${mn.map(v => v.toFixed(2))}]..[${mx.map(v => v.toFixed(2))}]`;
 
-const tr = manifestTranslations(fs.statSync(target).isDirectory() ? target : path.dirname(target));
-if (tr) {
-    let matched = 0, total = 0, worst = 0;
-    for (const w of rows) for (const v of w.pts) {
-        ++total;
-        if (!v.some(x => x !== 0)) continue;
+const exp = manifestExpectations(fs.statSync(target).isDirectory() ? target : path.dirname(target));
+if (exp) {
+    const nn = (v, set) => {
         let best = 1e300;
-        for (const e of tr) best = Math.min(best, Math.hypot(v[0] - e[0], v[1] - e[1], v[2] - e[2]));
-        worst = Math.max(worst, best);
-        if (best <= 1e-3 + 1e-4 * Math.max(...v.map(Math.abs))) ++matched;
+        for (const e of set) best = Math.min(best, Math.hypot(v[0] - e[0], v[1] - e[1], v[2] - e[2]));
+        return best;
+    };
+    const score = (set) => {
+        let matched = 0, total = 0, worst = 0;
+        for (const w of rows) for (const v of w.pts) {
+            ++total;
+            if (!v.some(x => x !== 0)) continue;
+            const d = nn(v, set);
+            worst = Math.max(worst, d);
+            if (d <= 1e-3 + 1e-4 * Math.max(...v.map(Math.abs))) ++matched;
+        }
+        return { matched, total, worst };
+    };
+    const s = score(exp.rel);
+    const a = score(exp.abs);
+    console.log(`manifest ${exp.schema || '?'} | 实例 ${exp.n} 条：缺 prototypeTransform ${exp.missingProto}、奇异原型 ${exp.singular}`);
+    console.log(`按相对帧 inverse(原型)·实例 比对：${s.total} 条 POSITION 对上 ${s.matched} (${s.total ? (100 * s.matched / s.total).toFixed(1) : '-'}%) 最近邻残差最大 ${s.worst.toExponential(2)} → ${s.total > 0 && s.matched === s.total ? 'PASS' : 'FAIL'}`);
+    console.log(`（诊断）按绝对平移比对：${a.total} 条对上 ${a.matched} —— 旧版本误把这一条当验收，命中绝对平移恰恰是双变换）`);
+    if (!(s.total > 0 && s.matched === s.total)) ++fail;
+    if (exp.missingProto || exp.singular) {
+        console.log('FAIL: manifest 缺少可判相对帧的原型矩阵（v1 产物 / 原型不可逆）——无法验收，必须用修正后的二进制重跑');
+        ++fail;
     }
-    const ok = total > 0 && matched === total;
-    console.log(`manifest 实例平移 ${tr.length} | 特征表 POSITION ${total} 条对上 ${matched} (${total ? (100 * matched / total).toFixed(1) : '-'}%) 最近邻残差最大 ${worst.toExponential(2)} → ${ok ? 'PASS' : 'FAIL'}`);
-    if (!ok) ++fail;
 } else {
-    console.log('（没有 feature-manifest.json，位姿只验"非全 0"，无法与真值对集合）');
+    console.log('（没有可用的 feature-manifest.json，位姿只验"非全 0"，无法与真值对集合）');
 }
 
 console.log(`\ni3dm 瓦片 ${rows.length} 个：POSITION 全 0 = ${rows.filter(w => w.bad).length} 个；GLB 节点带 TRS 合计 ${trsTotal}`);

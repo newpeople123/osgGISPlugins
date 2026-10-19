@@ -136,11 +136,21 @@ json TileFeatureMapper::manifestJson(const SourceModel& model) const
         const double* m = inst.matrix.ptr();
         ij["transform"] = {m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
                            m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]};
+        // i3dm 特征表里的矩阵是 `inverse(原型世界) · 实例世界`（原型几何已按世界
+        // 矩阵烘好）。不把这个记下来，产物自身无法判位姿对不对——只能拿绝对平移去
+        // 比，而绝对平移恰好是"双变换"错误口径的特征。
+        const SourceObject* proto = model.objectOf(inst.prototypeFeatureId);
+        if (proto)
+        {
+            const double* p = proto->worldMatrix.ptr();
+            ij["prototypeTransform"] = {p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
+                                        p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]};
+        }
         instances.push_back(ij);
     }
 
     return json{
-        {"schema", "osgGISPlugins/model23dtiles feature manifest v1"},
+        {"schema", "osgGISPlugins/model23dtiles feature manifest v1.1"},
         {"sourceFeatureCount", model.objects.size()},
         {"occurrenceCount", occ},
         {"features", features},
