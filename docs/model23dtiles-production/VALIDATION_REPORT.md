@@ -171,7 +171,7 @@ i3dm 位姿第一次进入验收，且验收口径是 `inverse(原型世界)·�
 | t11_sparse_outlier | 0 | 1.85 | 81.9 | 15 | 146 768 | 1 824 | 5643.16 | 7/6 | 0 | 154/616 | 0/0 |
 | t12_big_texture | 0 | 1.85 | 232.2 | 1 | **510 224** | 6 962 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
 
-四条必须一起读：
+五条必须一起读：
 
 1. **t05 是这一轮的实质变化**：`instanceTileCount=1` 且 `i3dm_pose_check` 判
    **299/299 = 100 % 对上相对帧 `inverse(原型世界)·实例世界`**（最近邻残差最大 **9.47e-6 m**，
@@ -191,6 +191,20 @@ i3dm 位姿第一次进入验收，且验收口径是 `inverse(原型世界)·�
    `matrix_a41fix` 逐字节同列）：`matrix_a41fix2` 那次是 A-40 的第 4 个变体，
    `maxBytes/errMax/cert-loose` 随变体动。本表列的是这一次运行的实测值，
    **t09 不是该资产的稳定值**，其余 11 个资产的稳定值与本表一致。
+5. **本矩阵里 4 个资产的所有瓦片 `geometricError` 都是 0**（t01/t05/t07/t12）：
+   按手册 9.6 `G(n) = max(measuredProxyError(n), max G(child))` 不加 epsilon，
+   单细节、没被简化过的 fixture 必然算出 0（叶节点 SHOULD 为 0）。这不是缺陷，
+   但**这些资产没有资格用来判 LOD 选择**——能判的只有 t02/t03/t04/t06/t08/t09/t10/t11
+   和真实数据集（`longxiang_a42` 根瓦片 168.37 m、67 个叶瓦片全为 0，符合规范）。
+   本轮给 `scripts/tileset_bounds.js` 加了"**子级误差大于父级**"这一列并复扫全部产物：
+   `node scripts/tileset_bounds.js F:/wb_3dtiles_out/matrix_a42fix F:/wb_3dtiles_out/longxiang_a42`
+   → **13 个数据集各列全 0**（父覆盖子 / NaN box / 负半轴 / 非法 ge / ge 递增），rc=0。
+   新列做过阳性对照：临时 tileset 把子级 9 塞到父级 5 下面，该列报 **1** 且 rc=1。
+   tileset 级 `geometricError` = max(根包围球半径, 根 G)，13 份全部非 0。
+   **给探针作者的一个坑**：`boxJson` 把三个半轴按列向量排在 12 元数组的下标 **3 / 7 / 11**
+   （`ProductionPipeline.cpp:197-200`），按下标 1..3 读会得到 `span=[0,0,0]`——
+   本轮差点据此判成"根包围盒塌陷"的产品缺陷，实际是临时探针读错位置
+   （仓库里的 `tileset_bounds.js` 一直读对了，该用工具而不是现写探针）。
 
 ## 2. 扩展场景（矩阵缺口补齐）
 
@@ -338,6 +352,11 @@ node scripts/va_paths.js <sessionFilter>                                        
 | `full_t02` | t02_thin_features（9 条路径） | 34 | 30 | 0 | 4 | 0 | 0 |
 | `full_longxiang` | longxiang_covfix（9 条路径） | 34 | 34 | 0 | 0 | 0 | 0 |
 
+- 上表最后一列在 `full_*` 这批里读作 0 是**字段缺失**造成的，不是"相机全部健康"：
+  那 68 帧压根没写 `cameraFinite`（现存 720 帧共 547 帧没这个字段，机制见本节末）。
+  `node scripts/va_paths.js` 现在同时给 `camBad`（页面自报）/`camNaN`（按记录里的相机值补判）
+  /`noFlag`（缺字段），全量口径实测
+  `shots=720 holes=222 tooSmall=27 camBad=9 camNaN=39 noFlag=547`。
 - 截图目录 `docs/visual-acceptance/runs/<会话>/`，每个会话另有 `summary.json`
   与 `manifest.jsonl`（逐帧相机经纬高、可见 tile URI、geometricError、
   `tileStates`、`env.gpuRenderer`）；
@@ -354,9 +373,19 @@ node scripts/va_paths.js <sessionFilter>                                        
   NaN 在这批记录里的形态是 6/12 帧 `camera.lon|height = null` + `maxProj=1e6`，
   **不是** `cameraFinite=false` 计数。而"修复后…空洞 0、中位剪影 65 674–819 868 px"
   那两个数出自 `fa_t01_plane_curved`，**属于 t01、不属于 t05/t08**。
-  所以：t05/t08 的"六轴修复后视觉验收"**未做**，不能引用为已通过；
-  `cameraFinite` 这个判据字段本身也漏报了 NaN（camBad=0 而相机确实是 null），
-  属于采集页的判据缺陷，记在下面的未做项里一起补。
+  所以：t05/t08 的"六轴修复后视觉验收"**未做**，不能引用为已通过。
+  **camBad=0 的机制本轮已查清并改掉**（此前我写成"flag 报 true 而相机是 null"，
+  逐条核对产物后确认不是这样）：`runs/*` 的 720 条 `kind:"shot"` 记录里
+  `cameraFinite` **字段缺失 547 条**（含全部 `ax_*`/`mx_*`/`full_*` 批次），
+  而 `va_paths.js` 判的是 `=== false`，"缺字段"因此被读成"没问题"；旧判据又只查
+  `positionWC`/`directionWC`，**没查真正落盘的 `camera.lon/lat/height`**，
+  NaN 经 `JSON.stringify` 静默变成 `null`。NaN 记录 39 条，
+  而"flag=true 且相机非有限"的记录 **0 条**。
+  修法：采集页改用 `cameraFiniteNow()`（世界坐标 + 视线方向 + cartographic 经纬度高程
+  一起查，`positionCartographic` 缺失时判 false 而不再抛异常），落盘数值统一走 `fin()`；
+  `va_paths.js` 增加 `camNaN`/`noFlag` 两列按记录值补判（`camBad` 列语义不变，
+  历史引用数字仍可读），旧批次不重跑也能看出损伤面——
+  `node scripts/va_paths.js ax_` 现报 `shots=60 holes=60 camBad=0 camNaN=30 noFlag=60`。
 - `t01` 的 `lod-threshold` 路径产生 0 帧不是漏跑：该数据集只有 1 个根瓦片且
   `geometricError=0`，没有 refine 距离可采样。
 - **A-41 对本节的约束（重要）**：即便补跑 t05 的视觉验收，"空洞/coverage"判据也
@@ -373,9 +402,9 @@ node scripts/va_paths.js <sessionFilter>                                        
 表里已注明路径条数差异。
 新增两项（本轮复核产物时发现，见上面 §4 的更正段）：① `ax_t05_instances` /
 `ax_t08_big_coords` 的**修复后**六轴批次要重跑——现存只有修复前批次，而此前文档
-把它们当成了"修复后 0 空洞"的证据；② 采集页的 `cameraFinite` 判据在相机为
-`null` 时仍报 `camBad=0`，这个漏报要先修（否则任何"相机健康"结论都不可信），
-修完再谈重跑。两项都必须用 **A-41 修复后的二进制**产出的数据集做，
+把它们当成了"修复后 0 空洞"的证据；② 采集页的相机判据漏报**本轮已修**（机制见上：
+缺字段 + 判据没覆盖落盘的经纬高），`scripts/check_page_js.js` 校验通过，
+剩下的只是用修好的采集页重跑。两项都必须用 **A-41 修复后的二进制**产出的数据集做，
 旧截图（含 `full_longxiang`、`mx_*`、`d_*`）都是 A-41 错版，不能续用。
 
 环境限定：headless Edge 只能拿到 SwiftShader 软件 WebGL

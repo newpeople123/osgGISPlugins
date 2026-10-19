@@ -811,10 +811,11 @@ function renderDefects() {
   });
 }
 document.getElementById("addDefectBtn").addEventListener("click", function () {
-  var c = camera.positionCartographic;
-  var lon = Cesium.defined(c) ? Cesium.Math.toDegrees(c.longitude).toFixed(6) : "";
-  var lat = Cesium.defined(c) ? Cesium.Math.toDegrees(c.latitude).toFixed(6) : "";
-  var h = Cesium.defined(c) ? c.height.toFixed(2) : "";
+  var camOk = cameraFiniteNow();
+  var c = camOk ? camera.positionCartographic : null;
+  var lon = c ? fin(Cesium.Math.toDegrees(c.longitude), 6) : null;
+  var lat = c ? fin(Cesium.Math.toDegrees(c.latitude), 6) : null;
+  var h = c ? fin(c.height, 2) : null;
   defects.push({
     kind: document.getElementById("defectKind").value,
     tileUri: document.getElementById("dTileUri").value,
@@ -918,6 +919,23 @@ function imgOf(url) {
 // 几何占比：同一相机帧"显示 tileset / 隐藏 tileset"的差异像素。
 // 0 表示该帧没有任何几何被画出来（远景空洞 / 代理缺内容都逃不掉这个判据）。
 function safeName(s) { return String(s).replace(/[^\w.-]/g, "_"); }
+
+// 写进 JSON 的每个数值都先过这一关。NaN 经 JSON.stringify 会静默变成 null，
+// 读的人看不出那是"没测到"还是"测出来是 NaN"。
+function fin(v, digits) {
+  return typeof v === "number" && isFinite(v) ? +v.toFixed(digits) : null;
+}
+
+// 相机是否"可用"：判据必须覆盖真正写进记录的那三个经纬高值，而不只是它们源头的
+// 世界坐标——NaN 经 JSON.stringify 会静默变成 null，读的人分不出"没测到"和
+// "测出来是 NaN"。旧版只查 positionWC/directionWC，且 `c` 缺失时直接抛 TypeError。
+function cameraFiniteNow() {
+  var c = camera.positionCartographic;
+  var p = camera.positionWC, dv = camera.directionWC;
+  if (!Cesium.defined(c) || !p || !dv) return false;
+  return [p.x, p.y, p.z, dv.x, dv.y, dv.z, c.longitude, c.latitude, c.height]
+    .every(function (v) { return typeof v === "number" && isFinite(v); });
+}
 
 // 灰底剪影：批量截图统一用中性灰底（见 applyCaptureEnv），因此"不是背景色"的
 // 像素就是被画出来的几何。这个判据不依赖两帧差值，天空/时间动画不会污染它，
@@ -1124,9 +1142,8 @@ function captureAll(opt) {
               return shotNow().then(function (urlOff) {
                 tileset.show = true;
                 var c = camera.positionCartographic;
-                  var p = camera.positionWC, dv = camera.directionWC;
-                  var camOk = [p.x, p.y, p.z, dv.x, dv.y, dv.z].every(isFinite);
-                  var projPx = projectedRadiusPx();
+                var camOk = cameraFiniteNow();
+                var projPx = projectedRadiusPx();
                   var cprojPx = contentProjectedRadiusPx();
                   var vis = currentTiles().map(function (t) {
                     return { uri: tileUri(t), geometricError: t.geometricError };
@@ -1138,15 +1155,17 @@ function captureAll(opt) {
                     kind: "shot", session: session, path: name, frame: f.name,
                     index: i, total: frames.length,
                     file: safeName(name) + "_" + (i < 10 ? "0" : "") + i + "_" + safeName(f.name) + ".png",
-                    camera: { lon: +Cesium.Math.toDegrees(c.longitude).toFixed(6),
-                              lat: +Cesium.Math.toDegrees(c.latitude).toFixed(6),
-                              height: +c.height.toFixed(2) },
+                    camera: Cesium.defined(c)
+                      ? { lon: fin(Cesium.Math.toDegrees(c.longitude), 6),
+                          lat: fin(Cesium.Math.toDegrees(c.latitude), 6),
+                          height: fin(c.height, 2) }
+                      : { lon: null, lat: null, height: null },
                     visibleCount: vis.length, visibleTiles: vis.slice(0, 60),
                     tileStates: tileStates().slice(0, 80),
                     coverage: cov, silhouette: sil, bright: bright,
-                    projectedRadiusPx: +projPx.toFixed(1),
+                    projectedRadiusPx: fin(projPx, 1),
                     cameraFinite: camOk,
-                    contentProjectedRadiusPx: +cprojPx.toFixed(1),
+                    contentProjectedRadiusPx: fin(cprojPx, 1),
                     settleIters: lastSettleIters,
                     colorSpread: cs,
                     canvas: canvasInfo,
@@ -1156,7 +1175,7 @@ function captureAll(opt) {
                   records.push({ path: name, frame: f.name, index: i,
                                  visibleCount: vis.length, coverage: cov.px,
                                  silhouette: sil.px, silLumAvg: sil.lumAvg,
-                                 projPx: +projPx.toFixed(1), cprojPx: +cprojPx.toFixed(1),
+                                 projPx: fin(projPx, 1), cprojPx: fin(cprojPx, 1),
                                  spread: cs.sd, camOk: camOk, settleIters: lastSettleIters,
                                  chroma: cs.chromaFraction,
                                  bright: bright.brightFraction,

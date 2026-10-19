@@ -133,7 +133,7 @@ docs/visual-acceptance/runs/<session>/
 | `projectedRadiusPx` / `contentProjectedRadiusPx` | 外接球投影半径 = `radius/dist/tan(fov/2)·h/2`；后者取"有内容的那些 tile"的最大值 | 只有投影 `>20 px` 的帧才有资格判 `HOLE`，否则记 `tooSmallToJudge`。根球会被离群部件/大坐标撑大（t05 内容 1 m、根球 1.7 km），判据用后者 |
 | `colorSpread.sd / chromaFraction` | 剪影内 RGB 标准差 / 彩度占比 | 纹理是否真的贴上（KTX2 解码失败会退成灰模） |
 | `tileStates[]` | 整棵树的 `contentReady` / `hasContent` / `geometricError` | `sil=0` 时分清"内容没加载"还是"加载了但没画" |
-| `camOk` | 相机 `position/direction/up/right` 是否全为有限数 | NaN 相机会污染其后**所有**帧，必须先判它再判空洞 |
+| `cameraFinite`（逐帧记录）/ `camOk`（会话汇总记录） | `cameraFiniteNow()`：`positionWC`、`directionWC` **以及真正落盘的 `positionCartographic` 经纬度高程**必须全部有限；`positionCartographic` 缺失判 false（旧版那里会抛 TypeError） | NaN 相机会污染其后**所有**帧，必须先判它再判空洞。落盘数值统一走 `fin()`，NaN → `null`，此时 flag 必为 false |
 | `settleIters` | 本帧为等内容就绪实际渲染的次数（上限 12） | 贴上限 = 内容没落地就出图，该帧 `sil` 偏低，不能判空洞 |
 
 ### 已知不可信项（不要拿它们当证据）
@@ -193,8 +193,15 @@ Edge 会把剩下的虚拟时间补完才退出，实测一条 3 帧的命令卡
    `cameraFinite=false` 12、空洞 12"与产物对不上，已按实测更正：
    `node scripts/va_summary.js ax_` → `ax_t05_instances` 12 帧 / 空洞 **6** / tooSmall **6**
    / camBad **0**；`ax_t08_big_coords` 12 帧 / 空洞 12 / camBad **0**。NaN 的形态是
-   6/12 帧 `camera.lon|height = null` 且 `maxProj=1e6`，而 `cameraFinite` 判据字段
-   **漏报**（camBad 恒 0），所以别把它当相机健康的依据。t05/t08 的修复后六轴批次
+   6/12 帧 `camera.lon|height = null` 且 `maxProj=1e6`。camBad 恒 0 的机制本轮查清：
+   这 5 个 `ax_*` 会话的记录**压根没有 `cameraFinite` 字段**（全部 720 条 shot 记录里
+   缺字段 547 条），`va_paths.js` 判 `=== false` 就把"缺字段"读成了"没问题"；旧判据也只查
+   `positionWC`/`directionWC`，没查真正落盘的经纬高。**不存在**"flag=true 而相机是 null"
+   的记录（0 条）。两处都已修：采集页的 `cameraFiniteNow()` 同时查世界坐标、视线方向与
+   cartographic 经纬度高程并把落盘数值统一过 `fin()`；`va_paths.js` 增加 `camNaN`/`noFlag`
+   两列按记录值补判（`camBad` 语义不变），`node scripts/va_paths.js ax_` 现报
+   `shots=60 holes=60 camBad=0 camNaN=30 noFlag=60`。在此之前任何"相机健康"结论都不可信。
+   t05/t08 的修复后六轴批次
    **至今没有跑过**（盘上现存 ax_* 全是修复前批次，12 帧剪影全 0）。
    10 条注册路径里 `lod-threshold` 在 t01
    上产生 0 帧不是漏跑——该数据集只有 1 个根瓦片且 `geometricError=0`，

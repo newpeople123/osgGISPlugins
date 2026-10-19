@@ -38,6 +38,16 @@ for (const session of fs.readdirSync(runsRoot).sort()) {
       holes: v.filter((r) => sil(r) === 0 && proj(r) > 20).length,
       tooSmall: v.filter((r) => sil(r) === 0 && proj(r) <= 20).length,
       camBad: v.filter((r) => r.cameraFinite === false).length,
+      // camBad 只信"页面自己承认坏了"的帧，历史批次有两处漏报：
+      // ① 早期页面压根没写 cameraFinite 字段（现存 720 帧里 547 帧没有），
+      //    `=== false` 把"缺字段"读成了"没问题"；
+      // ② 判据只查 positionWC/directionWC，没查真正落盘的 camera.lon/lat/height，
+      //    而 NaN 经 JSON.stringify 会静默变成 null。
+      // camNaN 直接按记录里的相机值补判，旧批次不用重跑也能看出损伤面。
+      camNaN: v.filter((r) => !r.camera
+        || [r.camera.lon, r.camera.lat, r.camera.height]
+            .some((x) => x === null || x === undefined || !isFinite(x))).length,
+      noFlag: v.filter((r) => r.cameraFinite === undefined).length,
       medSil: (() => { const a = v.map(sil).filter((x) => x > 0).sort((x, y) => x - y);
         return a.length ? a[a.length >> 1] : 0; })(),
       minProj: Math.round(Math.min(...v.map(proj)))
@@ -45,15 +55,19 @@ for (const session of fs.readdirSync(runsRoot).sort()) {
   }
 }
 
-const head = ['session', 'frame', 'shots', 'drawn', 'holes', 'tooSmall', 'camBad', 'medSil', 'minProj'];
+const head = ['session', 'frame', 'shots', 'drawn', 'holes', 'tooSmall',
+              'camBad', 'camNaN', 'noFlag', 'medSil', 'minProj'];
 console.log('| ' + head.join(' | ') + ' |');
 console.log('|' + head.map(() => '---').join('|') + '|');
 for (const r of rows) {
   console.log('| ' + head.map((k) => r[k]).join(' | ') + ' |');
 }
+const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
 console.log('\nsessions=' + new Set(rows.map((r) => r.session)).size
   + '  paths=' + rows.length
-  + '  shots=' + rows.reduce((a, r) => a + r.shots, 0)
-  + '  holes=' + rows.reduce((a, r) => a + r.holes, 0)
-  + '  tooSmall=' + rows.reduce((a, r) => a + r.tooSmall, 0)
-  + '  camBad=' + rows.reduce((a, r) => a + r.camBad, 0));
+  + '  shots=' + sum('shots')
+  + '  holes=' + sum('holes')
+  + '  tooSmall=' + sum('tooSmall')
+  + '  camBad=' + sum('camBad')
+  + '  camNaN=' + sum('camNaN')
+  + '  noFlag=' + sum('noFlag'));

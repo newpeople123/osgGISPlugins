@@ -1,5 +1,7 @@
 // 校验 tileset.json 里"父包围盒覆盖子包围盒"（3D Tiles 1.0 §10.2.2 语义要求，
 // Cesium 用它做视锥剔除与 error 计算；父不覆盖子会导致子树被误剔除）。
+// 顺带校验父级 geometricError >= 子级：本管线按 G(n)=max(measured(n), max G(child))
+// 构造（手册 9.6），违例意味着父级声称的误差比它自己的子级还小——那是构造被改坏了的信号。
 // tileset.box 是 [cx,cy,cz, xx,0,0, 0,yy,0, 0,0,zz]（轴对齐，无旋转）。
 // 用法：node scripts/tileset_bounds.js <数据集目录|容器目录> [...]
 // 退出码：有违例 = 1。
@@ -20,7 +22,7 @@ function datasetDirs(arg) {
 function checkDataset(dir) {
   const ts = JSON.parse(fs.readFileSync(path.join(dir, 'tileset.json'), 'utf8'));
   const issues = [];
-  let nan = 0, negHalf = 0, badGe = 0;
+  let nan = 0, negHalf = 0, badGe = 0, geUp = 0;
 
   function box(t) {
     const b = t.boundingVolume && t.boundingVolume.box;
@@ -39,9 +41,12 @@ function checkDataset(dir) {
     return null;
   }
 
-  (function walk(t, depth, parent, uri) {
+  (function walk(t, depth, parent, uri, parGe) {
     if (t.geometricError !== undefined &&
         (!Number.isFinite(t.geometricError) || t.geometricError < 0)) { badGe++; }
+    if (parGe !== null && Number.isFinite(t.geometricError) && t.geometricError > parGe + 1e-12) {
+      geUp++;
+    }
     const b = box(t);
     const myUri = (t.content && (typeof t.content === 'string' ? t.content
                  : t.content.uri)) || uri;
@@ -53,10 +58,11 @@ function checkDataset(dir) {
       }
     }
     if (b) b.__uri = myUri || '(no content)';
-    (t.children || []).forEach((c) => walk(c, depth + 1, b, myUri));
-  })(ts.root, 0, null, null);
+    (t.children || []).forEach((c) => walk(c, depth + 1, b, myUri,
+      Number.isFinite(t.geometricError) ? t.geometricError : parGe));
+  })(ts.root, 0, null, null, null);
 
-  return { name: path.basename(dir.replace(/[\\/]+$/, '')), issues, nan, negHalf, badGe };
+  return { name: path.basename(dir.replace(/[\\/]+$/, '')), issues, nan, negHalf, badGe, geUp };
 }
 
 let bad = 0;
@@ -68,17 +74,19 @@ for (const arg of process.argv.slice(2)) {
     let r;
     try { r = checkDataset(d); } catch (e) { console.error('ERROR ' + d + ': ' + e.message); bad++; continue; }
     rows.push(r);
-    if (r.issues.length || r.nan || r.negHalf || r.badGe) bad++;
+    if (r.issues.length || r.nan || r.negHalf || r.badGe || r.geUp) bad++;
   }
 }
 
-console.log('\n| dataset | 父不覆盖子 | NaN box | 负半轴 | 非法 geometricError | 示例(深度/轴/超出) |');
-console.log('|---|---|---|---|---|---|');
+console.log('\n| dataset | 父不覆盖子 | NaN box | 负半轴 | 非法 geometricError | 子级误差大于父级 | 示例(深度/轴/超出) |');
+console.log('|---|---|---|---|---|---|---|');
 for (const r of rows) {
   const ex = r.issues.slice(0, 3).map((i) => 'd' + i.depth + '/ax' + i.axis + '/'
     + (i.over < 0.01 ? i.over.toExponential(2) : i.over.toFixed(3))).join(' ');
-  console.log('| ' + [r.name, r.issues.length, r.nan, r.negHalf, r.badGe, ex || '-'].join(' | ') + ' |');
+  console.log('| ' + [r.name, r.issues.length, r.nan, r.negHalf, r.badGe, r.geUp, ex || '-'].join(' | ') + ' |');
 }
 const tot = rows.reduce((a, r) => a + r.issues.length, 0);
-console.log('\ndatasets=' + rows.length + '  父不覆盖子合计=' + tot + '  有问题的数据集=' + bad);
+const totUp = rows.reduce((a, r) => a + r.geUp, 0);
+console.log('\ndatasets=' + rows.length + '  父不覆盖子合计=' + tot
+  + '  误差递增违例合计=' + totUp + '  有问题的数据集=' + bad);
 process.exit(bad ? 1 : 0);

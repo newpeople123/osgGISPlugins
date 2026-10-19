@@ -35,11 +35,12 @@ bash scripts/visual_capture.sh <session> <tileset-url> [paths] [maxFrames] [port
 bash scripts/visual_sweep.sh [maxFrames] [name...]
                                            # 12 资产矩阵 + 真实 FBX + cmpt 探针一次跑完
 node scripts/va_summary.js [sessionFilter] # 汇总 runs/*/summary.json（帧数/空洞/判不了/灰模）
-node scripts/va_paths.js [sessionFilter]  # 逐相机路径明细（空洞/判不了/cameraFinite=false）
+node scripts/va_paths.js [sessionFilter]  # 逐相机路径明细（空洞/判不了/camBad/camNaN/noFlag）
 node scripts/check_manifest_assertions.js <数据集|容器目录> [...]
                                            # report ↔ manifest ↔ tileset 三文件一致性断言
 node scripts/tileset_bounds.js <数据集|容器目录> [...]
-                                           # 回扫 tileset.json：NaN/负半轴/非法 geometricError/父盒覆盖子盒
+                                           # 回扫 tileset.json：NaN/负半轴/非法 geometricError/
+                                           # 父盒覆盖子盒/子级误差大于父级（ge 单调性）
 node scripts/b3dm_extents.js <文件.b3dm|文件.i3dm> [...]
                                            # 读 GLB accessor min/max，核对 tileset 盒与真实写出的几何
 node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
@@ -335,8 +336,22 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    `ax_t08_big_coords` = 12 帧 / 空洞 12 / camBad **0**，且 12 帧剪影全 0——
    现存 `ax_*` **全是修复前批次**，"修复后 0 空洞"与 65 674–819 868 px 实际出自
    `fa_t01_plane_curved`（只有 t01）。两个后果：① t05/t08 的修复后六轴验收**从未做过**；
-   ② `cameraFinite` 判据字段在 `camera.lon|height = null` 时仍报 camBad=0，是**漏报**，
-   必须先修采集页再谈重跑。加上 A-41 之后所有 i3dm 截图都是错版，视觉验收整批重做。
+   ② 相机判据**整批不可用**（本轮把机制查清并已修，见下）。加上 A-41 之后所有 i3dm
+   截图都是错版，视觉验收整批重做。
+
+   **② 的准确机制**（我原先写成"flag 报 true 而相机是 null"，逐条核对产物后确认**不是**这样）：
+   把 `docs/visual-acceptance/runs/*` 里 720 条 `kind:"shot"` 记录全扫一遍——
+   `cameraFinite` **字段缺失 547 条**（含全部 `ax_*`/`mx_*`/`full_*` 批次，那些页版本压根没写它），
+   而 `va_paths.js` 判的是 `r.cameraFinite === false`，"缺字段"因此被读成"没问题"→ camBad 恒 0；
+   另有 **39 条** `camera.lon/lat/height` 落盘成 `null`（NaN 经 `JSON.stringify` 静默变 null），
+   其中 `ax_*` 5 个会话各 6/12 帧。**没有任何一条**是"flag=true 而相机非有限"。
+   漏报来自**字段缺失 + 判据只查 `positionWC`/`directionWC`、没查真正写进记录的经纬度**。
+   修法两条：页面新增 `cameraFiniteNow()`（同时查 WC 位置/视线方向与 cartographic 的
+   经纬度高程，`c` 缺失时判 false 而不再抛异常）+ 所有落盘数值走 `fin()`（NaN→null，
+   但此时 flag 必为 false）；`va_paths.js` 增加 `camNaN`/`noFlag` 两列，直接按记录里的相机值
+   补判，**旧批次不重跑也能看出损伤面**——
+   `node scripts/va_paths.js ax_` 现报 `shots=60 holes=60 camBad=0 camNaN=30 noFlag=60`。
+   `camBad` 列语义未改，历史引用数字仍然可读。
 8. **A-42（本轮新发现，中）已修**：发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录
    长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB
    `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` 分发出去——lugouqiao_v15 实测
