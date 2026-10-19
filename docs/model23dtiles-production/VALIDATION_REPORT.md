@@ -101,7 +101,7 @@ bash scripts/run_validator.sh <同一个 outDir> \
 |---|---|
 | A-33 i3dm 瓦片按**展开**三角形计数并受预算约束 | `t05/i2.i3dm` 报 `triangles=3588` = 原型 12 三角形 × 299 实例，≤ 120 000 硬限；上一轮这里报的是 12 |
 | A-34 聚合代理身份映射可查 | `manifest.aggregateProxies` 在 t03 有 **3 个瓦片 / 7 条 BATCHID→源 feature**（`tiles/t0、t1、t4`），其余 11 个资产为 0 —— 与 `report.aggregateProxyCount`（t03=3，其余 0）**逐个对得上** |
-| A-35 占用数单一口径 | 12/12 资产 `report.manifestOccurrences == manifest.occurrenceCount`（例如 t04 8414/8414、t06 1015/1015、t11 616/616） |
+| A-35 占用数单一口径 | 12/12 资产 `report.manifestOccurrences == manifest.occurrenceCount`（例如 t04 8414/8414、t06 1015/1015、t11 616/616）。这一轮扩扫到**全部 373 份产物**：修复提交 `262dc77` 之后 0 处不一致，之前残留 5 处（`longxiang_covfix` 571/623、`wuhu_v1` 228/263、`matrix_texless/t03` 4/11、`matrix_covfix/t03` 6/9、`matrix_final/t03` 4/11），差额即落到聚合代理身份上的条目数，与上一行 t03 的"7 条"互相印证；`evidence/manifest_occurrences-a35-boundary.txt` |
 | A-28 源身份覆盖 | 12/12 `featuresMissingFromLeaves=0`、`proxyDroppedFeatureCount=0` |
 
 **外部验证**：`validation-matrix-a34/` 12 个 tileset 合计 **3 error / 1 warning**。

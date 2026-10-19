@@ -106,7 +106,9 @@ python scripts/visual_capture.py --tileset <tileset.json> --out <dir>  # 视觉�
 
 `F:\wb_3dtiles_out\longxiang_covfix\`（日志 `longxiang_covfix.log`）。
 **0 ERROR、已发布**：129 tiles（深度 12）、127 内容瓦片最大 2 226 920 B、
-最大 34 675 三角形、145 源 feature / 623 occurrences、
+最大 34 675 三角形、145 源 feature / 623 occurrences（这串数字出自 `ee6499e`，
+早于 A-35 的 `262dc77`：623 是"所有 batch 条目"的旧口径，单一口径应为 571，
+见 AUDIT A-35 与 `evidence/manifest_occurrences-a35-boundary.txt`）、
 `featuresMissingFromLeaves=0`、`proxyDroppedFeatureCount=0`、
 误差 max 168.37 m / p95 100.51 m / mean 15.10 m、certified 58 / boundLoose 41、
 30 个远景代理按 A-30 契约建成无纹理版、93.4 s、峰值 RSS 2 401 MiB。

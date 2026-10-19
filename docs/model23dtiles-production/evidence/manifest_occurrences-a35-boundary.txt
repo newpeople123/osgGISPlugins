@@ -1,0 +1,59 @@
+A-35 占用数单一口径：修复前后的边界（373 份产物全量扫描）
+================================================================
+
+复现命令
+--------
+# 断言 1（report.manifestOccurrences == manifest.occurrenceCount）用仓库工具跑：
+node scripts/check_manifest_assertions.js \
+  docs/model23dtiles-production/runs/matrix_a34 \
+  docs/model23dtiles-production/runs/matrix_a38gate \
+  docs/model23dtiles-production/runs/matrix_a41fix \
+  docs/model23dtiles-production/runs/matrix_a41fix2
+#   -> datasets=46  failures=0   退出码 0
+
+node scripts/check_manifest_assertions.js \
+  docs/model23dtiles-production/runs/matrix_covfix/t03_giant_single_mesh \
+  docs/model23dtiles-production/runs/matrix_final/t03_giant_single_mesh \
+  F:/wb_3dtiles_out/longxiang_covfix F:/wb_3dtiles_out/wuhu_v1 \
+  F:/wb_3dtiles_out/matrix_texless
+#   -> datasets=16  failures=5   退出码 1（阳性对照：检测器真的会红）
+
+# 全量扫描（含"key 到底在哪个文件里"这一条）：遍历 runs/ 与 F:/wb_3dtiles_out/
+# 下所有同时带 feature-manifest.json + conversion-report.json 的目录，比较两个数。
+# 结果：checked=373  noKey=0  mismatch=5
+#（5 处 mismatch 全在下表，且全部早于修复提交）
+
+
+1. key 位置（此前有一条口头结论记错了，这里钉死）
+-------------------------------------------------
+- `occurrenceCount` 只在 **feature-manifest.json** 里写：`TileFeatureMapper.cpp:155`
+- `manifestOccurrences` 只在 **conversion-report.json** 里写：`ProductionProfile.cpp:115`
+  取数处 `ProductionPipeline.cpp:1221`
+- 373/373 份 manifest 都有 `occurrenceCount`，**0 份缺 key**。
+  "report 里没有 occurrenceCount"不是缺陷——两个文件本来各用各的键名，
+  文档里也没有任何一处声称 report 带 occurrenceCount（docs/ 全量 grep 复核）。
+
+
+2. 修复前残留的 5 处不一致（差额 = 落到聚合代理身份上的 batch 条目数）
+--------------------------------------------------------------------
+数据集                                   manifest  report  差额   产物时间
+F:/wb_3dtiles_out/longxiang_covfix          571     623     52   2026-10-19 11:38
+F:/wb_3dtiles_out/wuhu_v1                   228     263     35   2026-10-19 12:34
+F:/wb_3dtiles_out/matrix_texless/t03          4      11      7   2026-10-19 11:44
+runs/matrix_covfix/t03_giant_single_mesh      6       9      3   2026-10-19 11:31
+runs/matrix_final/t03_giant_single_mesh       4      11      7   2026-10-19 12:27
+
+A-35 定级时只举了 longxiang 那一对；其实 12 资产矩阵自己就有 3 处，
+t03（单一巨型 mesh + 聚合代理）是最容易暴露两套定义的 fixture。
+
+
+3. 边界
+-------
+修复提交 `262dc77`（2026-10-19 16:39:55 +08:00，"i3dm 实例瓦片补三角形预算，
+聚合代理身份映射真正落盘"）引入 `sourceOccurrenceCount(const SourceModel&)`
+作为唯一定义。上表 5 处产物时间全部落在 11:31～12:34，**严格早于该提交**；
+该提交之后的 4 个矩阵批次（46 个数据集）+ F 盘全部复跑产物，**0 处不一致**。
+
+同批次里 `aggregateProxies` 的"无条目"违例（longxiang 11 个瓦片、wuhu_v1 5 个、
+t03 若干）属 A-34，与 A-35 是同一提交修的两件事，这里一并列出以免被误读成
+"A-35 修复后又坏了"。

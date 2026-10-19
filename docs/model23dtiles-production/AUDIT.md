@@ -604,6 +604,16 @@ longxiang 的 11 个聚合瓦片全部缺 `aggregateProxies` 条目，t03 缺 3 
 manifest.occurrenceCount`；修复前 longxiang 实测 623 / 571 不一致
 （`evidence/assertions-before-a34.txt`）。
 
+**复验范围（已扩到全量产物，不只是 longxiang 一对）**：
+`evidence/manifest_occurrences-a35-boundary.txt`。373 份带 manifest 的产物全扫，
+**缺 key 的 0 份、两个数不一致的 5 份**——除 `longxiang_covfix`(571/623) 外还有
+`wuhu_v1`(228/263)、`matrix_texless/t03`(4/11)、`matrix_covfix/t03`(6/9)、
+`matrix_final/t03`(4/11)，产物时间全部早于修复提交 `262dc77`(16:39:55)；
+该提交之后的 4 个矩阵批次 46 个数据集 + F 盘复跑产物 **0 处不一致**。
+顺手钉死一个反复记错的点：`occurrenceCount` 只在 `feature-manifest.json` 里、
+`manifestOccurrences` 只在 `conversion-report.json` 里，两个文件各用各的键名，
+"report 没有 occurrenceCount"不是缺陷。
+
 ---
 
 ### A-36 `boxJson` 把 NaN / 未初始化包围盒折成零，坏 bounds 能"洗白"出盘　**CLOSED**
