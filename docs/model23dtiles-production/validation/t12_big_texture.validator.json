@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-19T06:27:19.745Z",
+  "numErrors": 0,
+  "numWarnings": 1,
+  "numInfos": 0,
+  "issues": [
+    {
+      "type": "CONTENT_VALIDATION_WARNING",
+      "path": "tiles/t0.b3dm",
+      "message": "tiles/t0.b3dm caused validation warnings",
+      "severity": "WARNING",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_WARNING",
+          "path": "tiles/t0.b3dm",
+          "message": "Content tiles/t0.b3dm caused validation warnings",
+          "severity": "WARNING",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/extensionsUsed/0",
+              "message": "Cannot validate an extension as it is not supported by the validator: 'KHR_texture_basisu'.",
+              "severity": "INFO"
+            },
+            {
+              "type": "CONTENT_VALIDATION_WARNING",
+              "path": "/images/0/mimeType",
+              "message": "Invalid value 'image/ktx2'. Valid values are ('image/jpeg', 'image/png').",
+              "severity": "WARNING"
+            },
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/images/0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            },
+            {
+              "type": "CONTENT_VALIDATION_WARNING",
+              "path": "/images/0",
+              "message": "Image format not recognized.",
+              "severity": "WARNING"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
