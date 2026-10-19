@@ -135,47 +135,62 @@ matrix_a34 本体 + 追加 `node .workbuddy/a38_rate/drive.js 30` 的 3 配置 �
 而且 t09 的 `instanceTileCount=0` 根本不进那条代码路径。产物不逐位一致这件事按 **AUDIT A-40**
 单列，逐配置/逐瓦片哈希对比见 `evidence/a38-forensics.txt` §5/§7/§8/§9。
 
-## 1c. 当前权威矩阵 `matrix_a41fix2`（2b 闸门生效 + A-41 修复，二进制 22:40）
+## 1c. 当前权威矩阵 `matrix_a42fix`（A-41 相对帧 + A-42 路径泄漏修复，exe 00:12 / `osgdb_gltf.dll` 00:16）
 
 ```bash
 cmake --build build --config Release --target model23dtiles test_production -j 8
+# osgdb_gltf 是 MODULE 插件，不在上一行的依赖图里：改到插件源码后必须单独重建，
+# 否则 exe 用的是旧 DLL（本轮踩过：DLL 停在 22:14，重跑看不出修复生效）
+cmake --build build --config Release --target osgdb_gltf -j 8
 bash scripts/run_matrix.sh E:/dev/C++/osgGISPlugins-gpt/test_assets \
-                           E:/dev/C++/osgGISPlugins-gpt/docs/model23dtiles-production/runs/matrix_a41fix2
-node scripts/collect_matrix.js <同一个 outDir>
-node scripts/i3dm_pose_check.js <outDir>/t05_instances     # A-41 位姿验收
+                           F:/wb_3dtiles_out/matrix_a42fix
+node scripts/collect_matrix.js F:/wb_3dtiles_out/matrix_a42fix
+node scripts/i3dm_pose_check.js <outDir>/t05_instances     # A-41 位姿验收（相对帧口径）
+node scripts/path_leak_scan.js  <outDir>                   # A-42 交付物不含本地绝对路径
 ```
+构建与转换**不要并行**：转换进程会占住 `Release/osgPlugins-3.6.5` 里的 DLL，
+post-build 的 `vcpkg z-applocal` 拷贝会失败（MSB3073，本轮实测撞到过一次）。
 
-结果 **12/12 rc=0、`limitViolations=0`**（`runs/matrix_a41fix2/`）。这一轮与 §1/§1b 的
-差别是**口径**而不是列数：`selfValidate` 的 2b 参考系已改成"全部 `_model.objects` aabb
-的并集"（A-41 记录的两条实测），且 i3dm 位姿第一次进入验收。
+结果 **12/12 rc=0、`limitViolations=0`、`path_leak_scan` 0/213 瓦片 0 命中**
+（`F:/wb_3dtiles_out/matrix_a42fix/`）。这一轮与 §1/§1b 的差别是**口径**而不是列数：
+`selfValidate` 的 2b 参考系已改成"全部 `_model.objects` aabb 的并集"（A-41 记录的两条实测），
+i3dm 位姿第一次进入验收，且验收口径是 `inverse(原型世界)·实例世界` 而**不是**绝对平移。
 
 | 资产 | rc | 耗时 s | 峰值 MiB | tiles | 最大字节 | 最大三角形 | errMax | cert/loose | inst | src/occ | miss/drop |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| t01_plane_curved | 0 | 0.04 | 16.4 | 1 | 77 184 | 3 042 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
+| t01_plane_curved | 0 | 0.02 | 16.4 | 1 | 77 184 | 3 042 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
 | t02_thin_features | 0 | 0.30 | 33.2 | 7 | 42 808 | 572 | 40.35 | 3/1 | 0 | 54/162 | 0/0 |
-| t03_giant_single_mesh | 0 | 262.24 | 149.6 | 7 | 1 162 032 | 34 296 | 131.27 | 0/3 | 0 | 1/4 | 0/0 |
-| t04_many_objects | 0 | 66.88 | 154.2 | 127 | 1 143 360 | 14 400 | 317.14 | 63/59 | 0 | 1202/8414 | 0/0 |
+| t03_giant_single_mesh | 0 | 261.54 | 149 | 7 | 1 162 032 | 34 296 | 131.27 | 0/3 | 0 | 1/4 | 0/0 |
+| t04_many_objects | 0 | 67.54 | 149.2 | 127 | 1 143 360 | 14 400 | 317.14 | 63/59 | 0 | 1202/8414 | 0/0 |
 | **t05_instances** | **0** | 0.02 | 18.1 | 4 | 24 712 | 3 588 | 0.00 | 0/0 | **1** | 300/2 | 0/0 |
-| t06_nonuniform | 0 | 2.59 | 126.1 | 31 | 193 624 | 2 412 | 754.27 | 13/13 | 0 | 203/1015 | 0/0 |
-| t07_zero_axis | 0 | 0.02 | 16.4 | 1 | 60 016 | 2 404 | 0.00 | 0/0 | 0 | 2/2 | 0/0 |
-| t08_big_coords | 0 | 0.74 | 51.7 | 7 | 59 080 | 720 | **10 633 297.47** | 3/3 | 0 | 62/186 | 0/0 |
-| t09_cross_tile_object | 0 | 0.75 | 40.7 | 7 | 41 152 | 492 | 331.62 | 3/2 | 0 | 43/129 | 0/0 |
-| t10_material_heavy | 0 | 0.56 | 55.9 | 7 | 40 184 | 480 | 123.29 | 3/3 | 0 | 42/126 | 0/0 |
-| t11_sparse_outlier | 0 | 1.80 | 81.8 | 15 | 146 768 | 1 824 | 5643.16 | 7/6 | 0 | 154/616 | 0/0 |
-| t12_big_texture | 0 | 1.86 | 232.3 | 1 | 510 440 | 6 962 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
+| t06_nonuniform | 0 | 2.66 | 143.9 | 31 | 193 624 | 2 412 | 754.27 | 13/13 | 0 | 203/1015 | 0/0 |
+| t07_zero_axis | 0 | 0.02 | 16.3 | 1 | 60 016 | 2 404 | 0.00 | 0/0 | 0 | 2/2 | 0/0 |
+| t08_big_coords | 0 | 0.79 | 61.4 | 7 | 59 080 | 720 | **10 633 297.47** | 3/3 | 0 | 62/186 | 0/0 |
+| t09_cross_tile_object | 0 | 0.80 | 53.8 | 7 | 41 120 | 492 | 386.77 | 3/3 | 0 | 43/129 | 0/0 |
+| t10_material_heavy | 0 | 0.56 | 52.6 | 7 | 40 184 | 480 | 123.29 | 3/3 | 0 | 42/126 | 0/0 |
+| t11_sparse_outlier | 0 | 1.85 | 81.9 | 15 | 146 768 | 1 824 | 5643.16 | 7/6 | 0 | 154/616 | 0/0 |
+| t12_big_texture | 0 | 1.85 | 232.2 | 1 | **510 224** | 6 962 | 0.00 | 0/0 | 0 | 1/1 | 0/0 |
 
-三条必须一起读：
+四条必须一起读：
 
 1. **t05 是这一轮的实质变化**：`instanceTileCount=1` 且 `i3dm_pose_check` 判
-   **299/299 条实例位姿落盘、与 manifest 逐条对上（残差最大 7.8e-6 m）、GLB 节点 TRS=0**
-   → PASS。§1/§1b 里的 t05 虽然 rc=0，但位姿全是 0（A-41），那两份产物按"格式通过、内容作废"读。
-2. **t08 大坐标 `errMax=1.06e7` 没有被 2b 误伤**——闸门对"合法但量级离谱"的资产放行，
+   **299/299 = 100 % 对上相对帧 `inverse(原型世界)·实例世界`**（最近邻残差最大 **9.47e-6 m**，
+   float32 在 \|v\|≈150 m 的舍入量级）、按绝对平移比对 **0/299**（命中数必须为 0，
+   命中恰恰是双变换）、POSITION 非零 299/299、GLB 节点 TRS=0 → PASS。
+   §1/§1b 里的 t05 虽然 rc=0，但位姿全是 0（A-41），那两份产物按"格式通过、内容作废"读；
+   `a41fix_t05` 与 `matrix_a41fix2` 那两批"对上绝对平移就算 PASS"的中间产物同样作废。
+2. **t12 的 `最大字节` 从 510 440 变成 510 224，是 A-42 不是 A-41**：GLB 的
+   `bufferView.name`/`image.name` 原来写的是纹理的**完整输出路径**，现在只剩文件名。
+   这条同时解释了历史上 t12 在 510 432/510 440/510 344/510 304/510 296 之间跳——
+   **瓦片字节数随输出目录字符串长度变化**（JSON chunk 按 8 字节补齐），过去被误当成 A-40 的噪声。
+3. **t08 大坐标 `errMax=1.06e7` 没有被 2b 误伤**——闸门对"合法但量级离谱"的资产放行，
    对 A-41 那种"内容离开源范围"才拒（gate-only 那轮 t05 的 rc=3 就是真阳性）。
    ① "正常数据集不因 2b 误伤"这一条到现在为止的证据是 12 个合成资产，
-   真实 FBX 只在 v16 之后才算验过。
-3. **t09 与 §1/§1b 不可比**：它落在 A-40 的第 4 个变体上（见 §1b 末段），
-   `maxBytes/errMax/cert-loose` 都会随变体动。本表列的是这一次运行的实测值，
-   不是该资产的稳定值。
+   真实 FBX 要等 `lugouqiao_v17` 才算验过。
+4. **t09 这一轮回到了 §1/§1b 的基线**（41 120 / 386.77 / cert-loose 3/3，与
+   `matrix_a41fix` 逐字节同列）：`matrix_a41fix2` 那次是 A-40 的第 4 个变体，
+   `maxBytes/errMax/cert-loose` 随变体动。本表列的是这一次运行的实测值，
+   **t09 不是该资产的稳定值**，其余 11 个资产的稳定值与本表一致。
 
 ## 2. 扩展场景（矩阵缺口补齐）
 
@@ -187,20 +202,23 @@ node scripts/i3dm_pose_check.js <outDir>/t05_instances     # A-41 位姿验收
 |---|---|---|
 | S1 | `-tf ktx2` 全链路：KTX magic 校验 + b3dm 内引用全为 .ktx2 + validator | PASS |
 | S2 | `-mb 4096` 超硬限：报 597 条明确 ERROR，**outputDir 零文件残留**（14.16/14.17） | PASS |
-| S3 | 实例瓦片格式：内容文件 magic = `i3dm` | PASS（**仅容器 magic**）；"每实例位姿落盘"这一子项 2026-10-16 产物为 **FAIL**，代码已修、**场景尚未重采集** |
+| S3 | 实例瓦片格式：内容文件 magic = `i3dm` | PASS（**仅容器 magic**）；"每实例位姿落盘"这一子项 2026-10-16 产物为 **FAIL**，代码已修，**合成资产 t05 已重采并 PASS（§1c），真实 FBX 场景待 `v17`** |
 | S4 | 常规 b3dm + BATCH_LENGTH 一致性（validator BATCH 检查） | PASS |
 
 > S3 的 PASS **只覆盖容器 magic**（文件头是 `i3dm`）。"每个实例的位姿有没有落盘"这一项
 > 历史上从未验收过，本轮实测发现它**是坏的**：v15 的 126/126 个 i3dm 瓦片特征表 POSITION
 > 全为 0，实例位姿全部丢失，且原型几何被同组实例矩阵就地累乘到最大 1.22e8 m——见 AUDIT
-> **A-41**（阻断级，22:40 二进制已修）。修好之后新增验收工具
-> `node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm>`，它把特征表 POSITION 逐条与
-> `feature-manifest.json` 的实例平移按 `(x,−z,y)` 对集合：t05 修复后 **299/299 命中、残差最大
-> 7.8e-6 m**、GLB 节点 TRS=0、原型 span 回到 2.00 m；同一工具对 `matrix_a34/t05` 判
-> 0/299、对 `lugouqiao_v15` 判 126/126 全 0（exit 1），所以这不是一个"永远 PASS"的检查。
-> §1 矩阵与 §2 扩展场景里凡涉及实例资产的结论，都只在"计数/格式"口径上成立，
-> 不能读成"实例渲染正确"；S1–S4 表格本身是 2026-10-16 的产物，**S3 的位姿子项必须重跑
-> 才能改成 PASS**（见 STATUS 未闭合第 5 条）。
+> **A-41**（阻断级；flatten 掩码 exe 22:40 生效，"相对原型"那半 exe 23:53 才生效）。
+> 修好之后新增验收工具 `node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm>`：
+> 它把特征表 POSITION 逐条与 `inverse(原型世界矩阵)·实例世界矩阵` 的 `(x,−z,y)` 置换做
+> 最近邻对集合（**不是**对绝对平移——对绝对平移全命中恰恰是双变换的签名，本轮一开始就用错
+> 过一次这个口径，已作废那批中间产物重跑）。§1c 的 t05 实测 **299/299 命中、残差最大
+> 9.47e-6 m、绝对帧比对 0/299**、GLB 节点 TRS=0、原型 span 回到 2.00 m；同一工具对
+> `matrix_a34/t05` 判 0/299、对 `lugouqiao_v15` 判 126/126 全 0（exit 1），
+> 对 22:40 那批"位姿落的是绝对平移"的产物也判 FAIL，所以这不是一个"永远 PASS"的检查。
+> §1 矩阵与 §2 扩展场景里凡涉及实例资产的结论，在 v17 之前仍只在"计数/格式"口径上成立，
+> 不能读成"实例渲染正确"；S1–S4 表格本身是 2026-10-16 的产物，**S3 行的 FAIL→PASS 目前
+> 只有合成资产 t05 那一份证据**（见 STATUS 未闭合第 5 条）。
 
 > BLOCKED（2026-10-19）：本机 `python` 是 Windows Store 占位程序，S1–S4 的自动化
 > 采集器 `run_extra_scenarios.py` 无法重跑（`rc=49`、零输出）。上表是 2026-10-16
@@ -231,6 +249,11 @@ bash scripts/wb_build.sh test_production
 > `test_production_result.txt` 只有末行计数，它是 `tests/production/main.cpp`
 > 自己 truncate 写的，别把 stdout 重定向到同名文件）。
 > 上一档 118/118 的证据保留在 `evidence/test_production-118.txt`。
+>
+> **2026-10-20 00:22 复测：150/150**。新增的是 A-41 的端到端位姿用例 `instancePoses`
+> （11 条，含"特征表 POSITION 逐条 = `inverse(原型世界)·实例世界`"、"GLB 原型几何不被连乘"、
+> "GLB 节点不带 TRS"）与 A-42 的 `noLocalPaths`（9 条，其中 3 条是路径探测器的**自检正例**）。
+> 计数轨迹 118 → 130 → 141 → 150，各档证据文件同目录保留。
 >
 > **harness 的一次真 bug**：加进包围体用例后全量跑一度只报 71 条、后来干脆
 > 中途没输出。原因不是"用例互相干扰"，而是 `is >> json` 解析 `1e999` 会抛
@@ -583,10 +606,14 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
 
 ## 9. 验证结论
 
-- **实例位姿（A-41，本轮新增口径）**：代码已修（22:40 二进制），`matrix_a41fix2` 的 t05
-  以 `scripts/i3dm_pose_check.js` 逐条对上 manifest 实例平移（299/299、残差 ≤7.8e-6 m、
-  GLB 无节点 TRS）；同一工具对 `matrix_a34/t05` 与 `lugouqiao_v15` 判 exit 1。
-  **结论只到合成资产**：真实 FBX 的 i3dm 位姿要等 `lugouqiao_v16` 跑完才算验过，
+- **实例位姿（A-41，本轮新增口径）**：代码分两段修好（flatten 掩码 exe 22:40 /
+  相对帧 exe 23:53），§1c 的 `matrix_a42fix` t05 用 `scripts/i3dm_pose_check.js` 逐条对上
+  `inverse(原型世界)·实例世界` 的 `(x,−z,y)` 置换（**299/299、残差 ≤9.47e-6 m、GLB 无节点 TRS**）；
+  **按绝对平移比对必须 0/299**，全命中绝对平移恰恰是"相对帧没生效"的签名——本轮一开始就把
+  这条判据写反过，`a41fix_t05`、`matrix_a41fix2` 两批"299/299 命中绝对平移"的 PASS 已作废。
+  同一工具对 `matrix_a34/t05`、`lugouqiao_v15` 与上述两批中间产物都判 exit 1。
+  **结论只到合成资产**：真实 FBX 的 i3dm 位姿要等 `lugouqiao_v17`（23:53 exe + 00:16 插件；
+  `v16` 用的是"相对帧为空操作"的 22:40 二进制，已主动终止）跑完才算验过，
   在此之前**任何带 `.i3dm` 的既有产物一律不可发布**（v15、longxiang*、matrix_a34 等）。
 - 结构合法性：12 资产 + 真实 FBX + cmpt 探针在**官方** OGC validator 下
   上一批产物 `numErrors=0`（§7），但同日复跑 `matrix_a34` 的 t02 报 3 个

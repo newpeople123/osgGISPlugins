@@ -47,7 +47,11 @@ node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
                                            # 报荒谬坐标与零长法线的 @count-k 相对下标与是否被索引引用
 node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm> [--top 12]
                                            # A-41 验收：i3dm 特征表 POSITION 是否落盘、逐条对得上
-                                           # feature-manifest 的实例平移（(x,-z,y)）、GLB 节点有无 TRS
+                                           # inverse(原型世界)·实例世界 的 (x,-z,y) 置换（**不是**
+                                           # 绝对平移：绝对帧全命中恰恰是双变换）、GLB 节点有无 TRS
+node scripts/path_leak_scan.js <数据集目录>
+                                           # A-42 验收：分发瓦片与旁证 json 里不得出现本地绝对路径；
+                                           # 只认 JSON 字符串字面量形态，避免在 float 数据里误报
 node scripts/check_page_js.js docs/visual-acceptance/index.html
                                            # 改页面后先做内联 script 语法校验
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]
@@ -99,7 +103,7 @@ python scripts/visual_capture.py --tileset <tileset.json> --out <dir>  # 视觉�
 > node 20 估算 32.5 MB ≈ 纯几何 6 倍）。历史三项见 bfa43a0：
 > 字节估算低估 4 倍、meshopt 因误差上限过宽不削减、代理只判三角形预算。
 
-### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 跑完但被 A-41 判废，v16 复跑中
+### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 被 A-41 判废；v16 中途主动终止（用的是"相对帧为空操作"的 22:40 二进制）；v17 用 23:53 exe + 00:16 插件复跑中
 
 `lugouqiao_v11`（37d832c 时代二进制）真实失败：`selfValidate` 抓到 7 个瓦片
 12.2 万～50.8 万三角形超 120 000 硬限 → 按 14.17 拒绝发布（日志
@@ -212,12 +216,18 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    **11 个 rc=0**，其中 t08 大坐标 `errMax=1.06e7` 没有被误伤（① 的答案：正常数据集不误伤，
    但**只在对实例内容做了正确处理后**成立）；t05 仍被拒，这次是**真阳性**，拦到的正是
    下面第 5 条的 A-41（`tile 2 ... axis 1 ([2970.56,2972.56] vs source [-0.898,20.986] ±213.14)`）。
-   A-41 修好后再跑一次全矩阵（`runs/matrix_a41fix2`，exe 22:40）：**12/12 rc=0、
-   `limitViolations=0`**，t05 首次以"实例瓦片 + 2b 闸门"同时通过（`instanceTileCount=1`、
+   A-41 修好后再跑全矩阵：`runs/matrix_a41fix2`（exe 22:40）那轮 t05 虽 12/12 rc=0，
+   但位姿落的是**绝对平移**（相对帧那半当时是空操作），权威轮是
+   `F:/wb_3dtiles_out/matrix_a42fix`（exe 00:12 + `osgdb_gltf.dll` 00:16）：
+   **12/12 rc=0、`limitViolations=0`、`path_leak_scan` 0/213 命中**，t05 首次以
+   "实例瓦片 + 2b 闸门 + **相对帧位姿验收 299/299**"同时通过（`instanceTileCount=1`、
    `instanceCount=299`、`src/occ 300/2`、`miss/drop 0/0`）。
    **闸门至今没有在 A-38 本人的污染样本上实测过**（127 次那 1 次无法复现，没有新鲜坏样本），
-   所以 VALIDATION_REPORT §8b 关于 2b 对 A-38 的拦截仍然只是数值推演。真实 FBX
-   （约 6 h）仍未用带闸 + 修好参考系的二进制跑过。
+   所以 VALIDATION_REPORT §8b 关于 2b 对 A-38 的拦截仍然只是数值推演。
+   真实 FBX 侧：65 MB 的 `longxiang.fbx` 已用修正后的二进制跑通（`F:/wb_3dtiles_out/longxiang_a42`，
+   129 瓦片 rc=0，位姿 10/10 命中相对帧、路径泄漏 0/127）；335 MB 的
+   `20240529卢沟桥分洪枢纽.fbx`（约 6 h）正在以 `lugouqiao_v17` 重跑，
+   在此之前"真实 FBX 用带闸 + 修好参考系 + 修好位姿的二进制跑通"仍未闭合。
 2. **A-40 产物不逐位一致**（t02 累计 127 份产物：121 份逐字节相同，6 份是 5 个
    互不相同的整棵瓦片树变体——`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3
    跳，峰值 RSS 34.4→47.3 MiB，其中 matrix_a34 那一份就是 A-38 的污染产物）。
@@ -266,7 +276,8 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    **已完成并有结论的一项**：A-41 对这份产物的影响评估 = **全废**。`scripts/i3dm_pose_check.js`
    实测 126/126 个 i3dm 瓦片 POSITION 全 0、1787 条实例位姿 0 命中、原型 `|v|` 被累乘到
    1.22e8 m；这份产物作为"可发布数据集"已经不成立，下面两项待办只对**修复后的 v16** 有意义。
-5. **A-41（本轮新发现，阻断级）已修**：i3dm 的**每实例位姿全部丢失**，原型几何被同组
+5. **A-41（本轮新发现，阻断级）已修，但分两段生效**（flatten 掩码 exe 22:40 / 相对帧 exe 23:53）：
+   i3dm 的**每实例位姿全部丢失**，原型几何被同组
    N 个实例矩阵**就地累乘**。`ProductionPipeline.cpp:963-972` 让 N 个 `MatrixTransform`
    共享同一份原型 drawable；`GltfOptimizer.cpp:549-554` 的 `FlattenTransformsVisitor`
    用 `TransformAttributeFunctor` **就地**改这份共享数组，随后 `GltfOptimizer.cpp:563-565`
@@ -278,26 +289,44 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    是两个不同的量，别再混用）。机制已做**定量证伪检验**：t05 的 299 个矩阵纯平移，
    平移之和 (273.09, 2956.73, −1788.77) 与出盘偏移 (273.09, 1788.78, 2956.72) 逐项相等
    （仅 Y-up `(x,−z,y)` 轴序差）。
-   **修法（exe 22:40）**两处：实例瓦片把 `FLATTEN_TRANSFORMS` / `MERGE_TRANSFORMS` /
+   **修法（两段）**两处：实例瓦片把 `FLATTEN_TRANSFORMS` / `MERGE_TRANSFORMS` /
    `FLATTEN_STATIC_TRANSFORMS(_DUPLICATING_SHARED_SUBGRAPHS)` 四个位从优化选项里屏蔽掉
-   （与遗留 `I3DMTile.cpp:5-12` 同一处置），并把矩阵改成**相对原型**的
+   （与遗留 `I3DMTile.cpp:5-12` 同一处置，exe 22:40 生效），并把矩阵改成**相对原型**的
    `invProto * insts[k]->matrix`（原型世界矩阵已烘进几何，`SourceModel.cpp:356`），
-   原型世界矩阵不可逆时显式失败而不是静默错位。
-   **验收（新增 `scripts/i3dm_pose_check.js`）**：t05 修复后 **299/299** 条 POSITION 非零，
-   与 manifest 实例平移按 `(x,−z,y)` **逐条**最近邻全命中（残差最大 **7.8e-6 m**，float32
-   舍入级），GLB 节点带 TRS = **0**（不再双变换），原型 `|v|` 从污染态 2972.56 m 回到
-   **89.56 m**；`test_production` **130/130**；12 资产矩阵 12/12 rc=0。
+   原型世界矩阵不可逆时显式失败而不是静默错位。**这第二处 22:40 版是空操作**：写的是
+   `pw.invert(invProto)`，而本仓 OSG 的 `bool Matrixd::invert(const Matrixd& rhs)` 语义是
+   **`this = inverse(rhs)`**，方向写反后 `invProto` 停在单位阵上，位姿静默变成绝对世界平移
+   且不报错；改成 `invProto.invert(pw)` 才真正生效（exe 23:53）。全仓该调用点只有这一例
+   （`ObbVisitor.cpp:290` 是注释、`main.cpp:321` 用静态 `Matrixd::inverse()`，方向正确）。
+   **验收（新增 `scripts/i3dm_pose_check.js`，口径已纠正一次）**：判据是"逐条对上
+   `inverse(原型世界)·实例世界` 的 Y-up 置换"，**不是**对上绝对平移。权威轮
+   `F:/wb_3dtiles_out/matrix_a42fix` 的 t05：**299/299 = 100 %** 命中相对帧、最近邻残差最大
+   **9.47e-6 m**（float32 在 \|v\|≈150 m 的舍入量级），按绝对平移比对 **0/299**（命中数必须为 0，
+   命中即双变换），POSITION 非零 299/299、GLB 节点带 TRS = **0**、原型 `|v|` 从污染态 2972.56 m
+   回到 **89.56 m**；`test_production` **150/150**；12 资产矩阵 12/12 rc=0、`limitViolations=0`。
    同一脚本对**修复前**产物必须判 FAIL——已在 `matrix_a34/t05`（0/299 命中、POSITION 全 0、
    原型 `|v|` 最大 2972.56 m）和 `lugouqiao_v15`（126/126 POSITION 全 0、1787 条 0 命中、
    原型 `|v|` 最大 **1.22e8 m**）上验证过，探测器不是空跑。
-   **待办**：真实 FBX 用 22:40 二进制重跑（`lugouqiao_v16`，约 6 h）；
-   **已发布的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
+   **我自己写错过一次并已纠正**：22:41 那轮把"299 条 POSITION 逐项等于**绝对**平移"当成 PASS
+   证据（`F:/wb_3dtiles_out/a41fix_t05`、`runs/matrix_a41fix2`），那次确实是全 0 位姿被修好了，
+   但落的是错的帧——绝对帧 100 % 命中恰恰是相对帧 0 % 生效的签名。这两批产物已作废。
+   **待办**：真实 FBX 用**修正后的 23:53 exe + 00:16 插件**重跑为 `lugouqiao_v17`（约 6 h）；
+   `lugouqiao_v16`（22:53 起，用的是"第 2 点为空操作"的 22:40 二进制）已**主动终止**，
+   终止时只有 `.wb-staging/` 里 8 个半成品 b3dm，没有 `tiles/`、没有 `tileset.json`。
+   **已发布/已归档的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
    `.i3dm` 的产物），VALIDATION_REPORT S3 的 PASS 口径已按此改写。
 6. **`cmake --build build --config Release` 在 HEAD 不是绿的**：`test_3dtiles` 目标有
    **98 个既有** `std::filesystem` 编译错误（C2039/C3083/C2660，与本轮改动无关，
    在 `F:/wb_3dtiles_out/build_a41fix.log` 里改动之前就已存在）。生产构建与单测请**指定目标**：
    `cmake --build build --config Release --target model23dtiles test_production -j 8`（exit 0）。
    `test_3dtiles` 的修复本身是一条独立的未闭合项。
+   **同一类坑（本轮踩到，必须记）**：`osgdb_gltf.dll` 是 `add_library(... MODULE)`
+   （`src/osgdb_gltf/CMakeLists.txt:41`），**不在 `model23dtiles` 的依赖图里**，按目标构建
+   不会重建它。A-42 改 `Osg2Gltf.cpp` 后只构建那两个目标，`Release/osgdb_gltf.dll` 仍停在
+   22:14，重跑 t12 观察到"泄漏没变"，差点把修好判成没修好。**改到插件源码后必须
+   `cmake --build build --config Release`（全量）或显式加 `--target osgdb_gltf`，
+   并核对 DLL 时间戳再复验**。同理的四个插件目标：`osgdb_gltf` / `osgdb_fbx` /
+   `osgdb_ktx` / `osgdb_webp`（`src/osgdb_*/CMakeLists.txt`，均为 `MODULE`）。
 7. **视觉验收文档与产物不符，本轮已就地更正（§4/§1c 之外新发现的第二条）**：
    VALIDATION_REPORT §4 与 `docs/visual-acceptance/README.md` 都写过
    "修复前 `ax_t05_instances`/`ax_t08_big_coords` 各 12 帧 `cameraFinite=false` 12、空洞 12；
@@ -308,5 +337,23 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    `fa_t01_plane_curved`（只有 t01）。两个后果：① t05/t08 的修复后六轴验收**从未做过**；
    ② `cameraFinite` 判据字段在 `camera.lon|height = null` 时仍报 camBad=0，是**漏报**，
    必须先修采集页再谈重跑。加上 A-41 之后所有 i3dm 截图都是错版，视觉验收整批重做。
+8. **A-42（本轮新发现，中）已修**：发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录
+   长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB
+   `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` 分发出去——lugouqiao_v15 实测
+   **691/1057** 个瓦片带 `F:/wb_3dtiles_out/lugouqiao_v15\textures\…`）；FBX 导入器用**源文件
+   绝对路径**命名根节点，顺着 `SourceModel.cpp:201/211` 的 `nodePath` 进
+   `feature-manifest.json`（同数据集 **2729** 处 `D:/BaiduNetdiskDownload/…fbx/…`）。
+   第二条伤害更隐蔽：name 进 GLB JSON chunk → 同一输入、同一代码，t12 的 `t0.b3dm` 在不同
+   输出目录下出现过 **510432/510440/510344/510304/510296** 五个尺寸，**以前这类差异被当成
+   A-40 的噪声**（A-40 的样本里因此掺了假样本）。修法：两处都只留文件名。
+   **验收**：新工具 `scripts/path_leak_scan.js` 只认 JSON 字符串字面量形态的盘符
+   （第一版用裸 `[A-Za-z]:[/\\]` 扫二进制，把 t03 的 7 个瓦片**误报**成泄漏，已收紧——
+   那种命中不能当证据）；修复后 `matrix_a42fix` **0/213 瓦片、0/36 旁证 json**，
+   而修复前的 `lugouqiao_v15`/`matrix_a41fix2` 仍报 691/1 泄漏，探测器既不空跑也不恒阳；
+   **路径无关性**用两个长度差 40 字符的目录验证，`t0.b3dm` sha256 前缀
+   `115eef9af8c80ef63e7c2cf8` 相同；`test_production` 新增用例 `noLocalPaths`
+   （含 3 条探测器自检），共 **150/150**。
+   **边界**：`noLocalPaths` 的 fixture 不带纹理，只钉住 `nodePath` 那一路；纹理 `name`
+   那一路靠矩阵里的 t12 + `path_leak_scan.js`，**没有单测保护**。
 
 

@@ -51,7 +51,8 @@
 | A-39 | `ProxyMeshBuilder::appendElements` 用**源**数组类型 `static_cast` **目标**数组，属性类型不一致时按错误步长写（堆越界） | `ProxyMeshBuilder.cpp::appendElements` | CLOSED（显式拒绝 dst/src 类型不一致；实测现存分组不会触发，属加固） | 5.3 | 中 |
 | A-40 | 同一二进制、同一输入，产物**不逐位一致**：t02 累计 127 次产物里 121 次落在同一基线，6 次是**整棵瓦片树变了**的变体（共 5 个互不相同的哈希；`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3 之间跳，峰值 RSS 也随之变）。变体同时出现在默认并行(jobs8)、`WB_JOBS=4`、`WB_PROXY_DEBUG=1` 三种配置，其中 jobs4 那次的哈希与旧记的"WB_PROXY_DEBUG 第 3 跑"变体**完全相同** → 变体与调试开关、与并行度都无绑定（旧结论"不是并行度本身"证据仅 n=6 已撤回）。而且**同一份 b3dm 内容会换瓦片槽位**（基线 t5 == 变体 t3，sha256 相同）——症状不是数值算错，是分类/分配次序依赖运行时时序。**本轮新增第二个样本 t09（单轮 0.75 s）**：22:40 二进制单独跑 8 次得 3 个 `t0.b3dm` 变体，矩阵内那次是第 4 个，且 `errMax` 随变体在 386.77 ↔ 331.62 之间动；6/8 次逐字节等于 22:14 那轮的树 → 变体也与**二进制版本**无关 | `ProductionPipeline::buildB3dmTree` 并行窗口 / 误差评估分支 | OPEN（非确定性来源未定位；jobs4 也复现，说明"关掉并行即可稳定"未经证实；t09 可用 8×0.75 s 廉价复现，是后续定位的首选样本） | 17 | 高 |
 
-| A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` | FIXED（22:40 二进制；t05 逐实例位姿复验 + 12 资产矩阵 12/12 rc=0 均通过，真实 FBX `lugouqiao_v16` 复跑中。v15 等既有 i3dm 产物一律作废） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
+| A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` / `buildInstanceTree` | FIXED（两段分开修：flatten 掩码 22:40 生效；"相对原型"那半在 22:40 是**空操作**——`pw.invert(invProto)` 把方向写反，23:53 才真正生效。验收口径同时从"命中绝对平移"改到相对帧。v15/v16 与所有 22:40 产物一律作废） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
+| A-42 | 发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` **分发出去**：lugouqiao_v15 实测 **691/1057** 个瓦片带 `F:/wb_3dtiles_out/lugouqiao_v15\textures\…`）；FBX 导入器用源文件绝对路径命名根节点，顺着 `nodePath` 进 `feature-manifest.json`（同数据集 **2729** 处 `D:/BaiduNetdiskDownload/…fbx/…`）。副作用更难查：name 进 GLB JSON chunk → 同一输入、同一代码，t12 的 `t0.b3dm` 在不同输出目录下出现过 510432/510440/510344/510304/510296 五个尺寸，**以前把这类差异算成 A-40 的噪声** | `Osg2Gltf.cpp::getTexture` + `SourceModel.cpp::SourceModelVisitor::apply(Node&)` | FIXED（exe 00:12 + 插件 00:16：两处只留文件名；`path_leak_scan.js` 复扫 `matrix_a42fix` **0/213 瓦片、0/36 json**；两个长度差 40 字符的目录产出 sha256 相同；`test_production` 150/150。**`osgdb_gltf` 是 MODULE 插件，按目标构建不会重建它**） | —（手册未列：交付物含本地路径） | 中（分发物带操作者目录结构；并污染"逐字节可复现"这一验收口径） |
 
 ---
 
@@ -871,6 +872,14 @@ A-38 的污染产物**实测**就落在这条非确定性分支上——把三�
 复现路径已具备：`for i in $(seq 1 30); do 转换; 比对 tile 哈希; done` 即可，
 不需要真实模型——这也是把这条列成独立审计项而不是并入 A-38 的原因。
 
+**给 A-40 清掉一个假样本（A-42 修复后补记）**：VALIDATION_REPORT §1/§1b/§1c 里"t12 的
+`maxBytes` 在不同矩阵轮次之间是 510 432 / 510 440 / 510 344"这类差异**不是非确定性**，而是 GLB `name` 里那条
+绝对输出路径的**字符长度**（JSON chunk 按 8 字节补齐，所以差值恒为 8 的倍数）——它是
+**确定性的、可用路径长度算出来的**，与运行时时序无关。A-42 修完后同一输入换目录重跑
+sha256 已经相同。**本节赖以立论的 t02（127 份产物）与 t09（8 次连跑）都是无纹理资产，
+不受这条混淆项影响，A-40 的证据 base 不变**；但往后凡用"逐字节一致"当验收，
+必须**固定输出目录**，否则又会把确定性差异读成噪声。
+
 ---
 
 ### A-39 `appendElements` 按源类型 cast 目标数组　**CLOSED（加固）**
@@ -906,7 +915,7 @@ A-38 的污染产物**实测**就落在这条非确定性分支上——把三�
 | `Tileset::valid()` / `Tile::valid()` 掩盖错误 | **CONFIRMED** → A-05 |
 | TBB 与非 TBB 路径都要可构建 | **CONFIRMED 不满足** → A-14 |
 
-### A-41 i3dm 实例位姿全部丢失 + 原型几何被实例矩阵就地累乘　**FIXED（22:40 二进制，阻断级）**
+### A-41 i3dm 实例位姿全部丢失 + 原型几何被实例矩阵就地累乘　**FIXED（flatten 掩码 22:40 / 相对帧 23:53，阻断级）**
 
 **症状**（全部来自盘上产物实测，不是推演）：`lugouqiao_v15` 的 126 个 `.i3dm` 瓦片，
 **126/126 的特征表 POSITION 全为 (0,0,0)、SCALE_NON_UNIFORM 全为 (1,1,1)**——也就是说
@@ -956,7 +965,7 @@ aabb 的并集"（`ProductionPipeline.cpp` 2b 块）。改完后 t05 **仍然**�
 内容对着合法实例最高只有 20 m 的源范围。也就是说：**闸门现在能拦住 A-41，但代价是任何带
 实例的数据集在 A-41 修好之前都发不出来**。
 
-**修复（已实施，exe 22:40）**，两处：
+**修复（分两段生效：flatten 掩码 exe 22:40，相对帧 exe 23:53）**，两处：
 1. `ProductionPipeline::writeContent` 对实例瓦片剔掉折变换的优化位——
    `FLATTEN_TRANSFORMS` / `MERGE_TRANSFORMS` / `FLATTEN_STATIC_TRANSFORMS`
    / `FLATTEN_STATIC_TRANSFORMS_DUPLICATING_SHARED_SUBGRAPHS`（两次 `optimize` 调用都用
@@ -966,6 +975,18 @@ aabb 的并集"（`ProductionPipeline.cpp` 2b 块）。改完后 t05 **仍然**�
 2. 实例矩阵改成**相对原型**：`mt->setMatrix(inverse(protoObj->worldMatrix) * insts[k]->matrix)`，
    原型世界矩阵不可逆时显式记 failure 并跳过该原型（宁可拒发）。
 
+**第 2 点在 22:40 二进制里是空操作（23:53 才真正生效）**：那行写的是
+`pw.invert(invProto)`，而本仓 OSG 的签名是
+`bool Matrixd::invert(const Matrixd& rhs)`——语义为 **`this = inverse(rhs)`**，不是
+"把 `this` 的逆写进 `rhs`"。于是 `invProto` 停在默认构造的单位阵上，`pw` 反而被覆盖成
+`inverse(单位阵)`。结果 `mt->setMatrix(I * instWorld)` = 实例**绝对**世界平移，而 GLB 几何
+已按原型世界矩阵烘好，渲染时仍整体偏移一个原型平移（双变换没消除）。追踪实测
+（临时 TRACE，已删）：`protoWorld=(-0,-0,-0) rel=(10,3,-4)`，而单测里独立
+`SourceModel::build` 出来的 `objects[0].worldT=(1,2,3)` —— 同一个 `build()` 给出两个值，
+差在 `invert` 把 `pw` 覆写了；原型 `aabb` 仍是 (1,2,3)..(2,3,3)，证明输入与 `build()` 都没问题。
+修正为 `invProto.invert(pw)`（exe 23:53），同一处调用点全仓只有这一例（`ObbVisitor.cpp:290`
+那条是注释，`main.cpp:321` 用的是 `Matrixd::inverse()` 静态版，方向正确）。
+
 **先纠正一条我自己写错的判断**：上面"要么跳过 flatten、否则 GLB 会双重变换"里的前提是错的。
 读码确认 `ReaderWriterGLTF.cpp:37-50` 的 i3dm 分支**本来就不把 `MatrixTransform` 转进 GLB**
 （它只取 `getChild(0)->asGroup()` 的孩子即 Geode 去转换），所以 GLB 里没有 per-node TRS
@@ -974,41 +995,130 @@ aabb 的并集"（`ProductionPipeline.cpp` 2b 块）。改完后 t05 **仍然**�
 `SourceInstance::matrix` 是实例自己的世界矩阵（`SourceModel.cpp:557`），不换算就会把世界
 变换乘两遍（IL=1 的瓦片也错，只是错得不显眼）。
 
-**定量复验（t05，22:40 二进制，`F:/wb_3dtiles_out/a41fix_t05`）**：`i2.i3dm`
-INSTANCES_LENGTH=299、**299/299 个 POSITION 非零**，其 bbox
-`(-148.99,-149.72,0.10) … (149.50,149.87,19.99)` 与 manifest 里 299 个实例平移的真实 bbox
-`(-148.99,0.10,-149.87) … (149.50,19.99,149.72)` 在 `(x,−z,y)` 轴序下**逐项相等**；
+**定量复验（t05，22:40 二进制，`F:/wb_3dtiles_out/a41fix_t05`）——只证 flatten 那一半**：
+`i2.i3dm` INSTANCES_LENGTH=299、**299/299 个 POSITION 非零**，其 bbox
+`(-148.99,-149.72,0.10) … (149.50,149.87,19.99)` 与 manifest 里 299 个实例**绝对**平移的真实
+bbox `(-148.99,0.10,-149.87) … (149.50,19.99,149.72)` 在 `(x,−z,y)` 轴序下**逐项相等**；
 GLB 几何跨度仍是 2.00 m（不再被连乘）、\|v\|max=89.56；瓦片包围盒从原来的
-`(309.96,1700.22,2971.56)` 变成覆盖实例云的中心 `(37.1,−88.5,24.9)` + x 半轴 150.2；
-`rc=0` 正常出盘；`test_production` 130/130 通过。
+`(309.96,1700.22,2971.56)` 变成覆盖实例云的中心 `(37.1,−88.5,24.9)` + x 半轴 150.2。
+**但"逐项等于绝对平移"本身就是错的期望**：正确口径是 `inverse(原型世界) · 实例世界`，
+命中绝对平移恰恰说明相对帧那半没生效（见上一条）。POSITION 非零、几何不被连乘、
+GLB 无 TRS 这三件事仍然成立，flatten 掩码是有效的。
 
-**复验口径已从"bbox 相等"收紧到"逐条位姿对得上真值"**，并沉淀成验收工具
-`scripts/i3dm_pose_check.js`（`node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm>`）：
+**验收工具 `scripts/i3dm_pose_check.js` 的口径本身也错了一次，现已改到相对帧**：
 逐 i3dm 瓦片读特征表 POSITION（i3dm 头 32 B，`ftj@12 ftb@16 btj@20 btb@24`），与
-`feature-manifest.json` 的实例平移按 `(x,−z,y)` 做**逐条最近邻**匹配，同时检查 GLB 节点有无
-TRS 与原型几何量级。
-- 修复后（`matrix_a41fix2/t05`，与 `a41fix_t05` 两次独立运行）：**299/299 = 100 %** 命中，
-  最近邻残差最大 **7.82e-6 m**（float32 在 |v|≈150 m 处的舍入量级，不是模型误差）；
-  TRS=0；原型 span 2.00×2.00×2.00 m、|v|max 89.56 m → **PASS / exit 0**。
-- 修复前同一资产（`matrix_a34/t05`）：0/299 命中、POSITION 全 0、原型 |v| 2972.56 m →
-  **FAIL / exit 1**。
-- 修复前真实 FBX（`lugouqiao_v15`，126 个 i3dm 全扫）：1787 条 POSITION **0 命中**、
-  **126/126** POSITION 全 0、原型 |v| 最大 **1.22e8 m** → **FAIL / exit 1**。
-  这条同时证明探测器不是"永远 PASS"的空检查。
+`feature-manifest.json` 里按 `(x,−z,y)` 置换后的期望做**逐条最近邻**匹配，同时检查 GLB 节点
+有无 TRS 与原型几何量级。第一版把期望取成实例的**绝对**平移——正好是被否定的那个口径，
+所以它给 22:40 的错产物打了 PASS。现在：
+- 期望改为 `perm(inverse(prototypeTransform) · transform)`，原型矩阵由 manifest 每条实例
+  新增的 `prototypeTransform` 字段提供（schema → **v1.1**，只补溯源数据，不把求逆公式
+  再抄一份到脚本侧）；缺该字段或原型奇异一律 **FAIL**，旧产物不许静默通过。
+- 绝对口径仍在，但只作为诊断打印（"命中绝对平移恰恰是双变换"）。
 
-**12 资产矩阵（`runs/matrix_a41fix2`，22:40 二进制）**：**12/12 rc=0、`limitViolations=0`**。
-t05 首次以"实例瓦片 + 2b 闸门 + 位姿验收"三者同时通过（`instanceTileCount=1`、
-`instanceCount=299`、`src/occ 300/2`、`miss/drop 0/0`、`maxTri 3588`、`maxBytes 24712`）。
-其余 11 个资产里 **10 个的汇总列（瓦片数/深度/字节/三角形/误差/cert-loose）与 gate-only 那轮
-（`matrix_a41fix`）逐项相同**；**t09_cross_tile_object 不同**（`maxBytes` 41120→41152、
-`errMax` 386.77→331.62、7 个 b3dm 全部换哈希）。这条**不能记在 A-41 的账上**：
-t09 的 `instanceTileCount=0`，根本不进 `buildInstanceTree`、也不进 `isInstanceTile` 分支，
-而用 22:40 二进制单独重跑 t09 **8 次**，6 次得到与 `matrix_a41fix` **完全相同**的字节
-（`t0.b3dm` sha 前缀 `95b36adf74`）、2 次得到另外两个变体（`792a9422a0` / `8e8f5da801`），
-矩阵内那次是**第 4 个**变体——同一二进制同一输入，产物逐字节不一致，正是 A-40 的签名。
+对照实测（三次独立取证）：
+- **正例**：23:53 二进制的单测产物（4 个实例、原型平移非零）相对帧 **4/4 命中、残差
+  0.00**，绝对口径 **0/4** → PASS / exit 0。
+- **反例 1**：`a41fix_t05`（22:40 二进制）相对帧 **0/299**、绝对 **299/299**、
+  `缺 prototypeTransform 299` → **FAIL / exit 1**。
+- **反例 2**：`matrix_a34/t05`（flatten 未掩码）POSITION 全 0、原型 |v| 2972.56 m →
+  **FAIL / exit 1**；`lugouqiao_v15`（126 个 i3dm 全扫）1787 条 0 命中、126/126 全 0、
+  原型 |v| 最大 **1.22e8 m** → **FAIL / exit 1**。
+探测器既不"永远 PASS"，也不再被错误口径骗过。
+
+**回归已沉淀进单测**（`tests/production/main.cpp` 用例 `instancePoses`，11 条断言）：
+5 个数值完全相同、仅矩阵不同的 Geode 走完整发布路径，直接解析落盘 i3dm 的特征表 POSITION，
+要求逐条等于 `perm(inverse(原型世界) · 实例世界)`，并同时卡住"几何被连乘搬走"
+（accessor min/max 的绝对量级 ≤3）与"GLB 节点带 TRS"。原型故意也带非零平移 (1,2,3)，
+否则相对帧与绝对帧数值相同、这条用例抓不到本轮的 bug。
+22:40 二进制下该用例 **0/4 命中**（打印 `got (10,4,3) want (9,7,1)`，即绝对平移的 Y-up 置换），
+23:53 修正后 **4/4 精确命中**；`test_production` **150/150**（含 A-42 的 9 条）。
+
+**12 资产矩阵（权威轮 `F:/wb_3dtiles_out/matrix_a42fix`，exe 00:12 + `osgdb_gltf.dll` 00:16）**：
+**12/12 rc=0、`limitViolations=0`、`path_leak_scan` 0 命中**。t05 首次以"实例瓦片 + 2b 闸门 +
+**相对帧**位姿验收"三者同时通过（`instanceTileCount=1`、`instanceCount=299`、`src/occ 300/2`、
+`miss/drop 0/0`、`maxTri 3588`、`maxBytes 24712`；`i3dm_pose_check` 判
+**299/299 = 100 %** 命中 `inverse(原型世界)·实例世界`、最近邻残差最大 **9.47e-6 m**、
+按绝对平移比对 **0/299**——绝对帧命中数必须为 0，见上一条）。
+与 gate-only 那轮（`runs/matrix_a41fix`，exe 22:14）逐列对比：除 t05（那轮被 2b 闸门拒发，
+本轮才出盘）外，**11 个资产的汇总列里只有一格变了**——t12 的 `maxBytes` 510440 → 510224。
+这格不属于 A-41：它正是 A-42（纹理 `name` 里那条绝对输出路径被换成文件名）的直接后果。
+中间轮 `matrix_a41fix2`（22:40）当时把 t12 记成 510440、t09 记成 `maxBytes 41152 / errMax 331.62`：
+**t09 那次是 A-40 的第 4 个变体**（`instanceTileCount=0`，根本不进 `buildInstanceTree` 也不进
+`isInstanceTile` 分支；22:40 二进制单独重跑 8 次，6 次逐字节等于 `matrix_a41fix`，
+见 A-40），本轮 t09 已回到基线 41120/386.77；**t12 的历史波动则不是 A-40**，是路径长度，
+详见 A-42。
 
 **尚未验证**：修好后 v15 的 root 盒与 `geometricError` 会回落到什么量级；80 个 IL≥2 瓦片的
 实例展开（A-33 口径"真实三角形数 = 实例数 × 原型三角形数"）是否仍成立——计数不受这条链影响，
-但**位置**受，所以这项必须等 `lugouqiao_v16`（22:53 起，22:40 二进制）跑完再核。
-**已发布的 i3dm 资产一律作废**（含 `lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
-`.i3dm` 的产物）。
+但**位置**受。`lugouqiao_v16`（22:53 起）跑到一半发现用的正是"第 2 点是空操作"的 22:40 二进制，
+**已主动终止**（终止时没有 `tiles/`、没有 `tileset.json`，只有 `.wb-staging/` 里 8 个半成品
+b3dm 与 `textures/` 里 8 个 ktx2；进程确认已退出），改用 23:53 二进制重跑为 `v17`。
+**已发布/已归档的 i3dm 资产一律作废**：`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
+`.i3dm` 的产物，加上 A-41 修复过程中产的两批中间品 `F:/wb_3dtiles_out/a41fix_t05`（22:41，
+位姿落的是绝对平移）与 `runs/matrix_a41fix2`（22:41，同上）——它们的位姿验收是**用错口径**
+判成 PASS 的，不能当证据。中间轮 `F:/wb_3dtiles_out/matrix_a41fix3`（23:53）**位姿那半是成立的**
+（相对帧 299/299 PASS），但它用的仍是 22:14 的 `osgdb_gltf.dll`，瓦片里带 A-42 的绝对路径，
+已由 `matrix_a42fix` 取代。
+
+### A-42 发布产物里泄漏本地绝对路径；瓦片字节数随输出目录变化　**FIXED（exe 00:12 / 插件 00:16）**
+
+**症状**（`scripts/path_leak_scan.js` 盘上实测）：
+- `F:/wb_3dtiles_out/lugouqiao_v15`：**691 / 1057** 个 `.b3dm/.i3dm` 瓦片内含
+  `"F:/wb_3dtiles_out/lugouqiao_v15\\textures\\171f531698a65c1d-basecolor.ktx2"`，
+  同数据集 `feature-manifest.json` 另有 **2729** 处
+  `"D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx/…"`。
+- 矩阵里 `matrix_a41fix2` / `matrix_a41fix3` 各 213 个瓦片中 1 个（t12）泄漏——**只有 1 个，
+  但它是分发物**。
+
+**机制**（两个独立口子，同一类成因：把路径当名字）：
+1. `src/osgdb_gltf/Osg2Gltf.cpp:763 / :766` 把 `bufferView.name` 和 `image.name` 直接写成
+   纹理的 `filename`。生产路径在出盘前已把纹理写到 `<out>/textures/`，所以 `filename` 是
+   **完整输出绝对路径**，随 GLB JSON chunk 进瓦片。
+2. FBX 导入器用**源文件绝对路径**命名根节点，`SourceModel.cpp:201/211` 把它拼进 `nodePath`，
+   `TileFeatureMapper.cpp:96` 原样写进 `feature-manifest.json`。
+
+**第二条伤害比泄漏本身更隐蔽、也更难查**：名字进了 GLB 的 JSON chunk，**瓦片字节数就随输出
+目录字符串长度变化**（chunk 按 8 字节补齐，所以差值恒为 8 的倍数）。同一个
+`test_assets/t12_big_texture.obj`、同一版代码，历史 `t0.b3dm` 尺寸：
+`matrix_a34` 510432、`matrix_a38gate`/`matrix_covfix`/`matrix_a41fix`/`matrix_a41fix2` 510440、
+`matrix_a41fix3` 510344、单独重跑 510304、510296。这解释了 A-41 那轮"t12 的 `maxBytes`
+莫名变了一格"——**既不是 A-41 的副作用，也不是 A-40 的时序非确定性**，是目录名长短。
+更要紧的是：它让"两次独立运行产物逐字节一致"这类复验**换个输出目录就自动失败**，
+以前把它当噪声，等于给 A-40 掺进了一个假样本。
+
+**修复**：两处都只留文件名（`osgDB::getSimpleFileName`；本仓 OSG 这个函数是大写 N，
+写成 `getSimpleFilename` 编译不过——C2039）。①`Osg2Gltf.cpp` 纹理 name；②`SourceModel.cpp`
+拼 `nodePath` 时，段名以 `/`、`\` 或 `[A-Za-z]:[/\]` 开头的取其文件名。**资产名仍留在
+provenance 里**（`20240529卢沟桥分洪枢纽.fbx/园博园桥`），只是不再交付目录结构。
+纹理去重逻辑（`Osg2Gltf.cpp:709` 比较的是 `existPathName == filename`，用的是内存里的
+osg::Texture 文件名，不是 GLB 里的 `name`）不受影响，且全仓没有任何地方回读
+`image.name`/`bufferView.name`，所以改动只在输出侧。
+
+**验收**：
+- 新工具 `scripts/path_leak_scan.js <数据集目录>`：只认 JSON 字符串字面量形态的盘符。
+  **口径纠正**：第一版用裸 `[A-Za-z]:[/\\]` 扫，把 t03 的 **7 个瓦片误报**成泄漏
+  （float 二进制里凑巧出现 `X:/` 字节序列）——那种命中不能当证据。收紧后：修复前
+  `lugouqiao_v15` 仍报 691/1057、`matrix_a41fix2` 仍报 1/213（**不是空跑**），修复后
+  `matrix_a42fix` 报 **0/213 瓦片、0/36 旁证 json**（**不是恒阳**）。
+- 修复后 t12：`bufferView.name` = `6ab89426e712936c-basecolor.ktx2`，瓦片 clean。
+- **路径无关性（这条才是"字节随目录变"的正解验证）**：同一输入写到
+  `F:/wb_3dtiles_out/x` 与 `F:/wb_3dtiles_out/much_longer_output_directory_name_for_path_length_test/t12`
+  两个目录，`t0.b3dm` sha256 前缀 **`115eef9af8c80ef63e7c2cf8` 相同**（修复前必然不同）。
+- **真实 FBX 的同资产前后对照**（`longxiang.fbx`，65 MB，129 瓦片 / 127 分发文件）：
+  修复前 `F:/wb_3dtiles_out/longxiang_covfix` = **81/127 瓦片泄漏**、manifest **145 处**
+  `"D:/BaiduNetdiskDownload/longxiang.fbx/…"`；修复后 `F:/wb_3dtiles_out/longxiang_a42`
+  = **0/127、0/3**，`rc=0` 正常出盘，nodePath 变成 `"longxiang.fbx/DTZTFT_06"`
+  ——**provenance 留着、目录去掉**。同一份 FBX 顺带把 A-41 也在真实资产上过了一遍：
+  6 个 i3dm 瓦片 / 10 条实例 **10/10 命中相对帧**（残差最大 7.11e-6 m）、绝对帧比对 0/10、
+  TRS=0、原型 `|v|` 最大 126.55 m（v15 污染态是 1.22e8 m）。
+- 回归单测 `test_production` 用例 `noLocalPaths`（+9 条断言，其中 3 条是**探测器自检**：
+  正例必须命中，否则"0 泄漏"可能只是谓词写坏了恒返回 false）。
+  **诚实边界**：该用例的 fixture 不带纹理，所以它只钉住 `nodePath` 那一路；纹理 `name`
+  那一路由矩阵里的 t12 + `path_leak_scan.js` 钉，**没有单测保护**，将来若有人把
+  `Osg2Gltf.cpp` 那两行改回去，只有跑矩阵才能发现。
+- `test_production` **150/150**。
+
+**构建陷阱（本轮踩到，写进 STATUS 第 6 条）**：`osgdb_gltf` 是 `add_library(... MODULE)`，
+不在 `model23dtiles` 的依赖图里。第一次只 `--target model23dtiles test_production` 构建，
+`Release/osgdb_gltf.dll` 还停在 22:14，重跑 t12 得到"泄漏没变"，几乎把已修好的代码判成没修。
+插件目录共四个：`osgdb_gltf` / `osgdb_fbx` / `osgdb_ktx` / `osgdb_webp`。
