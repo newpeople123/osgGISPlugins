@@ -200,14 +200,18 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
 
 ## 未闭合（写在这里，不靠记忆）
 
-1. **带 2b 闸的二进制从未在真实数据上跑过**。A-36/A-37 的 1b 与 A-38 的 2b 在
-   `matrix_a34` 那次转换**之后**才写进源码，`Release/model23dtiles.exe`（15:47:04）
-   里没有它们；A-39 的 `appendElements` 类型守卫同批未编译。等 `lugouqiao_v15`
-   释放 exe 锁后 `bash scripts/wb_build.sh model23dtiles` 重建，再拿 t02 + 真实
-   FBX 各跑一次，验证：① 正常数据集不因 2b 误伤（尤其 t08 大坐标）；② 若污染复现，
-   2b 必须在拒绝里报出轴号与数值。**在此之前 VALIDATION_REPORT §8b 关于 2b 的
-   拦截只是数值推演**（A-38/A-40 的复跑与 90 次可复现性样本用的都是这个 15:47:04
-   旧 exe，同样没跑到 2b）。
+1. **带 2b 闸的二进制已在 12 资产矩阵上实测，真实 FBX 仍未跑**。闸门**第一版是错的**：
+   它拿 `_model.bounds` 当参考系，而 `SourceModel.cpp:578-584` 在识别重复实例后把
+   `bounds` 重算成"剔除实例几何"的范围 → 任何实例数据集里**正常**的 i3dm 瓦片都会被判越界
+   （`matrix_a38gate/t05`：`i2.i3dm` x=[308.96,310.96] vs 源 [35.87,37.87]±1.73 → rc=3 拒发；
+   同一输入在 matrix_a34 / covfix / final 三次都正常出盘 4 个瓦片）。参考系已改成"全部
+   `_model.objects` aabb 的并集"并重跑 12 资产（`runs/matrix_a41fix`，exe 22:14）：
+   **11 个 rc=0**，其中 t08 大坐标 `errMax=1.06e7` 没有被误伤（① 的答案：正常数据集不误伤，
+   但**只在对实例内容做了正确处理后**成立）；t05 仍被拒，这次是**真阳性**，拦到的正是
+   下面第 5 条的 A-41（`tile 2 ... axis 1 ([2970.56,2972.56] vs source [-0.898,20.986] ±213.14)`）。
+   **闸门至今没有在 A-38 本人的污染样本上实测过**（127 次那 1 次无法复现，没有新鲜坏样本），
+   所以 VALIDATION_REPORT §8b 关于 2b 对 A-38 的拦截仍然只是数值推演。真实 FBX
+   （约 6 h）仍未用带闸 + 修好参考系的二进制跑过。
 2. **A-40 产物不逐位一致**（t02 累计 127 份产物：121 份逐字节相同，6 份是 5 个
    互不相同的整棵瓦片树变体——`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3
    跳，峰值 RSS 34.4→47.3 MiB，其中 matrix_a34 那一份就是 A-38 的污染产物）。
@@ -233,16 +237,34 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    0 次重现**（累计 127 次仅 1 次），没有新鲜污染产物可差分。
    `mergeGeometries` 缺的 `nrm->size()==pos->size()` 守卫（`ProxyMeshBuilder.cpp:361`）
    仍是独立隐患，但本例 `aggregateProxyCount=0`，聚合路径没走，不是这里的解释。
-4. **`lugouqiao_v15` 结果待验收**（15:47 起跑，19:08 时已落 551 个 `.b3dm`，
-   20:19 时 `.wb-staging/tiles/` 已有 **804 个 `.b3dm`（0 个 i3dm）**、仍在跑）：
-   中盘扫描（自定义脚本，与 `b3dm_attr_probe.js` 同解析、100 % 覆盖：
-   1 792 个 POSITION / 1 792 个 NORMAL accessor 全 float 全扫）报
-   **A-38 污染字节 0 命中、`|x|>1e6` 或非有限 POSITION 0 个、非有限 NORMAL 0 个、
-   零长度 NORMAL 186 个**。186 条要留意：可能全是简化器留下的**退化三角形**
-   （法线本来就是 0），也可能是 A-38 同族的**跨数组快照**问题在真实数据上的表现；
-   官方 validator 会**逐条**报 `is not of unit length: 0`，所以完成后必须分
-   **referenced vs. unreferenced** 才能定它的性质（探针 `--all` 会打这个）。
-   完成后按 A-33 口径核对 i3dm 展开三角形、`featuresMissingFromLeaves`、
-   `aggregateProxies`、官方 validator 逐资产错误条数 + 零长度 NORMAL 是否被引用，
-   再写进 §6.2/PERFORMANCE。
+4. **`lugouqiao_v15` 已跑完，验收未做**。15:47 起跑、**21:52:17 结束**（21 621 s ≈ 6 h），
+   产出 **1059 个瓦片**（1057 个 tile 文件：931 `.b3dm` + 126 `.i3dm`），
+   `errors: []`、`featuresMissingFromLeaves=0`、`proxySkippedCount=0`、
+   `proxyDroppedFeatureCount=0`、`maxTrianglesInTile=119840`（在 12 万硬上限内）、
+   `maxContentBytes=3238136`、`maxDepth=18`、`aggregateProxyCount=122`、
+   `nodesBoundLoose=332`、`nodesCertified=450`、`peakRssBytes=9.84 GB`、454 条 warning。
+   中盘与终盘独立扫描（自定义脚本，与 `b3dm_attr_probe.js` 同解析、100 % 覆盖，
+   1057 文件 / 2202 primitive）：**A-38 污染字节 0 命中、非有限坐标 0、量级离散 0、
+   声明 accessor min/max 与实数据逐 primitive 全等**——即这份产物**没有** A-38 签名；
+   但有 **195 条被索引引用的零长度 NORMAL**（分布在 19 个文件，常以连续 3 顶点成组，
+   如 `mesh0 v24/v25/v26`），按三角形面积分档：退化三角形 140～159 条、
+   真实面积 36～55 条（阈值随尺度在 1e-8～1e-9 之间摆动，判别力弱，见
+   `scripts/zero_normal_triage.js`）。官方 validator 会**逐条**报 `is not of unit length: 0`。
+   **仍未做**：官方 validator 逐资产跑一遍、A-33 口径的 i3dm 展开三角形核对、
+   `aggregateProxies` 复核，以及下面第 5 条 A-41 对这份产物的影响评估，再写进 §6.2/PERFORMANCE。
+5. **A-41（本轮新发现，阻断级，未修）**：i3dm 的**每实例位姿全部丢失**，原型几何被同组
+   N 个实例矩阵**就地累乘**。`ProductionPipeline.cpp:963-972` 让 N 个 `MatrixTransform`
+   共享同一份原型 drawable；`GltfOptimizer.cpp:549-554` 的 `FlattenTransformsVisitor`
+   用 `TransformAttributeFunctor` **就地**改这份共享数组，随后 `GltfOptimizer.cpp:563-565`
+   把每个 MatrixTransform 复位成单位阵；`ReaderWriterGLTF.cpp:302-345` 只能分解出单位阵。
+   实测：v15 **126/126** 个 i3dm 瓦片特征表 POSITION 全 0（1787 个实例位置一个都没落盘）、
+   **80/126** 是 IL≥2 的共享数组累乘、6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` |v|=1.22e8 m
+   （而 manifest 里全部 1787 个实例变换的 16 个元素最大只有 378）；root 盒被抬到 1.33e8 m、
+   root `geometricError` 抬到 7.65e7 m（注意与报告字段 `tilesetGeometricError=8857.99`
+   是两个不同的量，别再混用）。机制已做**定量证伪检验**：t05 的 299 个矩阵纯平移，
+   平移之和 (273.09, 2956.73, −1788.77) 与出盘偏移 (273.09, 1788.78, 2956.72) 逐项相等
+   （仅 Y-up `(x,−z,y)` 轴序差）。**后果**：任何带实例的数据集在修好前都发不出来
+   （2b 闸门会拦），已发布的 i3dm 资产全部不可信。修法见 AUDIT A-41"修法"段：
+   实例瓦片必须"一份局部原型几何 + 特征表逐实例位姿"，且 GLB 节点不能再带 TRS（否则双变换）。
+
 

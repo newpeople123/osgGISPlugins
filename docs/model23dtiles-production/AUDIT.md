@@ -51,6 +51,8 @@
 | A-39 | `ProxyMeshBuilder::appendElements` 用**源**数组类型 `static_cast` **目标**数组，属性类型不一致时按错误步长写（堆越界） | `ProxyMeshBuilder.cpp::appendElements` | CLOSED（显式拒绝 dst/src 类型不一致；实测现存分组不会触发，属加固） | 5.3 | 中 |
 | A-40 | 同一二进制、同一输入，产物**不逐位一致**：t02 累计 127 次产物里 121 次落在同一基线，6 次是**整棵瓦片树变了**的变体（共 5 个互不相同的哈希；`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3 之间跳，峰值 RSS 也随之变）。变体同时出现在默认并行(jobs8)、`WB_JOBS=4`、`WB_PROXY_DEBUG=1` 三种配置，其中 jobs4 那次的哈希与旧记的"WB_PROXY_DEBUG 第 3 跑"变体**完全相同** → 变体与调试开关、与并行度都无绑定（旧结论"不是并行度本身"证据仅 n=6 已撤回）。而且**同一份 b3dm 内容会换瓦片槽位**（基线 t5 == 变体 t3，sha256 相同）——症状不是数值算错，是分类/分配次序依赖运行时时序 | `ProductionPipeline::buildB3dmTree` 并行窗口 / 误差评估分支 | OPEN（非确定性来源未定位；jobs4 也复现，说明"关掉并行即可稳定"未经证实） | 17 | 高 |
 
+| A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` | OPEN（缺陷未修；2b 闸门修好参考系后已能拦住它——matrix_a41fix/t05 现被拒发） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
+
 ---
 
 ## 逐项说明
@@ -782,6 +784,15 @@ map 持引用，**一次瓦片写出里每个见过的数组都被钉住不释�
 37 次产物的逐瓦片哈希对比、轴序更正、追加 90 次（3 配置 × 30）的可复现性与零重现
 实测）都在 `evidence/a38-forensics.txt` §1–§9。
 
+**2b 闸门自身的两条实测（见 A-41）**：① 第一版用 `_model.bounds` 当参考系是**错的**——
+`SourceModel.cpp:578-584` 在识别重复实例后把 `bounds` 重算成"剔除实例几何"的范围，
+所以每个实例数据集里**正常**的 i3dm 瓦片都会被判成越界（matrix_a38gate/t05 实测 rc=3 拒发，
+而同一输入在同一代码路径的 matrix_a34 / covfix / final 三次里都正常出盘）。参考系已改为
+全部 `_model.objects` aabb 的并集。② 改完后 t05 仍被拒，但那是**真阳性**：拦下的正是 A-41
+的实例矩阵就地累乘（内容 y=2970 vs 合法实例最高 y=20）。结论要如实记：2b 到目前为止
+**没有**在 A-38 本人的污染样本上实测过（127 次里那 1 次无法复现，没有新鲜坏样本可拦），
+它被实测触发的两次，一次是它自己的误判、一次是它抓到了另一个缺陷。
+
 ---
 
 ### A-40 同一二进制、同一输入，产物不逐位一致　**OPEN**
@@ -881,3 +892,63 @@ A-38 的污染产物**实测**就落在这条非确定性分支上——把三�
 | `BatchIdVisitor` 覆盖属性 0 | **CONFIRMED** → A-11（并额外发现 A-12） |
 | `Tileset::valid()` / `Tile::valid()` 掩盖错误 | **CONFIRMED** → A-05 |
 | TBB 与非 TBB 路径都要可构建 | **CONFIRMED 不满足** → A-14 |
+
+### A-41 i3dm 实例位姿全部丢失 + 原型几何被实例矩阵就地累乘　**OPEN（阻断级）**
+
+**症状**（全部来自盘上产物实测，不是推演）：`lugouqiao_v15` 的 126 个 `.i3dm` 瓦片，
+**126/126 的特征表 POSITION 全为 (0,0,0)、SCALE_NON_UNIFORM 全为 (1,1,1)**——也就是说
+每个实例都画在同一个地方，1787 个实例的实际位姿一个都没进输出。同时原型几何被放到了
+源数据里不存在的位置：`i1017.i3dm` 顶点量级 1.09e7 m、`i1018.i3dm` 1.22e8 m，而同一数据集
+`feature-manifest.json` 里 1787 个实例变换的**全部 16 个元素**绝对值最大只有 378（p99 平移
+350.5 m）——所以这些 1e7/1e8 不是源数据带来的，是写出阶段造出来的。
+
+**机制链**（三段代码接成一条）：
+1. `ProductionPipeline.cpp:963-972`：一个实例瓦片 = `Group → N × MatrixTransform(inst.matrix) → Geode`，
+   而 N 个 Geode 里放的是**同一批原型 drawable 指针**（`protoGeom` 只 `materialize` 一次，
+   再 `addDrawable(child->getDrawable(d))` 逐个挂）。
+2. `GltfOptimizer.cpp:549-554` `FlattenTransformsVisitor::apply(osg::Drawable&)`：
+   `osgUtil::TransformAttributeFunctor tf(_currentMatrix); drawable.accept(tf);`
+   ——这个 functor **就地**改写 drawable 的顶点数组；因为数组是 N 个实例共享的那一份，
+   遍历到第 k 个 MatrixTransform 时，前 k−1 个矩阵已经乘在这份数组上了。
+   `GltfOptimizer.cpp:563-565` 随后把每个 MatrixTransform `setMatrix(identity())`。
+3. `ReaderWriterGLTF.cpp:302-345` `createFeatureI3DMTableBinary`：只能从**已被复位成单位阵**
+   的 MatrixTransform 里 `decompose`，于是 POSITION=0、SCALE=1。
+
+净结果：GLB 里的几何 = `M_N · … · M_1 · v`（N 个实例矩阵的**乘积**作用一次），
+特征表 = N 个单位阵（同一位置重复画 N 次）。IL=1 的瓦片只乘一次，所以看起来是对的——
+这解释了为什么"123/126 个 i3dm 瓦片量级正常"和"6 个爆到 1e4 以上"能同时成立。
+
+**定量验证**（把机制当成可证伪的预测来测，而不是事后解释）：t05 的 299 个实例矩阵经检查
+**不含旋转/缩放**（非单位元素计数 0），纯平移连乘 = 平移相加。
+- 预测：manifest 里 299 个平移之和 = (273.09, **2956.73**, **−1788.77**)
+- 实测：出盘 `i2.i3dm` 盒中心 (309.96, 1700.22, 2971.56) 减原型 `t0.b3dm` 盒中心
+  (36.87, −88.56, 14.84) = (273.09, 1788.78, 2956.72)
+两组数逐项相等，只是 Y/Z 互换并带符号——正是本管线 OSG→glTF 的 `(x, −z, y)` 轴序换算
+（见 `evidence/a38-forensics.txt` §6 的轴序纠正）。到小数第 2 位吻合，机制确认。
+
+**影响面**：`nodesBoundLoose` 与 root 包围盒/`geometricError` 被这条链污染——v15 的 root 盒
+跨度 1.33e8 m、root `geometricError` 7.65e7 m（而报告字段 `tilesetGeometricError` =
+`errorMaxMeters` = 8857.99，是**另一个量**，文档与对话里都别再混用）。整棵树的屏幕误差阈值
+由一个 1e8 量级的根盒决定，LOD/剔除的语义已经不成立。几何本身还退化到 1e5 m 尺度的搜索灯，
+属于"过 validator 但不可渲染"这一类，和 A-38 的判定口径相同。
+
+**与 2b 闸门的关系**：A-38 的 2b 闸门第一版直接拿 `_model.bounds` 当参考系，而
+`SourceModel.cpp:578-584` 在识别重复实例后把 `bounds` **重算成"剔除实例几何"的范围**，
+于是任何实例数据集的正常 i3dm 瓦片都会被判越界（matrix_a38gate/t05：i2.i3dm
+x=[308.96,310.96] vs 源 [35.87,37.87]±1.73 → rc=3 拒发；同一份数据在 matrix_a34 /
+matrix_covfix / matrix_final 里都正常出盘 4 个瓦片）。参考系已改为"全部 `_model.objects`
+aabb 的并集"（`ProductionPipeline.cpp` 2b 块）。改完后 t05 **仍然**被拒，但这次是真阳性：
+`ERROR: selfValidate: tile 2 content bounds leave the source model extent on axis 1
+([2970.560303, 2972.560303] vs source [-0.897531, 20.985998] +-213.144777)`——2970 m 的
+内容对着合法实例最高只有 20 m 的源范围。也就是说：**闸门现在能拦住 A-41，但代价是任何带
+实例的数据集在 A-41 修好之前都发不出来**。
+
+**修法（尚未实施）**：i3dm 的正确语义是"一份原型局部几何 + 特征表逐实例位姿"。要让
+`MatrixTransform` 不被折进共享数组，要么 (a) 实例瓦片跳过 flatten，且保证 GLB 侧不再把
+per-node TRS 与特征表**双重**乘一遍（`Osg2Gltf.cpp:80-96` 会把局部-到-世界矩阵写成节点
+translation/rotation/scale，直接跳过会双变换），要么 (b) 原型按**局部**帧物化（现有
+`SourceModel` 是世界帧烘焙），特征表写 `inverse(原型世界矩阵) · 实例世界矩阵`。
+两条都要动 `materialize` / `writeContent` / i3dm 写出三处，属独立阶段。
+**尚未验证**：修好后 v15 的 root 盒与 `geometricError` 回落到什么量级；以及 80 个 IL≥2
+瓦片的实例数展开（A-33 口径的"真实三角形数 = 实例数 × 原型三角形数"）是否仍成立——
+计数不受这条链影响，但**位置**受影响，验收时必须新增"逐实例位置"这一项。

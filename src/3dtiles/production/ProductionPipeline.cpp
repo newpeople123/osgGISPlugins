@@ -1540,7 +1540,17 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
     double srcSlack = 0.0;
     if (_model.bounds.valid())
     {
+        // 参考系必须是"全部源对象"的范围，而不是 _model.bounds 本身：
+        // SourceModel::build 在识别出重复实例后会把 bounds 重算成"剔除实例几何
+        // 之后"的范围（SourceModel.cpp:578-584），而 i3dm 瓦片的内容恰恰住在被
+        // 剔除的那一半。直接拿收窄后的 bounds 去比，每个实例数据集里正常的 i3dm
+        // 瓦片都会被判成越界（matrix_a38gate/t05：i2.i3dm 的 x=[308.96,310.96]
+        // 对源 [35.87,37.87]±1.73 拒发，而同一二进制之前它出盘是正常的 4 瓦片）。
         srcFrame = _model.bounds;
+        for (const SourceObject& o : _model.objects)
+        {
+            if (o.aabb.valid()) { srcFrame.expandBy(o.aabb); }
+        }
         srcSlack = 0.5 * (osg::Vec3d(srcFrame._max) - osg::Vec3d(srcFrame._min)).length();
     }
     for (const ProductionTile& t : _tiles)
