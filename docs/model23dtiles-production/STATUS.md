@@ -206,20 +206,33 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    释放 exe 锁后 `bash scripts/wb_build.sh model23dtiles` 重建，再拿 t02 + 真实
    FBX 各跑一次，验证：① 正常数据集不因 2b 误伤（尤其 t08 大坐标）；② 若污染复现，
    2b 必须在拒绝里报出轴号与数值。**在此之前 VALIDATION_REPORT §8b 关于 2b 的
-   拦截只是数值推演**。
-2. **A-40 产物不逐位一致**（t02 共 37 份产物：35 份逐字节相同，1 份整棵瓦片树变化
-   ——`nodesBoundLoose` 1→3、峰值 RSS 34.4→47.3 MiB，1 份就是 A-38 的污染产物）。
-   本轮实测把"两者同根"从推测变成观测：污染那次的 t1/t2/t3 与树变体**逐字节相同**，
-   而基线的 t5 与变体的 t3 是同一个文件（sha256 `3e0d68a79eacfa45…`）——变的是
-   **几何→瓦片 id 的分配次序**，不是数值。复现与逐瓦片哈希对比见 AUDIT A-40 /
-   `evidence/a38-forensics.txt` §5/§7/§8。
-3. **A-38 的写入方仍未定位**。已测到形态（个别槽位装着旧数据/回收字节，
-   三个瓦片是同一条尾巴的拷贝）；已排除 `Simplifier::remapArray`、
-   `materialize` 的长度守卫、加载器有限性守卫。污染字节拿全库扫（仓库 + 输出盘
-   58 133 个文件）只命中那 3 个瓦片，36 次复跑 0 次重现。下一步从
-   `ProxyMeshBuilder::mergeGeometries` 缺少的 `nrm->size()==pos->size()`
-   守卫（`ProxyMeshBuilder.cpp:361`）查起，并顺着"换槽位"这条线索查瓦片 id
-   分配/结果收集是否按完成次序而非稳定键。
+   拦截只是数值推演**（A-38/A-40 的复跑与 90 次可复现性样本用的都是这个 15:47:04
+   旧 exe，同样没跑到 2b）。
+2. **A-40 产物不逐位一致**（t02 累计 127 份产物：121 份逐字节相同，6 份是 5 个
+   互不相同的整棵瓦片树变体——`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3
+   跳，峰值 RSS 34.4→47.3 MiB，其中 matrix_a34 那一份就是 A-38 的污染产物）。
+   本轮追加 3 配置 × 30 = 90 次，把两条旧解释都打掉：`WB_JOBS=4` 跑出的变体哈希与
+   旧"`WB_PROXY_DEBUG` 第 3 跑"的**完全相同**（`fe354714…`），所以变体既不绑调试开关
+   也不绑并行度；"`WB_JOBS=1` 全同 → 并行度不是变量"（n=6）已撤回。分类结论
+   （loose/certified）本身随变体跳，说明依赖的是遍历/完成次序而非几何。污染那次的
+   t1/t2/t3 与 `fe354714…` 变体**逐字节相同**，而基线的 t5 与变体的 t3 是同一个文件
+   （sha256 `3e0d68a79eacfa45…`）——变的是**几何→瓦片 id 的分配次序**，不是数值。
+   复现与逐配置哈希对比见 AUDIT A-40 / `evidence/a38-forensics.txt` §5/§7/§8/§9。
+3. **A-38 的写入方仍未定位**。已测到形态（个别内部槽装着旧数据/零值，三个瓦片是
+   同一条尾巴的拷贝）。本轮读码把整类"按 size 构造后漏填"的写法排除：
+   `BatchIdVisitor`（只用 `assign()`）、`Osg2Gltf.cpp:194`（`std::fill` 全覆盖）、
+   `mergeGeometries/appendElements/cloneEmpty`（全 `reserve`+`push_back/insert`）、
+   `Simplifier` 的索引 `std::vector::resize`（值初始化为 0）。**也推翻**了上一版留下的
+   "裸指针缓存地址回收→悬垂 accessor"猜测：`_buffers/_bufferViews/_accessors` 的键是
+   `ref_ptr`（`Osg2Gltf.h:12,20-22`），一次写出内数组都被钉住，地址不会复用。
+   现存两条候选（都**未验证**与本例相关，见 AUDIT A-38 隐患①②）：
+   ① `getOrCreateBuffer` 只首触快照字节 + `Osg2Gltf.cpp:158` 就地 `normalize()` 改
+   共享数组，可能让"元数据"与"字节快照"分家；② `getOrCreateAccessor` 按指针去重，
+   同一数组被两个 `DrawArrays` 图元共享时第二个继承第一个的 `byteOffset/count`。
+   污染字节全库扫（仓库 + 输出盘 58 133 个文件）只命中那 3 个瓦片，**新增 90 次复跑
+   0 次重现**（累计 127 次仅 1 次），没有新鲜污染产物可差分。
+   `mergeGeometries` 缺的 `nrm->size()==pos->size()` 守卫（`ProxyMeshBuilder.cpp:361`）
+   仍是独立隐患，但本例 `aggregateProxyCount=0`，聚合路径没走，不是这里的解释。
 4. **`lugouqiao_v15` 结果待验收**（15:47 起跑，19:08 时已落 551 个 `.b3dm`、
    仍在跑，约 7 个/分钟；主树阶段最大 prim 34 847 三角形、荒谬顶点 0）：
    完成后按 A-33 口径核对 i3dm 展开三角形、`featuresMissingFromLeaves`、

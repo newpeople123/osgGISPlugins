@@ -2,6 +2,7 @@ A-38 / A-40 取证原始输出（2026-10-19，二进制 Release/model23dtiles.ex
 
 产物：docs/model23dtiles-production/runs/matrix_a34/t02_thin_features
 对照：同一二进制重跑 36 次（.workbuddy/a38_det、a38_race、a38_det10、a38_jobs1）
+（追加的 90 次复跑见 §9：变体分布、零重现计数，以及两条据本节样本得出的旧结论如何被推翻）
 
 ================================================================================
 1) 自研探针  node scripts/b3dm_attr_probe.js runs/matrix_a34/t02_thin_features
@@ -159,6 +160,9 @@ dbg3 变体完全相同（22928/13688/10552），所以污染那次也是"树换
    1 次 = dbg3（WB_PROXY_DEBUG 第 3 跑）fe354714…（整棵树换了）
    1 次 = matrix_a34（A-38 污染那次）d6dfbeef…
   → "产物不逐位一致"实测频率 = 2/37；A-38 污染 = 1/37。
+    （累计到 §9 的 127 次后：非确定性 6/127、A-38 污染 1/127；且本节的
+     2/37 与"A-38 污染那次 == dbg3 变体分支"仍成立，§9 只是补样本并把
+     "变体绑调试开关/并行度"两条解释打掉。）
 
 逐瓦片 sha1（前 10 位）三方对比：
   瓦片      dbg3        污染        基线        dbg3==污染  dbg3==基线
@@ -187,3 +191,74 @@ dbg3 变体完全相同（22928/13688/10552），所以污染那次也是"树换
           {h.update(f);h.update(fs.readFileSync(t+"/"+f));}
         console.log(r+"/"+k, h.digest("hex").slice(0,42)); }'
   （污染字节全库扫描：同一套遍历，用 Buffer.from("5031745138554db23450676d","hex").indexOf）
+
+================================================================================
+9) 追加实测：90 次 = 3 配置 × 30
+   二进制与 §5/§7 同一个：Release/model23dtiles.exe 15:47:04
+   （**不含** A-38 的 2b 发布闸，见 STATUS 未闭合 1 —— 本节只是时序复现，不是闸门实测）
+   .workbuddy/a38_rate/{jobs8_plain,jobs8_dbg,jobs4_plain}/r0..r29
+   驱动：node .workbuddy/a38_rate/drive.js 30（同一 exe、同一输入 t02_thin_features）
+   摘要口径同 §5：sha1(tiles/*.b3dm 按文件名排序，逐个喂"文件名 + 字节")，本节截取前 16 位
+================================================================================
+jobs8_plain（默认并行，30 次）          distinct=2  contam=0
+  x29  6e606dca3487ecca  nodesBoundLoose=1 nodesCertified=3   ← 与 §5/§7 基线同一哈希
+  x 1  4c1e17f932d5a1f9  nodesBoundLoose=0 nodesCertified=3
+jobs8_dbg（WB_PROXY_DEBUG=1，30 次）    distinct=3  contam=0
+  x28  6e606dca3487ecca  loose=1 cert=3
+  x 1  ed3209724934c0dd  loose=3 cert=1
+  x 1  e2e55a08b7bbf011  loose=3 cert=2
+jobs4_plain（WB_JOBS=4，30 次）         distinct=2  contam=0
+  x29  6e606dca3487ecca  loose=1 cert=3
+  x 1  fe354714b460b6a2  loose=3 cert=3
+合计 90 次：86 次落在基线 6e606dca…，4 次树变体（4 个互不相同的哈希）；
+污染字节 5031745138554db23450676d 在这 90 次的每一个 .b3dm 里 indexOf 命中 **0 次**。
+
+这一节推翻了 §5/§7/§8 里的两条表述，并收窄了一条：
+
+1. 【推翻"树变体 ↔ WB_PROXY_DEBUG 绑定"】jobs4_plain 那次变体的哈希是
+   fe354714b460b6a2…，与 §5 里"只有 WB_PROXY_DEBUG 第 3 跑出现过"的那个变体
+   **完全同一个**（§5 的 42 位全串 fe354714b460b6a2bb03f50a9d447d633206e818）。
+   也就是说 §5 把它记成"调试开关触发"是样本=1 的巧合，不是因果；代码里
+   WB_PROXY_DEBUG 只做日志开关（Simplifier.cpp:16 / ProxyMeshBuilder.cpp:35）。
+   正确表述：低概率树变体与并行度、与调试开关都无绑定，jobs4 与 jobs8 都会漏。
+   另外 dbg 配置自身 28/30 仍是基线，进一步说明开关不改变分布。
+
+2. 【推翻"并行度不是变量"】§7 用"WB_JOBS=1 连跑 6 次全同"得出该结论，证据太薄
+   （n=6，且只测了 jobs=1 一个点）。本轮变体出现在 jobs4 与 jobs8，串行没测到
+   不能证明串行没有——只能说"关掉并行不足以证明可复现"，要定论必须加大串行样本。
+   所以 §7 的口径要从"并行度对结果无影响"降级为"未证实并行度有影响"。
+
+3. 【收窄嫌疑面】变体之间 nodesBoundLoose 在 0/1/3 之间跳、nodesCertified 在
+   1/2/3 之间跳（基线恒为 loose=1 cert=3）。变的不只是字节布局或槽位，
+   **"哪些节点被判为 loose / certified"这个分类结论本身随时序变化**。
+   这把 A-40 待查项从"内存回收/槽位复用"往"误差评估反馈环
+   （budgetExhausted → boundLoose → 是否继续细分）被别的瓦片的运行期状态污染"
+   收窄了一格——分类结论依赖遍历次序，而不是只依赖几何。
+
+统计口径（诚实版，样本量与置信度都不夸大；§5/§7 的 37 次用的就是同一个 15:47:04 exe，
+所以 127 次是同二进制、同输入，可以直接并）：
+  本轮                 非确定性 4/90 ≈ 4.4%（单配置 1/30 ≈ 3.3%，dbg 配置 2/30 ≈ 6.7%）
+  并入 §5/§7/§8 的 37 次后：非确定性 6/127 ≈ 4.7%
+  A-38 污染            本轮 0/90；累计 1/127（仍只有 matrix_a34 那一次）
+  → A-38 的"根因写入方"仍未定位，且新增 90 次样本**没有**再给出一个可差分的新鲜
+    污染产物；能推进的只有 A-40 这条时序分支。发布闸（2b + validator）口径不变。
+
+复算命令（可重跑，不重跑 exe）：
+  node -e 'const fs=require("fs"),path=require("path"),c=require("crypto");
+    const POL=Buffer.from("5031745138554db23450676d","hex");
+    for(const cfg of ["jobs8_plain","jobs8_dbg","jobs4_plain"]){
+      const t=new Map(); let contam=0;
+      for(const k of fs.readdirSync(".workbuddy/a38_rate/"+cfg).sort()){
+        const d=".workbuddy/a38_rate/"+cfg+"/"+k+"/tiles"; if(!fs.existsSync(d))continue;
+        const h=c.createHash("sha1"); const sizes=[]; let hit=false;
+        for(const f of fs.readdirSync(d).filter(x=>x.endsWith(".b3dm")).sort()){
+          const b=fs.readFileSync(d+"/"+f); h.update(f); h.update(b); sizes.push(b.length);
+          if(b.indexOf(POL)>=0) hit=true; }
+        if(hit)++contam;
+        let loose="-",cert="-"; const rp=".workbuddy/a38_rate/"+cfg+"/"+k+"/conversion-report.json";
+        if(fs.existsSync(rp)){const r=JSON.parse(fs.readFileSync(rp,"utf8"));
+          loose=r.nodesBoundLoose;cert=r.nodesCertified;}
+        const key=h.digest("hex").slice(0,16)+" loose="+loose+" cert="+cert;
+        t.set(key,(t.get(key)||0)+1); }
+      console.log("=== "+cfg+" contam="+contam+" distinct="+t.size);
+      for(const [kk,v] of [...t].sort((a,b)=>b[1]-a[1])) console.log("  x"+v+"  "+kk); }'
