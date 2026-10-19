@@ -15,6 +15,7 @@
 #include <fstream>
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <map>
 #include <future>
 #include <iterator>
@@ -444,12 +445,20 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
         work->accept(o);
         for (const std::string& n : names)
         {
-            // 由名字回查 feature：名字在 materialize 时设为源对象名；
-            // 重名时退化为按出现顺序匹配（manifest 会记录 isProxy 供核对）
+            // 聚合代理的 Geode 名是 proxy_cluster_<proxyFeatureId>，直接解出身份。
+            // 落到下面的位置回退会把代理冒充成第 i 个真实源 feature（手册 8.1 禁止）。
             FeatureId found = INVALID_FEATURE;
-            for (const SourceObject& obj : _model.objects)
+            const std::string prefix = "proxy_cluster_";
+            if (n.compare(0, prefix.size(), prefix) == 0)
             {
-                if (obj.name == n) { found = obj.globalFeatureId; break; }
+                found = static_cast<FeatureId>(std::strtoul(n.c_str() + prefix.size(), nullptr, 10));
+            }
+            else
+            {
+                for (const SourceObject& obj : _model.objects)
+                {
+                    if (obj.name == n) { found = obj.globalFeatureId; break; }
+                }
             }
             out.featureOrder.push_back(found);
         }
@@ -569,6 +578,19 @@ ProductionPipeline::processTileHeavy(int pn, int id)
     const bool isLeaf = P.children.empty();
     w.leaf = isLeaf;
 
+    // 权威身份范围：只认源单元表，不认 Geode 名字（重名/聚合都会让名字回查失真）
+    {
+        std::set<FeatureId> fids;
+        for (std::uint32_t itemId : items)
+        {
+            if (itemId >= _prims.size()) { continue; }
+            const PrimRef& p = _prims[itemId];
+            if (p.tris.empty()) { continue; }
+            fids.insert(p.globalFeatureId);
+        }
+        w.sourceScope.assign(fids.begin(), fids.end());
+    }
+
     if (isLeaf)
     {
         // 叶保留原始高精度几何，只允许坐标规范化与无损重建（手册 7.4）
@@ -685,7 +707,19 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         TRACE("writeContent done");
         if (!wo.ok)
         {
-            _warnings.push_back("tile " + std::to_string(id) + ": " + wo.error);
+            // 叶瓦片写出失败 = 这批源 feature 在整个数据集里彻底消失，
+            // 只记 warning 会产出一个"看起来成功其实缺件"的数据集（手册 1.1）。
+            // 代理写出失败不丢数据（子树仍然覆盖同一 source scope）。
+            if (isLeaf && !w.sourceScope.empty())
+            {
+                _failures.push_back("leaf tile " + std::to_string(id) + " write failed: "
+                                    + wo.error + " (" + std::to_string(w.sourceScope.size())
+                                    + " source features would be lost)");
+            }
+            else
+            {
+                _warnings.push_back("tile " + std::to_string(id) + ": " + wo.error);
+            }
         }
         else
         {
@@ -732,6 +766,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
     _tiles[id].isProxy = w.isProxy;
     _tiles[id].aggregate = w.aggregate;
     _tiles[id].aggregateSources = std::move(w.aggregateSources);
+    _tiles[id].sourceScope = std::move(w.sourceScope);
     if (w.aggregate) { ++_report.aggregateProxyCount; }
     TRACE("finalize id=" << id << " state done");
 
@@ -1190,6 +1225,7 @@ bool ProductionPipeline::writeReport(const std::string& path) const
         tj["isLeaf"] = t.isLeaf;
         tj["isProxy"] = t.isProxy;
         tj["aggregate"] = t.aggregate;
+        tj["sourceFeatures"] = static_cast<unsigned>(t.sourceScope.size());
         tj["triangles"] = t.triangles;
         tj["contentBytes"] = t.contentBytes;
         tj["measuredProxyErrorM"] = t.measuredProxyErrorM;
@@ -1312,6 +1348,100 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
     };
     checkGe(_root);
 
+    // 4) 源身份覆盖（手册 9.5 / 17："REPLACE 子树完整覆盖其 source scope"）
+    //    这类缺陷在 Hausdorff 数值上是隐形的：被丢掉的小簇紧贴邻近表面时
+    //    双向距离仍然很小，平均误差一切正常但业务部件已经消失。只能按
+    //    globalFeatureId 逐叶核对。用的是分区单元表推出的 sourceScope，
+    //    不是 Geode 名字回查出来的 featureOrder（重名/聚合都会让它失真）。
+    std::set<FeatureId> sourceUniverse;
+    for (const PrimRef& p : _prims)
+    {
+        if (!p.tris.empty()) { sourceUniverse.insert(p.globalFeatureId); }
+    }
+    std::set<FeatureId> leafCovered;
+    for (const ProductionTile& t : _tiles)
+    {
+        if (t.hasContent && t.triangles == 0)
+        {
+            _failures.push_back("selfValidate: tile " + std::to_string(t.id) +
+                                " has content but zero triangles");
+            ok = false;
+        }
+        if (!t.isLeaf || t.sourceScope.empty()) { continue; }   // 实例叶无源单元
+        if (!t.hasContent)
+        {
+            _failures.push_back("selfValidate: leaf tile " + std::to_string(t.id) + " carries no content"
+                                + " but owns " + std::to_string(t.sourceScope.size())
+                                + " source features (geometry lost)");
+            ok = false;
+            continue;
+        }
+        leafCovered.insert(t.sourceScope.begin(), t.sourceScope.end());
+    }
+    std::vector<FeatureId> uncovered;
+    for (FeatureId fid : sourceUniverse)
+    {
+        if (!leafCovered.count(fid)) { uncovered.push_back(fid); }
+    }
+    if (!uncovered.empty())
+    {
+        std::string head;
+        for (std::size_t i = 0; i < uncovered.size() && i < 8; ++i)
+        {
+            head += (i ? "," : "") + std::to_string(uncovered[i]);
+        }
+        _failures.push_back("selfValidate: " + std::to_string(uncovered.size())
+                            + " source features are absent from every leaf tile (first ids: " + head + ")");
+        _report.featuresMissingFromLeaves = static_cast<unsigned>(uncovered.size());
+        ok = false;
+    }
+
+    // 5) 聚合代理的身份映射（手册 7.5 / 8.1）：proxyFeatureId 必须登记它
+    //    代表的源集合，且只能是父级粗层——叶必须保留对象身份。
+    //    抽稀掉的源 feature 单独计数进 report，不藏进平均误差（9.5）。
+    for (const ProductionTile& t : _tiles)
+    {
+        if (!t.aggregate) { continue; }
+        if (t.isLeaf)
+        {
+            _failures.push_back("selfValidate: leaf tile " + std::to_string(t.id)
+                                + " uses an aggregate proxy; leaves must keep object identity");
+            ok = false;
+        }
+        if (t.aggregateSources.empty())
+        {
+            _failures.push_back("selfValidate: aggregate proxy tile " + std::to_string(t.id)
+                                + " records no source-feature mapping");
+            ok = false;
+            continue;
+        }
+        const std::set<FeatureId> scope(t.sourceScope.begin(), t.sourceScope.end());
+        std::set<FeatureId> mapped;
+        for (const auto& kv : t.aggregateSources)
+        {
+            for (FeatureId src : kv.second)
+            {
+                if (!scope.count(src))
+                {
+                    _failures.push_back("selfValidate: aggregate proxy tile " + std::to_string(t.id)
+                                        + " maps source feature " + std::to_string(src)
+                                        + " that is outside its own scope");
+                    ok = false;
+                }
+                mapped.insert(src);
+            }
+        }
+        const unsigned dropped = static_cast<unsigned>(scope.size())
+                               - static_cast<unsigned>(std::min(mapped.size(), scope.size()));
+        _report.proxyDroppedFeatureCount += dropped;
+        if (dropped > 0)
+        {
+            _warnings.push_back("tile " + std::to_string(t.id) + ": aggregate proxy thins out "
+                                + std::to_string(dropped) + " of " + std::to_string(scope.size())
+                                + " source features (detail is only available in descendant leaves)");
+        }
+    }
+
     return ok;
 }
 
@@ -1351,13 +1481,16 @@ bool ProductionPipeline::finalize()
     TRACE("finalize: writeManifest");
     if (!writeManifest(_opt.stagingDir + sep + "feature-manifest.json"))
     { _failures.push_back("finalize: write feature-manifest.json failed"); discardStaging(); return false; }
-    TRACE("finalize: writeReport");
-    if (!writeReport(_opt.stagingDir + sep + "conversion-report.json"))
-    { _failures.push_back("finalize: write conversion-report.json failed"); discardStaging(); return false; }
-
     TRACE("finalize: selfValidate");
     if (!selfValidate(tsPath)) { TRACE("finalize: selfValidate FAILED (" << _failures.size() << " failures)"); discardStaging(); return false; }
     TRACE("finalize: selfValidate ok");
+
+    // report 必须在自校验之后落盘：覆盖计数与聚合抽稀 warning 都是校验阶段才产生的
+    _report.warnings = _warnings;
+    _report.errors = _failures;
+    TRACE("finalize: writeReport");
+    if (!writeReport(_opt.stagingDir + sep + "conversion-report.json"))
+    { _failures.push_back("finalize: write conversion-report.json failed"); discardStaging(); return false; }
 
     // 自校验通过：把暂存内容搬到最终目录
     std::error_code ec;

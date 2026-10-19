@@ -113,6 +113,8 @@ json ConversionReport::toJson() const
         {"instanceCount", instanceCount},
         {"sourceFeatureCount", sourceFeatureCount},
         {"manifestOccurrences", manifestOccurrences},
+        {"featuresMissingFromLeaves", featuresMissingFromLeaves},
+        {"proxyDroppedFeatureCount", proxyDroppedFeatureCount},
         {"warnings", warnings},
         {"errors", errors}
     };

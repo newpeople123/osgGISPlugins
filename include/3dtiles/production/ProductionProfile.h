@@ -142,6 +142,9 @@ struct ConversionReport {
     // feature
     unsigned sourceFeatureCount = 0;
     unsigned manifestOccurrences = 0;
+    // 手册 9.5：组件丢失必须单独报告，不能藏进平均误差
+    unsigned featuresMissingFromLeaves = 0;   // 叶瓦片覆盖缺口（真丢数据）
+    unsigned proxyDroppedFeatureCount = 0;    // 聚合代理被抽稀掉的源 feature 数
 
     std::vector<std::string> warnings;
     std::vector<std::string> errors;

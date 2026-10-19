@@ -7,17 +7,25 @@
 // 注意：不依赖任何外部资产，全部用例在内存里程序化构造几何。
 #include "3dtiles/production/ProductionPipeline.h"
 #include "3dtiles/production/GeometryErrorEvaluator.h"
+#include "3dtiles/production/ProxyMeshBuilder.h"
 #include "3dtiles/production/SourceModel.h"
 #include "3dtiles/production/SpatialPartitioner.h"
 #include "3dtiles/production/ProductionProfile.h"
+#include "utils/Simplifier.h"
+#include "utils/Utils.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/Group>
 #include <osg/MatrixTransform>
 #include <osg/Array>
+#include <osg/PrimitiveSet>
+#include <osg/ComputeBoundsVisitor>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -46,6 +54,18 @@ void checkNear(double got, double want, double tol, const std::string& name)
     const bool ok = (got >= want - tol) && (got <= want + tol);
     check(ok, name, "got=" + std::to_string(got) + " want=" + std::to_string(want)
                     + " tol=" + std::to_string(tol));
+}
+
+// 失败/警告清单压成一行，便于在 check() 的 detail 里直接看到原因
+std::string joinMessages(const std::vector<std::string>& msgs)
+{
+    std::string s;
+    for (std::size_t i = 0; i < msgs.size() && i < 4; ++i)
+    {
+        s += (i ? " | " : "") + msgs[i];
+    }
+    if (msgs.size() > 4) { s += " | ...(" + std::to_string(msgs.size()) + " total)"; }
+    return s;
 }
 
 // 程序化构造：gridX * gridY 个四边形（每格 2 三角形），整体铺在 XZ 平面
@@ -392,6 +412,317 @@ void testBatchIdVisitorPreservesAttrib0()
     }
 }
 
+// 把任意 OSG 节点的可读三角形展开进 TriangleSoup（误差评估用）
+struct NodeTriangleCollector : public osg::NodeVisitor
+{
+    TriangleSoup soup;
+    NodeTriangleCollector() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    void apply(osg::Geometry& geometry) override
+    {
+        osg::Geometry* g = &geometry;
+        const osg::Vec3Array* pos = dynamic_cast<const osg::Vec3Array*>(g->getVertexArray());
+        if (!pos) { return; }
+        for (unsigned p = 0; p < g->getNumPrimitiveSets(); ++p)
+        {
+            const osg::PrimitiveSet* ps = g->getPrimitiveSet(p);
+            if (ps->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
+            std::vector<unsigned> idx;
+            if (const auto* dui = dynamic_cast<const osg::DrawElementsUInt*>(ps))
+            { idx.assign(dui->begin(), dui->end()); }
+            else if (const auto* dus = dynamic_cast<const osg::DrawElementsUShort*>(ps))
+            { idx.assign(dus->begin(), dus->end()); }
+            else if (const auto* da = dynamic_cast<const osg::DrawArrays*>(ps))
+            { for (unsigned i = da->getFirst(); i < da->getFirst() + da->getCount(); ++i) idx.push_back(i); }
+            for (std::size_t i = 0; i + 2 < idx.size(); i += 3)
+            {
+                if (idx[i] >= pos->size() || idx[i + 1] >= pos->size() || idx[i + 2] >= pos->size())
+                { continue; }
+                soup.add(osg::Vec3d((*pos)[idx[i]]), osg::Vec3d((*pos)[idx[i + 1]]),
+                         osg::Vec3d((*pos)[idx[i + 2]]));
+            }
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
+// AUDIT A-26 回归：Simplifier 必须能简化含多个 primitiveSet 的几何。
+// 原实现在 psetCount > 1 时直接 return（因为顶点重映射只按单个 pset 的
+// usedVertices 重建 positions，多 pset 会互相踩索引），结果是这类几何
+// 完全不简化 —— 预算驱动削减静默失效。
+// ---------------------------------------------------------------------------
+void testSimplifierMultiplePrimitiveSets()
+{
+    std::cout << "[simplifier] multi primitiveSet geometry" << std::endl;
+
+    auto emitPatch = [](osg::Vec3Array* pos, osg::DrawElementsUInt* idx,
+                        double ox, double oy, int n, unsigned& nextVert)
+    {
+        for (int y = 0; y < n; ++y)
+        {
+            for (int x = 0; x < n; ++x)
+            {
+                const double xa = ox + x, xb = ox + x + 1.0;
+                const double ya = oy + y, yb = oy + y + 1.0;
+                pos->push_back(osg::Vec3(static_cast<float>(xa), static_cast<float>(ya), 0.0f));
+                pos->push_back(osg::Vec3(static_cast<float>(xb), static_cast<float>(ya), 0.0f));
+                pos->push_back(osg::Vec3(static_cast<float>(xb), static_cast<float>(yb), 0.0f));
+                pos->push_back(osg::Vec3(static_cast<float>(xa), static_cast<float>(yb), 0.0f));
+                const unsigned b = nextVert;
+                nextVert += 4;
+                idx->push_back(b); idx->push_back(b + 1); idx->push_back(b + 2);
+                idx->push_back(b); idx->push_back(b + 2); idx->push_back(b + 3);
+            }
+        }
+    };
+
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    osg::ref_ptr<osg::DrawElementsUInt> p0 =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    osg::ref_ptr<osg::DrawElementsUInt> p1 =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    unsigned nextVert = 0;
+    emitPatch(pos.get(), p0.get(), 0.0, 0.0, 20, nextVert);     // 800 三角形
+    emitPatch(pos.get(), p1.get(), 100.0, 0.0, 20, nextVert);   // 800 三角形
+    geom->setVertexArray(pos.get());
+    // 逐顶点离散 ID 属性：简化后长度必须与新顶点数一致，否则 _BATCHID 错位
+    osg::ref_ptr<osg::FloatArray> ids = new osg::FloatArray;
+    for (unsigned i = 0; i < nextVert; ++i) { ids->push_back(static_cast<float>(i % 7)); }
+    geom->setVertexAttribArray(3, ids.get(), osg::Array::BIND_PER_VERTEX);
+    geom->addPrimitiveSet(p0.get());
+    geom->addPrimitiveSet(p1.get());
+
+    const unsigned before = p0->getNumIndices() / 3 + p1->getNumIndices() / 3;
+    check(before == 1600, "two primitive sets built", std::to_string(before));
+
+    Simplifier simplifier(0.25, false, false, 1e-2f);
+    geom->accept(simplifier);
+
+    unsigned after = 0, maxIndex = 0;
+    bool indexTypeOk = true;
+    for (unsigned p = 0; p < geom->getNumPrimitiveSets(); ++p)
+    {
+        const osg::PrimitiveSet* ps = geom->getPrimitiveSet(p);
+        if (ps->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
+        const auto* de = dynamic_cast<const osg::DrawElementsUInt*>(ps);
+        const auto* ds = dynamic_cast<const osg::DrawElementsUShort*>(ps);
+        if (de)
+        {
+            after += de->getNumIndices() / 3;
+            for (const unsigned v : *de) { maxIndex = osg::maximum(maxIndex, v); }
+        }
+        else if (ds)
+        {
+            after += ds->getNumIndices() / 3;
+            for (const unsigned short v : *ds) { maxIndex = osg::maximum(maxIndex, static_cast<unsigned>(v)); }
+        }
+        else { indexTypeOk = false; }
+    }
+    const unsigned vertsAfter = geom->getVertexArray()->getNumElements();
+    check(indexTypeOk, "primitive sets stay index draw elements");
+    check(geom->getNumPrimitiveSets() == 2, "both primitive sets kept",
+          std::to_string(geom->getNumPrimitiveSets()));
+    check(after < before, "multi-pset geometry actually simplifies",
+          "before=" + std::to_string(before) + " after=" + std::to_string(after));
+    check(after > 0, "multi-pset geometry not emptied", std::to_string(after));
+    check(maxIndex < vertsAfter, "all indices within remapped vertex range",
+          "maxIndex=" + std::to_string(maxIndex) + " verts=" + std::to_string(vertsAfter));
+    const osg::Array* kept = geom->getVertexAttribArray(3);
+    check(kept != nullptr && kept->getNumElements() == vertsAfter,
+          "per-vertex attribute stays consistent with vertex count",
+          kept ? ("attrib=" + std::to_string(kept->getNumElements())
+                  + " verts=" + std::to_string(vertsAfter)) : std::string("attrib dropped"));
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT A-27 回归：聚合代理必须覆盖该节点的完整源几何范围。
+// 原实现 buildAggregate 里 cluster 只取 getChild(0) 的 Geode，其余 feature
+// 的几何被静默丢弃 —— 远景 LOD 会出现整块对象消失（手册 15 节 HOLE），
+// 且违反 0.1「不能丢失源几何」与 7.3「代理构建失败不能导致几何丢失」。
+// ---------------------------------------------------------------------------
+void testProxyAggregateCoversSourceScope()
+{
+    std::cout << "[proxy] aggregate fallback covers source scope" << std::endl;
+
+    // 每个 feature 只有 2 个三角形：身份保持型简化最低只能到 2*featureCount，
+    // 远低于预算的目标时就会进入聚合 fallback。
+    const int FEATURES = 1200;
+    osg::ref_ptr<osg::Group> root = new osg::Group;
+    for (int i = 0; i < FEATURES; ++i)
+    {
+        const double gx = (i % 40) * 10.0;
+        const double gy = (i / 40) * 10.0;
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName("small_" + std::to_string(i));
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(static_cast<float>(gx), static_cast<float>(gy), 0.0f));
+        pos->push_back(osg::Vec3(static_cast<float>(gx + 8.0), static_cast<float>(gy), 0.0f));
+        pos->push_back(osg::Vec3(static_cast<float>(gx + 8.0), static_cast<float>(gy + 8.0), 0.0f));
+        pos->push_back(osg::Vec3(static_cast<float>(gx), static_cast<float>(gy + 8.0), 0.0f));
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        idx->push_back(0); idx->push_back(2); idx->push_back(3);
+        geom->setVertexArray(pos.get());
+        geom->addPrimitiveSet(idx.get());
+        geode->addDrawable(geom.get());
+        root->addChild(geode.get());
+    }
+
+    SourceModel m;
+    check(m.build(root.get()), "small-feature scene build");
+    check(m.prims.size() == FEATURES, "one prim per feature",
+          std::to_string(m.prims.size()));
+
+    ProductionProfile profile;
+    const unsigned target = 120;
+    profile.budget.targetTrianglesPerTile = target;
+    profile.budget.maxTrianglesPerTile = target * 2;
+
+    std::vector<std::uint32_t> items;
+    for (std::size_t i = 0; i < m.prims.size(); ++i) { items.push_back(static_cast<std::uint32_t>(i)); }
+
+    ProxyMeshBuilder builder(m, profile, m.prims);
+    const ProxyResult r = builder.build(items, target, true);
+    check(r.failure.empty(), "aggregate proxy generation succeeds",
+          r.failure.empty() ? std::string() : r.failure);
+    check(r.node.valid(), "aggregate proxy node present");
+    if (r.aggregate)
+    {
+        check(r.triangles <= target, "aggregate proxy within triangle budget",
+              std::to_string(r.triangles) + " > " + std::to_string(target));
+    }
+    if (!r.node.valid()) { return; }
+
+    // 覆盖性判据（A-27 的直接回归）：聚合器按 cell 出代理，任何一个被源占据的
+    // cell 都必须在代理里有三角形。旧实现只取 cluster 的 child(0)，整个 cell
+    // 的其余 feature 被丢掉，表现为远景出现整块空洞。
+    std::vector<SourceModel::Triangle> srcTris;
+    m.collectTriangles(m.prims, items, srcTris);
+    TriangleSoup src, prox;
+    for (const SourceModel::Triangle& t : srcTris) { src.add(t.a, t.b, t.c); }
+    NodeTriangleCollector collector;
+    r.node->accept(collector);
+    prox = collector.soup;
+    check(prox.size() > 0, "aggregate proxy carries triangles", std::to_string(prox.size()));
+
+    const osg::Vec3d bmin(m.bounds.xMin(), m.bounds.yMin(), m.bounds.zMin());
+    const osg::Vec3d bmax(m.bounds.xMax(), m.bounds.yMax(), m.bounds.zMax());
+    const double diag = m.bounds.valid() ? (bmax - bmin).length() : 1.0;
+    const double cellSize = std::max(1e-6, diag * 0.25);   // 与 build() 的 cellSize 一致
+
+    using CellKey = std::array<long long, 3>;
+    auto cellOf = [&](const osg::Vec3d& p) {
+        return CellKey{ static_cast<long long>(std::floor(p.x() / cellSize)),
+                        static_cast<long long>(std::floor(p.y() / cellSize)),
+                        static_cast<long long>(std::floor(p.z() / cellSize)) };
+    };
+    auto occupiedCells = [&](const TriangleSoup& s) {
+        std::set<CellKey> cells;
+        for (std::size_t t = 0; t + 2 < s.v.size(); t += 3)
+        {
+            const osg::Vec3d c = (s.v[t] + s.v[t + 1] + s.v[t + 2]) * (1.0 / 3.0);
+            cells.insert(cellOf(c));
+        }
+        return cells;
+    };
+    const std::set<CellKey> srcCells = occupiedCells(src);
+    const std::set<CellKey> proxCells = occupiedCells(prox);
+    std::vector<CellKey> missing;
+    for (const CellKey& c : srcCells) { if (!proxCells.count(c)) { missing.push_back(c); } }
+    check(missing.empty(), "every source cell is represented in the aggregate proxy",
+          "srcCells=" + std::to_string(srcCells.size())
+          + " proxCells=" + std::to_string(proxCells.size())
+          + " missing=" + std::to_string(missing.size()));
+
+    // 采样下界：聚合代理是"按 cell 抽稀 feature"，误差不得越过聚合 cell 自身
+    // 尺度（cell 对角线 = cellSize*sqrt(2)）。A-27 旧行为是 497.2m（≈4 个 cell
+    // 的整块空洞），现在 130m（<1 个 cell 对角线）。保守上界会把大三角形的
+    // 覆盖半径也计入，不适合做硬阈值，这里一并打印如实反映。
+    GeometryErrorEvaluator ev(profile.error);
+    const ErrorResult er = ev.evaluate(src, prox);
+    std::cout << "    error: lower=" << er.lowerBoundM << " upper=" << er.upperBoundM
+              << " cellSize=" << cellSize << " cellDiag=" << cellSize * 1.4143
+              << " tris=" << prox.size() << std::endl;
+    check(er.lowerBoundM <= cellSize * 1.5,
+          "aggregate proxy error stays within one cell scale",
+          "lower=" + std::to_string(er.lowerBoundM) + " cellSize=" + std::to_string(cellSize));
+}
+
+// ---------------------------------------------------------------------------
+// 手册 9.5 / 17："每个 source feature 在其所属叶瓦片中都存在"、"REPLACE 子树
+// 完整覆盖其 source scope"、失败关闭不留半成品。
+//
+// 这是唯一能观察到 A-27 那类缺陷的用例层级：覆盖丢失在 Hausdorff 数值上是
+// 隐形的（被丢的小簇紧贴相邻表面时误差照样很小），只有跑完整管线、按
+// globalFeatureId 逐叶核对才会暴露。
+void testPipelineLeafCoverageInvariant()
+{
+    std::cout << "[pipeline] leaf coverage invariant" << std::endl;
+    Utils::registerFileAliases();   // .b3dm -> osgdb_gltf 写出器
+
+    ProductionProfile profile;
+    profile.budget.maxTrianglesPerTile = 12;
+    profile.budget.targetTrianglesPerTile = 8;
+
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_pipeline_coverage";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    const bool ran = pipeline.run(makeGrid(8, 8, 1.0).get(), opt);
+    const bool fin = pipeline.finalize();
+    check(ran && fin, "synthetic pipeline run+finalize succeeds",
+          joinMessages(pipeline.failures()));
+
+    const unsigned srcFeatures = pipeline.report().sourceFeatureCount;
+    check(srcFeatures == 64, "source registry holds one feature per grid object",
+          std::to_string(srcFeatures));
+
+    std::set<FeatureId> leafScope;
+    unsigned leaves = 0, leafsWithContent = 0, emptyLeafContent = 0;
+    for (const ProductionTile& t : pipeline.tiles())
+    {
+        if (!t.isLeaf) { continue; }
+        ++leaves;
+        if (t.hasContent) { ++leafsWithContent; }
+        if (t.hasContent && t.triangles == 0) { ++emptyLeafContent; }
+        leafScope.insert(t.sourceScope.begin(), t.sourceScope.end());
+    }
+    check(leaves > 1, "tree really split into several leaf tiles", std::to_string(leaves));
+    check(leafsWithContent == leaves, "every leaf tile carries content",
+          std::to_string(leafsWithContent) + "/" + std::to_string(leaves));
+    check(emptyLeafContent == 0, "no leaf tile writes zero-triangle content");
+    check(leafScope.size() == srcFeatures, "leaf tiles together cover every source feature",
+          std::to_string(leafScope.size()) + "/" + std::to_string(srcFeatures));
+    check(pipeline.report().featuresMissingFromLeaves == 0, "coverage hole counter stays zero");
+    check(std::filesystem::exists(out / "tileset.json", ec), "tileset.json published");
+    check(std::filesystem::exists(out / "conversion-report.json", ec), "report published");
+
+    // 失败关闭：硬字节上限压到不可能满足时，必须拒绝产出，而不是在输出目录里
+    // 留下一个"看着成功其实缺件"的 tileset（手册 14.17）。
+    ProductionProfile tight = profile;
+    tight.budget.maxTileContentBytes = 256;
+    tight.budget.targetTileContentBytes = 128;
+    const std::filesystem::path out2 =
+        std::filesystem::temp_directory_path() / "wb_pipeline_coverage_failclosed";
+    std::filesystem::remove_all(out2, ec);
+    ProductionPipeline rejecting(tight);
+    ProductionPipeline::Options opt2;
+    opt2.outputDir = out2.string();
+    (void)rejecting.run(makeGrid(8, 8, 1.0).get(), opt2);
+    const bool fin2 = rejecting.finalize();
+    check(!fin2, "over-budget run is rejected instead of published");
+    check(!std::filesystem::exists(out2 / "tileset.json", ec),
+          "no half-baked tileset left in the output directory");
+    check(!rejecting.failures().empty(), "rejection is explained by recorded failures",
+          joinMessages(rejecting.failures()));
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -409,6 +740,9 @@ int main(int argc, char** argv)
     run("error", &testErrorEvaluatorAnalytic);
     run("manifest", &testFeatureManifest);
     run("batchid", &testBatchIdVisitorPreservesAttrib0);
+    run("simplifier", &testSimplifierMultiplePrimitiveSets);
+    run("proxyAggregate", &testProxyAggregateCoversSourceScope);
+    run("pipelineCoverage", &testPipelineLeafCoverageInvariant);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();

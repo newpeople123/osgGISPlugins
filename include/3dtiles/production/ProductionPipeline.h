@@ -86,6 +86,10 @@ struct ProductionTile {
     std::string refine = "REPLACE";
     std::vector<FeatureId> featureOrder;
     std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
+    // 权威源身份范围：本 tile 分区单元（含切分后的新单元）里出现的
+    // globalFeatureId 去重集合。featureOrder 是从 Geode 名字回查出来的，
+    // 重名/聚合都会让它退化，所以覆盖校验必须用这一份而不是它。
+    std::vector<FeatureId> sourceScope;
 };
 
 // ---------------------------------------------------------------------------
@@ -173,6 +177,7 @@ private:
         bool leaf = false;
         bool texturesDropped = false;  // 内节点代理预估超限，构建时即去纹理
         std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
+        std::vector<FeatureId> sourceScope;
         double measuredProxyErrorM = 0.0;
         double errorLowerM = 0.0;
         double errorUpperM = 0.0;
