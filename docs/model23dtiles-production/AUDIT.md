@@ -819,6 +819,17 @@ min/max 那条报警，把某个分量改成 `NaN` 则只有"非有限"那条报
 **没有**在 A-38 本人的污染样本上实测过（127 次里那 1 次无法复现，没有新鲜坏样本可拦），
 它被实测触发的两次，一次是它自己的误判、一次是它抓到了另一个缺陷。
 
+**导入器侧那条候选机制现在单独存档，并且已按源文件实测缩小了范围**：
+`evidence/fbx_reader_candidate-mechanism.txt` 记的是 `fbxRMesh.cpp::getVertexIndex:74-102`
+（不支持的 mapping mode 只 `OSG_WARN` 一句就带 `index = 0` 继续）与 `getElement:124-131`
+（`GetDirectArray().GetAt(...)` 不校验上界，而 FBX SDK 头 `fbxarray.h:181-202` 明写越界不抛错）
+——这是"值随分配器状态变"的**性质来源**，但**仍不是 A-38 的原因**。已实测缩小的部分：
+本文件含零法线的那两个数组属性头是 `ByPolygonVertex` + `Direct`，而该组合在 `getVertexIndex`
+里直接返回 `nMeshVertex`，**两个可疑分支都不会走到**（顺带把 A-43 与这条机制分开）；
+文件里另有一批 `IndexToDirect` 形态的 layer element（UV/材质类）确实会走
+`GetIndexArray().GetAt()` 那条不校验的路。没做的判别（含三步廉价方案）写在那份文件 §3。
+**在这些被实测之前，不要给 `default` 分支加"显式失败"**——那会把真正的成因掩盖掉。
+
 ---
 
 ### A-40 同一二进制、同一输入，产物不逐位一致　**OPEN**

@@ -1,0 +1,54 @@
+# A-38/A-43 相关的 FBX 读取器候选机制（**未证实**，记录以免随会话丢失）
+#
+# 时间：2026-10-20 02:20　对象：本仓库自带的 FBX 转换器 `src/osgdb_fbx/fbxRMesh.cpp`
+# 这条**不是**结论，是一条"能被廉价证伪/证实但还没做"的记录。定级文档里引用它时
+# 必须带上这个限定（AUDIT A-38 正文只把导入器列为候选之一，没有把这段当成原因）。
+
+## 1. 两处不校验的读法
+
+- `fbxRMesh.cpp::getVertexIndex:74-102`：`int index = 0;` 起步，`switch (GetMappingMode())`
+  只认 `eByControlPoint` / `eByPolygonVertex` / `eByPolygon`，**`default` 分支只
+  `OSG_WARN` 一句"unsupported FBX mapping mode"，然后带着 `index = 0` 继续往下走**；
+  末尾若 `ReferenceMode != eDirect`，返回 `pLayerElement->GetIndexArray().GetAt(index)`。
+- `fbxRMesh.cpp::getElement:124-131`：直接
+  `pLayerElement->GetDirectArray().GetAt(getVertexIndex(...))`，**不做任何上界校验**。
+
+FBX SDK 自己写明越界不报错（`3rdparty/include/windows/fbxsdk/core/base/fbxarray.h:181-202`，
+注释原文 "No error will be thrown if the index is out of bounds"），所以越界时读到的是
+按内部指针步长算出去的任意字节——**这正是 A-38 那个"槽里装着别的数据"形态需要的性质**。
+
+## 2. 为什么它还没被证实，也还没被证伪
+
+已经实测到的（`evidence/a43-source-side-fbx-probe.txt` §3，以及本轮对源文件属性头的直接读取）：
+
+- 本文件 **2729 个法线数组全部解析成功**，其中含零法线的那两个数组的属性头是
+  `MappingInformationType = ByPolygonVertex`、`ReferenceInformationType = Direct`
+  （在 `Normals` 属性前 400 字节的窗口里可见，实测两处一致）。
+  → **对法线这条通路，上面的 `default: index=0` 与 `GetIndexArray().GetAt()`
+  两个分支都不会被走到**（ByPolygonVertex + Direct 直接返回 `nMeshVertex`）。
+  也就是说：A-43 的零法线**不能**用这个机制解释，它就是源数据自带的。
+- 同一文件里还有大量 **`IndexToDirect`** 形态的 layer element（UV/材质/颜色一类，
+  粗扫字符串得 `Direct` 2729 次、`IndexToDirect` 5458 次、`ByPolygonVertex` 5452 次、
+  `ByPolygon` 2729 次。**这组数是分块字符串扫描得到的，块间 256 B 重叠可能轻微重复计数，
+  只当量级看，不当精确值用**）。这类元素**会**走
+  `GetIndexArray().GetAt(index)` → `GetDirectArray().GetAt(...)` 那条不校验越界的路。
+
+所以剩下的问题是：**A-38 污染的 1 个 POSITION 槽 + 5 个 NORMAL 槽，是否来自某次
+`IndexToDirect` 索引越界**？注意 POSITION 本身不走这两个函数（来自
+`GetControlPoints()`），而 A-38 的污染槽里有 NORMAL——如果污染发生在我们自己的
+`SourceModel`/`GltfOptimizer`/`Osg2Gltf` 拷贝区间（A-38 正文记录的形态是"一份共享源顶点
+数组里 1 个 POSITION 槽 + 5 个 NORMAL 槽"，即数组**区间**被拷贝错位），那与 FBX 读取器无关。
+
+## 3. 能廉价判别的三步（谁有空谁做，不需要 6 h 的全量跑）
+
+1. **在读取器里加临时断言**（不提交）：`getElement` 调用前比较
+   `getVertexIndex(...)` 与 `GetDirectArray().GetCount()`，越界就打印属性名/索引/上界。
+   注意**必须用带 `IndexToDirect` 元素的 FBX** 才测得到这条路（矩阵 12 资产是 OBJ/OSG，
+   不走 `getElement`；当前唯一的大 FBX 就是 335 MB 那份，所以先用"只在前 N 个 mesh 上开断言"
+   的办法把成本压住）。
+2. **查 A-38 那 3 个瓦片的污染槽是否可能由"拷贝区间错位"产生**：A-38 已记录的形态
+   是共享数组区间错位，与 `GetAt` 越界读出来的"值随分配器状态变"是同一种症状的两个候选，
+   要靠 `WB_DUMP_SOURCE`（加载后的源 POSITION/NORMAL 落盘）与产物逐槽对比来分家。
+3. **给 `getVertexIndex` 的 `default` 分支改成显式失败**（返回 -1 并让调用方跳过该元素），
+   这属于加固而不是修 A-38——**在证明它被触发之前不要改**，否则会掩盖真正的成因，
+   而且会让"改完就好了"的假象进入验收记录。

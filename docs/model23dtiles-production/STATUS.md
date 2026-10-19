@@ -46,6 +46,15 @@ node scripts/b3dm_extents.js <文件.b3dm|文件.i3dm> [...]
 node scripts/b3dm_attr_probe.js <数据集目录|文件.b3dm> [--abs N] [--all]
                                            # A-38 取证：逐 primitive 关联 POSITION/NORMAL/索引，
                                            # 报荒谬坐标与零长法线的 @count-k 相对下标与是否被索引引用
+node scripts/fbx_source_normals_probe.js <模型.fbx> [--detail N]
+                                           # A-43 源侧定性：**裸读源 FBX**（按属性名找 Normals、
+                                           # encoding==1 时先 inflate）数零长度法线，再按同 mesh 的
+                                           # PolygonVertexIndex 真实负下标边界归面。回答的是
+                                           # 上面几条都回答不了的那个岔口："源里就有，还是我们写出
+                                           # 时变 0 的"——不需要动构建。三重自检（解压后长度精确
+                                           # 等于 arrayLength×elemSize / 非零向量里的"非单位"数 /
+                                           # 角点数==PVI 元素数）任一不过就别信统计数；含内容摘要
+                                           # 去重（instance 拷贝会把 7 个 mesh 重复计成 36 个数组）
 node scripts/accessor_extents_scan.js <数据集|容器目录|tiles 目录> [...] [--abs 1e6]
                                            # 全量逐 accessor 三条判据：声明 min/max vs 实算、
                                            # POSITION 非有限分量、荒谬顶点 |coord|>阈值；
@@ -288,6 +297,14 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    0 次重现**（累计 127 次仅 1 次），没有新鲜污染产物可差分。
    `mergeGeometries` 缺的 `nrm->size()==pos->size()` 守卫（`ProxyMeshBuilder.cpp:361`）
    仍是独立隐患，但本例 `aggregateProxyCount=0`，聚合路径没走，不是这里的解释。
+   **第三条候选（FBX 读取器侧）已单独存档**：`evidence/fbx_reader_candidate-mechanism.txt`
+   ——`getVertexIndex:74-102` 的 `default` 分支只 warn 一句就带 `index = 0` 继续、
+   `getElement:124-131` 的 `GetAt` 不校验上界（SDK 头明写越界不抛错）。本轮按源文件实测
+   **缩小**了它的适用范围：法线属性头是 `ByPolygonVertex` + `Direct`，该组合在
+   `getVertexIndex` 里直接返回 `nMeshVertex`，两个可疑分支都走不到（这也顺手把 A-43
+   与它分开）；仍会走到那条路的是 UV/材质一类 `IndexToDirect` 元素。
+   **未证实之前不要给 `default` 加"显式失败"**——那会掩盖真正成因，并把"改完就好了"
+   的假象送进验收记录。
 4. **`lugouqiao_v15` 已跑完，验收未做**。15:47 起跑、**21:52:17 结束**（21 621 s ≈ 6 h），
    产出 **1059 个瓦片**（1057 个 tile 文件：931 `.b3dm` + 126 `.i3dm`），
    `errors: []`、`featuresMissingFromLeaves=0`、`proxySkippedCount=0`、
