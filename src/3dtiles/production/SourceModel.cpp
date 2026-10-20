@@ -20,6 +20,11 @@ using namespace osgGISPlugins::production;
 
 namespace {
 
+// A-43 的两条尺子，与 scripts/zero_normal_triage.js / zero_normal_repair_plan.js 一致：
+// 长度低于 kZeroNormalEps 视为"零法线"，面积低于 kDegenerateAreaRel × 中位面积视为退化面。
+const double kZeroNormalEps = 1e-6;
+const double kDegenerateAreaRel = 1e-6;
+
 // 把 DrawElements / DrawArrays 展开成三角形列表
 void expandPrimitiveSet(const osg::PrimitiveSet* ps, std::vector<unsigned>& out)
 {
@@ -693,6 +698,95 @@ std::uint64_t SourceModel::estimateBytes(const std::vector<PrimRef>& primTable,
     return b;
 }
 
+SourceModel::NormalRepairCounts SourceModel::repairZeroNormals(
+    const osg::Vec3Array* pos, osg::Vec3Array* nrm, const std::vector<unsigned>& tris)
+{
+    NormalRepairCounts c;
+    if (!pos || !nrm || pos->size() != nrm->size() || tris.size() < 3) { return c; }
+
+    const std::size_t nv = pos->size();
+    const std::size_t nTri = tris.size() / 3;
+
+    auto usable = [](const osg::Vec3& n) {
+        return std::isfinite(n.x()) && std::isfinite(n.y()) && std::isfinite(n.z())
+            && n.length() > kZeroNormalEps;
+    };
+
+    std::vector<double> area(nTri, 0.0);
+    std::vector<osg::Vec3d> unit(nTri, osg::Vec3d(0.0, 0.0, 0.0));
+    for (std::size_t t = 0; t < nTri; ++t)
+    {
+        const osg::Vec3& a = (*pos)[tris[t * 3]];
+        const osg::Vec3& b = (*pos)[tris[t * 3 + 1]];
+        const osg::Vec3& cc = (*pos)[tris[t * 3 + 2]];
+        const osg::Vec3d e1(static_cast<double>(b.x()) - a.x(),
+                            static_cast<double>(b.y()) - a.y(),
+                            static_cast<double>(b.z()) - a.z());
+        const osg::Vec3d e2(static_cast<double>(cc.x()) - a.x(),
+                            static_cast<double>(cc.y()) - a.y(),
+                            static_cast<double>(cc.z()) - a.z());
+        const osg::Vec3d cr = e1 ^ e2;
+        const double len = cr.length();
+        if (!std::isfinite(len) || len <= 0.0) { continue; }
+        area[t] = len;
+        unit[t] = cr / len;
+    }
+
+    // 中位面积：与 zero_normal_triage.js 一样取升序后的 nTri/2 处
+    std::vector<double> sorted(area);
+    std::nth_element(sorted.begin(), sorted.begin() + nTri / 2, sorted.end());
+    const double med = sorted[nTri / 2];
+
+    osg::Vec3d primSum(0.0, 0.0, 0.0);
+    bool anyGood = false;
+    std::vector<osg::Vec3d> acc(nv, osg::Vec3d(0.0, 0.0, 0.0));
+    for (std::size_t t = 0; t < nTri; ++t)
+    {
+        // med==0（过半三角形退化）时尺子退化为"面积严格为正"
+        const bool good = area[t] > kDegenerateAreaRel * med;
+        if (!good) { continue; }
+        anyGood = true;
+        primSum += unit[t] * area[t];
+        for (int k = 0; k < 3; ++k)
+        {
+            const unsigned v = tris[t * 3 + k];
+            if (v >= nv || usable((*nrm)[v])) { continue; }
+            acc[v] += unit[t] * area[t];
+        }
+    }
+
+    osg::Vec3d fallback(0.0, 0.0, 0.0);
+    bool hasFallback = false;
+    if (anyGood && primSum.length() > 0.0)
+    {
+        fallback = primSum / primSum.length();
+        hasFallback = true;
+    }
+
+    for (std::size_t v = 0; v < nv; ++v)
+    {
+        osg::Vec3& n = (*nrm)[v];
+        if (usable(n)) { continue; }
+        if (acc[v].length() > 0.0)
+        {
+            const osg::Vec3d r = acc[v] / acc[v].length();
+            n.set(static_cast<float>(r.x()), static_cast<float>(r.y()), static_cast<float>(r.z()));
+            ++c.fromFaces;
+            continue;
+        }
+        if (hasFallback)
+        {
+            n.set(static_cast<float>(fallback.x()), static_cast<float>(fallback.y()),
+                  static_cast<float>(fallback.z()));
+            ++c.fromPrimitive;
+            continue;
+        }
+        n.set(0.0f, 0.0f, 0.0f);   // 不编造：留给 validator 判错
+        ++c.leftZero;
+    }
+    return c;
+}
+
 osg::ref_ptr<osg::Node> SourceModel::materialize(const std::vector<PrimRef>& primTable,
                                                  const std::vector<std::uint32_t>& itemIds,
                                                  bool perFeatureGeodes) const
@@ -853,7 +947,22 @@ osg::ref_ptr<osg::Node> SourceModel::materialize(const std::vector<PrimRef>& pri
 
         osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
         geom->setVertexArray(pos.get());
-        if (nrm.valid() && nrm->size() == pos->size()) { geom->setNormalArray(nrm.get(), osg::Array::BIND_PER_VERTEX); }
+        if (nrm.valid() && nrm->size() == pos->size())
+        {
+            const NormalRepairCounts rc = repairZeroNormals(pos.get(), nrm.get(), outTris);
+            if (rc.leftZero > 0)
+            {
+                OSG_WARN << "[SourceModel] " << rc.leftZero << " zero-length normal(s) left in group fid="
+                         << g.fid << ": this tile has no non-degenerate triangle to derive them from; "
+                         << "the official validator will reject the NORMAL accessor." << std::endl;
+            }
+            if (rc.fromFaces || rc.fromPrimitive)
+            {
+                TRACE("materialize A-43 normal repair fid=" << g.fid << " fromFaces=" << rc.fromFaces
+                      << " fromPrimitive=" << rc.fromPrimitive << " leftZero=" << rc.leftZero);
+            }
+            geom->setNormalArray(nrm.get(), osg::Array::BIND_PER_VERTEX);
+        }
         if (uv.valid() && uv->size() == pos->size()) { geom->setTexCoordArray(0, uv.get()); }
         if (col.valid() && col->size() == pos->size()) { geom->setColorArray(col.get(), osg::Array::BIND_PER_VERTEX); }
         for (std::size_t a = 0; a < outAttribs.size(); ++a)

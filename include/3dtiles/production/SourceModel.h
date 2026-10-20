@@ -159,6 +159,23 @@ public:
     struct Triangle {
         osg::Vec3d a, b, c;
     };
+
+    // A-43：源 FBX 的顶点法线数组里带零长度向量，osg::Vec3::normalize() 对它无解，
+    // 忠实透传进 glTF 后官方 3d-tiles-validator 判 severity=ERROR（发布闸不过）。
+    // 这里在物化出三角形拓扑之后重建：取该顶点入射非退化面的面积加权法线；顶点自身
+    // 入射面全退化时退到本图元的面积加权平均法线；两者都取不到才保持原值（不编造）。
+    // "非退化"用与 scripts/zero_normal_triage.js 主判据同一条尺子：面积 > 1e-6 ×
+    // 本批三角形中位面积（绝对阈值跨尺度会翻转结论，A-43 里实测过）。
+    struct NormalRepairCounts
+    {
+        int fromFaces = 0;       // 由入射非退化面修复
+        int fromPrimitive = 0;   // 由本图元平均面法线兜底
+        int leftZero = 0;        // 仍然不可用：产物会被 validator 判 ERROR
+    };
+    static NormalRepairCounts repairZeroNormals(const osg::Vec3Array* pos,
+                                                osg::Vec3Array* nrm,
+                                                const std::vector<unsigned>& tris);
+
     void collectTriangles(const std::vector<PrimRef>& primTable,
                           const std::vector<std::uint32_t>& itemIds,
                           std::vector<Triangle>& out) const;

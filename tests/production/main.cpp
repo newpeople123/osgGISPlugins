@@ -25,6 +25,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <functional>
+#include <cmath>
 #include <exception>
 #include <cstdlib>
 #include <limits>
@@ -162,6 +164,131 @@ void testSourceModelBaking()
         const osg::BoundingBox& bb = m.bounds;
         checkNear(bb.xMin(), 100.0, 1e-4, "world transform baked into bounds.xMin");
         checkNear(bb.xMax(), 101.0, 1e-4, "world transform baked into bounds.xMax");
+    }
+}
+
+// A-43：源法线数组里的零长度向量，写出侧必须重算成面法线，否则官方 validator
+// 对整个内容文件判 severity=ERROR（lugouqiao_v17 实测 26 个文件 / 195 条）。
+void testZeroNormalRepair()
+{
+    std::cout << "[nrmRepair] A-43 zero-length NORMAL rebuild" << std::endl;
+    auto zeroNormals = [](unsigned n) {
+        osg::ref_ptr<osg::Vec3Array> a = new osg::Vec3Array;
+        for (unsigned i = 0; i < n; ++i) { a->push_back(osg::Vec3(0.0f, 0.0f, 0.0f)); }
+        return a;
+    };
+
+    // 1) 入射非退化面：三个顶点的法线全零 -> 该面法线 +Z
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0, 0, 0));
+        pos->push_back(osg::Vec3(1, 0, 0));
+        pos->push_back(osg::Vec3(0, 1, 0));
+        osg::ref_ptr<osg::Vec3Array> nrm = zeroNormals(3);
+        std::vector<unsigned> tris = {0, 1, 2};
+        const auto rc = SourceModel::repairZeroNormals(pos.get(), nrm.get(), tris);
+        check(rc.fromFaces == 3 && rc.fromPrimitive == 0 && rc.leftZero == 0,
+              "face-normal repair counts", "fromFaces=" + std::to_string(rc.fromFaces)
+              + " fromPrimitive=" + std::to_string(rc.fromPrimitive)
+              + " leftZero=" + std::to_string(rc.leftZero));
+        for (unsigned v = 0; v < 3; ++v)
+        {
+            checkNear((*nrm)[v].length(), 1.0, 1e-5, "repaired normal is unit length v" + std::to_string(v));
+            checkNear((*nrm)[v].z(), 1.0, 1e-5, "repaired normal matches face normal v" + std::to_string(v));
+        }
+    }
+
+    // 2) 顶点只落在退化面上 -> 退到本图元平均面法线；已有法线一个字节都不许动
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0, 0, 0));
+        pos->push_back(osg::Vec3(2, 0, 0));
+        pos->push_back(osg::Vec3(0, 2, 0));
+        pos->push_back(osg::Vec3(0, 2, 0));           // 与 v2 重合：(0,2,3) 面积为 0
+        osg::ref_ptr<osg::Vec3Array> nrm = new osg::Vec3Array;
+        nrm->push_back(osg::Vec3(0, 0, 1));
+        nrm->push_back(osg::Vec3(0.25f, 0.0f, 1.0f));  // 非单位但非零：写出器另有 normalize，这里不该碰
+        nrm->push_back(osg::Vec3(0, 0, 1));
+        nrm->push_back(osg::Vec3(0, 0, 0));
+        const osg::Vec3 keepBefore = (*nrm)[1];
+        std::vector<unsigned> tris = {0, 1, 2, 0, 2, 3};
+        const auto rc = SourceModel::repairZeroNormals(pos.get(), nrm.get(), tris);
+        check(rc.fromFaces == 0 && rc.fromPrimitive == 1 && rc.leftZero == 0,
+              "degenerate-only vertex falls back to primitive mean",
+              "fromFaces=" + std::to_string(rc.fromFaces)
+              + " fromPrimitive=" + std::to_string(rc.fromPrimitive)
+              + " leftZero=" + std::to_string(rc.leftZero));
+        checkNear((*nrm)[3].length(), 1.0, 1e-5, "fallback normal is unit length");
+        checkNear((*nrm)[3].z(), 1.0, 1e-5, "fallback normal follows the good face");
+        check((*nrm)[1] == keepBefore, "usable non-unit normal left untouched");
+    }
+
+    // 3) 全退化：宁可留零让 validator 判错，也不编造法线
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        for (int i = 0; i < 3; ++i) { pos->push_back(osg::Vec3(1, 1, 1)); }
+        osg::ref_ptr<osg::Vec3Array> nrm = zeroNormals(3);
+        std::vector<unsigned> tris = {0, 1, 2};
+        const auto rc = SourceModel::repairZeroNormals(pos.get(), nrm.get(), tris);
+        check(rc.fromFaces == 0 && rc.fromPrimitive == 0 && rc.leftZero == 3,
+              "all-degenerate primitive fabricates nothing",
+              "fromFaces=" + std::to_string(rc.fromFaces)
+              + " fromPrimitive=" + std::to_string(rc.fromPrimitive)
+              + " leftZero=" + std::to_string(rc.leftZero));
+        check((*nrm)[0].length() == 0.0f, "left-zero stays zero");
+    }
+
+    // 4) 接线自检：materialize 出口的法线必须全部可用（前 3 条只测纯函数，
+    //    证明不了调用点存在）
+    {
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName("zeronorm");
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0, 0, 0));
+        pos->push_back(osg::Vec3(1, 0, 0));
+        pos->push_back(osg::Vec3(0, 1, 0));
+        geom->setVertexArray(pos.get());
+        osg::ref_ptr<osg::Vec3Array> nrm = zeroNormals(3);
+        geom->setNormalArray(nrm.get(), osg::Array::BIND_PER_VERTEX);
+        geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, 3));
+        geode->addDrawable(geom.get());
+        root->addChild(geode.get());
+
+        SourceModel m;
+        check(m.build(root.get()), "source model built from zero-normal geometry");
+        osg::ref_ptr<osg::Node> out = m.materialize(m.prims, {0}, true);
+        check(out.valid(), "materialize returned a node");
+        int drawables = 0, checked = 0;
+        bool allUsable = true;
+        std::function<void(osg::Node*)> walk = [&](osg::Node* n) {
+            if (!n) { return; }
+            if (osg::Geode* gd = n->asGeode())
+            {
+                for (unsigned i = 0; i < gd->getNumDrawables(); ++i)
+                {
+                    osg::Geometry* g = gd->getDrawable(i)->asGeometry();
+                    if (!g || !g->getNormalArray()) { continue; }
+                    ++drawables;
+                    const osg::Vec3Array* a = dynamic_cast<const osg::Vec3Array*>(g->getNormalArray());
+                    if (!a) { continue; }
+                    for (const osg::Vec3& v : *a)
+                    {
+                        ++checked;
+                        if (std::abs(v.length() - 1.0f) > 1e-5f) { allUsable = false; }
+                    }
+                }
+            }
+            if (osg::Group* grp = n->asGroup())
+            {
+                for (unsigned c = 0; c < grp->getNumChildren(); ++c) { walk(grp->getChild(c)); }
+            }
+        };
+        walk(out.get());
+        check(drawables == 1 && checked == 3, "materialized geometry carries a per-vertex normal array",
+              "drawables=" + std::to_string(drawables) + " normals=" + std::to_string(checked));
+        check(allUsable, "materialize hook repairs zero normals before they reach the writer");
     }
 }
 
@@ -1392,6 +1519,7 @@ int main(int argc, char** argv)
     };
     run("profile", &testProfileValidation);
     run("sourceModel", &testSourceModelBaking);
+    run("nrmRepair", &testZeroNormalRepair);
     run("partition", &testPartitionCoverageAndDeterminism);
     run("giant", &testGiantSingleMeshSplits);
     run("error", &testErrorEvaluatorAnalytic);
