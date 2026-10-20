@@ -1,0 +1,148 @@
+A-42 复验：lugouqiao_v17 上 path_leak_scan.js 报 rc=1 / 4 处命中的人工判定
+================================================================================
+
+复现命令（全部在仓库根 E:/dev/C++/osgGISPlugins-gpt 下执行；退出码逐条取 $?，
+不要用管道，管道拿到的是 tail/grep 的码）：
+
+  node scripts/path_leak_scan.js F:/wb_3dtiles_out/lugouqiao_v17
+      → rc=1，"瓦片 1057 个，内含绝对路径 4 个"，样本打印出来是二进制噪声
+  node scripts/path_leak_structural.js F:/wb_3dtiles_out/lugouqiao_v17
+      → rc=0，见 §4 逐字输出
+  node scripts/path_leak_structural.js F:/wb_3dtiles_out/lugouqiao_v15
+      → rc=1（阳性对照，§3）
+  node scripts/make_path_leak_fixture.js F:/wb_3dtiles_out/zn_fixture.b3dm F:/wb_3dtiles_out/a42_probe
+  node scripts/make_path_leak_fixture.js F:/wb_3dtiles_out/lugouqiao_v17/tiles/t669.b3dm F:/wb_3dtiles_out/a42_probe_v17t669
+  node scripts/path_leak_structural.js F:/wb_3dtiles_out/a42_probe_leak.b3dm        → rc=1
+  node scripts/path_leak_structural.js F:/wb_3dtiles_out/a42_probe_clean.b3dm       → rc=0
+
+结论先说：**v17 的 4 处命中是 GLB BIN chunk 里的字节噪声，不是泄漏**；v17 分发物按
+"结构解析后再判"的口径 CLEAN，旁证 json 也 CLEAN。但这条判定**不能**用
+path_leak_scan.js 的退出码来读——它没有结构，二进制噪声与真泄漏在它眼里同号。
+
+
+1. 为什么旧工具的这个 rc=1 不能读成结论，也不能读成"没问题"
+--------------------------------------------------------------------------------
+`scripts/path_leak_scan.js` 只做一件事：把整个文件按 latin1 读进，跑
+`/"[A-Za-z]:[/\\][^"]{4,}"/g`。它对 KTX2/顶点缓冲这类二进制 payload 一视同仁，
+所以：
+  - 命中数 = 真泄漏 + 噪声，两者无法从输出区分（A-42 关闭那轮就吃过这个亏，
+    见 AUDIT A-42 "口径纠正"：第一版裸正则在 t03 误报 7 个瓦片）。
+  - 反过来它也**漏**：只认盘符，UNC（`\\server\share`）、`file:///` URI、
+    前导 `/` 的 uri 都不在判据里。
+v17 那 4 处的实际形态（PLS_SHOW=1 打印的偏移 + 上下文 hex）：
+
+  [二进制噪声命中] t669.b3dm @254804 in glbBIN_1 匹配="\"B:/.m!.lS{.Me...pLZ6..Di...A.R.`.. g... gR.%O\\."
+      上下文 hex=45608100718105af22423a2fc46d21086c537bdd4d6508b018704c5a3605
+  [二进制噪声命中] t671.b3dm @253204 in glbBIN_1 匹配="\"B:/.m!.lS{.Me...pLZ6..Di...A.R.`.. g... gR.%O\\."
+      上下文 hex=45608100718105af22423a2fc46d21086c537bdd4d6508b018704c5a3605
+  [二进制噪声命中] t688.b3dm @120517 in glbBIN_1 匹配="\"q:/b.m.AI.b1..o!....Dm.......|....%GDd........."
+      上下文 hex=3f3b116c11e3082a22713a2f62dd6d104149126231a1916f21d21393a7446
+  [二进制噪声命中] t840.b3dm @550568 in glbBIN_1 匹配="\"s:/...2..T4..E.........!|.....6}Z+..W.lO....V.."
+      上下文 hex=58729097c77a43ff22733a2fc1a6cf32f2cf54340fd5459ae9dbbabae7b8e
+
+每条的 0x22（`"`）都是浮点/压缩数据里凑出来的字节，`:` `/` 同理（22 42 3a 2f =
+`"B:/`）。四个全部落在 glbBIN_1，没有一个进 JSON 区。
+另外 t669 与 t671 的命中内容**逐字节相同**（同一原型几何在两个瓦片的同一相对偏移上），
+这和 A-43 里"同一份原型几何被多个 LOD 复用"的观察一致——噪声也是确定性的。
+
+
+2. 尺子本身修过三处（都记下来，否则"0"不可信）
+--------------------------------------------------------------------------------
+新判据 `scripts/path_leak_structural.js` 前两版有三个会让它**静默恒阴**的 bug，
+全部是靠阳性对照（§3）暴露的，不是靠输出好看：
+
+① GLB chunk 头起点：写成 `base+20`，正确是 `base+12`（GLB 头 12 B，之后每 chunk
+   8 B 头）。后果是把 JSON 文本前 8 字节当成块头，`glbJSON` 区**根本不存在**，
+   所有命中被归到一个假区 `glbChunk_73736563`（"cess"，其实是 `{"accessors"` 的片段）。
+   当时它照样打印 "CLEAN"。
+② i3dm 的头比 b3dm/pnts 多一个 4 字节 `gltfFormat`（偏移 28），我按 b3dm 偏移走，
+   于是 ftJSON/btJSON 各自截尾 4 字节（JSON 解析失败），GLB 魔数对不上 →
+   **v15 那种 i3dm 真泄漏会被这个 bug 整条漏掉**。区表实测：
+     i1000.i3dm: ftJSON[32,264,JSON] ftBIN[264,320] btJSON[320,512,JSON]
+                 btBIN[512,512] glbJSON_0[532,3784,JSON] glbBIN_1[3792,136092]
+③ cmpt：规范说偏移 12 是"所有内层块的字节总长"，**本仓写出的实测是块数**
+   （`F:/wb_3dtiles_out/cmpt_probe/tiles/mixed.cmpt`：magic=`cmpt` 小写、
+   byteLength=26224、偏移12=2、内层首块 magic 在偏移 **16**）。按字节总长解释
+   得到 `lim=2`，递归一次都没进，区表只剩 `cmptHdr[0,20]`——又是一个"CLEAN 但没查"。
+   现在改成用每个内层块自己的 byteLength 走到文件尾，并把偏移 12 的两种解释
+   都试一遍、都不符就报"尺子失效"。实测：
+     [cmpt 偏移12] =2 → 按块数吻合（实走 2 块）
+     区表 mixed.cmpt: cmptHdr[0,16] ftJSON[44,96,JSON] … glbJSON_0[308,1052,JSON]
+                      glbBIN_1[1060,1516] ftJSON[1552,1800,JSON] … glbJSON_0[25020,25760,JSON]
+                      glbBIN_1[25768,26224]
+   注：偏移 12 的两种解释在这份文件里都能被"实走 2 块 / 内层字节 26208"区分开，
+   所以脚本是按实测选的，不是按规范文本选的。**这是产物与规范的偏差，另计。**
+
+退出码语义写进脚本头：0 = CLEAN；1 = 分发物 JSON 区解析后有绝对路径；
+**3 = 尺子自己失效**（结构或 JSON 解析失败），此时那个 0 不算数。
+
+
+3. 对照（三组，缺一不可）
+--------------------------------------------------------------------------------
+① 已知阳性产物 `lugouqiao_v15`（A-42 修复前的真实 FBX 输出）：
+     瓦片 1057 个 / 旁证 json 3 个
+     裸正则命中 3114 处，按区分布：glbJSON_0=3112 glbBIN_1=2
+     分发物判定：LEAK（3112 处）；旁证含绝对路径 2729 处；尺子失效 0 处
+   抽样指针（真泄漏长这样，能定位到 JSON 路径）：
+     [泄漏:盘符] …\v15\tiles\i1000.i3dm  glbJSON_0/bufferViews/0/name = "F:/wb_3dtiles_out/lugouqiao_v15\\textures\\171f531698a65c1d-basecolor.ktx2"
+     [泄漏:盘符] …\v15\tiles\i1000.i3dm  glbJSON_0/images/0/name       = 同上
+   两个口径在这份文件上互相独立地给出 3112 = 3112（结构判据）与 3112（裸命中进 JSON 区），
+   即 glbJSON 里的真泄漏一次不落地对上，BIN 里的 2 处噪声被正确排除。
+
+② 注入对照（`scripts/make_path_leak_fixture.js`，两种底本各一对）：
+     底本 A = F:/wb_3dtiles_out/zn_fixture.b3dm（最小合成 b3dm，ftJ=24 btJ=0）
+     底本 B = F:/wb_3dtiles_out/lugouqiao_v17/tiles/t669.b3dm（真实产物，890 032 B）
+   两个版本只差注入值的形态，其余字节完全同构：
+     leak  = {"__a42probe":"F:/wb_3dtiles_out/CONTROL/ktx2-basecolor.ktx2"} → rc=1
+       [泄漏:盘符] … glbJSON_0/__a42probe = "F:/wb_3dtiles_out/CONTROL/ktx2-basecolor.ktx2"
+     clean = {"__a42probe":"textures/ktx2-basecolor.ktx2"}                 → rc=0
+   两个底本都是 1/0。所以触发的是**盘符本身**，不是"多了一个键"或"文件被动过"。
+   这个对照是本轮才补的：第一版生成器把 GLB 写在偏移 28，丢掉了 feature table
+   （正确位置是 52），产出的文件结构非法——扫描器对它报 `[尺子失效] GLB 魔数不符 @52`
+   并返回 rc=3，**这个 3 是正确行为**。修生成器时踩的坑记在这里，是为了说明
+   "对照文件本身也要验结构"，否则拿一个非法文件去证明判据有效是空证明。
+
+③ 阴性一致性：矩阵/真实资产修复后数据集全部 CLEAN 且**裸命中 0 处**
+   （不是"命中被解释掉"，是压根没有命中）：
+     matrix_a42fix  瓦片 213 / 旁证 36 → rc=0，裸命中 0
+     longxiang_a42  瓦片 127 / 旁证 3  → rc=0，裸命中 0
+     a41fix_t05     瓦片 2   / 旁证 3  → rc=0，裸命中 0
+     cmpt_probe     瓦片 1（含 2 个内层块，递归已生效）/ 旁证 2 → rc=0，裸命中 0
+
+
+4. v17 全量逐字输出
+--------------------------------------------------------------------------------
+$ node scripts/path_leak_structural.js F:/wb_3dtiles_out/lugouqiao_v17
+瓦片 1057 个 / 旁证 json 3 个
+裸正则命中 4 处，按区分布：glbBIN_1=4
+分发物判定：CLEAN（JSON 区解析后无绝对路径）；裸命中进 JSON 区 0 处 / padding 残留 0 个区；旁证含绝对路径 0 处（不进退出码）；尺子失效 0 处
+rc=0
+
+旁证侧 v15→v17 的变化（同字段直接对照，证明 A-42 第 2 个口子在真实 FBX 上也修了）：
+  v15  feature-manifest.json/features/0/nodePath = "D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx/园博园桥"
+  v17  feature-manifest.json/features/0/nodePath = "20240529卢沟桥分洪枢纽.fbx/园博园桥"
+  v15  schema = "osgGISPlugins/model23dtiles feature manifest v1"     旁证含绝对路径 2729 处
+  v17  schema = "osgGISPlugins/model23dtiles feature manifest v1.1"   旁证含绝对路径    0 处
+  （两版 instances=1787 / occurrenceCount=4250 相同）
+  v17 manifest 顶层键：aggregateProxies features instances occurrenceCount schema sourceFeatureCount
+  ——**没有任何记录输入文件路径的键**。
+
+
+5. 已排除 / 未证实
+--------------------------------------------------------------------------------
+已排除：
+  - v17 的 4 处命中不是泄漏：全部在 glbBIN_1，且经结构解析（ftJSON/btJSON/glbJSON
+    三类 JSON 区逐个 JSON.parse 后走字符串）0 处绝对路径；尺子失效 0 处，
+    所以这个 0 不是"没查出来"。
+  - 不是 A-42 回归：同一把尺子在 v15 上报 3112 处、在注入对照上报 1 处，
+    判据在真泄漏面前会响。
+未证实（留给下一步）：
+  - 官方 validator 还没在 v17 上跑过，"能过 validator"这句现在没有实测支撑。
+  - cmpt 偏移 12 与本仓写出值（块数 vs 规范的字节总长）的偏差**只在一份探针文件上
+    测过**。按扩展名实测：`lugouqiao_v17` 0 份（931 b3dm + 126 i3dm）、
+    `matrix_a42fix` 0 份、`longxiang_a42` 0 份、`a41fix_t05` 0 份，
+    只有 `cmpt_probe` 1 份（tiles/mixed.cmpt）。所以这条偏差要不要单独开审计项，
+    取决于还有谁消费 cmpt——**本轮没查消费侧**。
+  - 结构判据依赖"JSON 区能 parse"。padding 残留（写在 JSON chunk 的 4 字节补齐区里
+    的路径字节）会被单独报 `[padding 残留]` 而不算泄漏；本轮所有数据集这个计数都是 0，
+    所以"客户端读不到"这一推断**没有实际样本验证过**。

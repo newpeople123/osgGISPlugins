@@ -87,8 +87,25 @@ node scripts/i3dm_pose_check.js <数据集目录|文件.i3dm> [--top 12]
                                            # inverse(原型世界)·实例世界 的 (x,-z,y) 置换（**不是**
                                            # 绝对平移：绝对帧全命中恰恰是双变换）、GLB 节点有无 TRS
 node scripts/path_leak_scan.js <数据集目录>
-                                           # A-42 验收：分发瓦片与旁证 json 里不得出现本地绝对路径；
-                                           # 只认 JSON 字符串字面量形态，避免在 float 数据里误报
+                                           # A-42 粗筛：裸正则找"盘符+分隔符"的引号串。
+                                           # **只用于"该人工看了"**：二进制 payload 里的字节
+                                           # 噪声与真泄漏在它眼里同号（v17 的 4 处就是噪声），
+                                           # 且只认盘符，漏 UNC / file:// / 前导斜杠。
+node scripts/path_leak_structural.js <数据集目录|瓦片文件> [...]
+                                           # A-42 验收口径：按 b3dm/i3dm/pnts/cmpt 头切出
+                                           # feature table / batch table / GLB 各 chunk，逐个
+                                           # JSON.parse 后走字符串，只有 JSON 区里的绝对路径
+                                           # 才算泄漏（盘符、前导 / 或 \、file:// 三种形态）。
+                                           # 退出码 0=CLEAN / 1=LEAK / **3=尺子失效**——取到 3
+                                           # 时那个 0 不算数。PLS_SHOW=1 打印噪声命中的偏移与
+                                           # 上下文 hex；PLS_REGIONS=1 打印区表（用来确认 cmpt
+                                           # 递归真的进去了）。i3dm 偏移 28 有 4 字节 gltfFormat、
+                                           # 本仓 cmpt 偏移 12 实测是内层块数不是字节总长，
+                                           # 这两处写错都会造成静默漏检。
+node scripts/make_path_leak_fixture.js <源.b3dm> <输出前缀>
+                                           # 上面那条判据的对照生成器：同一底本产出"注盘符"与
+                                           # "只注相对 uri"两份文件，期望退出码 1 / 0。
+                                           # 没有它，"0 处泄漏"可能只是判据恒返回 false。
 node scripts/check_page_js.js docs/visual-acceptance/index.html
                                            # 改页面后先做内联 script 语法校验
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]
@@ -383,18 +400,23 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    **我自己写错过一次并已纠正**：22:41 那轮把"299 条 POSITION 逐项等于**绝对**平移"当成 PASS
    证据（`F:/wb_3dtiles_out/a41fix_t05`、`runs/matrix_a41fix2`），那次确实是全 0 位姿被修好了，
    但落的是错的帧——绝对帧 100 % 命中恰恰是相对帧 0 % 生效的签名。这两批产物已作废。
-   **待办**：真实 FBX 用**修正后的 23:53 exe + 00:16 插件**重跑为 `lugouqiao_v17`（约 6 h）；
-   v17 落盘后要跑的验收电池（**逐条取 `$?` 再管道**，`| tail` 会把退出码盖成 `tail` 的 0——本轮踩过）：
-   `node scripts/i3dm_pose_check.js`（期望 126 个 i3dm / 1787 条实例位姿在**相对帧**全对上，
-   绝对帧比对必须 0 命中）、`node scripts/path_leak_scan.js`（期望 0）、
-   `node scripts/tileset_bounds.js`、`node scripts/check_manifest_assertions.js`、
-   `node scripts/accessor_extents_scan.js`（期望 b3dm >1e6 **和** i3dm >1e6 **都是 0**：
-   后者是 A-41 的签名，v15 实测 6 个 i3dm 命中）、
-   `node scripts/zero_normal_triage.js` + `zero_normal_tile_class.js`
-   （期望**仍是 ~195 条、同样签名**——A-43 已定性为源侧自带，**不是**回归信号，
-   见 `evidence/a43-source-side-fbx-probe.txt`）、
-   `bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17`（逐资产官方 validator，仍未做过），
-   再加 A-33 口径的展开三角形核对与 `aggregateProxies` 复核，最后写进 §6.2/PERFORMANCE。
+   **v17 已落盘**（00:35→08:35，28 485 s；1057 个分发文件 / 931 b3dm + 126 i3dm，471 个 `.ktx2`）。
+   验收电池（**逐条取 `$?` 再管道**，`| tail` 会把退出码盖成 `tail` 的 0——本轮踩过）：
+   - `node scripts/i3dm_pose_check.js` → **rc=0**（126 个 i3dm / 1787 条实例位姿在**相对帧**全对上，
+     绝对帧比对 0 命中）
+   - `node scripts/tileset_bounds.js` → **rc=0**；`node scripts/check_manifest_assertions.js` → **rc=0**
+   - `node scripts/accessor_extents_scan.js` → **rc=0**（b3dm >1e6 **和** i3dm >1e6 **都是 0**：
+     后者是 A-41 的签名，v15 实测 6 个 i3dm 命中）
+   - `node scripts/zero_normal_triage.js` + `zero_normal_tile_class.js` → **rc=0**
+     （仍是 ~195 条、同样签名——A-43 已定性为源侧自带，**不是**回归信号，
+     见 `evidence/a43-source-side-fbx-probe.txt`）
+   - `node scripts/path_leak_structural.js` → **rc=0**（1057 瓦片 + 3 旁证全 clean，尺子失效 0）。
+     注意 `path_leak_scan.js` 在 v17 报 **rc=1 / 4 处**，那 4 处经结构定位全在 GLB BIN chunk 里，
+     是字节噪声不是泄漏；已把它降级为粗筛，验收口径改用结构版。
+     证据 `evidence/a42-path-leak-v17-adjudication.txt`
+   - **仍未做**：`bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17`（逐资产官方
+     validator，真实 FBX 从没跑过）、A-33 口径的展开三角形核对、`aggregateProxies` 复核，
+     最后写进 §6.2/PERFORMANCE。
    `lugouqiao_v16`（22:53 起，用的是"第 2 点为空操作"的 22:40 二进制）已**主动终止**，
    终止时只有 `.wb-staging/` 里 8 个半成品 b3dm，没有 `tiles/`、没有 `tileset.json`。
    **已发布/已归档的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
