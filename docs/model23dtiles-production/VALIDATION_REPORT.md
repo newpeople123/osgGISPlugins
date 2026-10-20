@@ -615,6 +615,16 @@ bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_a42fix      docs/model23d
 重算为面法线（任务 #13），**不得**改用"关掉 NORMAL 属性""把 validator 判 ERROR 的
 输入剔除"或"把 ERROR 降成 warning"这类过闸手段。
 
+**处置已于同日落地到代码，但还没有产物验证过它**（`49b6d3c`）：`SourceModel::repairZeroNormals`
+在 `materialize()` 的 `setNormalArray` 之前按三角形拓扑重建零长度法线——入射非退化面优先
+（v17 实测 55 条），自身全退化时退到本图元面积加权平均面法线（140 条），整图元都退化则
+**保持为零并 `OSG_WARN`**（v17 实测 **0 条**，所以不需要编造方向）。可用法线一律不动。
+证据是**单测级**的：`test_production nrmRepair` 17/17、全量 **passed=167 failed=0**、rc=0。
+**本节上面那份 rc=1 属于 `lugouqiao_v17`，它不是带修复出的盘**；10:16 起跑的 `lugouqiao_v18`
+用的 exe 时间戳 **10:00**（早于 `49b6d3c`），同样不算验收轮。验收判据因此仍是
+**重新出盘 → `run_validator.sh` 逐资产看 `severity=ERROR` 叶层条数 → 自研电池复跑**，
+在这之前"v17/v18 未过发布闸"的记录不作废。
+
 KTX2 那批 warning 的成因这轮拿到了**validator 自己的话**，不再靠推断：
 叶层 info 里有 **691 条**（v17，= 带图的瓦片数）/ **81 条**（`longxiang_a42`）
 `Cannot validate an extension as it is not supported by the validator: 'KHR_texture_basisu'`，
@@ -761,9 +771,10 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   `aggregateProxies` 补全后可由源 feature 反查代理 ID 与其代表的源集合；
 - 视觉链路：CesiumJS 加载渲染真实出图，自动化 0 错误；
 - 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、Python 采集器（BLOCKED B-5）、
-  **A-43 写出侧处置**（官方 validator 对 `lugouqiao_v17` 判 **26 个内容文件 ERROR**、
-  `rc=1`，见 §7；零长度 NORMAL 虽判为源侧自带，但发布闸按 ERROR 计，
-  这份产物在处置前**不可发布**）、
+  **A-43 写出侧处置的产物级复验**（修复代码已在 `49b6d3c` 落地并通过 `test_production`
+  167 条单测；官方 validator 对 `lugouqiao_v17` 判 **26 个内容文件 ERROR**、`rc=1`，见 §7，
+  零长度 NORMAL 虽判为源侧自带，但发布闸按 ERROR 计，
+  这份产物在**用修复后的二进制重新出盘并复跑 validator** 之前**不可发布**）、
   **`lugouqiao_v17` 的视觉验收**（端到端与官方 validator 都已跑过，不再是待办）、
   **芜湖水厂用当前 HEAD 复跑**（`wuhu_v1` 是 A-41/A-42 之前产物，已判废）、
   **433 MB 的 `jianzhu+tietu.FBX` 从未出过盘**（5 个目录只有纹理），

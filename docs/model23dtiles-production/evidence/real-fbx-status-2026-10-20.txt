@@ -237,3 +237,62 @@ datasets=1  父不覆盖子合计=0  误差递增违例合计=0  有问题的数
   ProductionPipeline 侧 microBvhBuildSec 累加）。本轮全程**没有写源码、没有构建**，
   所以这是并发修改而非记错。
   ConversionReport 侧仍然没有落点：grep -c micro ProductionProfile.cpp / .h = 0 / 0（当场复测）
+
+【2026-10-20 10:35 追加：A-43 写出侧修复落地（代码级），本文件此前 §10 的
+ "本轮全程没有写源码、没有构建"只对 10:30 之前的那半轮成立】
+
+1) 修复可行性分档（先测后改，不动判据）
+   node scripts/zero_normal_repair_plan.js F:/wb_3dtiles_out/lugouqiao_v17
+     -> rc=0，读数全文存 F:/wb_3dtiles_out/v17_checks/zero_normal_repair_plan.txt
+     files=1057  rel=1e-6×本图元中位面积
+     零长度 NORMAL 顶点 = 195（涉及 26 个内容文件）
+       A 档 自身入射面可算出面法线   = 55
+       B 档 自身全退化、同图元有 good = 140
+       C 档 整图元无非退化面         = 0
+       无索引图元（归属不了）        = 0
+   C 档为 0 是本条的关键数：它证明"入射面法线 + 本图元平均面法线兜底"覆盖全部 195 条，
+   修复不需要给顶点编造一个几何上无依据的方向。旧文档里"邻接平均没有可用的非零邻居"
+   只描述了三处整面全零的形态，低估了 B 档仍有同图元有效面这一事实。
+
+2) 代码落点（为什么是 materialize 出口）
+   TRACE/grep 实测：b3dm 叶子 ProductionPipeline.cpp:612、i3dm 原型 :964、
+   代理簇 ProxyMeshBuilder.cpp:434/:626/:675 全部经 SourceModel::materialize 取几何，
+   所以 materialize 里 setNormalArray 之前是三条内容通路的共同出口。SourceModel.cpp/.h
+   不在并发未提交清单里，落点不会和别人的改动混在一个 commit。
+
+3) 构建与单测（rc 全部当场取，不经管道）
+   cmake --build build_wb --config Release --target test_production
+     -> rc=0，日志 F:/wb_3dtiles_out/build_a43norm3.log
+     第 1 次（build_a43norm.log）rc=1：测试里用了 osg::Vec3Array(3, osg::Vec3) 填充构造，
+       MSVC C2665（osg/Array 无该重载）——**改的是测试不是被测代码**；第 2 次 rc=1 是
+       Group::getChild(c) 返回 Node* 不是 ref_ptr（C2228）。两次都不是实现侧错误。
+     翻译单元实测含 GeometryErrorEvaluator.cpp / ProductionPipeline.cpp /
+     ProxyMeshBuilder.cpp 三份未提交改动（build_a43norm.log 第 4-9 行列出），
+     所以下面那 167 条通过**同时**是这 6 份未提交改动的一次未分级观察，
+     不构成它们需要的新旧上界逐节点对照或 12 资产 cert/loose 对照。
+   Release/test_production.exe nrmRepair   -> rc=0  passed=17 failed=0
+   Release/test_production.exe（全量）     -> rc=0  passed=167 failed=0
+     逐用例：profile 3 / sourceModel 4 / nrmRepair 17 / partition 7 / giant 7 / error 9 /
+     manifest 8 / batchid 8 / simplifier 7 / proxyAggregate 8 / pipelineCoverage 46 /
+     proxySkip 11 / bounds 12 / instancePoses 11 / noLocalPaths 9，failed 全 0
+     （在 F:/wb_3dtiles_out/a43_nrm_test/ 下运行，避免覆盖仓库根的
+      test_production_progress.txt——那里有并发会话的读数）
+   非空洞对照内置在 nrmRepair：全退化图元必须**保持为零**（leftZero=3，断言不编造）、
+   可用的非单位法线必须**逐字节不动**、并有一条走 materialize 的接线自检
+   （只测纯函数证明不了调用点存在）。
+
+4) commit 与未提交边界
+   49b6d3c  暂存 4 个路径：include/3dtiles/production/SourceModel.h(+17)、
+            src/3dtiles/production/SourceModel.cpp(+110/-1)、tests/production/main.cpp(+128)、
+            scripts/zero_normal_repair_plan.js(新增)
+   并发那 6 个文件提交后仍在未提交区、未被编辑（git diff --numstat 复核）。
+   未推送远程。
+
+5) 还缺什么（不要读成已闭环）
+   没有任何产物带这份修复出过盘。**在跑的 lugouqiao_v18 不是**：
+   命令 model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx
+   -o F:/wb_3dtiles_out/lugouqiao_v18，10:16:04 起，10:35 观测 CPU 9036 s、RSS 6.8 GB，
+   输出目录只有 textures/（2 个文件）；Release/model23dtiles.exe 时间戳 **10:00**，
+   早于 49b6d3c。所以 v18 出盘后若仍是同样 195 条 ERROR，不是回归信号。
+   验收判据不变：用 49b6d3c 之后的二进制重新出盘 → run_validator.sh 逐资产数
+   severity=ERROR 叶层 → 自研电池复跑。

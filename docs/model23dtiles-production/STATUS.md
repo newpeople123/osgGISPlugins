@@ -74,6 +74,12 @@ node scripts/zero_normal_tile_class.js <数据集目录>
                                            # A-43 取证：含零法线的瓦片对上 report 的
                                            # isProxy/isLeaf/aggregate/errorStatus——面积分档
                                            # 回答不了"是谁产生的"，这一条才能
+node scripts/zero_normal_repair_plan.js <数据集目录|文件> [...] [--rel 1e-6]
+                                           # A-43 写出侧修复的分档尺子：每个零长度 NORMAL 顶点
+                                           # 能不能从自身入射的非退化面拿到法线（A），拿不到时
+                                           # 同图元有没有有效面兜底（B），整图元都退化（C）。
+                                           # C 档决定"修复要不要编造方向"——v17 实测 A=55 B=140
+                                           # C=0，所以 `49b6d3c` 的规则不需要第四档
 node scripts/fbx_source_normals_probe.js <模型.fbx> [--detail N]
                                            # A-43 源侧定性：**裸读源 FBX**（按属性名找 Normals、
                                            # encoding==1 时先 inflate）数零长度法线，再按同 mesh 的
@@ -301,7 +307,8 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
 
 ## 工作区里那份**未提交**的改动（2026-10-20 记录，不属于本轮任何 commit）
 
-`git status --short` 现在有 **6** 个已跟踪源文件被改但未提交（本轮没有碰它们，也没有构建）：
+`git status --short` 现在有 **6** 个已跟踪源文件被改但未提交（本轮没有编辑它们；但见本节末尾——
+10:30 为验证 A-43 修复做过一次增量构建，这 6 份改动被一起编进了 `test_production.exe`）：
 
 ```
 include/3dtiles/production/GeometryErrorEvaluator.h  +2
@@ -341,6 +348,22 @@ src/3dtiles/production/ProxyMeshBuilder.cpp         +10
    `test_production` 误差用例复跑、以及 12 资产矩阵的 `cert/loose` 对照，
    并且**必须重新出盘**才能进验收——**v17 及之前所有产物都不是这份代码出的**。
 
+### 本轮（2026-10-20 10:30）的一次构建，把这 6 份未提交改动一起编了进去
+
+A-43 写出侧修复以 **`49b6d3c`** 提交（`include/3dtiles/production/SourceModel.h` +17、
+`src/3dtiles/production/SourceModel.cpp` +110/-1、`tests/production/main.cpp` +128、
+`scripts/zero_normal_repair_plan.js` 新增）。提交只 `git add` 这 4 个路径，上面那 6 个文件
+**仍在未提交区、未被编辑**。
+
+- 命令：`cmake --build build_wb --config Release --target test_production`（只建测试目标，
+  没碰正被 v18 占用的 `Release/model23dtiles.exe`；日志 `F:/wb_3dtiles_out/build_a43norm3.log`，rc=0）
+- 读数：`nrmRepair` 单独跑 **17/17**，全量 **passed=167 failed=0**，退出码 **0**
+  （在 `F:/wb_3dtiles_out/a43_nrm_test/` 下运行，避免覆盖仓库根的 `test_production_progress.txt`）
+- **口径提醒**：这份二进制的翻译单元列表实测含 `ProductionPipeline.cpp`、`ProxyMeshBuilder.cpp`、
+  `GeometryErrorEvaluator.cpp` 三份未提交改动，所以"167 条通过"**同时**是这 6 份改动的一次
+  未分级观察：`error` 那 9 条在新 `evaluateDirection` 口径下没报错，但它既不构成上面要求的
+  新旧上界逐节点对照，也不构成 12 资产 `cert/loose` 对照——别把它当成那两件事已做。
+
 ## 未闭合（写在这里，不靠记忆）
 
 1. **带 2b 闸的二进制已在 12 资产矩阵与 335 MB 真实 FBX（`lugouqiao_v17`）上实测通过**。闸门**第一版是错的**：
@@ -371,7 +394,19 @@ src/3dtiles/production/ProxyMeshBuilder.cpp         +10
    （`/meshes/*/primitives/0/attributes/NORMAL`），与自研 `zero_normal_triage.js` 的
    195 = 140（只落退化三角形）+ 55（落非退化、涉及 19 文件）**逐顶点对上**，即 A-43 的签名；
    同法对 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 **0 error**，所以不是校验器在乱报。
-   本条剩下的未闭合项因此是 **A-43 的写出侧处置**（见本节第 4 条）与这份产物的**视觉验收**。
+   **A-43 写出侧修复已在 `49b6d3c` 落地**（`SourceModel::repairZeroNormals`，物化出口按三角形
+   拓扑重建，`nrmRepair` 17 条 + 全量 167 条 `test_production` 通过），但这只是**代码级**证据：
+   尺子分档实测 v17 的 195 条 = 55 个可由自身入射非退化面修复 + 140 个退到本图元平均面法线 +
+   **0 个无解**（`scripts/zero_normal_repair_plan.js F:/wb_3dtiles_out/lugouqiao_v17`，
+   读数存 `F:/wb_3dtiles_out/v17_checks/zero_normal_repair_plan.txt`），
+   所以修复不需要编造方向。**产物级复验还没做**——需要一个用 `49b6d3c` 之后二进制出的盘。
+   本条剩下的未闭合项因此是**这份产物的视觉验收**与**修复后的重新出盘 + validator 复跑**。
+   > **v18 不是修复后的那一轮**（10:16 起在跑，`Release/model23dtiles.exe` 时间戳 **10:00**，
+   > 早于 `49b6d3c`）：命令 `model23dtiles.exe -sp -i D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx
+   > -o F:/wb_3dtiles_out/lugouqiao_v18`。10:35 观测：进程仍在跑（CPU 9036 s、RSS 6.8 GB），
+   > 输出目录只有 `textures/`（2 个文件），`tiles/`、`tileset.json`、两份 json 都还没出现。
+   > 它出盘后如果 validator 仍报同样 195 条零法线，**不是回归**，
+   > 是这轮本来就没带修复；也别把 v18 当成 A-43 的验收产物。
    另两份真实输入的现状（本轮盘上实测，旧文档写的
    "未跑／历史产物"都不准确）：`芜湖水厂总装.fbx` 只有 `wuhu_v1`，是 A-41/A-42 之前的
    二进制产物，`path_leak_structural` 报 226 处瓦片泄漏、`i3dm_pose_check` 报 5/5 个
@@ -462,6 +497,12 @@ src/3dtiles/production/ProxyMeshBuilder.cpp         +10
    但**解释不了"能发布"**：官方发布闸按 ERROR 计，v17 在写出侧处置（上面那条重算面法线）
    落地并重跑之前**不可发布**。禁止用"剔除含零法线的图元 / 不写 NORMAL 属性 /
    把 ERROR 降级"这类手段凑成通过。
+   **写出侧修复已于同日 `49b6d3c` 落地（代码级），产物级复验还没做**：`SourceModel::repairZeroNormals`
+   在 `materialize()` 装 `setNormalArray` 之前重建，`test_production nrmRepair` 17/17、全量 167/0、rc=0。
+   上面"邻接平均没有可用的非零邻居"那句只说对了形态、说轻了后果——按
+   `scripts/zero_normal_repair_plan.js` 对 v17 全量分档实测 **A=55（入射面可算）/ B=140（自身全退化、
+   同图元有有效面可兜）/ C=0（整图元都退化）**，C 档为 0 才让"不编造方向"成立；兜不到面的分支保留为零
+   并 `OSG_WARN`。**在跑的 `lugouqiao_v18` 不算验收轮**（exe 时间戳 10:00，早于该 commit）。
    **仍未做**：A-33 口径的 i3dm 展开三角形核对、`aggregateProxies` 复核
    （这两项本轮已由 `glb_prims.js` / `check_manifest_assertions.js` 在 v17 上补做，读数见
    VALIDATION_REPORT §6.2 的"v17 电池读数"表），官方 validator 也已跑（即上面的 FAIL）。
