@@ -185,8 +185,9 @@ i3dm 位姿第一次进入验收，且验收口径是 `inverse(原型世界)·�
    **瓦片字节数随输出目录字符串长度变化**（JSON chunk 按 8 字节补齐），过去被误当成 A-40 的噪声。
 3. **t08 大坐标 `errMax=1.06e7` 没有被 2b 误伤**——闸门对"合法但量级离谱"的资产放行，
    对 A-41 那种"内容离开源范围"才拒（gate-only 那轮 t05 的 rc=3 就是真阳性）。
-   ① "正常数据集不因 2b 误伤"这一条到现在为止的证据是 12 个合成资产，
-   真实 FBX 要等 `lugouqiao_v17` 才算验过。
+   ① "正常数据集不因 2b 误伤"这一条的证据：12 个合成资产 + **真实 FBX 已有 `lugouqiao_v17`**
+   （带闸 + 相对帧 + A-42 插件二进制，`rc=0`、`errors=[]`、1059 个瓦片全部登记、
+   没有任何一条 2b 拒发；它是这份 335 MB 输入历史上第一次出盘）。
 4. **t09 这一轮回到了 §1/§1b 的基线**（41 120 / 386.77 / cert-loose 3/3，与
    `matrix_a41fix` 逐字节同列）：`matrix_a41fix2` 那次是 A-40 的第 4 个变体，
    `maxBytes/errMax/cert-loose` 随变体动。本表列的是这一次运行的实测值，
@@ -221,6 +222,9 @@ i3dm 位姿第一次进入验收，且验收口径是 `inverse(原型世界)·�
    4 337 m、幅度命中 0；`>1e6` 的 4 处全在 i3dm（最大 1.223e8 m = `i1018.i3dm`），
    按 `--abs 1e4` 复扫得 6 个 i3dm 文件，正好等于 A-41 记录的"6 个瓦片烘焙坐标 >1e4"。
    如果两类瓦片混在一个判据里，A-41 的 6 个会被读成"A-38 在真实 FBX 上命中 6 次"。
+   **v17 复扫把这条 A-41 签名钉成"随修复消失"**：同一工具对 `lugouqiao_v17` 报
+   `i3dm >1e6 瓦片 = 0`、`i3dm max|c| = 383.5 m`（v15 是 6 个命中 / 最大 1.223e8 m），
+   b3dm 两列与 v15 一致（0 命中 / 4 337 m），所以归零来自 A-41 而不是判据被改松。
 
 ## 2. 扩展场景（矩阵缺口补齐）
 
@@ -506,9 +510,27 @@ A-30（纹理字节被当硬约束导致聚合 fallback 永不收敛）。
 
 | 输入 | 大小 | 状态 | 证据 |
 |---|---|---|---|
-| `20240529卢沟桥分洪枢纽.fbx` | 335 MB | 进行中（`lugouqiao_v14`） | A-31 之前 7 个内节点代理超 120 000 面 → 整批判失败；`lugouqiao_v11.log` 是失败关闭的真实证据 |
-| `芜湖水厂总装.fbx` | 132 MB | 未跑 | 命令同 6.1 |
-| `jianzhu+tietu.FBX` | 433 MB | 历史产物 `jianzhu_tietu_v5`（旧二进制，不含 A-26…A-31） | 需用当前 HEAD 复跑 |
+| `20240529卢沟桥分洪枢纽.fbx` | 335 MB（335 435 216 B） | **已跑通 `lugouqiao_v17`**（10-20 00:35→08:35，`totalSeconds=28 485.37`，rc=0；`tileCount=1059`、1057 个分发文件 = 931 `.b3dm` + 126 `.i3dm`、471 个 `.ktx2`；`errors=[]`、`maxTrianglesInTile=119 840`、`maxContentBytes=3 237 360`、`maxDepth=18`、`peakRssBytes=9.83 GB`） | 仓库电池**逐条 rc=0**（退出码不带管道取），明细见下面"v17 电池读数"段。**仍未做**：官方 validator、视觉验收 |
+| `芜湖水厂总装.fbx` | 132 MB（132 484 352 B） | **跑过但作废**：`wuhu_v1` 用 A-41/A-42 之前的二进制（report mtime 10-19 12:34 本机，`totalSeconds=207.53`，`tileCount=62` / 内容瓦片 `60` = 55 `.b3dm` + 5 `.i3dm`，`errors=[]`），manifest 仍是 `schema v1` | 本轮盘上实测两条 FAIL：`path_leak_structural` **rc=1**，瓦片 JSON 区 **226 处**泄漏（`glbJSON_0/bufferViews/N/name`、`images/N/name` = `F:/wb_3dtiles_out/wuhu_v1\textures\…`）+ 旁证 json 87 处 `D:/BaiduNetdiskDownload/芜湖水厂总装.fbx/…`；`i3dm_pose_check` **rc=1**，5/5 个 i3dm `POSITION` 全 0、19 条实例位姿 0 命中（工具直接判"manifest 缺 prototypeTransform，v1 产物无法验收，必须用修正后的二进制重跑"）、原型 `\|v\|` 最大 **52 494 m**。`report.errorMaxMeters=37 508.98` 是同一污染的连带读数，不能当误差结论。**需用当前 HEAD 复跑**（命令同 6.1） |
+| `jianzhu+tietu.FBX` | 433 MB（432 952 384 B） | **从未产出过数据集**——旧文案"历史产物 `jianzhu_tietu_v5`"是失真，已更正 | 5 个目录（`jianzhu_tietu`/`_v2`/`_v3`/`_v4`/`_v5`，`du -sb` 实测 238 862 431–1 008 345 919 B）**没有一个有 `tiles/`、`tileset.json` 或 `conversion-report.json`**；只有 `textures/`（57/66/73/93/85 个）与 `.wb-staging/tiles/` 里的半成品 b3dm（60/77/310/343/84 个，5 份 i3dm 计数全为 0）→ 5 次都停在写出中途。`v5/stderr_live.log` **0 字节**；`v3`（170 435 B）与 `v4`（186 245 B）末尾分别是 `evaluate pn=286 srcT=330 206 proxT=22 961` 和 `pn=221 srcT=1 320 823 proxT=19 380`。staging 有残留说明这几轮**没走到 §14.17 的失败清理**（候选：进程被外部终止），终止原因本轮未查。**结论：这份输入没有任何可验收产物**，与"旧二进制产物"是两回事 |
+
+**v17 电池读数**（2026-10-20 本机逐条跑、逐条取 `$?`，命令都在 `scripts/`）：
+
+| 判据 | 读数 | rc |
+|---|---|---|
+| `i3dm_pose_check.js` | 相对帧 **1787/1787** 对上、残差最大 **1.85e-5 m**、绝对帧比对 0 命中、POSITION 全 0 的瓦片 **0/126**、GLB 节点 TRS 0、原型 `\|v\|` 最大 383.48 m | 0 |
+| `accessor_extents_scan.js` | 931 b3dm / 126 i3dm / 4430 个 VEC3 accessor：声明≠实算 **0**、非有限分量 **0**、`>1e6` b3dm **0** 且 i3dm **0**；`\|c\|` 最大 b3dm 4 337 m、i3dm 383.5 m | 0 |
+| `path_leak_structural.js` | 1057 瓦片 + 3 旁证 **0 泄漏**、尺子失效 0（`path_leak_scan.js` 那 4 处是 BIN chunk 字节噪声，见 `evidence/a42-path-leak-v17-adjudication.txt`） | 0 |
+| `tileset_bounds.js` | 父覆盖子 / NaN box / 负半轴 / 非法 ge / ge 递增 全 0 | 0 |
+| `glb_prims.js` | 1057 个内容文件 **违例 + 解析失败 = 0**：`max prims/tile=11`（`t53.b3dm`）；A-33 口径的**实例展开**三角形最大 **119 840**（`i1042.i3dm`）与 `report.maxTrianglesInTile` 逐值对上，去重侧最大 37 885，展开合计 11 350 646 | 0 |
+| `check_manifest_assertions.js` | `aggProxies=122 / aggBuilt=122 / aggSkipped=0`、`occurrences=4250`（= `report.manifestOccurrences`）、`maxTris/tile=119 840` | 0 |
+| `zero_normal_triage.js` + `zero_normal_tile_class.js` | 195 条零长度 NORMAL / 140 退化 / 55 非退化 / 19 个文件——与 v15 同签名，A-43 已定性为**源侧自带**，不是回归信号 | 0 |
+
+这七项**不含**官方 validator 与视觉验收：前者从未在这份 335 MB 产物上跑过，后者的
+判据本身还在重做（STATUS 未闭合 7）。所以 v17 目前只能记成"仓库自研判据全绿 +
+`rc=0` 出盘"，不能写成"发布验收通过"。
+上面三行的原始读数（含命令、退出码、jianzhu 的 5 目录清单、`wuhu_v1` 两条 FAIL 全文、
+220 份 report 的字段扫描）在 `evidence/real-fbx-status-2026-10-20.txt`。
 
 ## 7. OGC 3D Tiles Validator（官方，B-3 已解除）
 
@@ -657,16 +679,23 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   **按绝对平移比对必须 0/299**，全命中绝对平移恰恰是"相对帧没生效"的签名——本轮一开始就把
   这条判据写反过，`a41fix_t05`、`matrix_a41fix2` 两批"299/299 命中绝对平移"的 PASS 已作废。
   同一工具对 `matrix_a34/t05`、`lugouqiao_v15` 与上述两批中间产物都判 exit 1。
-  **结论只到合成资产**：真实 FBX 的 i3dm 位姿要等 `lugouqiao_v17`（23:53 exe + 00:16 插件；
-  `v16` 用的是"相对帧为空操作"的 22:40 二进制，已主动终止）跑完才算验过，
-  在此之前**任何带 `.i3dm` 的既有产物一律不可发布**（v15、longxiang*、matrix_a34 等）。
+  **真实 FBX 现已在同一判据上验过**：`lugouqiao_v17`（23:53 exe + 00:16 插件；`v16` 用的是
+  "相对帧为空操作"的 22:40 二进制，已主动终止）实测 **126 个 i3dm / 1787 条实例位姿
+  相对帧 100 % 对上、残差最大 1.85e-5 m、POSITION 全 0 的瓦片 0 个、绝对帧比对 0 命中、
+  原型 `|v|` 最大 383.48 m，rc=0**（`wuhu_v1` 在同一工具上判 rc=1：5/5 个 i3dm POSITION 全 0、
+  19 条 0 命中、原型 52 494 m，属 A-41 之前产物）。在此之前**任何带 `.i3dm` 的既有产物
+  一律不可发布**（v15、longxiang*、matrix_a34 等）这条判据不变。
 - 结构合法性：12 资产 + 真实 FBX + cmpt 探针在**官方** OGC validator 下
   上一批产物 `numErrors=0`（§7），但同日复跑 `matrix_a34` 的 t02 报 3 个
   zero-length-normal ERROR（§1b/§7）——**"0 error"不是不变量**，缺陷按 A-38 记，
   内发布闸 `selfValidate` 对那批产物同样全 0 error（当时还没有 2b）；
-- 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 127 个内容瓦片
-  最大 2.17 MiB，矩阵 12/12 违例 0；实例瓦片的三角形预算见 §6.2 的 A-33；
-- 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 145 feature；
+- 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 现有两份达标产物——
+  `longxiang_a42` 127 个内容瓦片最大 2.17 MiB，`lugouqiao_v17` 1057 个内容文件
+  最大 3 237 360 B（`maxTrianglesInTile=119 840` 在 12 万硬限内，A-33 展开口径同值）；
+  矩阵 12/12 违例 0；实例瓦片的三角形预算见 §6.2 的 A-33；
+- 身份映射：manifest 跨瓦片回查单测通过；真实 FBX 最大一份是 `lugouqiao_v17`
+  的 **2729 个源 feature / 4250 条出现**（`longxiang_a42` 是 145 / 571，两份都由
+  `check_manifest_assertions.js` 判 rc=0）；
   **注意** `longxiang_covfix` 是 A-35 修复前的产物，它的
   `report.manifestOccurrences=623` 与 `manifest.occurrenceCount=571` 那对
   不一致的数字正是 A-35 的现场（差的 52 条是聚合代理条目，本就不该算源出现次数），
@@ -676,5 +705,9 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   `aggregateProxies` 补全后可由源 feature 反查代理 ID 与其代表的源集合；
 - 视觉链路：CesiumJS 加载渲染真实出图，自动化 0 错误；
 - 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、Python 采集器（BLOCKED B-5）、
-  lugouqiao/芜湖水厂端到端、longxiang 内存回退（B-7）、
-  写盘后 glTF primitive 数回读（B-9）。
+  **`lugouqiao_v17` 的官方 validator 与视觉验收**（端到端本身已跑通，不再是待办）、
+  **芜湖水厂用当前 HEAD 复跑**（`wuhu_v1` 是 A-41/A-42 之前产物，已判废）、
+  **433 MB 的 `jianzhu+tietu.FBX` 从未出过盘**（5 个目录只有纹理），
+  longxiang 内存回退（B-7）。
+  ~~写盘后 glTF primitive 数回读（B-9）~~ 已解除：`glb_prims.js` 在 v17 的 1057 个
+  内容文件上违例 0（读数见 §6.2 的 v17 电池表）。

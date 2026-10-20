@@ -1,0 +1,169 @@
+# 真实 FBX 三份输入的现状实测（2026-10-20）——用于更正 VALIDATION_REPORT §6.2 与 STATUS 未闭合 1 的失真
+# 所有读数在本机当场重跑，命令原样附在每段前；退出码一律单独取 $?（不经管道）
+
+## 0. 输入文件与产物体积（stat / du -sb 同法）
+335435216 bytes  D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx
+132484352 bytes  D:/BaiduNetdiskDownload/芜湖水厂总装.fbx
+432952384 bytes  D:/BaiduNetdiskDownload/jianzhu+tietu.FBX
+65764688 bytes  D:/BaiduNetdiskDownload/longxiang.fbx
+lugouqiao_v17      du -sb = 1006423166
+lugouqiao_v15      du -sb = 1012679026
+longxiang_a42      du -sb = 101606360
+wuhu_v1            du -sb = 90829567
+v17 分项: tiles=867628648 textures=133554986 json=1544575+3032490+662467
+v15 分项: tiles=864159856 textures=143982629
+v17 textures 文件数 = 471；tiles 文件数 = 1057
+
+## 1. jianzhu+tietu.FBX：盘上 5 个目录没有任何一次出盘
+命令：for d in jianzhu_tietu jianzhu_tietu_v2 _v3 _v4 _v5; do ls F:/wb_3dtiles_out/$d; du -sb ...; done
+jianzhu_tietu    bytes=246871660    顶层=[textures ]  tiles/存在=否  tileset.json存在=否  report存在=否  textures=57 个
+jianzhu_tietu_v2 bytes=299737956    顶层=[textures ]  tiles/存在=否  tileset.json存在=否  report存在=否  textures=66 个
+jianzhu_tietu_v3 bytes=924109707    顶层=[stderr_live.log textures ]  tiles/存在=否  tileset.json存在=否  report存在=否  textures=73 个
+jianzhu_tietu_v4 bytes=1008345919   顶层=[stderr_live.log textures ]  tiles/存在=否  tileset.json存在=否  report存在=否  textures=93 个
+jianzhu_tietu_v5 bytes=238862431    顶层=[stderr_live.log textures ]  tiles/存在=否  tileset.json存在=否  report存在=否  textures=85 个
+日志尾部（v5 = 0 字节；v3/v4 停在 proxy 评估中途，非成功收尾）：
+--- jianzhu_tietu_v3/stderr_live.log（170435 字节）末 3 行 ---
+[trace] collectTriangles pn=286
+[trace] collectTriangles done src=330206
+[trace] evaluate pn=286 srcT=330206 proxT=22961
+--- jianzhu_tietu_v4/stderr_live.log（186245 字节）末 3 行 ---
+[trace] collectTriangles pn=221
+[trace] collectTriangles done src=1320823
+[trace] evaluate pn=221 srcT=1320823 proxT=19380
+--- jianzhu_tietu_v5/stderr_live.log（0 字节）末 3 行 ---
+
+命令：for d in jianzhu_tietu{,/_v2,/_v3,/_v4,/_v5}; do ls -d $d/.wb-staging/tiles; find ... -name "*.b3dm" | wc -l; done
+jianzhu_tietu    .wb-staging/tiles 里 b3dm=60 i3dm=0  (tileset.json=无)
+jianzhu_tietu_v2 .wb-staging/tiles 里 b3dm=77 i3dm=0  (tileset.json=无)
+jianzhu_tietu_v3 .wb-staging/tiles 里 b3dm=310 i3dm=0  (tileset.json=无)
+jianzhu_tietu_v4 .wb-staging/tiles 里 b3dm=343 i3dm=0  (tileset.json=无)
+jianzhu_tietu_v5 .wb-staging/tiles 里 b3dm=84 i3dm=0  (tileset.json=无)
+
+判读：5 次全部**停在写出阶段中途**，`.wb-staging/tiles/` 里留着半成品（v4 343 个 b3dm、
+v5 84 个、v1-v3 也各有一批），正式目录里既没有 `tiles/` 也没有 `tileset.json`/report。
+按 14.17 的原子化设计，`run()` 返回失败时才 `remove_all(staging)`——**残留本身就说明
+这几轮不是"失败关闭后清理干净"，而是进程被外部终止（kill/断电/手动中断）后没走到清理**。
+终止原因本轮未查（0 字节的 v5 日志说明连 stderr 都没落盘），所以这句话只到"没有证据
+表明 jianzhu 跑通过"，不构成对终止原因的结论。
+
+## 2. wuhu_v1：A-41/A-42 之前的产物，两条扫描器当场判 FAIL（旧文档写的是未跑）
+命令：node scripts/path_leak_structural.js F:/wb_3dtiles_out/wuhu_v1   （退出码单独取 $?）
+退出码 = 1
+瓦片 60 个 / 旁证 json 3 个
+裸正则命中 227 处，按区分布：glbJSON_0=226 glbBIN_1=1
+分发物判定：LEAK（226 处）；裸命中进 JSON 区 226 处 / padding 残留 0 个区；旁证含绝对路径 87 处（不进退出码）；尺子失效 0 处
+  泄漏字段形态（前 3 条）：
+  [泄漏:盘符] F:\wb_3dtiles_out\wuhu_v1\tiles\i56.i3dm  glbJSON_0/bufferViews/0/name = "F:/wb_3dtiles_out/wuhu_v1\\textures\\ab7843976cb4a150-basecolor.ktx2"
+  [泄漏:盘符] F:\wb_3dtiles_out\wuhu_v1\tiles\i56.i3dm  glbJSON_0/images/0/name = "F:/wb_3dtiles_out/wuhu_v1\\textures\\ab7843976cb4a150-basecolor.ktx2"
+  [泄漏:盘符] F:\wb_3dtiles_out\wuhu_v1\tiles\i57.i3dm  glbJSON_0/bufferViews/0/name = "F:/wb_3dtiles_out/wuhu_v1\\textures\\7e033cbfb7c3e05b-basecolor.ktx2"
+
+命令：node scripts/i3dm_pose_check.js F:/wb_3dtiles_out/wuhu_v1
+退出码 = 1
+manifest osgGISPlugins/model23dtiles feature manifest v1 | 实例 19 条：缺 prototypeTransform 19、奇异原型 0
+按相对帧 inverse(原型)·实例 比对：19 条 POSITION 对上 0 (0.0%) 最近邻残差最大 0.00e+0 → FAIL
+（诊断）按绝对平移比对：19 条对上 0 —— 旧版本误把这一条当验收，命中绝对平移恰恰是双变换）
+原型几何 |v| 最大 52494.17 m（A-41 污染时这里会出现 1e4 以上）
+  FAIL i56.i3dm IL=3 非零=0 TRS=0 pos[0.00,0.00,0.00]..[0.00,0.00,0.00] 原型span=4453.73x4608.60x3186.31
+  FAIL i57.i3dm IL=7 非零=0 TRS=0 pos[0.00,0.00,0.00]..[0.00,0.00,0.00] 原型span=4404.46x1656.37x640.68
+  FAIL i58.i3dm IL=3 非零=0 TRS=0 pos[0.00,0.00,0.00]..[0.00,0.00,0.00] 原型span=3898.32x1824.43x1814.62
+  FAIL i59.i3dm IL=3 非零=0 TRS=0 pos[0.00,0.00,0.00]..[0.00,0.00,0.00] 原型span=4048.11x5077.24x3256.41
+  FAIL i60.i3dm IL=3 非零=0 TRS=0 pos[0.00,0.00,0.00]..[0.00,0.00,0.00] 原型span=3824.33x4994.82x2953.18
+
+report/manifest 读数（conversion-report.json）：
+  totalSeconds=207.5282429 tileCount=62 errors=0 warnings=25 peak=2.17GiB maxTris=31173 instanceTileCount=5 instanceCount=19
+  errorMaxMeters=37508.97852751665  ← A-41 污染下的连带读数，不能当误差结论
+  schema=osgGISPlugins/model23dtiles feature manifest v1  firstNodePath="D:/BaiduNetdiskDownload/芜湖水厂总装.fbx/6"  ← 源目录泄漏，A-42 之前形态
+  瓦片构成：     55 b3dm       5 i3dm 
+
+## 3. lugouqiao_v17 七项自研判据当场重跑（全部 rc=0）
+命令（逐条跑、逐条取 $?，无管道）：
+  node scripts/path_leak_structural.js F:/wb_3dtiles_out/lugouqiao_v17   → rc=0
+  node scripts/i3dm_pose_check.js      F:/wb_3dtiles_out/lugouqiao_v17   → rc=0
+  node scripts/accessor_extents_scan.js F:/wb_3dtiles_out/lugouqiao_v17  → rc=0
+  node scripts/glb_prims.js            F:/wb_3dtiles_out/lugouqiao_v17   → rc=0
+  node scripts/check_manifest_assertions.js F:/wb_3dtiles_out/lugouqiao_v17 → rc=0
+  node scripts/tileset_bounds.js       F:/wb_3dtiles_out/lugouqiao_v17   → rc=0
+  node scripts/zero_normal_triage.js   F:/wb_3dtiles_out/lugouqiao_v17   → rc=0
+--- path_leak_structural 摘要 ---
+瓦片 1057 个 / 旁证 json 3 个
+裸正则命中 4 处，按区分布：glbBIN_1=4
+分发物判定：CLEAN（JSON 区解析后无绝对路径）；裸命中进 JSON 区 0 处 / padding 残留 0 个区；旁证含绝对路径 0 处（不进退出码）；尺子失效 0 处
+--- i3dm_pose_check 摘要 ---
+manifest osgGISPlugins/model23dtiles feature manifest v1.1 | 实例 1787 条：缺 prototypeTransform 0、奇异原型 0
+按相对帧 inverse(原型)·实例 比对：1787 条 POSITION 对上 1787 (100.0%) 最近邻残差最大 1.85e-5 → PASS
+（诊断）按绝对平移比对：1787 条对上 0 —— 旧版本误把这一条当验收，命中绝对平移恰恰是双变换）
+
+i3dm 瓦片 126 个：POSITION 全 0 = 0 个；GLB 节点带 TRS 合计 0
+原型几何 |v| 最大 383.48 m（A-41 污染时这里会出现 1e4 以上）
+--- accessor_extents_scan 表 ---
+| lugouqiao_v17 | 931 | 126 | 4430 | 0 | 0 | 0 | 0 | 4.337e+3 | 3.835e+2 | PASS |
+datasets=1  违例数据集=0  阈值 |coord| > 1000000
+--- glb_prims 表+口径 ---
+| lugouqiao_v17 | 1057 | 11 | tiles/t53.b3dm | 37885 | 119840 | tiles/i1042.i3dm | 11350646 |
+files=1057  violations+parseFailures=0  limits: prims=24 expandedTriangles=120000
+口径：prims = glTF mesh.primitives 之和（结构上限，不随实例翻倍）；"去重" = accessor 里实际存的面数；"实例展开" = 去重面数 x i3dm INSTANCES_LENGTH，即运行时真实绘制量（手册 §3 三角形硬限按这一列判）。
+--- check_manifest_assertions 表 ---
+| lugouqiao_v17 | 1057 | 122 | 122 | 0 | 119840 | 4250 | PASS |
+datasets=1  failures=0
+--- tileset_bounds 表 ---
+| lugouqiao_v17 | 0 | 0 | 0 | 0 | 0 | - |
+datasets=1  父不覆盖子合计=0  误差递增违例合计=0  有问题的数据集=0
+--- zero_normal_triage 摘要 ---
+零长度 NORMAL 顶点 = 195
+  [主判据·相对中位面积] 只落在退化三角形 = 140 | 落在非退化三角形 = 55   -> 后者是真隐患（法线本该算得出）
+  [对照·绝对面积阈值]   只落在退化三角形 = 140 | 非退化 = 55
+真隐患涉及文件 19 个、primitive 19 个（按主判据）:
+
+## 4. STATUS B-10：conversion-report.json 的输入/输出四字段恒空（全库扫描）
+扫描范围：F:/wb_3dtiles_out 全树 + docs/model23dtiles-production/runs，逐份解析 conversion-report.json
+  reports=220  四项全为 ""/0 =220  任一项非空 =0
+  代码侧（grep 全仓 src/ tools/ tests/）：
+    include/3dtiles/production/ProductionProfile.h:114-123  声明 inputFile/outputDir/inputBytes/outputBytes
+    src/3dtiles/production/ProductionProfile.cpp:93-100     序列化进 JSON
+    赋值点：**0 处**（唯一出现的 `opt.outputDir` 是 Options，不是 report）
+  即这四项是"声明+序列化但无写入方"的仪表；BASELINE.md §4 表里的"输出字节"
+  来自 scripts/run_matrix.py:132（os.path.getsize）与 :140（dir_bytes），是外部采集，
+  两者此前在文档里没有区分。
+
+## 5. v15 / v17 同输入对照（说明 +31.7 % 耗时没有换到任何结构变化）
+  lugouqiao_v15: total=21621.13s proxy_encode_error=21610.47 tiles=1059/1057 warn=454 errors=0 peak=9.17GiB maxTris=119840 maxBytes=3238136 agg=122 cert/loose=450/332
+  lugouqiao_v17: total=28485.37s proxy_encode_error=28471.08 tiles=1059/1057 warn=454 errors=0 peak=9.16GiB maxTris=119840 maxBytes=3237360 agg=122 cert/loose=450/332
+  耗时差 = +31.7 %（全部落在 proxy_encode_error）
+
+## 6. 本轮据此改动的文档位置
+  VALIDATION_REPORT.md  §2 判据说明（2b 真实 FBX 证据）、§6.2 三行 + 新增"v17 电池读数"表、
+                    §9 结构合法性/预算控制/身份映射/A-41 bullet/未决清单
+  STATUS.md           §"335 MB" 小节标题、B-9 追加真实 FBX 复扫、新增 B-10、
+                    未闭合 1 标题与真实 FBX 段、v17 电池补 glb_prims / check_manifest 两项
+  BASELINE.md         §4 运行口径澄清（输出字节来源 ≠ report 字段）
+  PERFORMANCE_REPORT.md  抬头增补说明、§1 新增 lugouqiao_v17 表、§2 新增 v17 阶段行、
+                    §6.4 用终值替换"36 min 采样值/尚未出峰值"
+  更正前的错误说法（都已在上面四处文档里留下"旧文案…是失真"的痕迹）：
+    ① 芜湖水厂总装.fbx「未跑」      → 实际跑过 wuhu_v1，但属 A-41/A-42 之前，判废
+    ② 卢沟桥「进行中（lugouqiao_v14）」/「正在以 v17 重跑」 → v17 已 rc=0 出盘
+    ③ jianzhu_tietu_v5「历史产物」   → 5 个目录从未出盘，只有 textures 与 staging 半成品
+
+## 7. 另外三条当场复测的口径
+  (a) python 仍不可用（B-5）：python -c "print(\"ok\")" → rc=49（无输出，Windows Store 存根）
+  (b) 现役矩阵链路不采集目录字节：
+      # STATUS.md B-5, so scripts/run_matrix.py cannot run here).
+      #
+      # Runs Release/model23dtiles.exe over every test_assets/ entry and collects the
+      # metrics the tool writes itself (conversion-report.json) — no re-measuring, no
+      # reimplementing the acceptance numbers in shell.
+      #
+      #   bash scripts/run_matrix.sh [testAssetsDir] [outDir]
+      collect_matrix.js:1 → "Reads the conversion-report.json + tileset.json produced by run_matrix.sh"
+  (c) 工作区 5 个未提交源文件的 numstat（本轮不构建、不提交、不改写）：
+      17	0	include/3dtiles/production/ProductionPipeline.h
+      6	0	include/3dtiles/production/ProxyMeshBuilder.h
+      22	4	src/3dtiles/production/GeometryErrorEvaluator.cpp
+      30	0	src/3dtiles/production/ProductionPipeline.cpp
+      10	0	src/3dtiles/production/ProxyMeshBuilder.cpp
+      ConversionReport 侧是否有 micro 字段：grep -n micro src/3dtiles/production/ProductionProfile.cpp → 空（仪表采了但没处写）
+
+## 8. 新增判据 scripts/table_pipe_check.js 的阳性对照
+  为什么需要：本轮往 §6.2 与 PERFORMANCE §1 各插入一张表，多行单元格/未转义 | 会让
+  GFM 表格**静默断表**（表后面变成普通段落），肉眼检查 60 行表格不可靠。
+  阳性对照：/tmp/tbl_bad.md（分隔行 2 列、末行 3 列）→ 报 "第 6 行 列数=3 vs 2"，rc=1
+  真实读数：node scripts/table_pipe_check.js docs/model23dtiles-production/*.md → 全部一致，rc=0

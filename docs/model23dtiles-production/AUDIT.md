@@ -1181,6 +1181,12 @@ GLB 段整个没被查——**v15 那类 i3dm 真泄漏会被它整条放过去*
 注入对照 `scripts/make_path_leak_fixture.js` 两种底本（最小合成 `zn_fixture.b3dm` 与真实
 `lugouqiao_v17/tiles/t669.b3dm`）各一对，注盘符的那份 rc=1、只注相对 uri 的那份 rc=0——
 触发的是盘符，不是"多了一个键"。退出码 **3 = 尺子失效**，取到 3 时那个 0 不算数。
+**本轮又拿到第二个真实 FBX 阳性**：`wuhu_v1`（另一份输入 `芜湖水厂总装.fbx`）报
+**rc=1 / 瓦片 JSON 区 226 处 + 旁证 87 处**，且命中里明确出现 **`.i3dm`** 文件
+（`tiles/i56.i3dm glbJSON_0/bufferViews/0/name`、`images/0/name`）——上面 ② 那个
+"i3dm 偏移少 4 字节 → i3dm 整段没被查"的坑如果在，这一类就会被读成 CLEAN，
+所以这份产物同时是 **i3dm 分支的阳性对照**（此前只有 `lugouqiao_v15` 的 3112 处撑着）。
+证据 `evidence/real-fbx-status-2026-10-20.txt` §2。
 cmpt 偏移 12 与规范的偏差目前只有 1 份样本（其余数据集 `.cmpt` 计数实测为 0），
 消费侧没查，暂不单开审计项。证据：`evidence/a42-path-leak-v17-adjudication.txt`。
 

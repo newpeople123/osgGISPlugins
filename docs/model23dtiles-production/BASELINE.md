@@ -142,6 +142,18 @@ python scripts/run_matrix.py --out <repo>/docs/model23dtiles-production/baseline
 （每个资产执行：`<tool> -sp -i <abs input> -o <abs output>`，采集墙钟时间、
 Windows PSAPI 峰值工作集、退出码、输入/输出字节，并对产物跑 `scripts/tileset_tool.py validate`）
 
+> **口径澄清（2026-10-20）**：这里的"输入/输出字节"是 **harness 自己量的**
+> （`scripts/run_matrix.py:132` 用 `os.path.getsize`、`:140` 用 `dir_bytes(outdir)`），
+> 汇总落在 `matrix.json`；**不是** `conversion-report.json` 的字段。后者的
+> `inputBytes`/`outputBytes`/`inputFile`/`outputDir` 在盘上 220 份产物里**全部是 `""`/`0`**
+> （声明并序列化但从未赋值），记 STATUS **B-10**，别把这两个来源混读。
+>
+> **上面那条命令今天跑不了**：`run_matrix.py` 是 Python，受 B-5 阻塞（2026-10-20 当场
+> 复测 `python -c "print('ok')"` → **rc=49**），所以 §4 的 `python scripts/run_matrix.py …`
+> 只能作为 2026-10-16 那批数字的**出处记录**，不是可重跑步骤。现役矩阵链路是
+> `bash scripts/run_matrix.sh` + `node scripts/collect_matrix.js`，它**不采集目录字节**，
+> 因此"输出字节"这一列在当前链路上**无法复现**，需要按 B-10 二选一补齐。
+
 | 资产 | 退出码 | 秒 | 峰值 MiB | tile 数 | 深度 | 内容文件 | 输出字节 | 校验 ERROR |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | t01_plane_curved.obj | 0xC0000409 | 1.49 | 20.5 | 5 | 4 | 3 | 137496 | 5 |

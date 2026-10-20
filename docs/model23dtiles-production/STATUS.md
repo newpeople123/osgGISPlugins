@@ -108,6 +108,11 @@ node scripts/make_path_leak_fixture.js <源.b3dm> <输出前缀>
                                            # 没有它，"0 处泄漏"可能只是判据恒返回 false。
 node scripts/check_page_js.js docs/visual-acceptance/index.html
                                            # 改页面后先做内联 script 语法校验
+node scripts/table_pipe_check.js <md 文件...>
+                                           # 文档表格体检：每行的列数必须等于分隔行，
+                                           # 否则 GFM 会**静默断表**（`\|` 不计入列数）。
+                                           # 阳性对照：2 列分隔行 + 3 列数据行 → 报违例、rc=1；
+                                           # 全 5 份生产文档实测一致、rc=0
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]
                                            # 官方 OGC 3D Tiles validator（B-3）
 node scripts/glb_prims.js <datasetDir> [...]
@@ -159,7 +164,7 @@ python scripts/visual_capture.py --tileset <tileset.json> --out <dir>  # 视觉�
 > node 20 估算 32.5 MB ≈ 纯几何 6 倍）。历史三项见 bfa43a0：
 > 字节估算低估 4 倍、meshopt 因误差上限过宽不削减、代理只判三角形预算。
 
-### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 被 A-41 判废；v16 中途主动终止（用的是"相对帧为空操作"的 22:40 二进制）；v17 用 23:53 exe + 00:16 插件复跑中
+### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 被 A-41 判废；v16 中途主动终止（用的是"相对帧为空操作"的 22:40 二进制）；**v17 用 23:53 exe + 00:16 插件已 rc=0 出盘**
 
 `lugouqiao_v11`（37d832c 时代二进制）真实失败：`selfValidate` 抓到 7 个瓦片
 12.2 万～50.8 万三角形超 120 000 硬限 → 按 14.17 拒绝发布（日志
@@ -260,10 +265,66 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
   VALIDATION_REPORT §8。踩坑：b3dm 头 28 B 但 **i3dm 头 32 B**（多一个
   `glTFFormat`），且 GLB 起点还要加 feature/batch 四张表的长度，
   按固定 28 B 偏移解析 `mixed.cmpt` 会偏 4 B 而报 "not a GLB"。
+  **真实 FBX 复扫（2026-10-20）**：同一工具在 `lugouqiao_v17` 的 1057 个内容文件上
+  违例+解析失败 **0**（`max prims/tile=11`、实例展开最大 119 840）——累计 341+1057 个文件。
+- B-10 **`conversion-report.json` 的输入/输出身份与字节四个字段恒空**（本轮发现，
+  手册 §13.3 要求交付物自带可追溯统计，未闭合）：`ConversionReport` 声明并序列化了
+  `inputFile`/`outputDir`/`inputBytes`/`outputBytes`（`include/3dtiles/production/ProductionProfile.h:114-123`、
+  `src/3dtiles/production/ProductionProfile.cpp:93-100`），但全仓（`src/ tools/ tests/`）
+  **没有任何一处赋值**。盘上实测 **220 份 `conversion-report.json`**（`F:/wb_3dtiles_out` 全树
+  + `docs/model23dtiles-production/runs`）**220 份这四项全为 `""`/`0`，非空 0 份**——
+  即这四个字段目前是"看起来有、实际恒空"的仪表，不能当统计用。
+  后果：交付物内部**不自带**输入身份（A-42 之后这是有意为之的取舍，manifest `nodePath`
+  只留 FBX 文件名，目录不再交付），也**不自带**产物字节总量。
+  `BASELINE.md` §4 表格里的"输出字节"是外部 harness `scripts/run_matrix.py` 自己量的
+  （`os.path.getsize(asset)` 与 `dir_bytes(outdir)`，第 132/140 行），不是 report 字段，
+  两者不要混读。
+  **更要紧的是今天这条路也断了**：`run_matrix.py` 是 Python，受 **B-5** 阻塞
+  （本轮当场复测 `python -c "print('ok')"` → **rc=49**），现役替代链路
+  `scripts/run_matrix.sh` + `scripts/collect_matrix.js` **只读 report 与 tileset，
+  没有任何目录字节统计**（`collect_matrix.js:1` 的注释就是这个范围，
+  `run_matrix.sh:5-6` 更明写 "collects the metrics the tool writes itself —
+  no re-measuring"，即设计上就依赖 report 字段，而那四个恰好是空的）。
+  即"输入/输出字节"目前**没有任何可跑的采集路径**：要么把 B-10 的四个字段接进管线，
+  要么给 node 版矩阵补 `du` 级统计，二选一，否则手册 §13.3 的这条统计在文档里
+  只有 2026-10-16 那批历史数字撑着。
+  **修法**：把这四项接进管线（`outputBytes` 遍历 staging 的最终文件清单，别把
+  `.wb-staging` 算两遍；`inputFile` 按 A-42 口径只写文件名），或者干脆从
+  `ConversionReport` 删掉这四个字段并在文档里声明未实现——**留一个恒空的仪表比没有更坏**，
+  它会让人以为统计已经存在。工作区里那份未提交的 `micro*` 计时（见下一节）如果落地，
+  正好是同一处接线点。
+
+## 工作区里那份**未提交**的改动（2026-10-20 记录，不属于本轮任何 commit）
+
+`git status --short` 现在有 5 个已跟踪源文件被改但未提交（本轮没有碰它们，也没有构建）：
+
+```
+include/3dtiles/production/ProductionPipeline.h    +17
+include/3dtiles/production/ProxyMeshBuilder.h       +6
+src/3dtiles/production/GeometryErrorEvaluator.cpp  +22/-4
+src/3dtiles/production/ProductionPipeline.cpp      +30
+src/3dtiles/production/ProxyMeshBuilder.cpp        +10
+```
+
+读码得到的两点（**都未验证**，不是已完成项）：
+
+1. **子阶段计时仪表**：`ProxyResult::Metrics`（simplify / aggregate 秒数与候选数）+
+   `TileHeavyWork` 里 6 个 `micro*` 字段 + 管线成员 `_micro*` 累加。
+   **半件状态**：`ConversionReport` 没有对应字段（`grep -n micro src/3dtiles/production/ProductionProfile.cpp`
+   为空），所以现在跑完也读不到数；这正是 PERFORMANCE §2 想要的"把 6 千秒拆开看"。
+2. **误差评估器改了上界与 `BOUND_LOOSE` 口径**（`evaluateDirection`）：
+   未采样的三角形不再进堆，改为按解析量计入 `upper = max(upper, globalLower)`；
+   已收敛的 patch（`maxSampleDist + radius <= globalLower + tolerance`）不再入堆；
+   `budgetExhausted` 从"`samples >= max` 即算耗尽"改成"堆未空且预算耗尽才算，
+   但有未采样三角形时仍算"。**这不是纯性能改动**——它动的是手册 9.3 第 6/9 条的
+   保守上界语义与 `errorQualityStatus` 分布，`nodesBoundLoose` 计数会变。
+   若采纳，需要：阳性对照（同一输入新旧上界逐节点对比、不许变小）、
+   `test_production` 误差用例复跑、以及 12 资产矩阵的 `cert/loose` 对照，
+   并且**必须重新出盘**才能进验收——**v17 及之前所有产物都不是这份代码出的**。
 
 ## 未闭合（写在这里，不靠记忆）
 
-1. **带 2b 闸的二进制已在 12 资产矩阵上实测，真实 FBX 仍未跑**。闸门**第一版是错的**：
+1. **带 2b 闸的二进制已在 12 资产矩阵与 335 MB 真实 FBX（`lugouqiao_v17`）上实测通过**。闸门**第一版是错的**：
    它拿 `_model.bounds` 当参考系，而 `SourceModel.cpp:578-584` 在识别重复实例后把
    `bounds` 重算成"剔除实例几何"的范围 → 任何实例数据集里**正常**的 i3dm 瓦片都会被判越界
    （`matrix_a38gate/t05`：`i2.i3dm` x=[308.96,310.96] vs 源 [35.87,37.87]±1.73 → rc=3 拒发；
@@ -282,8 +343,18 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
    所以 VALIDATION_REPORT §8b 关于 2b 对 A-38 的拦截仍然只是数值推演。
    真实 FBX 侧：65 MB 的 `longxiang.fbx` 已用修正后的二进制跑通（`F:/wb_3dtiles_out/longxiang_a42`，
    129 瓦片 rc=0，位姿 10/10 命中相对帧、路径泄漏 0/127）；335 MB 的
-   `20240529卢沟桥分洪枢纽.fbx`（约 6 h）正在以 `lugouqiao_v17` 重跑，
-   在此之前"真实 FBX 用带闸 + 修好参考系 + 修好位姿的二进制跑通"仍未闭合。
+   `20240529卢沟桥分洪枢纽.fbx` **已以 `lugouqiao_v17` 跑通并落盘**（10-20 00:35→08:35，
+   28 485 s，rc=0，1057 个分发文件，七项自研判据逐条 rc=0，见本节第 5 条与
+   VALIDATION_REPORT §6.2 的"v17 电池读数"表）——所以"真实 FBX 用带闸 + 修好参考系 +
+   修好位姿的二进制跑通"**这一条已闭合**，本条唯一剩下的未闭合项是这份产物的
+   **官方 validator 与视觉验收**。另两份真实输入的现状（本轮盘上实测，旧文档写的
+   "未跑／历史产物"都不准确）：`芜湖水厂总装.fbx` 只有 `wuhu_v1`，是 A-41/A-42 之前的
+   二进制产物，`path_leak_structural` 报 226 处瓦片泄漏、`i3dm_pose_check` 报 5/5 个
+   i3dm POSITION 全 0，**判废、需用当前 HEAD 复跑**；`jianzhu+tietu.FBX`（433 MB）
+   盘上 5 个目录**从未产出过 `tiles/` 或 `tileset.json` 或 report**，只有 `textures/`
+   和 `.wb-staging/tiles/` 里的半成品 b3dm（5 次都停在写出中途，且残留说明没走到
+   §14.17 的失败清理——终止原因未查）。
+   连"旧二进制产物"都谈不上。
 2. **A-40 产物不逐位一致**（t02 累计 127 份产物：121 份逐字节相同，6 份是 5 个
    互不相同的整棵瓦片树变体——`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3
    跳，峰值 RSS 34.4→47.3 MiB，其中 matrix_a34 那一份就是 A-38 的污染产物）。
@@ -414,9 +485,16 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
      注意 `path_leak_scan.js` 在 v17 报 **rc=1 / 4 处**，那 4 处经结构定位全在 GLB BIN chunk 里，
      是字节噪声不是泄漏；已把它降级为粗筛，验收口径改用结构版。
      证据 `evidence/a42-path-leak-v17-adjudication.txt`
+   - `node scripts/glb_prims.js` → **rc=0**（1057 个内容文件违例+解析失败 **0**：
+     `max prims/tile=11` 在 `t53.b3dm`；A-33 口径的实例展开三角形最大 **119 840**
+     = `i1042.i3dm`，与 `report.maxTrianglesInTile` 逐值对上；去重侧 37 885，展开合计
+     11 350 646）——**A-33 的展开核对与 B-9 的 primitive 回读就此在真实 FBX 上闭合**
+   - `node scripts/check_manifest_assertions.js` → **rc=0**，同一行给出
+     `aggProxies=122 / aggBuilt=122 / aggSkipped=0`、`occurrences=4250`
+     （= `report.manifestOccurrences`），**`aggregateProxies` 复核就此闭合**
    - **仍未做**：`bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17`（逐资产官方
-     validator，真实 FBX 从没跑过）、A-33 口径的展开三角形核对、`aggregateProxies` 复核，
-     最后写进 §6.2/PERFORMANCE。
+     validator，真实 FBX 从没跑过）与视觉验收。VALIDATION_REPORT §6.2 的"v17 电池读数"
+     表已按上面七项逐条登记。
    `lugouqiao_v16`（22:53 起，用的是"第 2 点为空操作"的 22:40 二进制）已**主动终止**，
    终止时只有 `.wb-staging/` 里 8 个半成品 b3dm，没有 `tiles/`、没有 `tileset.json`。
    **已发布/已归档的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带
