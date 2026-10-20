@@ -167,3 +167,58 @@ datasets=1  父不覆盖子合计=0  误差递增违例合计=0  有问题的数
   GFM 表格**静默断表**（表后面变成普通段落），肉眼检查 60 行表格不可靠。
   阳性对照：/tmp/tbl_bad.md（分隔行 2 列、末行 3 列）→ 报 "第 6 行 列数=3 vs 2"，rc=1
   真实读数：node scripts/table_pipe_check.js docs/model23dtiles-production/*.md → 全部一致，rc=0
+
+## 9. 官方 validator 逐资产复跑（本轮追加，命令与读数）
+  工具：vendor/3dt-validator/node_modules/3d-tiles-validator = 3d-tiles-validator 0.6.1
+        内嵌 gltf-validator = 2.0.0-dev.3.10
+  命令（逐条取 $?，不接管道）：
+    bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17   → rc=1
+    bash scripts/run_validator.sh F:/wb_3dtiles_out/longxiang_a42   → rc=0
+    bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_a42fix   → rc=0（容器目录，逐资产）
+  报告头（docs/model23dtiles-production/validation/*.validator.json）：
+    lugouqiao_v17   err=26  warn=682  info=349
+    longxiang_a42   err=0   warn=81   info=40
+    matrix_a42fix   t01..t12 err 全 0；warn 仅 t12=1；info 按 t01→t12 = 1/7/7/127/0/31/1/7/7/7/15/0
+
+  v17 叶层展开（walk causes 到叶子）：
+    ERROR  = 195 条，覆盖 26 个内容文件；消息 100 % 为
+             "Vector3 at accessor indices N..N+2 is not of unit length: 0."，
+             path 全为 /meshes/<i>/primitives/0/attributes/NORMAL；
+             **非 unit-length 之外的 ERROR = 0**
+    拆分：   7 个文件各 20 条（t0/t57/t69/t70/t551/t552/t553 = 140）
+            19 个文件各 2~3 条（i952/i956/i957/t126/t141/t158/t160/t162/t163/t164/t166/
+                t685/t697/t698/t699/t708/t709/t710/t716 = 55）
+    与自研尺子对账：zero_normal_triage.js 对同一数据集独立报
+            零长度 NORMAL 顶点 = 195；只落退化三角形 140 / 落非退化 55；
+            非退化侧涉及 19 个文件 —— 195、140/55、19 三个数逐项相同
+    WARNING= 3138 条（1569 张 image/ktx2 × 两类消息），覆盖 691 个瓦片（头 682，少 9 未归因）
+    INFO   = 2667 条：1969 "This object may be unused." + 691 "Cannot validate an
+             extension as it is not supported by the validator: 'KHR_texture_basisu'" + 7 条退化三角形提示
+             （1969+691+7 = 2667 对得上）
+
+  longxiang_a42 叶层：ERROR 0；WARNING 500 条（250 图 × 2 类）覆盖 81 瓦片；
+             INFO 405 条覆盖 121 瓦片，其中 81 条是 KHR_texture_basisu 不认识
+    → 头的三个数与叶层/瓦片数之间**没有固定换算**，验收只读叶层分类 + 按瓦片归组
+
+  "validator 不认识 basisu" 的代码侧证据（不是推断）：
+    grep -c KHR_texture_basisu vendor/3dt-validator/node_modules/gltf-validator/gltf_validator.dart.js → 0
+    全文件唯一含 "ktx2" 的一行是 10517 的字符串表：
+      B.ci=A.a(s(["image/jpeg","image/png","image/webp","image/ktx2"]),t.i)
+      同一行上方 B.ap=A.a(s(["image/jpeg","image/png"]),t.i)                  ← 核心 schema 用的这张
+    B.ci 全文被引用 1 次（3164 行：n=n==null?i:B.ci[n.a]），用途是把**嗅探到的图片格式**
+      映射成 mediatype 再与声明比对（失败消息 "The declared mediatype does not match the
+      embedded content."，我们的报告里没有这条），**不参与 schema 允许值检查**。
+      所以 ktx2 那张表救不了枚举检查；"Image format not recognized." 出自 8922 行的消息类，
+      KTX2 魔数没有登记表（grep -c "KTX" = 1，就是 10517 那行的 image/ktx2 字符串）。
+      （本段前两次写法"B.ci 未被引用 / 除定义外 0 次读取"是错的，已按 3164 行实测更正。）
+
+  产物侧扩展声明（scripts/scan_image_mime.js 新增，扫 GLB JSON chunk）：
+    lugouqiao_v17: 1057 瓦片全解析成功；691 个含 images；mimeType 全为 image/ktx2（1569）；
+                   extensionsUsed/extensionsRequired = KHR_texture_basisu + KHR_texture_transform（各 691）
+    t0.b3dm 无 images（远端 LOD 无纹理代理，对应 report 的 362 条 budget warning）
+    longxiang_a42: 127 瓦片中 81 个含 images，image/ktx2 = 250
+    matrix_a42fix/t10_material_heavy: 7 瓦片，0 含 images（无纹理资产，故 0 warning）
+    matrix_a42fix/t12_big_texture: 1 瓦片 1 图 image/ktx2 → 头 warn=1
+  非恒阴对照：同一 validator 对 matrix_a42fix 12/12 与 longxiang_a42 判 **0 error**，
+    对 v17 判 26 → 报的是产物里的零长度法线，不是校验器对整条管线的系统性误报。
+  历史口径修正：本报告 §7 旧文"longxiang 81 条 = 85 张 KTX2 去重后…"不成立（实测 250 张），已替换。

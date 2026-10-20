@@ -5,6 +5,12 @@
 # 实际 registry.npmjs.org 可达，只是 github.com 不可达，导致 sharp 0.32 的
 # prebuild-install（从 GitHub  Releases 拉 libvips）超时。装法见本脚本第 1 步。
 #
+# 读报告时注意：表头那三列来自报告 JSON 的 numErrors/numWarnings/numInfos，
+# 它们与 issues 递归到叶子的条数**没有固定换算**（实测 2026-10-20：
+# longxiang_a42 头 info=40 而叶层 405 条覆盖 121 个瓦片；lugouqiao_v17 头 warn=682
+# 而带警告的瓦片是 691）。判发布只看 *.validator.json 里 severity=ERROR 的叶层
+# 与它们归组到的瓦片集合，不看头数。
+#
 # 用法: bash scripts/run_validator.sh <tilesetsDir> [reportDir]
 #   tilesetsDir  下面每个子目录里要有 tileset.json
 #   reportDir    默认 docs/model23dtiles-production/validation

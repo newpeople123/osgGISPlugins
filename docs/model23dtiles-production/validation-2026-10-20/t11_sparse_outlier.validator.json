@@ -1,0 +1,338 @@
+{
+  "date": "2026-10-20T01:58:43.742Z",
+  "numErrors": 0,
+  "numWarnings": 0,
+  "numInfos": 15,
+  "issues": [
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t0.b3dm",
+      "message": "tiles/t0.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t0.b3dm",
+          "message": "Content tiles/t0.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t8.b3dm",
+      "message": "tiles/t8.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t8.b3dm",
+          "message": "Content tiles/t8.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t12.b3dm",
+      "message": "tiles/t12.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t12.b3dm",
+          "message": "Content tiles/t12.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t14.b3dm",
+      "message": "tiles/t14.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t14.b3dm",
+          "message": "Content tiles/t14.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t13.b3dm",
+      "message": "tiles/t13.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t13.b3dm",
+          "message": "Content tiles/t13.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t9.b3dm",
+      "message": "tiles/t9.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t9.b3dm",
+          "message": "Content tiles/t9.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t11.b3dm",
+      "message": "tiles/t11.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t11.b3dm",
+          "message": "Content tiles/t11.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t10.b3dm",
+      "message": "tiles/t10.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t10.b3dm",
+          "message": "Content tiles/t10.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t1.b3dm",
+      "message": "tiles/t1.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t1.b3dm",
+          "message": "Content tiles/t1.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t5.b3dm",
+      "message": "tiles/t5.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t5.b3dm",
+          "message": "Content tiles/t5.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t7.b3dm",
+      "message": "tiles/t7.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t7.b3dm",
+          "message": "Content tiles/t7.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t6.b3dm",
+      "message": "tiles/t6.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t6.b3dm",
+          "message": "Content tiles/t6.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t2.b3dm",
+      "message": "tiles/t2.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t2.b3dm",
+          "message": "Content tiles/t2.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t4.b3dm",
+      "message": "tiles/t4.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t4.b3dm",
+          "message": "Content tiles/t4.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CONTENT_VALIDATION_INFO",
+      "path": "tiles/t3.b3dm",
+      "message": "tiles/t3.b3dm caused validation infos",
+      "severity": "INFO",
+      "causes": [
+        {
+          "type": "CONTENT_VALIDATION_INFO",
+          "path": "tiles/t3.b3dm",
+          "message": "Content tiles/t3.b3dm caused validation infos",
+          "severity": "INFO",
+          "causes": [
+            {
+              "type": "CONTENT_VALIDATION_INFO",
+              "path": "/meshes/0/primitives/0/attributes/TEXCOORD_0",
+              "message": "This object may be unused.",
+              "severity": "INFO"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

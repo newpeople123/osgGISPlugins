@@ -510,7 +510,7 @@ A-30（纹理字节被当硬约束导致聚合 fallback 永不收敛）。
 
 | 输入 | 大小 | 状态 | 证据 |
 |---|---|---|---|
-| `20240529卢沟桥分洪枢纽.fbx` | 335 MB（335 435 216 B） | **已跑通 `lugouqiao_v17`**（10-20 00:35→08:35，`totalSeconds=28 485.37`，rc=0；`tileCount=1059`、1057 个分发文件 = 931 `.b3dm` + 126 `.i3dm`、471 个 `.ktx2`；`errors=[]`、`maxTrianglesInTile=119 840`、`maxContentBytes=3 237 360`、`maxDepth=18`、`peakRssBytes=9.83 GB`） | 仓库电池**逐条 rc=0**（退出码不带管道取），明细见下面"v17 电池读数"段。**仍未做**：官方 validator、视觉验收 |
+| `20240529卢沟桥分洪枢纽.fbx` | 335 MB（335 435 216 B） | **已跑通 `lugouqiao_v17`**（10-20 00:35→08:35，`totalSeconds=28 485.37`，rc=0；`tileCount=1059`、1057 个分发文件 = 931 `.b3dm` + 126 `.i3dm`、471 个 `.ktx2`；`errors=[]`、`maxTrianglesInTile=119 840`、`maxContentBytes=3 237 360`、`maxDepth=18`、`peakRssBytes=9.83 GB`） | 仓库电池**逐条 rc=0**（退出码不带管道取），明细见下面"v17 电池读数"段。**仍未做/未过**：官方 validator 已跑但 **rc=1 / 26 个内容文件 ERROR**（A-43 零长度 NORMAL，见 §7 的 2026-10-20 复跑），视觉验收还没做 |
 | `芜湖水厂总装.fbx` | 132 MB（132 484 352 B） | **跑过但作废**：`wuhu_v1` 用 A-41/A-42 之前的二进制（report mtime 10-19 12:34 本机，`totalSeconds=207.53`，`tileCount=62` / 内容瓦片 `60` = 55 `.b3dm` + 5 `.i3dm`，`errors=[]`），manifest 仍是 `schema v1` | 本轮盘上实测两条 FAIL：`path_leak_structural` **rc=1**，瓦片 JSON 区 **226 处**泄漏（`glbJSON_0/bufferViews/N/name`、`images/N/name` = `F:/wb_3dtiles_out/wuhu_v1\textures\…`）+ 旁证 json 87 处 `D:/BaiduNetdiskDownload/芜湖水厂总装.fbx/…`；`i3dm_pose_check` **rc=1**，5/5 个 i3dm `POSITION` 全 0、19 条实例位姿 0 命中（工具直接判"manifest 缺 prototypeTransform，v1 产物无法验收，必须用修正后的二进制重跑"）、原型 `\|v\|` 最大 **52 494 m**。`report.errorMaxMeters=37 508.98` 是同一污染的连带读数，不能当误差结论。**需用当前 HEAD 复跑**（命令同 6.1） |
 | `jianzhu+tietu.FBX` | 433 MB（432 952 384 B） | **从未产出过数据集**——旧文案"历史产物 `jianzhu_tietu_v5`"是失真，已更正 | 5 个目录（`jianzhu_tietu`/`_v2`/`_v3`/`_v4`/`_v5`，`du -sb` 实测 238 862 431–1 008 345 919 B）**没有一个有 `tiles/`、`tileset.json` 或 `conversion-report.json`**；只有 `textures/`（57/66/73/93/85 个）与 `.wb-staging/tiles/` 里的半成品 b3dm（60/77/310/343/84 个，5 份 i3dm 计数全为 0）→ 5 次都停在写出中途。`v5/stderr_live.log` **0 字节**；`v3`（170 435 B）与 `v4`（186 245 B）末尾分别是 `evaluate pn=286 srcT=330 206 proxT=22 961` 和 `pn=221 srcT=1 320 823 proxT=19 380`。staging 有残留说明这几轮**没走到 §14.17 的失败清理**（候选：进程被外部终止），终止原因本轮未查。**结论：这份输入没有任何可验收产物**，与"旧二进制产物"是两回事 |
 
@@ -524,11 +524,12 @@ A-30（纹理字节被当硬约束导致聚合 fallback 永不收敛）。
 | `tileset_bounds.js` | 父覆盖子 / NaN box / 负半轴 / 非法 ge / ge 递增 全 0 | 0 |
 | `glb_prims.js` | 1057 个内容文件 **违例 + 解析失败 = 0**：`max prims/tile=11`（`t53.b3dm`）；A-33 口径的**实例展开**三角形最大 **119 840**（`i1042.i3dm`）与 `report.maxTrianglesInTile` 逐值对上，去重侧最大 37 885，展开合计 11 350 646 | 0 |
 | `check_manifest_assertions.js` | `aggProxies=122 / aggBuilt=122 / aggSkipped=0`、`occurrences=4250`（= `report.manifestOccurrences`）、`maxTris/tile=119 840` | 0 |
-| `zero_normal_triage.js` + `zero_normal_tile_class.js` | 195 条零长度 NORMAL / 140 退化 / 55 非退化 / 19 个文件——与 v15 同签名，A-43 已定性为**源侧自带**，不是回归信号 | 0 |
+| `zero_normal_triage.js` + `zero_normal_tile_class.js` | 195 条零长度 NORMAL / 140 退化 / 55 非退化 / 19 个文件——与 v15 同签名，A-43 判为**源侧自带**、不是回归信号。**注意这把自研尺子只统计不拦**：同样 195 条在官方 validator 里是 **ERROR**（见 §7） | 0 |
 
-这七项**不含**官方 validator 与视觉验收：前者从未在这份 335 MB 产物上跑过，后者的
-判据本身还在重做（STATUS 未闭合 7）。所以 v17 目前只能记成"仓库自研判据全绿 +
-`rc=0` 出盘"，不能写成"发布验收通过"。
+这七项**不含**官方 validator 与视觉验收：官方 validator 已在 2026-10-20 对 v17 跑过，
+**判 26 个内容文件 ERROR（全部是 A-43 的零长度 NORMAL），rc=1**，读数与拆分见 §7；
+视觉验收的判据本身还在重做（STATUS 未闭合 7）。所以 v17 目前的准确表述是
+"仓库自研判据全绿 + `rc=0` 出盘，**官方 validator 未过闸**"，不能写成"发布验收通过"。
 上面三行的原始读数（含命令、退出码、jianzhu 的 5 目录清单、`wuhu_v1` 两条 FAIL 全文、
 220 份 report 的字段扫描）在 `evidence/real-fbx-status-2026-10-20.txt`。
 
@@ -541,6 +542,11 @@ A-30（纹理字节被当硬约束导致聚合 fallback 永不收敛）。
 bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_texless
 bash scripts/run_validator.sh F:/wb_3dtiles_out/longxiang_covfix
 bash scripts/run_validator.sh F:/wb_3dtiles_out/cmpt_probe
+# 2026-10-20 本轮（结论见下面的"2026-10-20 复跑"；报告必须显式给第二个参数，
+# 否则会覆盖 validation/ 里 10-19 那批原件——本轮跑完已把产物迁到 validation-2026-10-20/）
+bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17      docs/model23dtiles-production/validation-2026-10-20   # rc=1，26 error
+bash scripts/run_validator.sh F:/wb_3dtiles_out/longxiang_a42      docs/model23dtiles-production/validation-2026-10-20   # rc=0
+bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_a42fix      docs/model23dtiles-production/validation-2026-10-20   # rc=0，容器目录逐资产
 ```
 
 脚本内含本机踩过的安装坑（写进脚本而不是让人重踩）：validator 依赖链里的
@@ -579,10 +585,57 @@ bash scripts/run_validator.sh F:/wb_3dtiles_out/cmpt_probe
 > 独立佐证，同一资产同一二进制既能 0 error 也能 3 error，说明缺陷是间歇的。
 > 官方 validator 因此从"通过过一次"降级为"每轮必跑、且必须逐资产看错误条数"。
 
+### 2026-10-20 复跑：`lugouqiao_v17` **未通过**（26 个内容文件 ERROR）
+
+同一 `run_validator.sh`、同一 `3d-tiles-validator@0.6.1`，对当前三份产物逐条跑、逐条取 `$?`。
+本轮 28 份报告（12 资产 + 两份真实 FBX 的 json/log）在
+`docs/model23dtiles-production/validation-2026-10-20/`；`validation/` 保持 10-19 那批不动
+（脚本默认输出目录会指向前者，本轮先跑后迁，防止覆盖历史原件）。
+
+| 数据集 | errors | warnings | infos | 脚本 rc |
+|---|---:|---:|---:|---:|
+| `matrix_a42fix`（t01…t12 逐个） | **12/12 全 0** | 仅 t12 有 1 条 | 0…127 | 0 |
+| `longxiang_a42`（真实 FBX 65 MB） | **0** | 81 | 40 | 0 |
+| `lugouqiao_v17`（真实 FBX 335 MB） | **26** | 682 | 349 | **1** |
+
+**v17 的 26 条 ERROR 全部是同一签名，且与自研尺子逐顶点对上**：叶层 ERROR **195 条**，
+消息全为 `Vector3 at accessor indices N..N+2 is not of unit length: 0`，落在
+`/meshes/*/primitives/0/attributes/NORMAL`；**非 unit-length 之外的 ERROR = 0**。
+按文件拆：7 个文件各 20 条（`t0`/`t57`/`t69`/`t70`/`t551`/`t552`/`t553` = 140 条）+
+19 个文件各 2–3 条（`i952`/`i956`/`i957`/`t126`/`t141`/`t158`…`t716` = 55 条），
+合计 26 个文件 / 195 条。`zero_normal_triage.js` 对同一数据集独立测得
+**零长度 NORMAL 顶点 195 = 只落退化三角形 140 + 落非退化三角形 55，非退化侧涉及 19 个文件**
+——两个数量（195 与 140/55、19）与官方 validator 的拆分逐项相同，
+所以这 26 条 ERROR 就是 **A-43 的零长度法线**，不是新问题。
+旁证：同一工具对 `longxiang_a42` 判 **0 error**，说明它是**输入相关**而非管线必然产物。
+
+**这条结果把 A-43 的定级推回待定**：AUDIT/STATUS 记的是"源侧自带、不需要动构建"，
+源侧起源的解释仍然成立（构建没有制造它），但**官方发布闸按 ERROR 计**，
+携带它的 `lugouqiao_v17` 因此**不能出盘即发布**。处置方向是写出侧对零长度 NORMAL
+重算为面法线（任务 #13），**不得**改用"关掉 NORMAL 属性""把 validator 判 ERROR 的
+输入剔除"或"把 ERROR 降成 warning"这类过闸手段。
+
+KTX2 那批 warning 的成因这轮拿到了**validator 自己的话**，不再靠推断：
+叶层 info 里有 **691 条**（v17，= 带图的瓦片数）/ **81 条**（`longxiang_a42`）
+`Cannot validate an extension as it is not supported by the validator: 'KHR_texture_basisu'`，
+且内嵌 `gltf-validator@2.0.0-dev.3.10` 全文
+`grep -c KHR_texture_basisu` = **0**、唯一的 `KTX` 字样就是 `image/ktx2` 这个字符串本身
+（即它既不认识扩展、也没有 KTX2 魔数）。产物侧声明是齐的：v17 的 691 个带图瓦片
+每个都写了 `extensionsUsed` / `extensionsRequired` = `KHR_texture_basisu` +
+`KHR_texture_transform`，1569 张图全为 `image/ktx2`（内嵌 bufferView，无外部 uri）。
+所以这两类 warning 是**校验器口径限制**，判据可复核。
+
 warning 全部同源、且不成立为缺陷：validator 自带的 glTF schema 早于
 `KHR_texture_basisu`，对 `mimeType: image/ktx2` 报
-`Invalid value "image/ktx2"` / `Image format not recognized`
-（longxiang 81 条 = 85 张 KTX2 里去重后仍被逐图引用的部分，t12 1 条）。
+`Invalid value "image/ktx2"` / `Image format not recognized`。
+**计数口径**（2026-10-20 实测，别再按"张数=warning 数"读）：报告头的
+`numErrors/numWarnings/numInfos` **与叶层条数没有固定换算**——
+`longxiang_a42` 头 `warn=81`，而叶层 WARNING 500 条（250 张 `image/ktx2` × 两类消息），
+只覆盖 81 个瓦片；头 `info=40`，而叶层 INFO 405 条、覆盖 **121** 个瓦片。
+`lugouqiao_v17` 头 `warn=682`，叶层 WARNING 3138 = 1569 × 2、覆盖 **691** 个瓦片
+（头比"带警告的瓦片"少 9，**差因本轮未归因**）。
+**因此验收只读两样**：叶层按 `severity` 分类的条数 + 按瓦片归组的集合；
+头三个数只当进度提示，不当判据。上一版这里写的"81 条 = 85 张 KTX2 去重后…"是错的，已按实测替换。
 CesiumJS 1.119 侧同一批 `.ktx2` 在 §4 的截图链路里实际解码并贴上了纹理
 （判据 `colorSpread.chromaFraction`，见 `docs/visual-acceptance/README.md`）。
 升级 validator 依赖链里的 glTF schema 才会消掉这批 warning，本轮不为此改动产物。
@@ -689,7 +742,10 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   上一批产物 `numErrors=0`（§7），但同日复跑 `matrix_a34` 的 t02 报 3 个
   zero-length-normal ERROR（§1b/§7）——**"0 error"不是不变量**，缺陷按 A-38 记，
   内发布闸 `selfValidate` 对那批产物同样全 0 error（当时还没有 2b）；
-- 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 现有两份达标产物——
+  **2026-10-20 这条判据落到 v17 上了**：`matrix_a42fix` 12/12 与 `longxiang_a42` 全 0 error，
+  而 `lugouqiao_v17` **26 个内容文件 195 条 zero-length-normal ERROR、rc=1**（§7）——
+  这一条不满足，发布验收就不能判过；
+- 预算控制：超硬限明确失败、零残留（S2 实测）；真实 FBX 硬限达标两份——
   `longxiang_a42` 127 个内容瓦片最大 2.17 MiB，`lugouqiao_v17` 1057 个内容文件
   最大 3 237 360 B（`maxTrianglesInTile=119 840` 在 12 万硬限内，A-33 展开口径同值）；
   矩阵 12/12 违例 0；实例瓦片的三角形预算见 §6.2 的 A-33；
@@ -705,7 +761,10 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   `aggregateProxies` 补全后可由源 feature 反查代理 ID 与其代表的源集合；
 - 视觉链路：CesiumJS 加载渲染真实出图，自动化 0 错误；
 - 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、Python 采集器（BLOCKED B-5）、
-  **`lugouqiao_v17` 的官方 validator 与视觉验收**（端到端本身已跑通，不再是待办）、
+  **A-43 写出侧处置**（官方 validator 对 `lugouqiao_v17` 判 **26 个内容文件 ERROR**、
+  `rc=1`，见 §7；零长度 NORMAL 虽判为源侧自带，但发布闸按 ERROR 计，
+  这份产物在处置前**不可发布**）、
+  **`lugouqiao_v17` 的视觉验收**（端到端与官方 validator 都已跑过，不再是待办）、
   **芜湖水厂用当前 HEAD 复跑**（`wuhu_v1` 是 A-41/A-42 之前产物，已判废）、
   **433 MB 的 `jianzhu+tietu.FBX` 从未出过盘**（5 个目录只有纹理），
   longxiang 内存回退（B-7）。

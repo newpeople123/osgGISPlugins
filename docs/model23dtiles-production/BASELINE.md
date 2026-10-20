@@ -334,5 +334,8 @@ B-4 真机 GPU 人眼验收、B-5 Python、B-6 t08/t11 远景部件瞬现、
 B-7 longxiang 内存回退（335 MB 的 lugouqiao 实测工作集 5.5 GiB 以上，见
 PERFORMANCE_REPORT §6.4）、B-8 cmpt 混合实例场景（`mixed.cmpt` 探针 0/0/0 已过，
 生产写出器仍输出兄弟 b3dm/i3dm 子树，仓库内无 cmpt 写出器）。
-~~B-3 外部官方 validator~~ 已闭环：`bash scripts/run_validator.sh <dir>` 实测
-14/14 个 tileset `numErrors=0`（VALIDATION_REPORT §7）。
+~~B-3 外部官方 validator~~ **工具侧**已闭环：`bash scripts/run_validator.sh <dir>` 实测
+14/14 个 tileset `numErrors=0`（VALIDATION_REPORT §7）。**2026-10-20 更新**：工具仍可跑，
+但 `lugouqiao_v17` 判 **rc=1 / 26 个内容文件 ERROR**（A-43 零长度 NORMAL），
+同批 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 0 error — 所以 B-3 的"能力缺口"没了，
+取而代之的是一条**未过的发布判据**（见 VALIDATION_REPORT §7 的 2026-10-20 复跑）。

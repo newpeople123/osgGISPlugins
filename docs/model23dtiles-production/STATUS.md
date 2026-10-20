@@ -113,6 +113,11 @@ node scripts/table_pipe_check.js <md 文件...>
                                            # 否则 GFM 会**静默断表**（`\|` 不计入列数）。
                                            # 阳性对照：2 列分隔行 + 3 列数据行 → 报违例、rc=1；
                                            # 全 5 份生产文档实测一致、rc=0
+node scripts/scan_image_mime.js <数据集目录> [maxTiles]
+                                           # 剥 b3dm/i3dm 外壳读 GLB JSON chunk，统计 images[].mimeType
+                                           # 与 extensionsUsed/Required。官方 validator 那批 image/ktx2
+                                           # warning 判"是校验器不认识 KHR_texture_basisu 还是我们没声明"
+                                           # 就看这一条；无退出码，是取证工具
 bash scripts/run_validator.sh <tilesetsDir> [reportDir]
                                            # 官方 OGC 3D Tiles validator（B-3）
 node scripts/glb_prims.js <datasetDir> [...]
@@ -164,7 +169,7 @@ python scripts/visual_capture.py --tileset <tileset.json> --out <dir>  # 视觉�
 > node 20 估算 32.5 MB ≈ 纯几何 6 倍）。历史三项见 bfa43a0：
 > 字节估算低估 4 倍、meshopt 因误差上限过宽不削减、代理只判三角形预算。
 
-### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 被 A-41 判废；v16 中途主动终止（用的是"相对帧为空操作"的 22:40 二进制）；**v17 用 23:53 exe + 00:16 插件已 rc=0 出盘**
+### `20240529卢沟桥分洪枢纽.fbx`（335 MB）— v15 被 A-41 判废；v16 中途主动终止（用的是"相对帧为空操作"的 22:40 二进制）；**v17 用 23:53 exe + 00:16 插件已 rc=0 出盘，但官方 validator 判 rc=1（26 个内容文件 ERROR，A-43）→ 未过发布闸**
 
 `lugouqiao_v11`（37d832c 时代二进制）真实失败：`selfValidate` 抓到 7 个瓦片
 12.2 万～50.8 万三角形超 120 000 硬限 → 按 14.17 拒绝发布（日志
@@ -346,8 +351,14 @@ src/3dtiles/production/ProxyMeshBuilder.cpp        +10
    `20240529卢沟桥分洪枢纽.fbx` **已以 `lugouqiao_v17` 跑通并落盘**（10-20 00:35→08:35，
    28 485 s，rc=0，1057 个分发文件，七项自研判据逐条 rc=0，见本节第 5 条与
    VALIDATION_REPORT §6.2 的"v17 电池读数"表）——所以"真实 FBX 用带闸 + 修好参考系 +
-   修好位姿的二进制跑通"**这一条已闭合**，本条唯一剩下的未闭合项是这份产物的
-   **官方 validator 与视觉验收**。另两份真实输入的现状（本轮盘上实测，旧文档写的
+   修好位姿的二进制跑通"**这一条已闭合**。官方 validator 本轮（2026-10-20）也跑了，
+   **结果不是通过**：`bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17` → **rc=1，
+   26 个内容文件 / 叶层 195 条 ERROR**，消息全是 `Vector3 … is not of unit length: 0`
+   （`/meshes/*/primitives/0/attributes/NORMAL`），与自研 `zero_normal_triage.js` 的
+   195 = 140（只落退化三角形）+ 55（落非退化、涉及 19 文件）**逐顶点对上**，即 A-43 的签名；
+   同法对 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 **0 error**，所以不是校验器在乱报。
+   本条剩下的未闭合项因此是 **A-43 的写出侧处置**（见本节第 4 条）与这份产物的**视觉验收**。
+   另两份真实输入的现状（本轮盘上实测，旧文档写的
    "未跑／历史产物"都不准确）：`芜湖水厂总装.fbx` 只有 `wuhu_v1`，是 A-41/A-42 之前的
    二进制产物，`path_leak_structural` 报 226 处瓦片泄漏、`i3dm_pose_check` 报 5/5 个
    i3dm POSITION 全 0，**判废、需用当前 HEAD 复跑**；`jianzhu+tietu.FBX`（433 MB）
@@ -426,13 +437,20 @@ src/3dtiles/production/ProxyMeshBuilder.cpp        +10
    不是"3 角点/面"假设；散落单角点 0），按内容去重只有 **7 个** mesh 带零（原始 36 个数组里
    29 个是逐字节相同的 instance 拷贝）。最硬的一条是两条不相干读路径撞上同一组数：
    源侧某数组 14 454 角点 = **4 818** 面、1 个整面全零 ↔ 产物 `i952`/`t162`/`t166` 的
-   `#mesh0` 各自"该图元三角形 4 818、零法线 3 条"。据此 A-43 定级**低**（源数据缺陷 + 忠实透传），
+   `#mesh0` 各自"该图元三角形 4 818、零法线 3 条"。据此 A-43 **成因定级低**（源数据缺陷 + 忠实透传），
    处置改为写出时把这类零法线**重算为其所在非退化三角形的面法线**（邻接平均在这里没有可用的
-   非零邻居），**不按拒绝发布处理**；证据 `evidence/a43-source-side-fbx-probe.txt`。
+   非零邻居）；证据 `evidence/a43-source-side-fbx-probe.txt`。
    本条只定**成因层面**，没有做逐顶点归因（需要 mesh 级源↔产物 id 映射，未做）。
-   官方 validator 会**逐条**报 `is not of unit length: 0`。
-   **仍未做**：官方 validator 逐资产跑一遍、A-33 口径的 i3dm 展开三角形核对、
-   `aggregateProxies` 复核，再写进 §6.2/PERFORMANCE。
+   **"不按拒绝发布处理"这半句本轮被实测推翻**：2026-10-20 官方 validator 逐资产跑完，
+   `lugouqiao_v17` **rc=1、26 个内容文件、叶层 195 条 `is not of unit length: 0` ERROR**，
+   逐顶点数与自研 triage 的 195 = 140 + 55（19 文件）对上；同一工具对
+   `matrix_a42fix` 12/12 和 `longxiang_a42` 判 **0 error**。也就是说源侧起源能解释"不是构建造的"，
+   但**解释不了"能发布"**：官方发布闸按 ERROR 计，v17 在写出侧处置（上面那条重算面法线）
+   落地并重跑之前**不可发布**。禁止用"剔除含零法线的图元 / 不写 NORMAL 属性 /
+   把 ERROR 降级"这类手段凑成通过。
+   **仍未做**：A-33 口径的 i3dm 展开三角形核对、`aggregateProxies` 复核
+   （这两项本轮已由 `glb_prims.js` / `check_manifest_assertions.js` 在 v17 上补做，读数见
+   VALIDATION_REPORT §6.2 的"v17 电池读数"表），官方 validator 也已跑（即上面的 FAIL）。
    **已完成并有结论的一项**：A-41 对这份产物的影响评估 = **全废**。`scripts/i3dm_pose_check.js`
    实测 126/126 个 i3dm 瓦片 POSITION 全 0、1787 条实例位姿 0 命中、原型 `|v|` 被累乘到
    1.22e8 m；这份产物作为"可发布数据集"已经不成立，上面几项待办只对**修复后的 v17** 有意义
@@ -479,8 +497,18 @@ src/3dtiles/production/ProxyMeshBuilder.cpp        +10
    - `node scripts/accessor_extents_scan.js` → **rc=0**（b3dm >1e6 **和** i3dm >1e6 **都是 0**：
      后者是 A-41 的签名，v15 实测 6 个 i3dm 命中）
    - `node scripts/zero_normal_triage.js` + `zero_normal_tile_class.js` → **rc=0**
-     （仍是 ~195 条、同样签名——A-43 已定性为源侧自带，**不是**回归信号，
-     见 `evidence/a43-source-side-fbx-probe.txt`）
+     （仍是 ~195 条、同样签名——A-43 已定性为源侧自带，**不是回归信号**，
+     见 `evidence/a43-source-side-fbx-probe.txt`）。**但这个 rc=0 不是发布信号**：
+     自研尺子只统计不拦，官方 validator 把同一批顶点逐条判 **ERROR**（下一条）
+   - `bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17` → **rc=1**（报告在
+     `validation-2026-10-20/`；本轮先写默认目录再迁出，`validation/` 里 10-19 那批原件已用
+     `git checkout --` 还原，没有被覆盖）
+     官方 `3d-tiles-validator@0.6.1` 报 **26 个内容文件 / 叶层 195 条**
+     `Vector3 … is not of unit length: 0`（全为 A-43 零长度 NORMAL），
+     682 warning 全是 `image/ktx2`（validator 自己不认识 `KHR_texture_basisu`：v17 叶层
+     **691 条** `Cannot validate an extension as it is not supported by the validator`
+     的 info，`longxiang_a42` 81 条）。同法 `matrix_a42fix` 12/12、`longxiang_a42`
+     **0 error** → 尺子没有乱报，v17 就是没过官方闸。读数明细见 VALIDATION_REPORT §7
    - `node scripts/path_leak_structural.js` → **rc=0**（1057 瓦片 + 3 旁证全 clean，尺子失效 0）。
      注意 `path_leak_scan.js` 在 v17 报 **rc=1 / 4 处**，那 4 处经结构定位全在 GLB BIN chunk 里，
      是字节噪声不是泄漏；已把它降级为粗筛，验收口径改用结构版。
@@ -492,9 +520,9 @@ src/3dtiles/production/ProxyMeshBuilder.cpp        +10
    - `node scripts/check_manifest_assertions.js` → **rc=0**，同一行给出
      `aggProxies=122 / aggBuilt=122 / aggSkipped=0`、`occurrences=4250`
      （= `report.manifestOccurrences`），**`aggregateProxies` 复核就此闭合**
-   - **仍未做**：`bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17`（逐资产官方
-     validator，真实 FBX 从没跑过）与视觉验收。VALIDATION_REPORT §6.2 的"v17 电池读数"
-     表已按上面七项逐条登记。
+   - **仍未做**：视觉验收（判据本身在重做，见本条第 7 项）。官方 validator **本轮已跑**，
+     结论是 **rc=1 未过闸**（上一条），不再是"从没跑过"。
+     VALIDATION_REPORT §6.2 的"v17 电池读数"表已按上面七项逐条登记。
    `lugouqiao_v16`（22:53 起，用的是"第 2 点为空操作"的 22:40 二进制）已**主动终止**，
    终止时只有 `.wb-staging/` 里 8 个半成品 b3dm，没有 `tiles/`、没有 `tileset.json`。
    **已发布/已归档的 i3dm 资产一律作废**（`lugouqiao_v15`、`longxiang*`、`matrix_a34` 等所有带

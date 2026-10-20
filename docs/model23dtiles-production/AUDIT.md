@@ -52,7 +52,7 @@
 | A-40 | 同一二进制、同一输入，产物**不逐位一致**：t02 累计 127 次产物里 121 次落在同一基线，6 次是**整棵瓦片树变了**的变体（共 5 个互不相同的哈希；`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3 之间跳，峰值 RSS 也随之变）。变体同时出现在默认并行(jobs8)、`WB_JOBS=4`、`WB_PROXY_DEBUG=1` 三种配置，其中 jobs4 那次的哈希与旧记的"WB_PROXY_DEBUG 第 3 跑"变体**完全相同** → 变体与调试开关、与并行度都无绑定（旧结论"不是并行度本身"证据仅 n=6 已撤回）。而且**同一份 b3dm 内容会换瓦片槽位**（基线 t5 == 变体 t3，sha256 相同）——症状不是数值算错，是分类/分配次序依赖运行时时序。**本轮新增第二个样本 t09（单轮 0.75 s）**：22:40 二进制单独跑 8 次得 3 个 `t0.b3dm` 变体，矩阵内那次是第 4 个，且 `errMax` 随变体在 386.77 ↔ 331.62 之间动；6/8 次逐字节等于 22:14 那轮的树 → 变体也与**二进制版本**无关 | `ProductionPipeline::buildB3dmTree` 并行窗口 / 误差评估分支 | OPEN（非确定性来源未定位；jobs4 也复现，说明"关掉并行即可稳定"未经证实；t09 可用 8×0.75 s 廉价复现，是后续定位的首选样本） | 17 | 高 |
 | A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` / `buildInstanceTree` | FIXED（两段分开修：flatten 掩码 22:40 生效；"相对原型"那半在 22:40 是**空操作**——`pw.invert(invProto)` 把方向写反，23:53 才真正生效。验收口径同时从"命中绝对平移"改到相对帧。v15/v16 与所有 22:40 产物一律作废） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
 | A-42 | 发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` **分发出去**：lugouqiao_v15 实测 **691/1057** 个瓦片带 `F:/wb_3dtiles_out/lugouqiao_v15\textures\…`）；FBX 导入器用源文件绝对路径命名根节点，顺着 `nodePath` 进 `feature-manifest.json`（同数据集 **2729** 处 `D:/BaiduNetdiskDownload/…fbx/…`）。副作用更难查：name 进 GLB JSON chunk → 同一输入、同一代码，t12 的 `t0.b3dm` 在不同输出目录下出现过 510432/510440/510344/510304/510296 五个尺寸，**以前把这类差异算成 A-40 的噪声** | `Osg2Gltf.cpp::getTexture` + `SourceModel.cpp::SourceModelVisitor::apply(Node&)` | FIXED（exe 00:12 + 插件 00:16：两处只留文件名；`path_leak_scan.js` 复扫 `matrix_a42fix` **0/213 瓦片、0/36 json**；两个长度差 40 字符的目录产出 sha256 相同；`test_production` 150/150。**`osgdb_gltf` 是 MODULE 插件，按目标构建不会重建它**。v17 复验：结构判据 `path_leak_structural.js` 报 **1057 瓦片 CLEAN / rc=0**、旁证绝对路径 **2729→0**；`path_leak_scan.js` 那 4 处是 BIN chunk 噪声，不是泄漏，该工具降级为粗筛） | —（手册未列：交付物含本地路径） | 中（分发物带操作者目录结构；并污染"逐字节可复现"这一验收口径） |
-| A-43 | 产物里有零长度 NORMAL：`lugouqiao_v15` 实测 **195 个顶点 / 26 个瓦片**，其中 **55 个落在非退化三角形上**（法线本该算得出）。旧判据用绝对面积阈值，1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，无法定级 | **源数据本身**（非产品代码）；产物侧为忠实透传 `SourceModel.cpp:805-807`、写出闸 `:856` | 源侧定性 **CONFIRMED**，写出侧修复**未实施**：裸读源 FBX 实测 2729 个法线数组（解析失败 0）、按内容去重 626 个，其中 **7 个含零法线**（另有 29 个逐字节相同的 instance 拷贝，故原始计数是 36 个数组）；零角点 **63** 个 = **21 个整面全零三角形**（按 PVI 真实负下标边界算，不是"3 角点/面"假设），散落单角点 **0**。尺子本轮已修对（主判据 `REL×中位面积`、绝对阈值降为对照列、`make_zero_norm_fixture.js` 阳性对照、非单位列做解析自检）。已排除：简化器（`EXACT_LEAF` 瓦片带同样 3 条）、写出侧造零（`SourceModel` 只能原样带上或整条丢掉）、平滑（`-nrm` 未开，`SmoothingVisitor` 不参与）、A-38 同族（确定、可逐字节复现）。证据 `evidence/a43-source-side-fbx-probe.txt`，含源↔产物两条独立读路径在同一个 4 818 面 mesh 上对上"面数 + 3 条零" | —（手册未列：非单位法线） | 低（输入数据缺陷 + 忠实透传：可渲染，局部 shading 异常 + validator 逐条告警；**不按"拒绝发布"处理**；处置改为写出时把整面零法线重算为该非退化三角形的面法线） |
+| A-43 | 产物里有零长度 NORMAL：`lugouqiao_v15` 实测 **195 个顶点 / 26 个瓦片**，其中 **55 个落在非退化三角形上**（法线本该算得出）。旧判据用绝对面积阈值，1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，无法定级 | **源数据本身**（非产品代码）；产物侧为忠实透传 `SourceModel.cpp:805-807`、写出闸 `:856` | 源侧定性 **CONFIRMED**，写出侧修复**未实施**：裸读源 FBX 实测 2729 个法线数组（解析失败 0）、按内容去重 626 个，其中 **7 个含零法线**（另有 29 个逐字节相同的 instance 拷贝，故原始计数是 36 个数组）；零角点 **63** 个 = **21 个整面全零三角形**（按 PVI 真实负下标边界算，不是"3 角点/面"假设），散落单角点 **0**。尺子本轮已修对（主判据 `REL×中位面积`、绝对阈值降为对照列、`make_zero_norm_fixture.js` 阳性对照、非单位列做解析自检）。已排除：简化器（`EXACT_LEAF` 瓦片带同样 3 条）、写出侧造零（`SourceModel` 只能原样带上或整条丢掉）、平滑（`-nrm` 未开，`SmoothingVisitor` 不参与）、A-38 同族（确定、可逐字节复现）。证据 `evidence/a43-source-side-fbx-probe.txt`，含源↔产物两条独立读路径在同一个 4 818 面 mesh 上对上"面数 + 3 条零" | —（手册未列：非单位法线） | 低（**成因**：输入数据缺陷 + 忠实透传，可渲染、局部 shading 异常）。**发布等级本轮上调**：2026-10-20 官方 validator 对 `lugouqiao_v17` 判 **rc=1 / 26 个内容文件 / 叶层 195 条 `not of unit length: 0` ERROR**（同工具对 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 0 error），旧写法"validator 只逐条告警、不按拒绝发布处理"已撤回——写出侧把整面零法线重算为非退化三角形面法线后必须重跑，禁止用丢属性或降级判据凑通过 |
 
 ---
 
@@ -509,7 +509,10 @@ VALIDATION_REPORT §1/§6）。反向对照用的是分区器在 `maxTreeDepth=1
 但它命中的是 `partition:` 失败而不是 3b 本身。
 
 > 后续（2026-10-19）：B-3 已解除（官方 validator 14/14 `numErrors=0`，见
-> VALIDATION_REPORT §7），但它**不核对每瓦片 glTF primitive 数**，所以 A-32 段里
+> VALIDATION_REPORT §7），**但这条"14/14 零 error"只对那批产物成立**：2026-10-20 同一工具
+> 对 `lugouqiao_v17` 判 **rc=1 / 26 个内容文件 / 叶层 195 条 ERROR**（全为 A-43 零长度 NORMAL），
+> 对 `matrix_a42fix` 12/12 与 `longxiang_a42` 仍是 0 error，见 VALIDATION_REPORT §7 的复跑段。
+> 但它**不核对每瓦片 glTF primitive 数**，所以 A-32 段里
 > 留给"外部 validator"的那一半缺口由新脚本 `scripts/glb_prims.js` 补上：
 > 读回 341 个内容文件，`mesh.primitives` 最大 11 ≤ 24、i3dm 展开三角形
 > 最大 3 588 ≤ 120 000，0 违例（B-9 解除，见 VALIDATION_REPORT §8）。
@@ -1259,9 +1262,17 @@ instance 拷贝——不去重会把"7 个 mesh"说成"36 个 mesh"，那是夸�
 "某含零法线的瓦片来自一个源里没有零法线的 mesh"，那需要 mesh 级源↔产物 id 映射，未做——
 所以本条定的是**成因层面**（源里确实有、且是整面形态），不是**逐顶点归因**。
 
-**定级：低（源侧 authored 的数据缺陷 + 我们忠实透传，不是产品缺陷）**。
-处置改为**写出时修复**，不触发拒绝发布：数据可渲染，只是那 21 个面光照异常，
-validator 只会逐条告警；手册的"宁可拒绝发布"针对的是不可渲染/位置错的产物，这里不属于。
-修法按源侧签名定：三处都是**整面三条角点法线同时为 0**，所以邻接平均没有可用的非零邻居，
+**成因定级：低（源侧 authored 的数据缺陷 + 我们忠实透传，不是产品缺陷）**；
+**但"不触发拒绝发布"这半句在 2026-10-20 被实测推翻，已撤回**。当时的推断是
+"validator 只会逐条告警"，实际跑下来官方 `3d-tiles-validator@0.6.1` 对 `lugouqiao_v17`
+判的是 **severity=ERROR**：**rc=1、26 个内容文件、叶层 195 条**
+`Vector3 at accessor indices N..N+2 is not of unit length: 0`，且这批 ERROR 之外
+**没有其他类 ERROR**（叶层 ERROR 195 条 100 % 同签名）。同一工具对 `matrix_a42fix`
+12 个资产和 `longxiang_a42` 判 **0 error**，所以不是校验器对整条管线的系统性误报。
+后果：**携带这些顶点的产物过不了官方发布闸**，v17 在写出侧修复落地并重跑之前不可发布；
+手册的"宁可拒绝发布"在这里成立的不是"数据不可渲染"，而是**官方口径把非单位法线判为 ERROR**。
+处置方向不变：三处都是**整面三条角点法线同时为 0**，所以邻接平均没有可用的非零邻居，
 应当把这类零法线**重算为其所在非退化三角形的面法线**（顶点位置现成，不需要邻接图）。
-动手需要构建位——`lugouqiao_v17` 正在跑，并行构建会撞 post-build `z-applocal` 拷贝（MSB3073）。
+**不允许**用"整条丢掉 NORMAL 属性""剔除含零法线的图元""把 validator 的 ERROR 记成 warning"
+来凑通过——那属于手册禁止的放宽验证。
+动手需要构建位——`lugouqiao_v17` 当时正在跑，并行构建会撞 post-build `z-applocal` 拷贝（MSB3073）。

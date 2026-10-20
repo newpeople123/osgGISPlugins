@@ -146,3 +146,10 @@ rc=0
   - 结构判据依赖"JSON 区能 parse"。padding 残留（写在 JSON chunk 的 4 字节补齐区里
     的路径字节）会被单独报 `[padding 残留]` 而不算泄漏；本轮所有数据集这个计数都是 0，
     所以"客户端读不到"这一推断**没有实际样本验证过**。
+
+  【2026-10-20 更新，覆盖上面"官方 validator 还没在 v17 上跑过"那句】
+  已跑：bash scripts/run_validator.sh F:/wb_3dtiles_out/lugouqiao_v17 → rc=1，
+  26 个内容文件 / 叶层 195 条 ERROR（全为 A-43 零长度 NORMAL），
+  682 warning 全是 image/ktx2（validator 不认识 KHR_texture_basisu）。
+  读数与逐文件拆分见 evidence/real-fbx-status-2026-10-20.txt §9、
+  VALIDATION_REPORT §7 的"2026-10-20 复跑"。所以"能过 validator"这句**不成立**。
