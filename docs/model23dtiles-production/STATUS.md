@@ -301,22 +301,36 @@ i3dm 瓦片在 A-33 之后才带三角形预算，所以实例段的验收必须
 
 ## 工作区里那份**未提交**的改动（2026-10-20 记录，不属于本轮任何 commit）
 
-`git status --short` 现在有 5 个已跟踪源文件被改但未提交（本轮没有碰它们，也没有构建）：
+`git status --short` 现在有 **6** 个已跟踪源文件被改但未提交（本轮没有碰它们，也没有构建）：
 
 ```
-include/3dtiles/production/ProductionPipeline.h    +17
-include/3dtiles/production/ProxyMeshBuilder.h       +6
-src/3dtiles/production/GeometryErrorEvaluator.cpp  +22/-4
-src/3dtiles/production/ProductionPipeline.cpp      +30
-src/3dtiles/production/ProxyMeshBuilder.cpp        +10
+include/3dtiles/production/GeometryErrorEvaluator.h  +2
+include/3dtiles/production/ProductionPipeline.h     +20
+include/3dtiles/production/ProxyMeshBuilder.h        +6
+src/3dtiles/production/GeometryErrorEvaluator.cpp   +27/-4
+src/3dtiles/production/ProductionPipeline.cpp       +38
+src/3dtiles/production/ProxyMeshBuilder.cpp         +10
 ```
+
+**这份清单在本轮会话期间自己变过一次**：09:53 记录时是 5 个文件（`+17/+6/+22-4/+30/+10`），
+提交 validator 结论前复测 `git diff --numstat -- include src` 变成 6 个——多出
+`GeometryErrorEvaluator.h` 的 `+2`（`ErrorResult::bvhBuildSeconds` 与
+`DirectionResult::bvhBuildSeconds`，注释写"仪表：目标侧建树耗时，不参与判定"），
+同时 `.cpp` 从 +22/-4 涨到 +27/-4、`ProductionPipeline.h/.cpp` 各涨 3/8 行。
+**本轮没有任何构建或写源码的动作**，所以这是工作区被并发修改，不是记错——后续接手请
+按"共享工作区"对待，任何提交前都要重新 `git diff --numstat` 核对包含关系。
 
 读码得到的两点（**都未验证**，不是已完成项）：
 
 1. **子阶段计时仪表**：`ProxyResult::Metrics`（simplify / aggregate 秒数与候选数）+
-   `TileHeavyWork` 里 6 个 `micro*` 字段 + 管线成员 `_micro*` 累加。
-   **半件状态**：`ConversionReport` 没有对应字段（`grep -n micro src/3dtiles/production/ProductionProfile.cpp`
-   为空），所以现在跑完也读不到数；这正是 PERFORMANCE §2 想要的"把 6 千秒拆开看"。
+   `TileHeavyWork` / 管线成员里的 `micro*` 累加，实测字段为
+   `microProxySimplifySec`、`microProxyAggregateSec`、`microCollectSec`、
+   `microEvaluateSec`、`microEvaluateSamples`、`microFinalizeSec`、
+   `microAggregateCandidates`，本轮并发新增 `microBvhBuildSec`（配套
+   `ErrorResult::bvhBuildSeconds` / `DirectionResult::bvhBuildSeconds`）。
+   **半件状态**：`ConversionReport` 那侧没有对应字段
+   （`grep -c micro src/3dtiles/production/ProductionProfile.cpp include/3dtiles/production/ProductionProfile.h`
+   → **0 / 0**，2026-10-20 复测），所以现在跑完也读不到数；这正是 PERFORMANCE §2 想要的"把 6 千秒拆开看"。
 2. **误差评估器改了上界与 `BOUND_LOOSE` 口径**（`evaluateDirection`）：
    未采样的三角形不再进堆，改为按解析量计入 `upper = max(upper, globalLower)`；
    已收敛的 patch（`maxSampleDist + radius <= globalLower + tolerance`）不再入堆；

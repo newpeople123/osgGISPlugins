@@ -154,7 +154,8 @@ datasets=1  父不覆盖子合计=0  误差递增违例合计=0  有问题的数
       #
       #   bash scripts/run_matrix.sh [testAssetsDir] [outDir]
       collect_matrix.js:1 → "Reads the conversion-report.json + tileset.json produced by run_matrix.sh"
-  (c) 工作区 5 个未提交源文件的 numstat（本轮不构建、不提交、不改写）：
+  (c) 工作区 5 个未提交源文件的 numstat（当时快照，**本轮会话结束时已是 6 个**，见 §10；
+      本轮不构建、不提交、不改写）：
       17	0	include/3dtiles/production/ProductionPipeline.h
       6	0	include/3dtiles/production/ProxyMeshBuilder.h
       22	4	src/3dtiles/production/GeometryErrorEvaluator.cpp
@@ -222,3 +223,17 @@ datasets=1  父不覆盖子合计=0  误差递增违例合计=0  有问题的数
   非恒阴对照：同一 validator 对 matrix_a42fix 12/12 与 longxiang_a42 判 **0 error**，
     对 v17 判 26 → 报的是产物里的零长度法线，不是校验器对整条管线的系统性误报。
   历史口径修正：本报告 §7 旧文"longxiang 81 条 = 85 张 KTX2 去重后…"不成立（实测 250 张），已替换。
+
+## 10. 工作区未提交改动在本轮**自己变过**（并发修改取证）
+  §7(c) 记录时：5 个文件，numstat 17/6/22-4/30/10
+  提交 validator 结论前复测 `git diff --numstat -- include src`：6 个文件
+    2	0	include/3dtiles/production/GeometryErrorEvaluator.h
+    20	0	include/3dtiles/production/ProductionPipeline.h
+    6	0	include/3dtiles/production/ProxyMeshBuilder.h
+    27	4	src/3dtiles/production/GeometryErrorEvaluator.cpp
+    38	0	src/3dtiles/production/ProductionPipeline.cpp
+    10	0	src/3dtiles/production/ProxyMeshBuilder.cpp
+  新增内容是 bvhBuildSeconds 仪表（.h 两处成员 + .cpp 里 steady_clock 取值 +
+  ProductionPipeline 侧 microBvhBuildSec 累加）。本轮全程**没有写源码、没有构建**，
+  所以这是并发修改而非记错。
+  ConversionReport 侧仍然没有落点：grep -c micro ProductionProfile.cpp / .h = 0 / 0（当场复测）
