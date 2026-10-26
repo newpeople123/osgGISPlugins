@@ -1,6 +1,7 @@
 #ifndef OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H
 #define OSG_GIS_PLUGINS_GLTF_OPTIMIZER_H
 #include <osgUtil/Optimizer>
+#include <osg/Geometry>
 #include <meshoptimizer.h>
 #include <osgdb_gltf/material/GltfMaterial.h>
 #include <unordered_map>
@@ -24,6 +25,71 @@ namespace osgGISPlugins
 			DIFFUSE,
 			SPECULARGLOSSINESS
 		};
+
+		// 纹理落盘用量（AUDIT A-47 判据①）。processCpuSeconds 是**进程**口径的差值，
+		// 包含 .ktx2 写盘时 libktx 自己起的 basis 压缩线程；threadCpuSeconds 只是
+		// 调用线程那一份，生产侧 micro_* 仪表量的就是这一份。
+		struct TextureExportStats
+		{
+			unsigned long long files = 0;
+			double wallSeconds = 0.0;
+			double threadCpuSeconds = 0.0;
+			double processCpuSeconds = 0.0;
+		};
+
+		static TextureExportStats textureExportStats();
+		static void resetTextureExportStats();
+
+		// A-51 方案 A 的执行体：把 drawable 上记录图集子矩形的 TEX_TRANSFORM_*
+		// user value 折进它自己的 TEXCOORD_0，然后清掉这些 user value（写手随后
+		// 只会给一个恒等变换）。
+		// 为什么要折：瓦片最终的 glTF primitive 数由写出侧决定 ——
+		// Osg2Gltf::getCurrentMaterial 用 tinygltf::Material::operator== 去重，而
+		// TextureInfo::operator== 会比对 extensions，于是每个不同的
+		// KHR_texture_transform 都是一种不同材质；GltfMerger::mergeMeshes 再按
+		// 世界矩阵 × 材质 × 属性名集合 融图元。清掉变换后，共用同一张图集的
+		// drawable 才可能归成同一个材质、融成同一个 primitive。
+		// 折叠必须用**变换原值**（OSG 口径的 offset/scale）：Osg2Gltf 对任何变换都会
+		// 再乘一次 Y 翻转（flipGltfTextureYAxis），折叠前后那次翻转同样作用，
+		// 所以采到的是同一个纹素。
+		// 调用点只有一个：ProductionPipeline::writeContent 在每次 writeNodeFile 之前。
+		// uvBackup 保存"折叠前那份 TEXCOORD_0"。同一个瓦片可能被纹理超限重写阶梯再
+		// optimize 一次，那一轮必须先 restoreFoldedTextureUvs 再重折：不还原会让变换
+		// 叠两次，而且图集的 |uv|>1 闸门会看到已经落回 [0,1] 的假象，把原本平铺
+		//（REPEAT）的 drawable 错收进图集。
+		// 返回值是本轮真正折叠掉的 drawable 数；只在所有参与采样的纹理槽共用同一个
+		// 变换、且 UV 通道是 0 时才折叠，否则保持原样不动。
+		struct FoldedSlotState
+		{
+			osg::ref_ptr<osg::Object> holder;
+			std::string enableKey;
+			std::string offsetXKey;
+			std::string offsetYKey;
+			std::string scaleXKey;
+			std::string scaleYKey;
+			std::string texCoordKey;
+			bool enabled = false;
+			double offsetX = 0.0;
+			double offsetY = 0.0;
+			double scaleX = 1.0;
+			double scaleY = 1.0;
+			int texCoord = 0;
+		};
+		struct TextureUvBackupEntry
+		{
+			// 持引用：条目还在时这个地址不会被别的几何复用，裸 key 因此始终可信。
+			osg::ref_ptr<osg::Geometry> geometry;
+			// 恒等折叠（只清键、不改 UV）时为 null。
+			osg::ref_ptr<osg::Array> originalTexCoords;
+			// 清掉的键连同原值一起存着：还原必须把节点装回折叠前的逐值状态，
+			// 否则"restore 之后重折"这一条契约在恒等变换上就不成立。
+			std::vector<FoldedSlotState> slots;
+		};
+		using TextureUvBackup = std::unordered_map<osg::Geometry*, TextureUvBackupEntry>;
+		static unsigned foldTextureTransformsIntoUv(osg::Node* node, TextureUvBackup& uvBackup);
+
+		// 把 uvBackup 里的 TEXCOORD_0 装回各自的几何并清空映射（见上面的还原要求）。
+		static unsigned restoreFoldedTextureUvs(TextureUvBackup& uvBackup);
 
 		struct GltfTextureOptimizationOptions
 		{
@@ -248,9 +314,11 @@ namespace osgGISPlugins
 				const std::string fullPath,
 				const GltfTextureType type);
 
-			static void resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
-
 			static bool compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2);
+
+			// 图集装配的第三级排序键：只由图像内容派生（文件名，或对无文件名者取内容哈希）。
+			// 见 A-52——页内子图位置决定整页字节内容，进而决定页的内容哈希文件名。
+			static std::string imageOrderKey(osg::Image* img);
 
 			void addImageFromTexture(const osg::ref_ptr<osg::Texture2D>& texture, std::vector<osg::ref_ptr<osg::Image>>& imgs);
 
@@ -285,6 +353,13 @@ namespace osgGISPlugins
 			void apply(osg::Drawable& drawable) override;
 
 			void packTextures();
+
+			// 返回"可以安全使用"的图：无需改动时返回入参本身，需要改像素时返回私有副本。
+			// 绝不就地改原图——瓦片克隆 StateSet 时 osg::Image 是共享的（DEEP_COPY_TEXTURES
+			// 只深到 osg::Texture 层，实测 clone 出来的纹理 getImage() 还是同一张图），
+			// 就地 scaleImage 会让一个瓦片的降分辨率改掉后续所有瓦片的贴图。
+			// 公有是为了让"改像素必须先私有化"这条被单元测试钉住。
+			static osg::ref_ptr<osg::Image> resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight);
 
 			~TextureAtlasBuilderVisitor()
 			{

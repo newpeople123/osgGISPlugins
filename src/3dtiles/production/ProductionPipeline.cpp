@@ -147,6 +147,34 @@ private:
     std::chrono::steady_clock::time_point _t0;
 };
 
+// 线程 CPU 秒计时器。壁钟仪表和进程 CPU 秒不是一个量：8 个瓦片并行时
+// Σ 壁钟只等于 1×工作量，CPU 秒是 8×；节点内再开线程又是一层。
+// 想让"已归属 ≈ 进程 user 秒"这条算式成立，仪表必须也用 CPU 秒。
+class CpuTimer {
+public:
+    CpuTimer() { _t0 = threadCpuSeconds(); }
+    double elapsed() const { return threadCpuSeconds() - _t0; }
+private:
+    double _t0 = 0.0;
+    static double threadCpuSeconds()
+    {
+#ifdef _WIN32
+        FILETIME c, e, k, u;
+        if (GetThreadTimes(GetCurrentThread(), &c, &e, &k, &u))
+        {
+            const auto toSec = [](const FILETIME& ft) {
+                ULARGE_INTEGER v;
+                v.LowPart = ft.dwLowDateTime;
+                v.HighPart = ft.dwHighDateTime;
+                return static_cast<double>(v.QuadPart) / 1.0e7;
+            };
+            return toSec(u) + toSec(k);
+        }
+#endif
+        return 0.0;
+    }
+};
+
 std::uint64_t currentPeakRss()
 {
 #ifdef _WIN32
@@ -155,6 +183,45 @@ std::uint64_t currentPeakRss()
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, pmc.cb)) { return pmc.PeakWorkingSetSize; }
 #endif
     return 0;
+}
+
+// 进程自身的 CPU 秒 / 墙钟秒（自进程创建累计）。
+// run() 的 totalSeconds 覆盖不到 main.cpp 里的 osgDB::readNodeFile，
+// 335 MB 档那 32 % "无归属 CPU 秒"的嫌疑就在这段外面；把进程读数写进报告，
+// 归属算术才不需要外部 PowerShell 监视器（它有 1 s 级采样滞后）。
+struct ProcessTimes {
+    double cpuSeconds = 0.0;
+    double wallSeconds = 0.0;
+    double userSeconds = 0.0;
+    double kernelSeconds = 0.0;
+};
+
+ProcessTimes currentProcessTimes()
+{
+    ProcessTimes pt;
+#ifdef _WIN32
+    FILETIME creation, exitT, kernel, user;
+    if (GetProcessTimes(GetCurrentProcess(), &creation, &exitT, &kernel, &user))
+    {
+        const auto toSec = [](const FILETIME& ft) {
+            ULARGE_INTEGER u;
+            u.LowPart = ft.dwLowDateTime;
+            u.HighPart = ft.dwHighDateTime;
+            return static_cast<double>(u.QuadPart) / 1.0e7;   // 100 ns 单位
+        };
+        pt.userSeconds = toSec(user);
+        pt.kernelSeconds = toSec(kernel);
+        pt.cpuSeconds = pt.userSeconds + pt.kernelSeconds;
+        FILETIME now;
+        SYSTEMTIME st;
+        GetSystemTime(&st);
+        if (SystemTimeToFileTime(&st, &now))
+        {
+            pt.wallSeconds = toSec(now) - toSec(creation);
+        }
+    }
+#endif
+    return pt;
 }
 
 // OSG/glTF 是 Y-up，Cesium/3D Tiles 的 box 是 Z-up： (x, y, z) -> (x, -z, y)
@@ -417,9 +484,27 @@ ProductionPipeline::ProductionPipeline(const ProductionProfile& profile)
 {
 }
 
+std::vector<unsigned> ProductionPipeline::textureDownscaleLadder(unsigned textureMaxEdgePx)
+{
+    std::vector<unsigned> rungs;
+    static const unsigned kCaps[] = { 256u, 128u, 64u };
+    for (unsigned cap : kCaps)
+    {
+        if (cap < proxyTextureFloorEdgePx) { break; }
+        // 代理首轮已按 textureMaxEdgePx 压过，比它更宽（或相等）的档位是重写浪费。
+        // 判据只能用显式传入的本瓦片上限，不能用钳制后的 topts：叶瓦片不传上限，
+        // topts 仍是全局 -tw/-th（2048），拿它比较会让阶梯对叶瓦片永远空转，
+        // 等于悄悄废掉手册 7.3 的超限兜底。
+        if (textureMaxEdgePx > 0 && cap >= textureMaxEdgePx) { continue; }
+        rungs.push_back(cap);
+    }
+    return rungs;
+}
+
 ProductionPipeline::WriteOutcome
 ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
-                                 bool isInstanceTile)
+                                 bool isInstanceTile, unsigned textureMaxEdgePx,
+                                 bool foldTextureTransform)
 {
     WriteOutcome out;
     if (!node) { out.error = "null node"; return out; }
@@ -440,8 +525,40 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     }
     // 纹理 / 材质优化（图集 + KTX2）
     GltfOptimizer optimizer;
-    optimizer.setGltfTextureOptimizationOptions(_opt.textureOptions);
+    GltfOptimizer::GltfTextureOptimizationOptions topts = _opt.textureOptions;
+    if (textureMaxEdgePx > 0)
+    {
+        // 内节点代理（远景 LOD）：单张纹理边长压到 proxyTextureMaxEdgePx。
+        // 本瓦片之外的瓦片绝不能被这次降分辨率带小：源模型里同一张贴图会被多个
+        // 瓦片共用，而 GltfOptimizer 克隆 StateSet 只到 osg::Texture 层，
+        // osg::Image 依旧是同一份（实测），所以隔离靠的是
+        // GltfOptimizer::resizeImageToPowerOfTwo 的"改像素先私有化"（A-48）。
+        topts.maxTextureWidth = std::min(topts.maxTextureWidth, static_cast<int>(textureMaxEdgePx));
+        topts.maxTextureHeight = std::min(topts.maxTextureHeight, static_cast<int>(textureMaxEdgePx));
+    }
+    optimizer.setGltfTextureOptimizationOptions(topts);
     optimizer.optimize(work.get(), optBits);
+
+    // A-51 方案 A：写出前把图集子矩形折进 TEXCOORD_0（只对代理开）。
+    // uvBackup 跨整个 writeContent 存活：纹理超限阶梯会在同一个节点上再跑一次
+    // 图集，那一轮必须看到原始 UV，所以每次 optimize 之前先还原、每次写盘之前重折。
+    GltfOptimizer::TextureUvBackup uvBackup;
+    // 折叠态不能活过本瓦片。图集克隆只到 osg::Texture 层，同一份几何/贴图和后续
+    // 瓦片共用（见上面 A-48 注释），而图集装配判据正包含变换 enable 键与 |uv|>1
+    // 平铺判断。折叠把 UV 压进 [0,1]、把键清零，若让它逃进下一个瓦片的 optimize()，
+    // 那张本该独立导出的 REPEAT 贴图就会被错收进图集——产物级实测：60 个代理里有
+    // 4 页图集换了内容、2 个根本没走折叠的叶瓦片跟着变了字节。
+    struct FoldScopeGuard
+    {
+        GltfOptimizer::TextureUvBackup& backup;
+        ~FoldScopeGuard() { GltfOptimizer::restoreFoldedTextureUvs(backup); }
+    } foldScopeGuard{ uvBackup };
+    const auto foldBeforeWrite = [&]() {
+        if (!foldTextureTransform) { return; }
+        const unsigned folded =
+            GltfOptimizer::foldTextureTransformsIntoUv(work.get(), uvBackup);
+        TRACE("foldTextureTransformsIntoUv folded=" << folded);
+    };
 
     // 每个 tile 写出前重建 tile-local batch index（手册 5.5 第 4 点）
     BatchIdVisitor biv;
@@ -494,6 +611,7 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
     const std::string dir = osgDB::getFilePath(abs);
     if (!dir.empty()) { osgDB::makeDirectory(dir); }
+    foldBeforeWrite();
     if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
     {
         out.error = "writeNodeFile failed: " + abs;
@@ -510,22 +628,28 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     // 此时唯一可压的维度是纹理分辨率，逐级降采样重写直到达标或到下限。
     if (out.bytes > _profile.budget.maxTileContentBytes)
     {
-        static const unsigned texCaps[] = { 256u, 128u, 64u };
-        for (unsigned cap : texCaps)
+        for (unsigned cap : textureDownscaleLadder(textureMaxEdgePx))
         {
             TRACE("rewriteWithSmallerTextures cap=" << cap << " curBytes=" << out.bytes);
+            // 折叠态的 UV 绝不能进入下一轮图集：先装回原始 TEXCOORD_0，
+            // 否则子矩形变换叠两次，而且 |uv|>1 闸门会把已折叠的 [0,1] UV 当成
+            // 不平铺，把本该独立导出的 REPEAT 贴图错收进图集。
+            GltfOptimizer::restoreFoldedTextureUvs(uvBackup);
             ClearTextureExportCacheVisitor clr;
             work->accept(clr);
 
             GltfOptimizer optimizer2;
-            GltfOptimizer::GltfTextureOptimizationOptions topts = _opt.textureOptions;
-            topts.maxTextureWidth = std::min(topts.maxTextureWidth, static_cast<int>(cap));
-            topts.maxTextureHeight = std::min(topts.maxTextureHeight, static_cast<int>(cap));
-            topts.maxTextureAtlasWidth = std::min(topts.maxTextureAtlasWidth, static_cast<int>(cap));
-            topts.maxTextureAtlasHeight = std::min(topts.maxTextureAtlasHeight, static_cast<int>(cap));
-            optimizer2.setGltfTextureOptimizationOptions(topts);
+            // 从首轮的实际档位继续折半（代理首轮已经被 proxyTextureMaxEdgePx 压过），
+            // 图集尺寸一并跟上：图小了就无需大 atlas，否则 atlas 页数不降反升。
+            GltfOptimizer::GltfTextureOptimizationOptions ladder = topts;
+            ladder.maxTextureWidth = std::min(ladder.maxTextureWidth, static_cast<int>(cap));
+            ladder.maxTextureHeight = std::min(ladder.maxTextureHeight, static_cast<int>(cap));
+            ladder.maxTextureAtlasWidth = std::min(ladder.maxTextureAtlasWidth, static_cast<int>(cap));
+            ladder.maxTextureAtlasHeight = std::min(ladder.maxTextureAtlasHeight, static_cast<int>(cap));
+            optimizer2.setGltfTextureOptimizationOptions(ladder);
             optimizer2.optimize(work.get(), optBits);
 
+            foldBeforeWrite();
             if (!osgDB::writeNodeFile(*work.get(), abs, _opt.writeOptions))
             {
                 out.error = "writeNodeFile failed (texture rewrite): " + abs;
@@ -540,10 +664,11 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
         }
     }
 
-    // 说明：超限且不可再压的内节点代理不在这里剥纹理——写时剥离需要改动
-    // 与源模型共享的 StateSet（materialize 复用），并行构建下会破坏引用计数
-    // （v8-v10 段错误根因）。内节点代理的超预算问题在 processTileHeavy 里
-    // 以"构建时就建成无纹理版"解决，见 FarLodTextureStripper。
+    // 说明：内节点代理的纹理在这里按 proxyTextureMaxEdgePx 降分辨率（见上面
+    // textureMaxEdgePx），仍然超限则由上面的阶梯继续折半；剥掉整张纹理只在
+    // processTileHeavy 里、构建阶段用私有 StateSet 做（写时剥离要改动与源模型
+    // 共享的 StateSet，并行构建下会破坏引用计数，v8-v10 段错误根因），
+    // 见 FarLodTextureStripper。
     out.ok = true;
     return out;
 }
@@ -585,6 +710,9 @@ ProductionPipeline::TileHeavyWork
 ProductionPipeline::processTileHeavy(int pn, int id)
 {
     TileHeavyWork w;
+    const Timer tHeavy;
+    const CpuTimer cHeavy;
+    const TileTaskScope taskScope;   // 让误差评估器知道现在有几个瓦片在并行抢核
     const PartitionNode& P = _partitioner->nodes[pn];
     std::vector<std::uint32_t> items;
     TRACE("buildB3dm pn=" << pn << " children=" << P.children.size());
@@ -609,15 +737,26 @@ ProductionPipeline::processTileHeavy(int pn, int id)
     {
         // 叶保留原始高精度几何，只允许坐标规范化与无损重建（手册 7.4）
         TRACE("leaf materialize pn=" << pn << " items=" << items.size());
+        const Timer tMaterialize;
+        const CpuTimer cMaterialize;
         w.content = _model.materialize(_prims, items, true);
+        w.microMaterializeSec = tMaterialize.elapsed();
+        w.microMaterializeCpuSec = cMaterialize.elapsed();
         TRACE("leaf materialize done");
     }
     else
     {
         ProxyMeshBuilder builder(_model, _profile, _prims);
         TRACE("proxy build pn=" << pn << " items=" << items.size());
+        const Timer tProxyBuild;
+        const CpuTimer cProxyBuild;
         const ProxyResult pr = builder.build(items, _profile.budget.targetTrianglesPerTile,
                                              !_profile.strictIdentity);
+        w.microProxyBuildSec = tProxyBuild.elapsed();
+        w.microProxyBuildCpuSec = cProxyBuild.elapsed();
+        w.microProxySimplifySec = pr.metrics.simplifySeconds;
+        w.microProxyAggregateSec = pr.metrics.aggregateSeconds;
+        w.microAggregateCandidates = pr.metrics.aggregateCandidates;
         // 注意：聚合 fallback 耗尽后 pr.node 仍是最后一次聚合结果（有效），
         // failure 已置位。只检查 node.valid() 会让超限代理漏网到写出阶段
         // （lugouqiao_v11 实测 7 个瓦片 14~50 万三角形漏过 selfValidate 之前的
@@ -626,6 +765,8 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         {
             w.failure = "proxy generation failed for node " + std::to_string(pn)
                       + ": " + (pr.failure.empty() ? "invalid proxy node" : pr.failure);
+            w.microHeavySec = tHeavy.elapsed();
+            w.microHeavyCpuSec = cHeavy.elapsed();
             return w;
         }
         w.content = pr.node;
@@ -633,40 +774,50 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         w.aggregate = pr.aggregate;
         w.aggregateSources = pr.aggregateSources;
 
-        // 内节点代理大小预估：几何按目标三角形数近似，纹理取子树全部纹理字节
-        // （代理会携带子树的所有材质纹理，这是根/中层瓦片超限的主因）。
-        // 预估超限 → 构建时直接建成无纹理版（远景 LOD 无纹理是常规做法），
-        // 通过 w.texturesDropped 上报记 warning，不静默缺内容。
-        // 必须在构建后立刻去纹理且只动私有 StateSet——若留到写出阶段剥离，
-        // 会改动与源模型共享的 StateSet（v8-v10 段错误根因），见
-        // FarLodTextureStripper 注释。
-        std::uint64_t texBytes = 0;
-        std::uint64_t allBytes = 0;
-        for (std::uint32_t itemId : items)
+        // 内节点代理（远景 LOD）纹理策略：先降分辨率，装不下才去纹理。
+        // 判据用 ProxyMeshBuilder 在**建好的代理节点**上量的去重估算：同一张
+        // 纹理被 N 个 primitive 引用只算一次。旧实现在这里用
+        // Σ PrimRef.byteEstimate 逐 primitive 累加纹理字节，共享纹理被重复计数，
+        // longxiang 实测 42/42 代理被判超限 → 整片退化成无纹理灰模（顶层瓦片
+        // 无贴图，视觉验收不接受）。
+        // 降分辨率本身不在构建期做：代理的 StateSet 与源模型共享，构建期改图
+        // 会波及其他 worker 正在读的原始模型。改为给写出阶段传
+        // proxyTextureMaxEdgePx，由 GltfOptimizer 缩放——它克隆 StateSet 只到
+        // osg::Texture 层，osg::Image 仍是共享的，所以隔离依赖
+        // resizeImageToPowerOfTwo 的"改像素先私有化"（A-48），不是靠克隆本身。
+        // 上限只有比全局 -tw/-th 更紧时才真的起作用：-ptw >= -tw 时它是空操作，
+        // 把 60 个代理全记成"降过分辨率"会让报告说假话。
+        const int globalTextureCap = std::min(_opt.textureOptions.maxTextureWidth,
+                                              _opt.textureOptions.maxTextureHeight);
+        w.texturesCappedPx = static_cast<int>(_profile.budget.proxyTextureMaxEdgePx) >= globalTextureCap
+                                 ? 0u : _profile.budget.proxyTextureMaxEdgePx;
+        if (!pr.fitsWithFloorTextures)
         {
-            if (itemId >= _prims.size()) { continue; }
-            const PrimRef& p = _prims[itemId];
-            allBytes += p.byteEstimate;
-            const std::uint64_t geoBytes =
-                p.vertexCount * 32ull + static_cast<std::uint64_t>(p.tris.size()) * 160ull;
-            texBytes += (p.byteEstimate > geoBytes) ? (p.byteEstimate - geoBytes) : 0ull;
-        }
-        const std::uint64_t proxyEstimate =
-            std::min<std::uint64_t>(allBytes,
-                static_cast<std::uint64_t>(_profile.budget.targetTrianglesPerTile) * 200ull
-                    + texBytes);
-        if (pr.needsTextureless || proxyEstimate > _profile.budget.maxTileContentBytes)
-        {
-            TRACE("proxy far-lod detexture pn=" << pn << " estimate=" << proxyEstimate);
+            // 连下限分辨率都装不下（几何本身吃掉大半预算）：最后手段，
+            // 构建时直接建成无纹理版，通过 w.texturesDropped 上报记 warning。
+            TRACE("proxy far-lod detexture pn=" << pn
+                  << " floor textures do not fit, textures at floor are the last resort");
             FarLodTextureStripper stripper;
             w.content->accept(stripper);
+            w.texturesCappedPx = 0;
             w.texturesDropped = true;
+        }
+        else
+        {
+            TRACE("proxy far-lod texture cap pn=" << pn << " capPx=" << w.texturesCappedPx);
         }
     }
 
-    if (!w.content.valid()) { return w; }
+    if (!w.content.valid())
+    {
+        w.microHeavySec = tHeavy.elapsed();
+        w.microHeavyCpuSec = cHeavy.elapsed();
+        return w;
+    }
 
     // ---- 几何误差评估（手册 9）----
+    const Timer tCollect;
+    const CpuTimer cCollect;
     std::vector<SourceModel::Triangle> srcTris;
     TRACE("collectTriangles pn=" << pn);
     _model.collectTriangles(_prims, items, srcTris);
@@ -674,6 +825,8 @@ ProductionPipeline::processTileHeavy(int pn, int id)
     TriangleSoup src, prox;
     for (const SourceModel::Triangle& t : srcTris) { src.add(t.a, t.b, t.c); }
     collectTrianglesFromNode(w.content.get(), prox);
+    w.microCollectSec = tCollect.elapsed();
+    w.microCollectCpuSec = cCollect.elapsed();
     if (isLeaf && !_opt.vertexCompression)
     {
         // 叶保留原始表面：只有确认没有任何有损变换时才可写 0
@@ -686,7 +839,14 @@ ProductionPipeline::processTileHeavy(int pn, int id)
     {
         GeometryErrorEvaluator ev(_profile.error);
         TRACE("evaluate pn=" << pn << " srcT=" << src.size() << " proxT=" << prox.size());
+        const Timer tEval;
+        const CpuTimer cEval;
         const ErrorResult er = ev.evaluate(src, prox);
+        w.microEvaluateSec = tEval.elapsed();
+        w.microEvaluateCpuSec = cEval.elapsed() + er.workerCpuSeconds;
+        w.microEvaluateWorkerCpuSec = er.workerCpuSeconds;
+        w.microEvaluateSamples = er.samplesUsed;
+        w.microBvhBuildSec = er.bvhBuildSeconds;
         TRACE("evaluate done");
         w.measuredProxyErrorM = er.geometricErrorM();
         w.errorLowerM = er.lowerBoundM;
@@ -696,6 +856,8 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         w.boundLoose = er.boundLoose;
         w.p95M = er.p95M;
     }
+    w.microHeavySec = tHeavy.elapsed();
+    w.microHeavyCpuSec = cHeavy.elapsed();
     return w;
 }
 
@@ -703,6 +865,39 @@ ProductionPipeline::processTileHeavy(int pn, int id)
 void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
 {
     TRACE("finalize id=" << id << " begin pn=" << pn);
+    const Timer tFinalize;
+    const CpuTimer cFinalize;
+    // 细分仪表：先落账，即使这个瓦片随后降级/失败
+    _microHeavySec += w.microHeavySec;
+    _microHeavyCpuSec += w.microHeavyCpuSec;
+    _microMaterializeSec += w.microMaterializeSec;
+    _microMaterializeCpuSec += w.microMaterializeCpuSec;
+    _microProxyBuildSec += w.microProxyBuildSec;
+    _microProxyBuildCpuSec += w.microProxyBuildCpuSec;
+    _microProxySimplifySec += w.microProxySimplifySec;
+    _microProxyAggregateSec += w.microProxyAggregateSec;
+    _microAggregateCandidates += w.microAggregateCandidates;
+    _microCollectSec += w.microCollectSec;
+    _microCollectCpuSec += w.microCollectCpuSec;
+    _microEvaluateSec += w.microEvaluateSec;
+    _microEvaluateCpuSec += w.microEvaluateCpuSec;
+    _microEvaluateWorkerCpuSec += w.microEvaluateWorkerCpuSec;
+    _microEvaluateSamples += w.microEvaluateSamples;
+    _microBvhBuildSec += w.microBvhBuildSec;
+    // 逐瓦片一份（A-47）：阶段级 micro_* 只有总和，看不出关键路径在哪个瓦片上
+    _tiles[id].timing.heavySec = w.microHeavySec;
+    _tiles[id].timing.heavyCpuSec = w.microHeavyCpuSec;
+    _tiles[id].timing.materializeSec = w.microMaterializeSec;
+    _tiles[id].timing.materializeCpuSec = w.microMaterializeCpuSec;
+    _tiles[id].timing.proxyBuildSec = w.microProxyBuildSec;
+    _tiles[id].timing.proxyBuildCpuSec = w.microProxyBuildCpuSec;
+    _tiles[id].timing.collectSec = w.microCollectSec;
+    _tiles[id].timing.collectCpuSec = w.microCollectCpuSec;
+    _tiles[id].timing.evaluateSec = w.microEvaluateSec;
+    _tiles[id].timing.evaluateCpuSec = w.microEvaluateCpuSec;
+    _tiles[id].timing.evaluateWorkerCpuSec = w.microEvaluateWorkerCpuSec;
+    _tiles[id].timing.bvhBuildSec = w.microBvhBuildSec;
+    _tiles[id].timing.evaluateSamples = w.microEvaluateSamples;
     // 身份与覆盖范围先落账：即使这个瓦片随后降级成"无内容"，它覆盖的源
     // feature 范围仍然要能被报告和自检看到（A-31 的"子树仍然覆盖"不能只
     // 活在 warning 文案里）。
@@ -721,12 +916,20 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         if (w.leaf)
         {
             _failures.push_back(w.failure);
+            _microFinalizeSec += tFinalize.elapsed();
+            _microFinalizeCpuSec += cFinalize.elapsed();
+            _tiles[id].timing.finalizeSec = tFinalize.elapsed();
+            _tiles[id].timing.finalizeCpuSec = cFinalize.elapsed();
             return;
         }
         _warnings.push_back(w.failure + " -> tile carries no far-LOD content, children "
                             "still cover " + std::to_string(scopeCount)
                             + " source features");
         ++_report.proxySkippedCount;
+        _microFinalizeSec += tFinalize.elapsed();
+        _microFinalizeCpuSec += cFinalize.elapsed();
+        _tiles[id].timing.finalizeSec = tFinalize.elapsed();
+        _tiles[id].timing.finalizeCpuSec = cFinalize.elapsed();
         return;
     }
 
@@ -738,7 +941,15 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         const std::string relUri = std::string("tiles") + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
                                  + "t" + std::to_string(id) + ".b3dm";
         TRACE("writeContent pn=" << pn);
-        WriteOutcome wo = writeContent(content.get(), relUri, false);
+        const Timer tWrite;
+        const CpuTimer cWrite;
+        WriteOutcome wo = writeContent(content.get(), relUri, false, w.texturesCappedPx,
+                                       !isLeaf);
+        const double writeSec = tWrite.elapsed();
+        _microWriteSec += writeSec;
+        _microWriteCpuSec += cWrite.elapsed();
+        _tiles[id].timing.writeSec = writeSec;
+        _tiles[id].timing.writeCpuSec = cWrite.elapsed();
         TRACE("writeContent done");
         if (!wo.ok)
         {
@@ -761,8 +972,14 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             if (w.texturesDropped)
             {
                 _warnings.push_back("tile " + std::to_string(id) +
-                                    ": far-LOD proxy built without textures to fit budget (bytes=" +
+                                    ": far-LOD proxy built without textures, even the "
+                                    + std::to_string(proxyTextureFloorEdgePx)
+                                    + "px texture floor does not fit budget (bytes=" +
                                     std::to_string(wo.bytes) + ")");
+            }
+            else if (w.texturesCappedPx > 0)
+            {
+                ++_report.proxyTextureCappedCount;
             }
             const bool overBytes = wo.bytes > _profile.budget.maxTileContentBytes;
             const bool overTris = wo.triangles > _profile.budget.maxTrianglesPerTile;
@@ -850,6 +1067,11 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             }
         }
     }
+    const double finalizeSec = tFinalize.elapsed();
+    _microFinalizeSec += finalizeSec;
+    _microFinalizeCpuSec += cFinalize.elapsed();
+    _tiles[id].timing.finalizeSec = finalizeSec;
+    _tiles[id].timing.finalizeCpuSec = cFinalize.elapsed();
     TRACE("finalize id=" << id << " end");
 }
 
@@ -883,15 +1105,42 @@ int ProductionPipeline::buildB3dmTree(int rootPn)
 
     std::size_t next = 0;
     std::map<int, std::future<TileHeavyWork>> inflight;  // key = pn
+    std::map<int, TileHeavyWork> ready;                  // key = tile id
     auto submit = [this, &inflight, &idToPn](int pn) {
         const int id = idToPn[pn];
         inflight.emplace(pn, std::async(std::launch::async, [this, pn, id]() {
             return processTileHeavy(pn, id);
         }));
     };
-    while (inflight.size() < window && next < pns.size()) { submit(pns[next++]); }
+    // 在制品总量 = 正在算的 + 算完等写出的，恒不超过窗口大小。
+    // 只按 inflight 计窗口的话，乱序收割会把已完成瓦片的中间产物（物化节点、
+    // 三角汤）无限堆在 ready 里，等一个大瓦片的同时内存能涨到整个模型量级。
+    auto refill = [&]() {
+        while (inflight.size() + ready.size() < window && next < pns.size())
+        {
+            submit(pns[next++]);
+        }
+    };
+    // 乱序收割：把已经算完的任务挪出 inflight，腾出窗口槽位。
+    // 必须及时收割，否则已完成的 future 仍占着槽位，worker 空转、
+    // 并发度随收割进度一路掉下去（v18 实测 8 job 平均只吃到 3.4 核）。
+    auto harvestReady = [&]() {
+        std::size_t moved = 0;
+        for (auto it = inflight.begin(); it != inflight.end(); )
+        {
+            if (it->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+            {
+                ready.emplace(idToPn[it->first], it->second.get());
+                it = inflight.erase(it);
+                ++moved;
+            }
+            else { ++it; }
+        }
+        return moved;
+    };
+    refill();
 
-    // 主线程按 tile id 升序收结果并串行写出，保证与串行版完全一致的
+    // 主线程按 tile id 升序写出，保证与串行版完全一致的
     // _mapper.addTile 顺序、report 聚合顺序与 staging 文件名。
     // 注意：提交顺序按工作量降序，而收集按 id 升序——id 靠前的小任务
     // 可能还没进窗口，此时主线程直接同步执行它（窗口任务照常并行），
@@ -899,17 +1148,22 @@ int ProductionPipeline::buildB3dmTree(int rootPn)
     for (int id = 0; id < static_cast<int>(_tiles.size()); ++id)
     {
         const int pn = idToPn[id];
-        auto it = inflight.find(pn);
-        if (it == inflight.end())
+        while (ready.find(id) == ready.end())
         {
-            TileHeavyWork w = processTileHeavy(pn, id);
-            finalizeTileFromWork(pn, id, std::move(w));
-            continue;
+            if (inflight.find(pn) == inflight.end())
+            {
+                ready.emplace(id, processTileHeavy(pn, id));
+                break;
+            }
+            if (harvestReady() > 0) { refill(); continue; }
+            auto it = inflight.find(pn);
+            if (it != inflight.end()) { it->second.wait_for(std::chrono::milliseconds(20)); }
         }
-        TileHeavyWork w = it->second.get();
-        inflight.erase(it);
+        auto rit = ready.find(id);
+        TileHeavyWork w = std::move(rit->second);
+        ready.erase(rit);
         finalizeTileFromWork(pn, id, std::move(w));
-        if (next < pns.size()) { submit(pns[next++]); }
+        refill();
     }
     return rootId;
 }
@@ -1013,7 +1267,14 @@ int ProductionPipeline::buildInstanceTree()
             _tiles[childId].id = childId;
             const std::string relUri = std::string("tiles") + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
                                      + "i" + std::to_string(childId) + ".i3dm";
+            const Timer tInstWrite;
+            const CpuTimer cInstWrite;
             WriteOutcome wo = writeContent(group.get(), relUri, true);
+            const double instWriteSec = tInstWrite.elapsed();
+            _microWriteSec += instWriteSec;
+            _microWriteCpuSec += cInstWrite.elapsed();
+            _tiles[childId].timing.writeSec = instWriteSec;
+            _tiles[childId].timing.writeCpuSec = cInstWrite.elapsed();
             const bool overBytes = wo.bytes > _profile.budget.maxTileContentBytes;
             const bool overTris = wo.triangles > _profile.budget.maxTrianglesPerTile;
             if (wo.ok && !overBytes && !overTris)
@@ -1092,6 +1353,8 @@ void ProductionPipeline::assignGeometricError(int tile)
 bool ProductionPipeline::run(osg::Node* input, const Options& opt)
 {
     Timer total;
+    // run() 之前发生了什么（readNodeFile / DLL 初始化 / 参数解析）只有进程读数知道
+    const ProcessTimes ptBeforeRun = currentProcessTimes();
     _opt = opt;
     // 暂存目录：<outputDir>/.wb-staging（可在 Options 里覆盖）
     if (_opt.stagingDir.empty())
@@ -1109,8 +1372,14 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         return false;
     }
 
+    // 报告里的 profile 必须是**生效**的那份：ConversionReport::profile 默认是
+    // 硬编码缺省值，不赋值的话 CLI 覆盖（-tol/-ptw/预算）在产物里一律显示成缺省，
+    // 验收时无法从 conversion-report.json 判断这批产物到底用了什么参数。
+    _report.profile = _profile;
+
     // ---- import / normalize ----
     Timer tImport;
+    CpuTimer cImport;
     TRACE("model.build");
     if (!_model.build(input))
     {
@@ -1118,15 +1387,19 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         return false;
     }
     _report.addStage("import_normalize", tImport.elapsed());
+    _report.addStage("import_normalize_cpu", cImport.elapsed());
     _report.sourceFeatureCount = _model.featureCount();
 
     Timer tSeam;
+    CpuTimer cSeam;
     TRACE("seams");
     _seams.build(_model);
     _report.addStage("seam_registry", tSeam.elapsed());
+    _report.addStage("seam_registry_cpu", cSeam.elapsed());
 
     // ---- partition ----
     Timer tPart;
+    CpuTimer cPart;
     TRACE("partition");
     _prims = _model.prims;
     _partitioner = new SpatialPartitioner(_model, _profile, _prims);
@@ -1143,9 +1416,31 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         _failures.push_back("spatial partition coverage check failed");
     }
     _report.addStage("partition", tPart.elapsed());
+    _report.addStage("partition_cpu", cPart.elapsed());
 
     // ---- proxy / encode / error ----
     Timer tBuild;
+    _microHeavySec = 0.0;
+    _microHeavyCpuSec = 0.0;
+    _microMaterializeCpuSec = 0.0;
+    _microProxyBuildCpuSec = 0.0;
+    _microCollectCpuSec = 0.0;
+    _microEvaluateCpuSec = 0.0;
+    _microEvaluateWorkerCpuSec = 0.0;
+    _microWriteCpuSec = 0.0;
+    _microFinalizeCpuSec = 0.0;
+    _microMaterializeSec = 0.0;
+    _microProxyBuildSec = 0.0;
+    _microWriteSec = 0.0;
+    _microProxySimplifySec = 0.0;
+    _microProxyAggregateSec = 0.0;
+    _microEvaluateSec = 0.0;
+    _microCollectSec = 0.0;
+    _microAggregateCandidates = 0;
+    _microEvaluateSamples = 0;
+    _microBvhBuildSec = 0.0;
+    _microFinalizeSec = 0.0;
+    GltfOptimizer::resetTextureExportStats();
     TRACE("buildTrees");
     _tiles.clear();
     const int b3dmRoot = _prims.empty() ? -1 : buildB3dmTree(rootPn);
@@ -1153,6 +1448,62 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     const int i3dmRoot = buildInstanceTree();
     TRACE("i3dmRoot=" << i3dmRoot);
     _report.addStage("proxy_encode_error", tBuild.elapsed());
+    // 细分仪表（micro_* 前缀）：stages 只放秒数，层级关系求和时只能取一层——
+    //   micro_total           = 各瓦片 processTileHeavy 全程（并行侧总 CPU 秒）
+    //     ├─ micro_materialize + micro_proxy_build + micro_collect_triangles + micro_evaluate
+    //     │    （micro_proxy_simplify / micro_proxy_aggregate 在 proxy_build 之内，
+    //     │      micro_bvh_build 在 micro_evaluate 之内）
+    //     └─ 残差 = 身份范围收集 / 代理字节预估 / 去纹理等未单列的小段
+    //   micro_finalize_encode = 主线程收尾全程，micro_write 是其中的编码写出段
+    _report.addStage("micro_total", _microHeavySec);
+    _report.addStage("micro_materialize", _microMaterializeSec);
+    _report.addStage("micro_proxy_build", _microProxyBuildSec);
+    _report.addStage("micro_proxy_simplify", _microProxySimplifySec);
+    _report.addStage("micro_proxy_aggregate", _microProxyAggregateSec);
+    _report.addStage("micro_evaluate", _microEvaluateSec);
+    _report.addStage("micro_collect_triangles", _microCollectSec);
+    _report.addStage("micro_bvh_build", _microBvhBuildSec);
+    _report.addStage("micro_finalize_encode", _microFinalizeSec);
+    _report.addStage("micro_write", _microWriteSec);
+    // 同一层的 CPU 秒口径（AUDIT A-47 闭合判据）。壁钟那套在并行下必然小于
+    // 进程 CPU 秒：8 个瓦片同跑，Σ 壁钟只算 1 份工作量。
+    // micro_total_cpu = Σ(瓦片调用线程 CPU 秒) + Σ(节点内 worker 线程 CPU 秒)，
+    // 和壁钟层一样是"外层包住内层"的关系：micro_evaluate_cpu 是它的一个子集
+    // （evaluate 段的调用线程 + worker），micro_finalize_encode_cpu 与它同层。
+    _report.addStage("micro_total_cpu", _microHeavyCpuSec + _microEvaluateWorkerCpuSec);
+    _report.addStage("micro_materialize_cpu", _microMaterializeCpuSec);
+    _report.addStage("micro_proxy_build_cpu", _microProxyBuildCpuSec);
+    _report.addStage("micro_evaluate_cpu", _microEvaluateCpuSec);
+    _report.addStage("micro_evaluate_worker_cpu", _microEvaluateWorkerCpuSec);
+    _report.addStage("micro_collect_triangles_cpu", _microCollectCpuSec);
+    _report.addStage("micro_finalize_encode_cpu", _microFinalizeCpuSec);
+    _report.addStage("micro_write_cpu", _microWriteCpuSec);
+    // 第三方线程的 CPU 秒（AUDIT A-47 判据①剩下的那块）：写 .ktx2 时 libktx 会
+    // 自起 threadCount = hardware_concurrency 个 basis 压缩线程
+    // （src/osgdb_ktx/LoadTextureKTX.cpp:630），上面所有 micro_* 都是**调用线程**
+    // 的 CPU 秒，一秒也记不到它们。process_cpu 是进程口径的差值，
+    // 与 thread_cpu 相减就是这批第三方线程的量（含写出期间并行瓦片的 worker 秒，
+    // 因此是上界）。
+    const GltfOptimizer::TextureExportStats texExport = GltfOptimizer::textureExportStats();
+    _report.addStage("micro_texture_export", texExport.wallSeconds);
+    _report.addStage("micro_texture_export_thread_cpu", texExport.threadCpuSeconds);
+    _report.addStage("micro_texture_export_process_cpu", texExport.processCpuSeconds);
+    _report.addCounter("micro_texture_export_files", texExport.files);
+    // 计数走 counters：以前塞在 stages 里和秒数共用 "seconds" 字段，
+    // 按秒求和会把 4.4 亿候选当成 4.4 亿秒加进已归属时间（AUDIT A-47）。
+    _report.addCounter("micro_aggregate_candidates", _microAggregateCandidates);
+    _report.addCounter("micro_evaluate_samples", _microEvaluateSamples);
+
+    // 远景代理纹理降分辨率是**成片**发生的（每个内节点代理一次），逐瓦片
+    // warning 会把真正需要看的告警淹掉：这里只出一条汇总，逐瓦片明细在
+    // report.proxyTextureCappedCount + 瓦片 timing 里。
+    if (_report.proxyTextureCappedCount > 0)
+    {
+        _warnings.push_back("far-LOD proxies: " + std::to_string(_report.proxyTextureCappedCount)
+                            + " inner-node tiles written with textures capped at <= "
+                            + std::to_string(_profile.budget.proxyTextureMaxEdgePx)
+                            + " px (leaf tiles keep the -tw/-th resolution)");
+    }
 
     // ---- 组装根 ----
     if (b3dmRoot >= 0 && i3dmRoot >= 0)
@@ -1225,6 +1576,16 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
 
     TRACE("stats: finalize report (rss/seconds)");
     _report.totalSeconds = total.elapsed();
+    const ProcessTimes ptAtReport = currentProcessTimes();
+    _report.processWallSeconds = ptAtReport.wallSeconds;
+    _report.processCpuSeconds = ptAtReport.cpuSeconds;
+    _report.processUserSeconds = ptAtReport.userSeconds;
+    _report.processKernelSeconds = ptAtReport.kernelSeconds;
+    // run() 之前那一段（main.cpp 的 osgDB::readNodeFile 是主体）单独成一项。
+    // 那时只有主线程在跑，所以 CPU 秒就是它的真实用量；wall 与 cpu 都记，
+    // 归属求和用 cpu 那一项（wall 里含 IO 等待，加进 CPU 秒账里会算重）。
+    _report.addStage("input_read", ptBeforeRun.wallSeconds);
+    _report.addStage("input_read_cpu", ptBeforeRun.cpuSeconds);
     _report.peakRssBytes = currentPeakRss();
     _report.warnings = _warnings;
     _report.errors = _failures;
@@ -1339,6 +1700,31 @@ bool ProductionPipeline::writeManifest(const std::string& path) const
     return true;
 }
 
+json TileTimings::toJson() const
+{
+    // 只到 0.1 ms：仪表是给人读占比的，多余位数只会让 report 变大且制造虚假精度
+    const auto r = [](double s) { return std::round(s * 1.0e4) / 1.0e4; };
+    return json{
+        {"heavySec", r(heavySec)},
+        {"materializeSec", r(materializeSec)},
+        {"proxyBuildSec", r(proxyBuildSec)},
+        {"collectSec", r(collectSec)},
+        {"evaluateSec", r(evaluateSec)},
+        {"bvhBuildSec", r(bvhBuildSec)},
+        {"writeSec", r(writeSec)},
+        {"finalizeSec", r(finalizeSec)},
+        {"heavyCpuSec", r(heavyCpuSec)},
+        {"materializeCpuSec", r(materializeCpuSec)},
+        {"proxyBuildCpuSec", r(proxyBuildCpuSec)},
+        {"collectCpuSec", r(collectCpuSec)},
+        {"evaluateCpuSec", r(evaluateCpuSec)},
+        {"evaluateWorkerCpuSec", r(evaluateWorkerCpuSec)},
+        {"writeCpuSec", r(writeCpuSec)},
+        {"finalizeCpuSec", r(finalizeCpuSec)},
+        {"evaluateSamples", evaluateSamples}
+    };
+}
+
 bool ProductionPipeline::writeReport(const std::string& path) const
 {
     std::ofstream f(path, std::ios::binary);
@@ -1364,6 +1750,7 @@ bool ProductionPipeline::writeReport(const std::string& path) const
         tj["geometricErrorM"] = t.geometricErrorM;
         tj["errorStatus"] = t.errorStatus;
         tj["refine"] = t.refine;
+        tj["timing"] = t.timing.toJson();
         if (t.aggregate)
         {
             json agg = json::object();
@@ -1377,6 +1764,87 @@ bool ProductionPipeline::writeReport(const std::string& path) const
     f.close();
     return true;
 }
+
+// ---------------------------------------------------------------------------
+// 产物级 glTF 读取（selfValidate 的 primitive / 材质预算闸用）
+//
+// 为什么必须读产物而不是数 OSG 节点上的 drawable：最终 primitive 数由写出侧
+// GltfMerger::mergeMeshes() 决定，它按 世界矩阵 × 材质索引 × 属性名集合
+// 分桶融图元，一个瓦片里 N 个 drawable 最后可能只剩 1 个 primitive。
+// ---------------------------------------------------------------------------
+namespace {
+bool readU32LE(const std::string& buf, std::size_t off, std::uint32_t& out)
+{
+    if (off + 4 > buf.size()) { return false; }
+    out = static_cast<std::uint32_t>(static_cast<unsigned char>(buf[off]))
+        | (static_cast<std::uint32_t>(static_cast<unsigned char>(buf[off + 1])) << 8)
+        | (static_cast<std::uint32_t>(static_cast<unsigned char>(buf[off + 2])) << 16)
+        | (static_cast<std::uint32_t>(static_cast<unsigned char>(buf[off + 3])) << 24);
+    return true;
+}
+
+// 单个内层 tile（b3dm/i3dm）的 glTF JSON 起点；容器不合法时返回 false。
+bool glbJsonRange(const std::string& bytes, std::size_t tileStart,
+                  std::size_t& jsonOff, std::uint32_t& jsonLen)
+{
+    std::size_t header = 0;
+    if (bytes.compare(tileStart, 4, "b3dm") == 0) { header = 28; }
+    else if (bytes.compare(tileStart, 4, "i3dm") == 0) { header = 32; }
+    else { return false; }
+
+    // 两种容器的表长字段布局相同：byteLength@8、featureTableJson@12、
+    // featureTableBinary@16、batchTableJson@20、batchTableBinary@24；
+    // i3dm 只是头多 4 字节（glTFFormat）。
+    std::uint32_t ftj = 0, ftb = 0, btj = 0, btb = 0;
+    if (!readU32LE(bytes, tileStart + 12, ftj)) { return false; }
+    if (!readU32LE(bytes, tileStart + 16, ftb)) { return false; }
+    if (!readU32LE(bytes, tileStart + 20, btj)) { return false; }
+    if (!readU32LE(bytes, tileStart + 24, btb)) { return false; }
+
+    const std::size_t glb = tileStart + header + ftj + ftb + btj + btb;
+    if (glb + 20 > bytes.size()) { return false; }
+    if (bytes.compare(glb, 4, "glTF") != 0) { return false; }
+    if (!readU32LE(bytes, glb + 12, jsonLen)) { return false; }
+    if (bytes.compare(glb + 16, 4, "JSON") != 0) { return false; }
+    jsonOff = glb + 20;
+    return jsonOff + jsonLen <= bytes.size();
+}
+
+// 遍历一个瓦片内容文件里内嵌的每一个 glTF JSON chunk（cmpt 会有多个内层 tile）。
+void forEachGltfJsonChunk(const std::string& bytes,
+                          const std::function<void(const std::string&)>& onJson)
+{
+    std::vector<std::size_t> tileStarts;
+    if (bytes.size() >= 16 && bytes.compare(0, 4, "cmpt") == 0)
+    {
+        std::uint32_t outerLength = 0, innerCount = 0;
+        if (!readU32LE(bytes, 8, outerLength)) { return; }
+        if (!readU32LE(bytes, 12, innerCount)) { return; }
+        if (outerLength > bytes.size()) { return; }
+        std::size_t p = 16;
+        for (std::uint32_t i = 0; i < innerCount; ++i)
+        {
+            std::uint32_t innerLength = 0;
+            if (!readU32LE(bytes, p + 8, innerLength)) { return; }
+            if (innerLength < 12 || p + innerLength > bytes.size()) { return; }
+            tileStarts.push_back(p);
+            p += innerLength;
+        }
+    }
+    else
+    {
+        tileStarts.push_back(0);
+    }
+
+    for (std::size_t start : tileStarts)
+    {
+        std::size_t jsonOff = 0;
+        std::uint32_t jsonLen = 0;
+        if (!glbJsonRange(bytes, start, jsonOff, jsonLen)) { continue; }
+        onJson(bytes.substr(jsonOff, jsonLen));
+    }
+}
+} // namespace
 
 // ---------------------------------------------------------------------------
 // 手册 14.17：异常终止与重试
@@ -1426,19 +1894,74 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
         {
             _failures.push_back("selfValidate: content uri missing on disk: " + u);
             ok = false;
+            continue;
         }
-        else
+        cf.seekg(0, std::ios::end);
+        const std::uint64_t bytes = static_cast<std::uint64_t>(cf.tellg());
+        cf.seekg(0, std::ios::beg);
+        std::string contentBytes;
+        contentBytes.reserve(static_cast<std::size_t>(bytes));
+        contentBytes.assign(std::istreambuf_iterator<char>(cf), std::istreambuf_iterator<char>());
+        cf.close();
+        if (bytes > _profile.budget.maxTileContentBytes)
         {
-            cf.seekg(0, std::ios::end);
-            const std::uint64_t bytes = static_cast<std::uint64_t>(cf.tellg());
-            cf.close();
-            if (bytes > _profile.budget.maxTileContentBytes)
+            _failures.push_back("selfValidate: content over hard byte limit: " + u
+                                + " (" + std::to_string(bytes) + " > "
+                                + std::to_string(_profile.budget.maxTileContentBytes) + ")");
+            ok = false;
+        }
+
+        // 1a) glTF primitive / 材质预算（手册 7.3 第 2 步"材质/图元合并"的
+        //     产物级复核）。读不到可解析的 glTF 也算失败：预算无法证明时
+        // 不能当成"没超"（A-32/A-33 同族：声明了预算却没有闸）。
+        unsigned prims = 0;
+        unsigned mats = 0;
+        bool sawGltf = false;
+        bool badGltf = false;
+        forEachGltfJsonChunk(contentBytes, [&](const std::string& gltfJson) {
+            sawGltf = true;
+            try
             {
-                _failures.push_back("selfValidate: content over hard byte limit: " + u
-                                    + " (" + std::to_string(bytes) + " > "
-                                    + std::to_string(_profile.budget.maxTileContentBytes) + ")");
-                ok = false;
+                const json gltf = json::parse(gltfJson);
+                if (gltf.contains("meshes") && gltf["meshes"].is_array())
+                {
+                    for (const json& m : gltf["meshes"])
+                    {
+                        if (m.contains("primitives") && m["primitives"].is_array())
+                        {
+                            prims += static_cast<unsigned>(m["primitives"].size());
+                        }
+                    }
+                }
+                if (gltf.contains("materials") && gltf["materials"].is_array())
+                {
+                    mats += static_cast<unsigned>(gltf["materials"].size());
+                }
             }
+            catch (const std::exception&)
+            {
+                badGltf = true;
+            }
+        });
+        if (!sawGltf || badGltf)
+        {
+            _failures.push_back(std::string("selfValidate: content has no parsable glTF body (")
+                                + (badGltf ? "json error" : "no glTF chunk") + "): " + u);
+            ok = false;
+        }
+        else if (prims > _profile.budget.maxPrimitivesPerTile)
+        {
+            _failures.push_back("selfValidate: content over primitive budget: " + u + " ("
+                                + std::to_string(prims) + " primitives > "
+                                + std::to_string(_profile.budget.maxPrimitivesPerTile) + ")");
+            ok = false;
+        }
+        else if (mats > _profile.budget.maxMaterialsPerTile)
+        {
+            _failures.push_back("selfValidate: content over material budget: " + u + " ("
+                                + std::to_string(mats) + " materials > "
+                                + std::to_string(_profile.budget.maxMaterialsPerTile) + ")");
+            ok = false;
         }
     }
 

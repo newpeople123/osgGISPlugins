@@ -16,19 +16,35 @@
 namespace osgGISPlugins {
 namespace production {
 
+// 代理节点的内容字节估算，纹理按 osg::Image 指针去重（同一张纹理被 N 个
+// primitive 引用只算一次）。纹理边长下限用 ProductionProfile.h 的
+// proxyTextureFloorEdgePx。
+struct ProxyBytes {
+    std::uint64_t geo = 0;      // 几何：200 B/三角形 + 48 B/顶点
+    std::uint64_t texFull = 0;  // 纹理按原始分辨率（解码 RGBA8 的 1/8 折算）
+    std::uint64_t texFloor = 0; // 同一批纹理压到 proxyTextureFloorEdgePx 后
+};
+
 struct ProxyResult {
     osg::ref_ptr<osg::Node> node;
     bool identity = false;         // 未做简化（原样几何）
     bool aggregate = false;        // 使用了聚合代理
-    // 几何本身达标、带上子树纹理才超字节：内节点代理本来就该建成无纹理版
-    // （远景 LOD 常规做法）。由调用方据此剥纹理，不再各自重复预估。
-    bool needsTextureless = false;
+    // 纹理降到 proxyTextureFloorEdgePx 后代理是否仍装得下硬字节上限。
+    // 装不下时调用方才把代理建成无纹理版（最后手段）；装得下就保纹理，
+    // 由写出阶段按 proxyTextureMaxEdgePx 降分辨率。
+    bool fitsWithFloorTextures = true;
     unsigned triangles = 0;
     unsigned vertices = 0;
     double appliedRatio = 1.0;
     std::string failure;
     // aggregate 时：proxyFeatureId -> 源 globalFeatureId 集合
     std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
+    // 阶段内细分仪表（手册 13.3"各阶段耗时"）：不参与任何判定，纯观测
+    struct Metrics {
+        double simplifySeconds = 0.0;   // 身份保持型代理的 simplifyNode 累计
+        double aggregateSeconds = 0.0;  // 聚合 fallback 全部候选累计（含每候选简化）
+        unsigned aggregateCandidates = 0;
+    } metrics;
 };
 
 class ProxyMeshBuilder {
@@ -42,6 +58,10 @@ public:
                       bool allowAggregate) const;
 
     static unsigned countTriangles(osg::Node* node);
+
+    // 去重后的代理内容字节估算。build() 用它决定是否还能保住纹理，
+    // 单元测试用它验证共享纹理不会被按 primitive 重复计数。
+    static ProxyBytes estimateBytes(osg::Node* node);
 
 private:
     // 按目标三角形数简化（每个 drawable 独立，误差上限递增直到达标）

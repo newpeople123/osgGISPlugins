@@ -11,9 +11,11 @@
 #include "3dtiles/production/SourceModel.h"
 #include "3dtiles/production/SpatialPartitioner.h"
 #include "3dtiles/production/ProductionProfile.h"
+#include "utils/GltfOptimizer.h"
 #include "utils/Simplifier.h"
 #include "utils/Utils.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
+#include "osgdb_gltf/material/GltfPbrMRMaterial.h"
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/Group>
@@ -21,6 +23,9 @@
 #include <osg/Array>
 #include <osg/PrimitiveSet>
 #include <osg/ComputeBoundsVisitor>
+#include <osg/Texture2D>
+#include <osg/StateSet>
+#include <osg/Image>
 #include <osgDB/ReadFile>
 #include <iostream>
 #include <fstream>
@@ -135,6 +140,14 @@ void testProfileValidation()
     threw = false;
     try { bad2.validate(); } catch (const std::exception&) { threw = true; }
     check(threw, "target > max must throw");
+
+    ProductionProfile bad3 = ok;
+    bad3.budget.proxyTextureMaxEdgePx = proxyTextureFloorEdgePx - 1u;
+    threw = false;
+    try { bad3.validate(); } catch (const std::exception&) { threw = true; }
+    check(threw, "proxy texture cap below the floor must throw (not silently clamp)");
+    check(ok.budget.proxyTextureMaxEdgePx >= proxyTextureFloorEdgePx,
+          "default profile keeps a usable proxy texture cap");
 }
 
 void testSourceModelBaking()
@@ -434,6 +447,242 @@ void testErrorEvaluatorAnalytic()
     ErrorResult r2 = ev.evaluate(src, empty);
     check(std::isfinite(r2.geometricErrorM()), "empty proxy yields finite error");
     check(r2.geometricErrorM() > 0.0, "empty proxy yields non-zero error");
+}
+
+// BVH 查询必须等于暴力最近距离：建树会按质心中位数重排 order 数组，
+// 叶子如果按"位置"而不是按 order 取三角形，查询命中的就是别的面的，
+// 距离会随机偏大/偏小——偏小那一侧直接把 geometricError 写小（违规）。
+void testMeshBVHMatchesBruteForce()
+{
+    std::cout << "[bvh] nearest distance equals brute force" << std::endl;
+
+    TriangleSoup soup;
+    for (int iy = 0; iy < 8; ++iy)
+    {
+        for (int ix = 0; ix < 8; ++ix)
+        {
+            const double x = ix * 5.0, y = iy * 5.0;
+            soup.add(osg::Vec3d(x, y, 0.0), osg::Vec3d(x + 1.0, y, 0.0),
+                     osg::Vec3d(x, y + 1.0, 0.0));
+        }
+    }
+    MeshBVH bvh;
+    bvh.build(soup);
+
+    const osg::Vec3d probes[] = {
+        osg::Vec3d(0.2, 0.2, 0.0),      // 落在第一个三角形内部
+        osg::Vec3d(17.5, 12.3, 0.4),    // 网格中间的空隙
+        osg::Vec3d(35.0, 35.0, 3.0),    // 右上角外侧
+        osg::Vec3d(-4.0, 9.0, 0.0),     // 左侧远处
+        osg::Vec3d(2.6, 27.1, -1.7),    // 任意斜上方
+        osg::Vec3d(44.0, -6.0, 8.0)     // 全体外侧
+    };
+    for (const osg::Vec3d& p : probes)
+    {
+        // 基准：单三角形子树必然是叶子、order 恒等，逐三角形取最小即精确最近距离
+        double brute = std::numeric_limits<double>::max();
+        for (std::size_t t = 0; t < soup.size(); ++t)
+        {
+            TriangleSoup one;
+            one.add(soup.v[t * 3], soup.v[t * 3 + 1], soup.v[t * 3 + 2]);
+            MeshBVH b1;
+            b1.build(one);
+            brute = std::min(brute, b1.distance(p));
+        }
+        const double got = bvh.distance(p);
+        checkNear(got, brute, 1e-12,
+                  "bvh distance == brute force at (" + std::to_string(p.x()) + ", "
+                  + std::to_string(p.y()) + ", " + std::to_string(p.z()) + ")");
+    }
+}
+
+// L1 把 BVH 遍历从"固定左先"改成"近孩子优先"。顺序可以改，结果一位都不能变。
+//
+// 这里不去跑新旧两份实现对拍（旧实现已经不在了，而且新旧对拍要付一整轮转换的
+// 代价），而是把查询结果钉死在基准上：每个三角形单独建一棵树必然是叶子、
+// order 恒等，逐三角形取 min 就是全局最近距离。只要两种遍历都取到同一个全局
+// 最小元素，它们必然等于同一个 double——所以断言用**逐位相等**，不用容差。
+//
+// 阳性/阴性对照在最后：判据必须能在 1 ulp 的偏差上翻脸，否则"逐位相等"是空话。
+void testMeshBVHTraversalBitExact()
+{
+    std::cout << "[bvhOrder] traversal bit-exact vs per-triangle baseline" << std::endl;
+
+    std::uint64_t seed = 0x9E3779B97F4A7C15ull;
+    const auto rnd = [&seed]() {
+        seed = seed * 6364136223846793005ull + 1442695040888963407ull;
+        return static_cast<double>((seed >> 11) & 0xFFFFFull) / 1048575.0;  // [0,1]
+    };
+    const auto bitExact = [](double a, double b) { return a == b; };
+
+    // 3 = 只有根叶子（没有内部节点），17/200/3000 = 会真正走到近/远孩子分支
+    for (const std::size_t n : {std::size_t(3), std::size_t(17), std::size_t(200), std::size_t(3000)})
+    {
+        TriangleSoup soup;
+        for (std::size_t t = 0; t < n; ++t)
+        {
+            const osg::Vec3d c(rnd() * 100.0, rnd() * 100.0, rnd() * 20.0);
+            const osg::Vec3d e1(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5);
+            const osg::Vec3d e2(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5);
+            soup.add(c, c + e1, c + e2);
+        }
+        MeshBVH bvh;
+        bvh.build(soup);
+        check(bvh.triangleCount() == n, "bvhOrder triangle count n=" + std::to_string(n));
+
+        // 基准树建一次就存下来：每个探针都重建 n 棵树会让这条用例跑到分钟级
+        std::vector<MeshBVH> singles(n);
+        for (std::size_t t = 0; t < n; ++t)
+        {
+            TriangleSoup s;
+            s.add(soup.v[t * 3], soup.v[t * 3 + 1], soup.v[t * 3 + 2]);
+            singles[t].build(s);
+        }
+
+        // 探针：既有mesh内部/外侧/远处，也有正好压在顶点上的退化位置
+        std::vector<osg::Vec3d> probes;
+        for (int i = 0; i < 64; ++i)
+        {
+            probes.emplace_back(rnd() * 140.0 - 20.0, rnd() * 140.0 - 20.0, rnd() * 40.0 - 10.0);
+        }
+        for (std::size_t t = 0; t < soup.size() && t < 4; ++t)
+        {
+            probes.push_back(soup.v[t * 3]);             // 恰在顶点上 ⇒ 距离 0
+        }
+
+        int exact = 0;
+        for (const osg::Vec3d& p : probes)
+        {
+            double want = std::numeric_limits<double>::max();
+            for (std::size_t t = 0; t < n; ++t) { want = std::min(want, singles[t].distance(p)); }
+            const double got = bvh.distance(p);
+            if (bitExact(got, want)) { ++exact; }
+            else
+            {
+                std::ostringstream os;
+                os << "n=" << n << " got=" << std::setprecision(17) << got
+                   << " want=" << want << " diff=" << (got - want);
+                check(false, "bvhOrder bit-exact query", os.str());
+            }
+        }
+        check(exact == static_cast<int>(probes.size()),
+              "bvhOrder all probes bit-exact n=" + std::to_string(n),
+              "exact=" + std::to_string(exact) + "/" + std::to_string(probes.size()));
+
+        // 对照：同一批数值里把基准抬高 1 ulp，判据必须拒绝；原值必须接受
+        const double ref = singles[0].distance(probes.front());
+        const double bumped = std::nextafter(ref, std::numeric_limits<double>::infinity());
+        check(bitExact(ref, ref), "bvhOrder control: identical value accepted");
+        check(!bitExact(bumped, ref), "bvhOrder control: 1-ulp-off rejected",
+              "ref=" + std::to_string(ref) + " bumped=" + std::to_string(bumped));
+    }
+}
+
+// 上界可靠性的三条底线（手册"不得私自降低上界"的可执行形式）。
+// 这三例都是刻意用小预算把旧实现的退化路径踩出来的：旧实现按
+// maxSamplesPerNode 把每三角形的采样点砍到 1~6 个，却仍然按 7 点集合
+// 的覆盖半径 L/3 记账；顶点没查全的三角形干脆不进账。
+void testErrorBoundSoundness()
+{
+    std::cout << "[error] bound soundness" << std::endl;
+    const double pi = std::acos(-1.0);
+
+    // 1) 环形目标 + 内接等边三角形：3 个顶点全落在环带里（顶点距离 0），
+    //    真实误差完全由内部点（圆心）贡献 = 环带内半径。
+    //    源三角形外接圆半径 1、最长边 L = sqrt(3)：
+    //      顶点集合口径 R = L/sqrt(3) = 1.000 >= 0.98  -> 上界成立
+    //      7 点集合口径 R = L/3       = 0.577 <  0.98  -> 上界被写小（违规）
+    //    所以小预算（把密度压到只剩 3 个顶点）之后，上界仍然必须 >= 0.98。
+    const double rIn = 0.98, rOut = 1.02;
+    TriangleSoup ring, inscribed;
+    const int segs = 48, copies = 40;
+    for (int c = 0; c < copies; ++c)
+    {
+        const double ox = c * 6.0;
+        for (int s = 0; s < segs; ++s)
+        {
+            const double t0 = 2.0 * pi * s / segs, t1 = 2.0 * pi * (s + 1) / segs;
+            const osg::Vec3d i0(ox + rIn * std::cos(t0),  rIn * std::sin(t0), 0.0);
+            const osg::Vec3d i1(ox + rIn * std::cos(t1),  rIn * std::sin(t1), 0.0);
+            const osg::Vec3d o0(ox + rOut * std::cos(t0), rOut * std::sin(t0), 0.0);
+            const osg::Vec3d o1(ox + rOut * std::cos(t1), rOut * std::sin(t1), 0.0);
+            ring.add(i0, o0, o1);
+            ring.add(i0, o1, i1);
+        }
+        osg::Vec3d p[3];
+        for (int k = 0; k < 3; ++k)
+        {
+            const double a = pi / 2.0 + 2.0 * pi * k / 3.0;
+            p[k] = osg::Vec3d(ox + std::cos(a), std::sin(a), 0.0);   // 半径 1 -> 落在环带内
+        }
+        inscribed.add(p[0], p[1], p[2]);
+    }
+    ErrorEvalConfig tight;
+    tight.maxSamplesPerNode = 3;    // cap = 1 -> 每三角形只剩 3 个顶点，且细分预算为 0：
+                                    // 此时上界完全由"顶点集合覆盖半径"撑起，口径错就露馅
+    GeometryErrorEvaluator evTight(tight);
+    ErrorResult ri = evTight.evaluate(inscribed, ring);
+    check(ri.upperBoundM >= rIn - 1e-9, "vertex-only radius must still cover interior error",
+          "upper=" + std::to_string(ri.upperBoundM) + " want>=" + std::to_string(rIn));
+    check(ri.upperBoundM >= ri.lowerBoundM, "upper >= lower (inscribed ring case)");
+    check(ri.boundLoose, "no refinement budget must be admitted as BOUND_LOOSE",
+          std::string("status=") + ri.status);
+
+    // 2) 大 soup 里只有一个离群三角形：它必须进账。旧实现用固定步长抽样
+    //    （sampleEvery），步长没落在它头上时它对上下界都没有贡献，上界会
+    //    停在"其它面都完全吻合"的水平 —— 数据里真实存在的 50 m 偏差被吞掉。
+    const std::size_t crowd = 60001;   // 三角形总数 60002，离群者下标 60001（不是 3 的倍数）
+    TriangleSoup plane, many;
+    for (int i = 0; i < 10; ++i)
+    {
+        for (int j = 0; j < 10; ++j)
+        {
+            const double x0 = i * 2.0, x1 = x0 + 2.0, y0 = j * 2.0, y1 = y0 + 2.0;
+            const osg::Vec3d a(x0, y0, 0.0), b(x1, y0, 0.0), c(x1, y1, 0.0), d(x0, y1, 0.0);
+            plane.add(a, b, c);
+            plane.add(a, c, d);
+        }
+    }
+    for (std::size_t t = 0; t < crowd; ++t)
+    {
+        // 全部落在目标面覆盖范围（0..20 x 0..20）内、且完全吻合（距离 0）
+        const double x = (t % 250) * 0.08, y = (t / 250) * 0.08;
+        many.add(osg::Vec3d(x, y, 0.0), osg::Vec3d(x + 0.04, y, 0.0), osg::Vec3d(x, y + 0.04, 0.0));
+    }
+    many.add(osg::Vec3d(1.0, 1.0, 50.0), osg::Vec3d(2.0, 1.0, 50.0), osg::Vec3d(1.0, 2.0, 50.0));
+    ErrorEvalConfig fullCfg;
+    GeometryErrorEvaluator evDefault(fullCfg);
+    ErrorResult ro = evDefault.evaluate(many, plane);
+    check(ro.lowerBoundM >= 50.0 - 1e-6, "outlier triangle must reach the lower bound",
+          "lower=" + std::to_string(ro.lowerBoundM));
+    check(ro.upperBoundM >= 50.0, "outlier triangle must reach the upper bound",
+          "upper=" + std::to_string(ro.upperBoundM));
+
+    // 3) 预算真的不够时必须承认没收敛（BOUND_LOOSE），而不是悄悄报一个更小的数；
+    //    反过来，堆排空 = 细分收敛，不能因为样本数撞过上限就误标。
+    TriangleSoup coarse;
+    coarse.add(osg::Vec3d(0, 0, 0), osg::Vec3d(10, 0, 0), osg::Vec3d(0, 10, 0));
+    TriangleSoup fine;
+    fine.add(osg::Vec3d(0, 0, 0.4), osg::Vec3d(10, 0, 0.4), osg::Vec3d(0, 10, 0.4));
+    ErrorEvalConfig starved;
+    starved.maxSamplesPerNode = 12;
+    GeometryErrorEvaluator evStarved(starved);
+    ErrorResult rs = evStarved.evaluate(coarse, fine);
+    check(rs.boundLoose, "starved budget reports BOUND_LOOSE, not a tightened number",
+          std::string("status=") + rs.status);
+    check(rs.upperBoundM >= 0.4 - 1e-6, "starved budget upper bound still covers true error",
+          "upper=" + std::to_string(rs.upperBoundM));
+    // 收敛到容差以内时必须承认收敛（不能因为样本数撞过上限就误标 BOUND_LOOSE）：
+    // 这里用放大的容差，让二分树在预算内真的排空——1 m² 的面要压到 1e-3 需要
+    // 2^19 个子 patch，那是另一个量级的成本，不属于这条判据。
+    ErrorEvalConfig convergeCfg;
+    convergeCfg.toleranceMeters = 0.05;
+    GeometryErrorEvaluator evFull(convergeCfg);
+    TriangleSoup oneTri;
+    oneTri.add(osg::Vec3d(0, 0, 0), osg::Vec3d(1, 0, 0), osg::Vec3d(0, 1, 0));
+    ErrorResult rc = evFull.evaluate(oneTri, oneTri);
+    check(!rc.boundLoose && rc.certified, "identical surface converges instead of claiming loose",
+          std::string("status=") + rc.status + " upper=" + std::to_string(rc.upperBoundM));
 }
 
 void testFeatureManifest()
@@ -805,6 +1054,202 @@ void testProxyAggregateCoversSourceScope()
 }
 
 // ---------------------------------------------------------------------------
+// 远景 LOD 代理的纹理预算。回归的是 longxiang 的实测缺陷：调用方按 primitive
+// 累加纹理字节，同一张纹理被 N 个 primitive 引用就算 N 次，42/42 代理被判
+// "超预算"，整片退化成无贴图灰模。代理字节估算必须按 osg::Image 去重，并且
+// 能折算"降到下限分辨率"后的字节，调用方才有依据先降分辨率、最后才去纹理。
+osg::ref_ptr<osg::Geode> makeTexturedQuad(const osg::ref_ptr<osg::Texture2D>& tex)
+{
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    pos->push_back(osg::Vec3(0, 0, 0));
+    pos->push_back(osg::Vec3(1, 0, 0));
+    pos->push_back(osg::Vec3(1, 0, 1));
+    pos->push_back(osg::Vec3(0, 0, 1));
+    geom->setVertexArray(pos.get());
+    geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, 3));
+    geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, 1));
+    geode->addDrawable(geom.get());
+    osg::ref_ptr<osg::StateSet> ss = new osg::StateSet;
+    ss->setTextureAttributeAndModes(0, tex.get(), osg::StateAttribute::ON);
+    geode->setStateSet(ss.get());
+    return geode;
+}
+
+osg::ref_ptr<osg::Texture2D> makeTextured(const unsigned edgePx)
+{
+    osg::ref_ptr<osg::Image> img = new osg::Image;
+    img->allocateImage(static_cast<int>(edgePx), static_cast<int>(edgePx), 1,
+                       GL_RGBA, GL_UNSIGNED_BYTE);
+    return new osg::Texture2D(img.get());
+}
+
+void testProxyTextureBudget()
+{
+    std::cout << "[proxyTexture] shared textures dedup + floor scaling" << std::endl;
+    const unsigned edge = 2048u;
+    const std::uint64_t perImage =
+        (static_cast<std::uint64_t>(edge) * edge * 4ull) / 8ull;  // 估算口径：解码 /8
+
+    osg::ref_ptr<osg::Texture2D> tex = makeTextured(edge);
+
+    // 1) 两个 drawable 共享同一张纹理：只能算一次
+    osg::ref_ptr<osg::Group> shared = new osg::Group;
+    shared->addChild(makeTexturedQuad(tex).get());
+    shared->addChild(makeTexturedQuad(tex).get());
+    const ProxyBytes s = ProxyMeshBuilder::estimateBytes(shared.get());
+    check(s.texFull == perImage, "shared texture counted once, not per primitive",
+          "got=" + std::to_string(s.texFull) + " want=" + std::to_string(perImage));
+
+    // 阳性对照：两张不同的纹理必须算两次，否则"去重"其实是永远只算一份
+    osg::ref_ptr<osg::Group> distinct = new osg::Group;
+    distinct->addChild(makeTexturedQuad(tex).get());
+    distinct->addChild(makeTexturedQuad(makeTextured(edge)).get());
+    const ProxyBytes d = ProxyMeshBuilder::estimateBytes(distinct.get());
+    check(d.texFull == perImage * 2ull, "two distinct textures count twice",
+          "got=" + std::to_string(d.texFull) + " want=" + std::to_string(perImage * 2ull));
+
+    // 2) 降到下限分辨率的折算：面积比 (64/2048)^2 = 1/1024
+    const std::uint64_t wantFloor =
+        static_cast<std::uint64_t>(static_cast<double>(perImage)
+            * (static_cast<double>(proxyTextureFloorEdgePx) / edge)
+            * (static_cast<double>(proxyTextureFloorEdgePx) / edge));
+    check(s.texFloor == wantFloor, "floor estimate scales by area",
+          "got=" + std::to_string(s.texFloor) + " want=" + std::to_string(wantFloor));
+    check(s.texFloor < s.texFull, "floor estimate is strictly smaller than full res");
+
+    // 3) 小于下限的纹理不缩水（否则一个 32px 法线贴图会被"折算"成更小）
+    // 注：变量名不能用 small —— Windows SDK 的 rpcndr.h 里有 `#define small char`。
+    osg::ref_ptr<osg::Group> tinyGroup = new osg::Group;
+    tinyGroup->addChild(makeTexturedQuad(makeTextured(32u)).get());
+    const ProxyBytes tiny = ProxyMeshBuilder::estimateBytes(tinyGroup.get());
+    const std::uint64_t tinyFull = (32ull * 32ull * 4ull) / 8ull;
+    check(tiny.texFull == tinyFull && tiny.texFloor == tinyFull,
+          "textures at or below the floor keep their full byte cost",
+          "full=" + std::to_string(tiny.texFull) + " floor=" + std::to_string(tiny.texFloor));
+
+    // 4) 几何估算照旧在 geo 里，不会被纹理估算吞掉。
+    // shared 节点 = 2 个 quad，每个 quad 2 个 DrawArrays(TRIANGLES)（1 面 + 0 面）
+    // 和 4 个顶点 → 2 面、8 顶点。
+    check(s.geo == 2ull * 200ull + 8ull * 48ull, "geometry part unchanged",
+          "got=" + std::to_string(s.geo));
+
+    // 5) 空节点是 0，不是脏值
+    const ProxyBytes empty = ProxyMeshBuilder::estimateBytes(nullptr);
+    check(empty.geo == 0 && empty.texFull == 0 && empty.texFloor == 0,
+          "null node estimates to zero");
+}
+
+// 超限兜底阶梯的档位选择。要紧的是"叶瓦片（textureMaxEdgePx=0）一档都不能少"：
+// 判据一度写成与钳制后的全局 -tw/-th 比较，而叶瓦片的 topts 正是 2048，条件恒真，
+// 整套字节兜底对叶静默失效；集成用例走的是三角形超限分支，看不见这个退化。
+void testProxyTextureLadder()
+{
+    std::cout << "[proxyTextureLadder] byte-overflow downscale rungs" << std::endl;
+    const std::vector<unsigned> leaf = ProductionPipeline::textureDownscaleLadder(0u);
+    check(leaf.size() == 3, "leaf tiles keep every rung",
+          "count=" + std::to_string(leaf.size()));
+    check(!leaf.empty() && leaf.front() == 256u && leaf.back() == proxyTextureFloorEdgePx,
+          "leaf ladder starts at 256 and stops at the floor",
+          "front=" + std::to_string(leaf.empty() ? 0u : leaf.front())
+              + " back=" + std::to_string(leaf.empty() ? 0u : leaf.back()));
+
+    // 512px 代理首轮压过之后，256/128/64 仍然都比首轮低，一档都不该被跳过
+    check(ProductionPipeline::textureDownscaleLadder(512u) == leaf,
+          "a 512px proxy keeps the whole ladder because every rung is below it");
+
+    const std::vector<unsigned> p128 = ProductionPipeline::textureDownscaleLadder(128u);
+    check(p128.size() == 1 && (!p128.empty() && p128[0] == 64u),
+          "a 128px proxy only has 64 left to try",
+          "count=" + std::to_string(p128.size()));
+
+    const std::vector<unsigned> atFloor =
+        ProductionPipeline::textureDownscaleLadder(proxyTextureFloorEdgePx);
+    check(atFloor.empty(), "at the floor there is nothing smaller to fall back to");
+    check(!leaf.empty() && !p128.empty() && atFloor.empty(),
+          "positive control: empty ladder is the floor case only, not a dead function");
+}
+
+// ---------------------------------------------------------------------------
+// 代理瓦片降分辨率的隔离性。回归的是 longxiang 的产物级缺陷：给内节点代理压到
+// 512px 之后，同一批次里的**叶**瓦片贴图字节掉了一到两成（t71 的 KTX2 从 534958B
+// 变成 294305B，尺寸却仍是 2048x2048 —— 先缩小再被塞回大图集页的糊图特征）。
+//
+// 通路有两条，都必须钉住：
+//   1) osg::clone(StateSet, DEEP_COPY_TEXTURES) 只克隆到 osg::Texture 层，
+//      osg::Image 依旧是同一份共享对象；
+//   2) resizeImageToPowerOfTwo 曾经就地 scaleImage，于是第一个降分辨率的瓦片
+//      改掉了源模型里那张原图，后续所有引用它的瓦片（含叶）一起糊掉。
+// ---------------------------------------------------------------------------
+void testOptimizerResizeIsolation()
+{
+    std::cout << "[texResize] shared osg::Image must never be resized in place" << std::endl;
+
+    osg::ref_ptr<osg::Image> img = new osg::Image;
+    img->allocateImage(1024, 1024, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+    img->data(0, 0, 0)[0] = 123;
+
+    // 前提核对（不是被测行为）：若哪天 OSG 把 DEEP_COPY_TEXTURES 做成连图一起深拷，
+    // 这条会红，届时"私有化"就从必须变成冗余，但不能反过来假设它一直成立。
+    osg::ref_ptr<osg::Texture2D> tex = new osg::Texture2D(img.get());
+    osg::ref_ptr<osg::StateSet> ss = new osg::StateSet;
+    ss->setTextureAttributeAndModes(0, tex.get(), osg::StateAttribute::ON);
+    osg::ref_ptr<osg::StateSet> cloned = osg::clone(ss.get(),
+        osg::CopyOp::DEEP_COPY_STATESETS | osg::CopyOp::DEEP_COPY_STATEATTRIBUTES
+                                       | osg::CopyOp::DEEP_COPY_TEXTURES);
+    osg::Texture2D* clonedTex = static_cast<osg::Texture2D*>(
+        cloned->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
+    check(clonedTex != tex.get(), "clone gives a private Texture object");
+    check(clonedTex->getImage() == img.get(),
+          "premise: cloned Texture still SHARES the osg::Image (pixels are the shared part)");
+
+    // 1) 需要改像素：必须返回私有副本，原图一个字节都不能动。
+    osg::ref_ptr<osg::Image> shrunk =
+        GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(img, 512, 512);
+    check(shrunk != img.get(), "a resize returns a private copy, not the shared image",
+          "samePointer=" + std::to_string(shrunk == img.get()));
+    check(shrunk->s() == 512 && shrunk->t() == 512, "copy is at the requested cap",
+          "got=" + std::to_string(shrunk->s()) + "x" + std::to_string(shrunk->t()));
+    check(img->s() == 1024 && img->t() == 1024, "source image keeps its resolution",
+          "got=" + std::to_string(img->s()) + "x" + std::to_string(img->t()));
+    check(img->data(0, 0, 0)[0] == 123, "source pixels untouched");
+
+    // 2) 原图不得被写脏：ORIGIN_* 是共享对象上的元数据，写上去等于把别的瓦片
+    //    的判定基准也改了。
+    int originWidth = 0;
+    check(!img->getUserValue(ORIGIN_WIDTH, originWidth),
+          "source image carries no origin-width written by the resize");
+
+    // 3) 副本自己记住改动前的尺寸，降档阶梯才能继续从它往下折。
+    int copyOrigin = 0;
+    check(shrunk->getUserValue(ORIGIN_WIDTH, copyOrigin) && copyOrigin == 1024,
+          "the private copy records the pre-resize size",
+          "got=" + std::to_string(copyOrigin));
+
+    // 4) 不需要改动时返回入参本身：既不做无谓的整幅拷贝（图集路径每瓦片几十张图），
+    //    也不留两份可被分别改写的像素。
+    osg::ref_ptr<osg::Image> kept =
+        GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(shrunk, 2048, 2048);
+    check(kept == shrunk.get(), "an image already within the cap is returned unchanged");
+
+    // 阳性对照：低于上限但不是 2 的幂的图同样要私有化——判据是"像素会不会变"，
+    // 不是"是否超上限"。少了这条，非 2 次幂贴图又会走回就地缩放。
+    osg::ref_ptr<osg::Image> odd = new osg::Image;
+    odd->allocateImage(300, 300, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+    osg::ref_ptr<osg::Image> oddOut =
+        GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(odd, 2048, 2048);
+    check(oddOut != odd.get() && odd->s() == 300,
+          "a sub-cap but non-power-of-two image is still copied, not resized in place",
+          "out=" + std::to_string(oddOut->s()) + " src=" + std::to_string(odd->s()));
+
+    // 5) 空图不炸、不伪造副本
+    osg::ref_ptr<osg::Image> null;
+    check(GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(null, 512, 512) == nullptr,
+          "null image passes through");
+}
+
+// ---------------------------------------------------------------------------
 // 手册 9.5 / 17："每个 source feature 在其所属叶瓦片中都存在"、"REPLACE 子树
 // 完整覆盖其 source scope"、失败关闭不留半成品。
 //
@@ -856,6 +1301,44 @@ void testPipelineLeafCoverageInvariant()
     check(pipeline.report().featuresMissingFromLeaves == 0, "coverage hole counter stays zero");
     check(std::filesystem::exists(out / "tileset.json", ec), "tileset.json published");
     check(std::filesystem::exists(out / "conversion-report.json", ec), "report published");
+
+    // A-47：仪表必须**接得上**才谈得上归因。上一轮的教训就是计时器在算、
+    // 但没落到 report 里，跑完照样读不到。这里合成模型没有纹理，
+    // 所以只钉"字段存在"（接线），数值闭合靠产物级复跑。
+    {
+        auto hasStage = [&pipeline](const char* name) {
+            for (const StageTiming& s : pipeline.report().stages)
+            {
+                if (s.name == name) { return true; }
+            }
+            return false;
+        };
+        auto hasCounter = [&pipeline](const char* name) {
+            for (const StageCount& c : pipeline.report().counters)
+            {
+                if (c.name == name) { return true; }
+            }
+            return false;
+        };
+        check(hasStage("micro_texture_export") && hasStage("micro_texture_export_process_cpu"),
+              "texture-export instrument is wired into the report");
+        check(hasStage("micro_materialize") && hasStage("micro_total_cpu"),
+              "leaf materialize + CPU-layer stages exist");
+        bool anyTileHasEvaluateSec = false;
+        for (const ProductionTile& t : pipeline.tiles())
+        {
+            if (t.timing.evaluateSec > 0.0 || t.timing.materializeSec > 0.0) { anyTileHasEvaluateSec = true; break; }
+        }
+        check(anyTileHasEvaluateSec, "per-tile timing reaches the report (A-47 criterion 2)");
+        check(hasCounter("micro_evaluate_samples"), "sample counts live in counters");
+        bool countLeakedIntoStages = false;
+        for (const StageTiming& s : pipeline.report().stages)
+        {
+            if (s.name.find("samples") != std::string::npos
+                || s.name.find("candidates") != std::string::npos) { countLeakedIntoStages = true; }
+        }
+        check(!countLeakedIntoStages, "no counter leaked into the seconds array (A-47 criterion 3)");
+    }
 
     // manifest.aggregateProxies 必须给每个"发布了内容的聚合代理"一条按 tileUri
     // 索引的映射，key 只能指向真实发布出去的瓦片（手册 17 节：从代理 ID 反查
@@ -1473,6 +1956,564 @@ void testArtifactsCarryNoLocalPaths()
           std::to_string(leaked) + " leaked, first=" + firstLeak);
 }
 
+// ---------------------------------------------------------------------------
+// A-51 方案 A：代理写出把图集子矩形 KHR_texture_transform 折进 TEXCOORD_0。
+// 折叠改的是贴图坐标，属质量敏感路径，所以这里把"什么时候许折、什么时候必须
+// 不折"逐条钉住；合并效果本身由下面的预算闸 + 产物对照负责。
+// ---------------------------------------------------------------------------
+namespace {
+
+osg::ref_ptr<osg::Geometry> makeTexturedQuad(const std::vector<osg::Vec2>& uvs)
+{
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    pos->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
+    pos->push_back(osg::Vec3(1.0f, 0.0f, 0.0f));
+    pos->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
+    pos->push_back(osg::Vec3(0.0f, 1.0f, 0.0f));
+    // osg::Vec2Array 的析构是 protected，测试里只能经 ref_ptr 在堆上建；
+    // 源数据用 std::vector 保存，方便按值比对而不用碰数组对象本身。
+    osg::ref_ptr<osg::Vec2Array> tc = new osg::Vec2Array;
+    tc->reserve(static_cast<osg::Vec2Array::size_type>(uvs.size()));
+    for (const osg::Vec2& uv : uvs) { tc->push_back(uv); }
+    osg::ref_ptr<osg::DrawElementsUInt> idx =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    idx->push_back(0); idx->push_back(1); idx->push_back(2);
+    idx->push_back(0); idx->push_back(2); idx->push_back(3);
+    geom->setVertexArray(pos.get());
+    geom->setTexCoordArray(0, tc.get());
+    geom->addPrimitiveSet(idx.get());
+    return geom;
+}
+
+osg::ref_ptr<osg::Texture2D> makeAtlasPage()
+{
+    osg::ref_ptr<osg::Image> img = new osg::Image;
+    img->allocateImage(4, 4, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+    return new osg::Texture2D(img.get());
+}
+
+// 图集打包写在宿主（贴图或 GltfMaterial）上的那组键；值类型必须与写手读的一致。
+void setSlotTransform(osg::Object* holder, const char* enableKey, const char* oxKey,
+                      const char* oyKey, const char* sxKey, const char* syKey,
+                      const char* tcKey, double ox, double oy, double sx, double sy,
+                      int texCoord)
+{
+    holder->setUserValue(enableKey, true);
+    holder->setUserValue(oxKey, ox);
+    holder->setUserValue(oyKey, oy);
+    holder->setUserValue(sxKey, sx);
+    holder->setUserValue(syKey, sy);
+    holder->setUserValue(tcKey, texCoord);
+}
+
+void setBasecolorRect(osg::Object* holder, double ox, double oy, double sx, double sy,
+                      int texCoord = 0)
+{
+    setSlotTransform(holder, TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME,
+                     TEX_TRANSFORM_BASECOLOR_OFFSET_X, TEX_TRANSFORM_BASECOLOR_OFFSET_Y,
+                     TEX_TRANSFORM_BASECOLOR_SCALE_X, TEX_TRANSFORM_BASECOLOR_SCALE_Y,
+                     TEX_TRANSFORM_BASECOLOR_TEXCOORD, ox, oy, sx, sy, texCoord);
+}
+
+bool slotEnabled(osg::Object* holder, const char* enableKey)
+{
+    bool on = false;
+    holder->getUserValue(enableKey, on);
+    return on;
+}
+
+osg::ref_ptr<osg::StateSet> texturedStateSet(osg::Texture2D* tex)
+{
+    osg::ref_ptr<osg::StateSet> ss = new osg::StateSet;
+    ss->setTextureAttributeAndModes(0, tex, osg::StateAttribute::ON);
+    return ss;
+}
+
+// 折叠前后必须采到同一个纹素。写手对任何变换都会再乘一次 Y 翻转
+//（flipGltfTextureYAxis：offsetY=1-offsetY、scaleY=-scaleY），
+// glTF 侧最终坐标 = scale'·uv + offset'。这里把两条路径分别算出来对比，
+// 钉住的是"折进 UV 用的必须是变换原值"这条约定。
+bool samplesSameTexel(const osg::Vec2& originalUv, const osg::Vec2& foldedUv,
+                      double ox, double oy, double sx, double sy)
+{
+    const double unfoldedU = sx * originalUv.x() + ox;
+    const double unfoldedV = (1.0 - oy) - sy * originalUv.y();
+    const double foldedU = 1.0 * foldedUv.x() + 0.0;
+    const double foldedV = 1.0 - 1.0 * foldedUv.y();
+    return std::abs(unfoldedU - foldedU) < 1e-6 && std::abs(unfoldedV - foldedV) < 1e-6;
+}
+
+} // namespace
+
+void testFoldTextureTransformIntoUv()
+{
+    std::cout << "[foldUv] atlas sub-rect folded into TEXCOORD_0" << std::endl;
+
+    std::vector<osg::Vec2> uvs;
+    uvs.push_back(osg::Vec2(0.0f, 0.0f));
+    uvs.push_back(osg::Vec2(1.0f, 0.0f));
+    uvs.push_back(osg::Vec2(1.0f, 1.0f));
+    uvs.push_back(osg::Vec2(0.0f, 1.0f));
+
+    // ① 两个 drawable 共用同一张图集页、子矩形不同：折完材质逐值相同才能合并
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> a = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Geometry> b = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Texture2D> texA = makeAtlasPage();
+    osg::ref_ptr<osg::Texture2D> texB = makeAtlasPage();
+    setBasecolorRect(texA.get(), 0.25, 0.50, 0.50, 0.25);
+    setBasecolorRect(texB.get(), 0.00, 0.00, 0.50, 0.25);
+    osg::ref_ptr<osg::StateSet> ssA = texturedStateSet(texA.get());
+    osg::ref_ptr<osg::StateSet> ssB = texturedStateSet(texB.get());
+    a->setStateSet(ssA.get());
+    b->setStateSet(ssB.get());
+    geode->addDrawable(a.get());
+    geode->addDrawable(b.get());
+
+    osg::ref_ptr<osg::Vec2Array> origA =
+        dynamic_cast<osg::Vec2Array*>(a->getTexCoordArray(0));
+    check(slotEnabled(texA.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME),
+          "premise: transform is enabled before folding (positive control)");
+
+    GltfOptimizer::TextureUvBackup backup;
+    const unsigned folded = GltfOptimizer::foldTextureTransformsIntoUv(geode.get(), backup);
+    check(folded == 2, "both sub-rects folded", std::to_string(folded));
+    check(!slotEnabled(texA.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME)
+          && !slotEnabled(texB.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME),
+          "transform keys cleared so the writer emits one identical material");
+
+    const osg::Vec2Array* bakedA =
+        dynamic_cast<const osg::Vec2Array*>(a->getTexCoordArray(0));
+    check(bakedA != nullptr && bakedA != origA.get(),
+          "geometry switches to a fresh array (never resizes the possibly-shared one)");
+    bool mathOk = bakedA != nullptr && bakedA->size() == 4;
+    for (int i = 0; mathOk && i < 4; ++i)
+    {
+        mathOk = std::abs((*bakedA)[i].x() - float(0.50 * uvs[i].x() + 0.25)) < 1e-6
+              && std::abs((*bakedA)[i].y() - float(0.25 * uvs[i].y() + 0.50)) < 1e-6;
+    }
+    check(mathOk, "baked UV == sx*u+ox, sy*v+oy (OSG-space transform, pre-flip)");
+    check(origA.valid() && (*origA)[2].x() == 1.0f && (*origA)[2].y() == 1.0f,
+          "original array values survive untouched");
+    bool sameTexel = bakedA != nullptr;
+    for (int i = 0; sameTexel && i < 4; ++i)
+    {
+        sameTexel = samplesSameTexel(uvs[i], (*bakedA)[i], 0.25, 0.50, 0.50, 0.25);
+    }
+    check(sameTexel, "folded sampling hits the same texel as the unfolded transform");
+
+    std::vector<osg::Vec2> firstBaked;
+    if (bakedA != nullptr)
+    {
+        for (const osg::Vec2& uv : *bakedA) { firstBaked.push_back(uv); }
+    }
+
+    // ② 还原往返：原始数组指针与数值都回来，备份清空
+    const unsigned restored = GltfOptimizer::restoreFoldedTextureUvs(backup);
+    check(restored == 2, "restore puts both arrays back", std::to_string(restored));
+    check(a->getTexCoordArray(0) == origA.get(), "restored array is the original object");
+    check(backup.empty(), "restore empties the backup (no stale pointer for the next tile)");
+
+    // ③ 契约：fold 起手先整体还原，所以连续两次 fold 的烘焙永远建立在原始 UV 上，
+    //    变换只作用一次。反例（不还原直接再折）会把 u 折成 0.25u+0.375，
+    //    与第一次的 0.50u+0.25 不同，这条检查就会红。
+    const unsigned second = GltfOptimizer::foldTextureTransformsIntoUv(geode.get(), backup);
+    check(second == 2, "a second fold re-derives both sub-rects from the original UVs",
+          std::to_string(second));
+    const osg::Vec2Array* rebaked =
+        dynamic_cast<const osg::Vec2Array*>(a->getTexCoordArray(0));
+    bool idempotent = rebaked != nullptr && rebaked->size() == firstBaked.size();
+    for (std::size_t i = 0; idempotent && i < firstBaked.size(); ++i)
+    {
+        idempotent = std::abs((*rebaked)[i].x() - firstBaked[i].x()) < 1.0e-6f
+                  && std::abs((*rebaked)[i].y() - firstBaked[i].y()) < 1.0e-6f;
+    }
+    check(idempotent, "two folds give the same UVs (the transform never stacks)");
+    check(rebaked != nullptr && rebaked != origA.get(),
+          "the second fold also writes a fresh array, never the possibly-shared original");
+
+    // ④ 无变换的 drawable 一个字节都不许动（阴性对照）
+    osg::ref_ptr<osg::Geode> plainGeode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> plain = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Texture2D> texP = makeAtlasPage();
+    osg::ref_ptr<osg::StateSet> ssP = texturedStateSet(texP.get());
+    plain->setStateSet(ssP.get());
+    plainGeode->addDrawable(plain.get());
+    osg::Array* plainUv = plain->getTexCoordArray(0);
+    GltfOptimizer::TextureUvBackup backupP;
+    check(GltfOptimizer::foldTextureTransformsIntoUv(plainGeode.get(), backupP) == 0
+          && plain->getTexCoordArray(0) == plainUv,
+          "drawable without a transform is left alone");
+
+    // ⑤ 共享贴图 + 一个 TEXCOORD_0 不是 Vec2Array 的兄弟：谁都不许折，
+    //    否则清掉共享键会让那个兄弟按原始 UV 采到图集的错误子矩形
+    osg::ref_ptr<osg::Geode> shared = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> s1 = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Geometry> s2 = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Vec3Array> s2uv = new osg::Vec3Array;
+    s2uv->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
+    s2uv->push_back(osg::Vec3(1.0f, 0.0f, 0.0f));
+    s2uv->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
+    s2uv->push_back(osg::Vec3(0.0f, 1.0f, 0.0f));
+    s2->setTexCoordArray(0, s2uv.get());
+    osg::ref_ptr<osg::Texture2D> texS = makeAtlasPage();
+    setBasecolorRect(texS.get(), 0.25, 0.25, 0.50, 0.50);
+    osg::ref_ptr<osg::StateSet> ssS = texturedStateSet(texS.get());
+    s1->setStateSet(ssS.get());
+    s2->setStateSet(ssS.get());
+    shared->addDrawable(s1.get());
+    shared->addDrawable(s2.get());
+    osg::Array* s1Uv = s1->getTexCoordArray(0);
+    GltfOptimizer::TextureUvBackup backupS;
+    check(GltfOptimizer::foldTextureTransformsIntoUv(shared.get(), backupS) == 0,
+          "a sibling that cannot fold blocks the shared holder");
+    check(slotEnabled(texS.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME),
+          "shared holder keeps its key (clearing it would mis-sample the sibling)");
+    check(s1->getTexCoordArray(0) == s1Uv, "blocked candidate leaves UVs untouched");
+
+    // ⑥ 同一 drawable 上两个槽变换不一致：保守不折（折哪个都是错的）
+    osg::ref_ptr<osg::Geode> twoSlot = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> g6 = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::StateSet> ss6 = new osg::StateSet;
+    osg::ref_ptr<GltfPbrMRMaterial> mr = new GltfPbrMRMaterial;
+    mr->baseColorTexture = makeAtlasPage();
+    mr->normalTexture = makeAtlasPage();
+    setBasecolorRect(mr.get(), 0.25, 0.25, 0.50, 0.50);
+    setSlotTransform(mr.get(), TEX_TRANSFORM_NORMAL_TEXTURE_NAME,
+                     TEX_TRANSFORM_NORMAL_OFFSET_X, TEX_TRANSFORM_NORMAL_OFFSET_Y,
+                     TEX_TRANSFORM_NORMAL_SCALE_X, TEX_TRANSFORM_NORMAL_SCALE_Y,
+                     TEX_TRANSFORM_NORMAL_TEXCOORD, 0.00, 0.50, 0.50, 0.25, 0);
+    ss6->setAttributeAndModes(mr.get(), osg::StateAttribute::ON);
+    g6->setStateSet(ss6.get());
+    twoSlot->addDrawable(g6.get());
+    osg::Array* uv6 = g6->getTexCoordArray(0);
+    GltfOptimizer::TextureUvBackup backup6;
+    check(GltfOptimizer::foldTextureTransformsIntoUv(twoSlot.get(), backup6) == 0,
+          "two enabled slots with different transforms refuse to fold");
+    check(slotEnabled(mr.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME)
+          && slotEnabled(mr.get(), TEX_TRANSFORM_NORMAL_TEXTURE_NAME),
+          "both keys stay enabled when the fold is refused");
+    check(g6->getTexCoordArray(0) == uv6, "refused fold keeps the UV array");
+
+    // ⑦ texCoord != 0：折进 0 号通道会改变采样，必须不折
+    osg::ref_ptr<osg::Geode> tcGeode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> g7 = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Texture2D> tex7 = makeAtlasPage();
+    setBasecolorRect(tex7.get(), 0.0, 0.0, 0.50, 0.50, /*texCoord=*/1);
+    osg::ref_ptr<osg::StateSet> ss7 = texturedStateSet(tex7.get());
+    g7->setStateSet(ss7.get());
+    tcGeode->addDrawable(g7.get());
+    GltfOptimizer::TextureUvBackup backup7;
+    check(GltfOptimizer::foldTextureTransformsIntoUv(tcGeode.get(), backup7) == 0
+          && slotEnabled(tex7.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME),
+          "transform on UV set 1 is not folded into TEXCOORD_0");
+
+    // ⑧ 恒等变换：不动 UV，只清键（材质值不变，但少一次材质分裂）。
+    //    清键本身就是对节点的改动，所以条目仍进备份，让"fold 之前 = fold 之后"
+    //    这条契约成立（还原会把键装回去）。
+    osg::ref_ptr<osg::Geode> idGeode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> g8 = makeTexturedQuad(uvs);
+    osg::ref_ptr<osg::Texture2D> tex8 = makeAtlasPage();
+    setBasecolorRect(tex8.get(), 0.0, 0.0, 1.0, 1.0);
+    osg::ref_ptr<osg::StateSet> ss8 = texturedStateSet(tex8.get());
+    g8->setStateSet(ss8.get());
+    idGeode->addDrawable(g8.get());
+    osg::Array* uv8 = g8->getTexCoordArray(0);
+    GltfOptimizer::TextureUvBackup backup8;
+    check(GltfOptimizer::foldTextureTransformsIntoUv(idGeode.get(), backup8) == 1,
+          "identity transform folds by clearing the key only");
+    check(g8->getTexCoordArray(0) == uv8, "identity fold writes no UV");
+    check(!slotEnabled(tex8.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME),
+          "identity fold clears the key");
+    check(backup8.size() == 1, "identity fold is still undoable", std::to_string(backup8.size()));
+    GltfOptimizer::restoreFoldedTextureUvs(backup8);
+    check(slotEnabled(tex8.get(), TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME),
+          "restore puts the identity key back (fold leaves the node byte-identical)");
+}
+
+// ---------------------------------------------------------------------------
+// 手册 7.3 的 primitive / 材质预算闸（A-32/A-33 同族：声明了预算却没有闸）。
+// 判据必须读**产物**：最终 primitive 数由写出侧 GltfMerger::mergeMeshes() 决定，
+// 在 OSG 节点上数 drawable 得到的是另一个数。
+// ---------------------------------------------------------------------------
+namespace {
+
+void putU32(std::vector<char>& b, std::size_t at, std::uint32_t v)
+{
+    std::memcpy(b.data() + at, &v, sizeof(v));
+}
+
+// 手工拼一个最小 b3dm：28B 头 + "{}  " 特征表 + GLB（只有 JSON chunk）。
+std::vector<char> makeFakeB3dm(unsigned primitives, unsigned materials)
+{
+    nlohmann::json gltf;
+    gltf["asset"]["version"] = "2.0";
+    nlohmann::json prims = nlohmann::json::array();
+    for (unsigned i = 0; i < primitives; ++i)
+    {
+        prims.push_back({ { "attributes", { { "POSITION", 0 } } } });
+    }
+    gltf["meshes"] = nlohmann::json::array({ { { "primitives", prims } } });
+    nlohmann::json mats = nlohmann::json::array();
+    for (unsigned i = 0; i < materials; ++i) { mats.push_back(nlohmann::json::object()); }
+    gltf["materials"] = mats;
+
+    std::string jsonText = gltf.dump();
+    while (jsonText.size() % 4 != 0) { jsonText += ' '; }
+    const std::uint32_t jsonLen = static_cast<std::uint32_t>(jsonText.size());
+    const std::size_t glbLen = 12 + 8 + jsonLen;
+    const std::size_t ftj = 4;
+    const std::uint32_t total = static_cast<std::uint32_t>(28 + ftj + glbLen);
+
+    std::vector<char> out(total, '\0');
+    std::memcpy(out.data(), "b3dm", 4);
+    putU32(out, 4, 1);                 // version
+    putU32(out, 8, total);
+    putU32(out, 12, static_cast<std::uint32_t>(ftj));
+    putU32(out, 16, 0);                // featureTableBinary
+    putU32(out, 20, 0);                // batchTableJson
+    putU32(out, 24, 0);                // batchTableBinary
+    std::memcpy(out.data() + 28, "{}  ", 4);
+    const std::size_t g = 28 + ftj;
+    std::memcpy(out.data() + g, "glTF", 4);
+    putU32(out, g + 4, 2);
+    putU32(out, g + 8, static_cast<std::uint32_t>(glbLen));
+    putU32(out, g + 12, jsonLen);
+    std::memcpy(out.data() + g + 16, "JSON", 4);
+    std::memcpy(out.data() + g + 20, jsonText.data(), jsonText.size());
+    return out;
+}
+
+} // namespace
+
+// A-52 回归：图集画布的**未被子矩形覆盖的缝隙**必须是 0。
+// TexturePacker::pack 用 osg::Image::allocateImage 建画布，而 OSG 只 new 缓冲区不清零；
+// 两张源图很少铺满画布，缝隙里留着的就是上一次堆使用的字节。页名（computeImageHash）
+// 和 KTX2 都按整张画布算，于是同一份输入两次运行会产出不同的图集页。
+//
+// 污染堆是这条用例的全部难点：小画布直接向系统要新虚拟页时天然全 0，去掉清零也照样通过
+// （2026-10-21 实测：只写"分配前塞一个 1 MiB 脏 vector"的版本，负对照 10/0 空过）。
+// 所以先用第一轮探出画布的真实字节数，再把同尺寸的堆块反复污染成 0xFF 后释放，
+// 逼 allocator 把脏块回收给后续画布；多轮取和，降低 LFH 挑块的偶然性。
+void testAtlasCanvasZeroed()
+{
+    std::cout << "[atlasCanvas] uncovered atlas pixels must be zero (A-52)" << std::endl;
+
+    auto solid = [](int w, int h, unsigned char v) -> osg::ref_ptr<osg::Image> {
+        osg::ref_ptr<osg::Image> im = new osg::Image;
+        im->allocateImage(w, h, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+        std::memset(im->data(), v, im->getImageSizeInBytes());
+        return im;
+    };
+    // 70x50 + 60x40：必然留出 (x>=70, y<50) 之类的缝隙
+    osg::ref_ptr<osg::Image> a = solid(70, 50, 0xAA);
+    osg::ref_ptr<osg::Image> b = solid(60, 40, 0x55);
+
+    struct Pack
+    {
+        osg::ref_ptr<osg::Image> atlas;
+        size_t numPacked = 0;
+        double ax = 0, ay = 0, bx = 0, by = 0;
+        int aw = 0, ah = 0, bw = 0, bh = 0;
+    };
+    auto doPack = [&a, &b]() -> Pack {
+        Pack p;
+        TexturePacker packer(256, 256);
+        const size_t idA = packer.addElement(a);
+        const size_t idB = packer.addElement(b);
+        p.atlas = packer.pack(p.numPacked, true, true);
+        if (p.atlas.valid())
+        {
+            packer.getPackingData(idA, p.ax, p.ay, p.aw, p.ah);
+            packer.getPackingData(idB, p.bx, p.by, p.bw, p.bh);
+        }
+        return p;
+    };
+
+    auto inside = [](int x, int y, double rx, double ry, int rw, int rh) {
+        return x >= static_cast<int>(rx) && x < static_cast<int>(rx) + rw
+            && y >= static_cast<int>(ry) && y < static_cast<int>(ry) + rh;
+    };
+
+    // 缝隙扫描：gaps=缝隙像素数，badGap=其中非零的字节所在像素数
+    int gaps = 0, badGap = 0, badA = 0, badB = 0;
+    auto scan = [&inside](const Pack& p, int& g, int& bg, int& aErr, int& bErr) {
+        const unsigned char* base = p.atlas->data();
+        const int s = p.atlas->s(), t = p.atlas->t();
+        const int rowStep = static_cast<int>(p.atlas->getRowStepInBytes());
+        const int pix = static_cast<int>(p.atlas->getPixelSizeInBits() / 8);
+        for (int y = 0; y < t; ++y)
+        {
+            const unsigned char* row = base + static_cast<size_t>(y) * rowStep;
+            for (int x = 0; x < s; ++x)
+            {
+                const unsigned char* px = row + static_cast<size_t>(x) * pix;
+                const bool inA = inside(x, y, p.ax, p.ay, p.aw, p.ah);
+                const bool inB = inside(x, y, p.bx, p.by, p.bw, p.bh);
+                if (!inA && !inB)
+                {
+                    ++g;
+                    for (int c = 0; c < pix; ++c) { if (px[c] != 0) { ++bg; break; } }
+                }
+                else if (inA)
+                {
+                    if (px[0] != 0xAA || px[1] != 0xAA) { ++aErr; }
+                }
+                else
+                {
+                    if (px[0] != 0x55 || px[1] != 0x55) { ++bErr; }
+                }
+            }
+        }
+    };
+
+    Pack first = doPack();
+    check(first.atlas.valid(), "atlas produced");
+    if (!first.atlas.valid()) { return; }
+    check(first.numPacked == 2, "both images placed", std::to_string(first.numPacked));
+    check(first.atlas->getPixelSizeInBits() / 8 >= 3, "atlas has >=3 channels");
+    scan(first, gaps, badGap, badA, badB);
+
+    // 阳性对照：缝隙区域必须真的存在，否则这条用例什么都没钉住
+    check(gaps > 0, "fixture leaves uncovered canvas pixels", std::to_string(gaps));
+    check(badA == 0, "sub-rect A content blitted", "bad=" + std::to_string(badA));
+    check(badB == 0, "sub-rect B content blitted", "bad=" + std::to_string(badB));
+
+    // 轮 0 已计入；再跑 5 轮，每轮前把同尺寸堆块涂成 0xFF 并释放
+    const size_t canvasBytes = first.atlas->getImageSizeInBytes();
+    int rounds = 1;
+    for (int round = 0; round < 5; ++round)
+    {
+        {
+            std::vector<std::vector<unsigned char>> pool(8);
+            for (std::vector<unsigned char>& v : pool) { v.assign(canvasBytes, 0xFFu); }
+            check(!pool.back().empty() && pool.back().front() == 0xFFu,
+                  "heap dirtied with canvas-sized blocks");
+        }   // 8 块脏内存同时释放，落在同一个大小桶里
+        Pack p = doPack();
+        if (!p.atlas.valid()) { continue; }
+        ++rounds;
+        int rg = 0, rbg = 0, ra = 0, rb = 0;
+        scan(p, rg, rbg, ra, rb);
+        gaps += rg; badGap += rbg; badA += ra; badB += rb;
+    }
+
+    check(badA == 0, "sub-rect A content blitted (all rounds)", "bad=" + std::to_string(badA));
+    check(badB == 0, "sub-rect B content blitted (all rounds)", "bad=" + std::to_string(badB));
+    check(badGap == 0, "uncovered atlas pixels are zeroed",
+          "dirty=" + std::to_string(badGap) + "/" + std::to_string(gaps)
+              + " rounds=" + std::to_string(rounds));
+}
+
+void testPrimitiveBudgetGate()
+{
+    std::cout << "[budgetGate] glTF primitive / material budget" << std::endl;
+    Utils::registerFileAliases();
+
+    ProductionProfile profile;
+    profile.budget.maxPrimitivesPerTile = 8;
+    profile.budget.maxMaterialsPerTile = 8;
+
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_budget_gate";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    const bool ran = pipeline.run(makeGrid(4, 4, 1.0).get(), opt);
+    check(ran, "budget gate fixture builds", joinMessages(pipeline.failures()));
+
+    std::string uri;
+    for (const ProductionTile& t : pipeline.tiles())
+    {
+        if (t.hasContent) { uri = t.uri; break; }
+    }
+    check(!uri.empty(), "fixture has a content tile to swap");
+    const std::filesystem::path staging = out / ".wb-staging";
+    const std::filesystem::path content = staging / uri;
+    check(std::filesystem::exists(content, ec), "staged content file exists", content.string());
+
+    // selfValidate 只认磁盘上的 tileset.json，而 tileset 是 finalize 才写的。
+    // 探针必须用生产同一个序列化函数落到 finalize 会用的那个路径上：自己拼一份
+    // "看着像"的 JSON 会把 URI 口径写歪，而 URI 对不上时 content 循环整段空转，
+    // 下面的"超标必拒"就全成了假绿。
+    const std::string tsPath = (staging / "tileset.json").string();
+    check(pipeline.writeTilesetJson(tsPath), "probe tileset.json written", tsPath);
+    // 只看本次探针那个 URI 的裁决：其它瓦片同样会说话，混在一起就把
+    // "闸有没有生效"变成了"总共报了几条"。
+    auto probe = [&pipeline, &uri, &tsPath]()
+    {
+        const std::size_t before = pipeline.failures().size();
+        pipeline.selfValidate(tsPath);
+        std::vector<std::string> hits;
+        for (std::size_t i = before; i < pipeline.failures().size(); ++i)
+        {
+            const std::string& m = pipeline.failures()[i];
+            if (m.find(uri.c_str()) != std::string::npos) { hits.push_back(m); }
+        }
+        return hits;
+    };
+    auto writeFake = [&](unsigned prims, unsigned mats) {
+        const std::vector<char> blob = makeFakeB3dm(prims, mats);
+        std::ofstream f(content, std::ios::binary | std::ios::trunc);
+        f.write(blob.data(), static_cast<std::streamsize>(blob.size()));
+        f.close();
+    };
+
+    // 阳性对照①：真实写出的 b3dm 必须解析得出、且在预算内。
+    // 这一条同时证明容器读法（28B 头 + 表长）对写出器的产物成立。
+    check(probe().empty(), "real written b3dm parses and is within budget",
+          joinMessages(probe()));
+
+    // 阳性对照②：正好卡在上限的瓦片放行（否则下面三条"超标必拒"只是空转）。
+    writeFake(8, 8);
+    check(probe().empty(), "at-budget tile passes the gate");
+
+    writeFake(9, 8);
+    {
+        const std::vector<std::string> hits = probe();
+        bool ok = !hits.empty();
+        for (const std::string& h : hits)
+        {
+            if (h.find("primitive budget") == std::string::npos) { ok = false; }
+        }
+        check(ok, "one primitive over the declared budget is rejected",
+              hits.empty() ? "no hit" : hits[0]);
+    }
+
+    writeFake(8, 9);
+    {
+        const std::vector<std::string> hits = probe();
+        bool ok = !hits.empty();
+        for (const std::string& h : hits)
+        {
+            if (h.find("material budget") == std::string::npos) { ok = false; }
+        }
+        check(ok, "one material over the declared budget is rejected",
+              hits.empty() ? "no hit" : hits[0]);
+    }
+
+    // 读不出 glTF 也必须是失败：预算无法证明 ≠ 没超
+    {
+        std::ofstream f(content, std::ios::binary | std::ios::trunc);
+        f << "not a 3d tiles container";
+        f.close();
+    }
+    {
+        const std::vector<std::string> hits = probe();
+        bool ok = !hits.empty();
+        for (const std::string& h : hits)
+        {
+            if (h.find("parsable glTF") == std::string::npos) { ok = false; }
+        }
+        check(ok, "an unparsable content body is a failure, not a pass",
+              hits.empty() ? "no hit" : hits[0]);
+    }
+}
+
 
 
 int main(int argc, char** argv)
@@ -1523,15 +2564,24 @@ int main(int argc, char** argv)
     run("partition", &testPartitionCoverageAndDeterminism);
     run("giant", &testGiantSingleMeshSplits);
     run("error", &testErrorEvaluatorAnalytic);
+    run("bvh", &testMeshBVHMatchesBruteForce);
+    run("bvhOrder", &testMeshBVHTraversalBitExact);
+    run("error-soundness", &testErrorBoundSoundness);
     run("manifest", &testFeatureManifest);
     run("batchid", &testBatchIdVisitorPreservesAttrib0);
     run("simplifier", &testSimplifierMultiplePrimitiveSets);
     run("proxyAggregate", &testProxyAggregateCoversSourceScope);
+    run("proxyTexture", &testProxyTextureBudget);
+    run("proxyTextureLadder", &testProxyTextureLadder);
+    run("texResize", &testOptimizerResizeIsolation);
     run("pipelineCoverage", &testPipelineLeafCoverageInvariant);
     run("proxySkip", &testPipelineProxySkipDegrades);
     run("bounds", &testPipelineBoundsGate);
     run("instancePoses", &testInstancePosesSurvive);
     run("noLocalPaths", &testArtifactsCarryNoLocalPaths);
+    run("foldUv", &testFoldTextureTransformIntoUv);
+    run("budgetGate", &testPrimitiveBudgetGate);
+    run("atlasCanvas", &testAtlasCanvasZeroed);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;
     std::cout.flush();

@@ -13,6 +13,10 @@ namespace production {
 
 using json = nlohmann::json;
 
+// 内节点代理纹理的最低可接受边长：写出阶段的降采样阶梯到此为止，构建期
+// "降到下限仍装不下才去纹理"的判据用同一个值，两边不能各说各话。
+constexpr unsigned proxyTextureFloorEdgePx = 64;
+
 // ---------------------------------------------------------------------------
 // 硬上限 / 软目标
 // ---------------------------------------------------------------------------
@@ -32,6 +36,10 @@ struct ResourceBudget {
     // 图集
     unsigned maxAtlasDimension = 4096;
     unsigned targetAtlasDimension = 2048;
+    // 内节点代理（远景 LOD）纹理最大边长：按预算降分辨率，而不是整张删纹理。
+    // 装不下 maxTileContentBytes 时逐级折半，直到 proxyTextureFloorEdgePx
+    // 仍不达标才去纹理。
+    unsigned proxyTextureMaxEdgePx = 512;
     // 空间树
     unsigned maxTreeDepth = 48;
     // i3dm
@@ -110,13 +118,30 @@ struct StageTiming {
     json toJson() const { return json{{"name", name}, {"seconds", seconds}}; }
 };
 
+// 计数量（AUDIT A-47）：以前塞在 stages 里，秒数与个数共用一个 "seconds" 字段，
+// 汇总脚本按秒求和就会把 4 亿个候选当成 4 亿秒加进去。计数单独走 counters。
+struct StageCount {
+    std::string name;
+    std::uint64_t value = 0;
+    json toJson() const { return json{{"name", name}, {"value", value}}; }
+};
+
 struct ConversionReport {
     std::string inputFile;
     std::string outputDir;
     ProductionProfile profile;
 
     std::vector<StageTiming> stages;
+    std::vector<StageCount> counters;
     double totalSeconds = 0.0;
+    // 进程自己的读数（AUDIT A-47）：totalSeconds 只覆盖 ProductionPipeline::run()，
+    // 而 main.cpp 里的 osgDB::readNodeFile 完全不在这段里——335 MB 档"32 % CPU 秒
+    // 无归属"的缺口就藏在这里。没有这两行，归属比例永远算不平，外部监视器还会
+    // 带进 1 s 级的采样误差。
+    double processCpuSeconds = 0.0;    // 自进程启动累计 user+kernel CPU 秒
+    double processUserSeconds = 0.0;   // 其中 user 态：壁钟仪表能对上的是这一项
+    double processKernelSeconds = 0.0; // 其中 kernel 态：缺页/文件 IO，壁钟仪表看不见
+    double processWallSeconds = 0.0;   // 自进程启动累计墙钟秒
     std::uint64_t peakRssBytes = 0;
 
     std::uint64_t inputBytes = 0;
@@ -146,11 +171,15 @@ struct ConversionReport {
     unsigned featuresMissingFromLeaves = 0;   // 叶瓦片覆盖缺口（真丢数据）
     unsigned proxyDroppedFeatureCount = 0;    // 聚合代理被抽稀掉的源 feature 数
     unsigned proxySkippedCount = 0;           // 建不出达标远景代理、退化为"仅子树覆盖"的内节点数
+    // 写出时纹理被压到 proxyTextureMaxEdgePx 的内节点代理瓦片数（保住纹理、只降
+    // 分辨率）。连下限都装不下、退化成无纹理的那批另有逐瓦片 warning。
+    unsigned proxyTextureCappedCount = 0;
 
     std::vector<std::string> warnings;
     std::vector<std::string> errors;
 
     void addStage(const std::string& n, double s) { stages.push_back({n, s}); }
+    void addCounter(const std::string& n, std::uint64_t v) { counters.push_back({n, v}); }
     json toJson() const;
 };
 

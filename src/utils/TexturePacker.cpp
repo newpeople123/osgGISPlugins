@@ -108,6 +108,11 @@ osg::Image* TexturePacker::pack(size_t& numImages, bool generateResult, bool sto
 		total->allocateImage(totalW, totalH, 1, GL_RGBA, GL_UNSIGNED_BYTE);
 	}
 
+	// osg::Image::allocateImage 只 new 缓冲区、不清零。子矩形很少铺满整张画布，
+	// 缝隙里留着的就是上一次堆使用的字节：同一份输入两次运行的图集页哈希/压缩
+	// 字节数都会变（A-52 的实测根因）。清零后缝隙固定为透明黑。
+	if (total->data()) { memset(total->data(), 0, total->getImageSizeInBytes()); }
+
 	for (std::map<size_t, InputPair>::iterator itr = _result.begin();
 		itr != _result.end(); ++itr)
 	{

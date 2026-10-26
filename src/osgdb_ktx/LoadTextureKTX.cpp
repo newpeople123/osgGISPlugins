@@ -11,6 +11,7 @@
 #include <ktx/gl_format.h>
 #include <osgdb_ktx/LoadTextureKTX.h>
 #include <thread>
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 
@@ -630,6 +631,14 @@ namespace osg
             unsigned int numThreads = std::thread::hardware_concurrency();
             if (numThreads == 0) {
                 numThreads = 2;
+            }
+            // WB_KTX2_THREADS 用来做"第三方压缩线程配额"的 A/B。
+            // 注：A-52（同二进制两遍产物不逐位相同）的真因已查明是图集画布未初始化
+            // （TexturePacker.cpp:114），不是线程数——2026-10-22 实测 1 与 24 线程
+            // 在 longxiang 上 244/244 个产物文件逐位相同。线程数影响逐位性只是未证伪的猜测。
+            if (const char* e = std::getenv("WB_KTX2_THREADS")) {
+                const int n = std::atoi(e);
+                if (n > 0) { numThreads = static_cast<unsigned>(n); }
             }
             params.threadCount = numThreads;
             result = ktxTexture2_CompressBasisEx((ktxTexture2*)texture, &params);

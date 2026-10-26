@@ -19,6 +19,17 @@
 namespace osgGISPlugins {
 namespace production {
 
+// 节点内并行预算。tile 之间已经有 WB_JOBS 路并行，评估器只有在并行度
+// 掉下来（大瓦片 straggler 独占机器）时才该往节点内扩线程，否则就是
+// 过订阅。管线每进入/退出一个瓦片任务登记一次，评估器按剩余空闲核分配。
+class TileTaskScope {
+public:
+    TileTaskScope();
+    ~TileTaskScope();
+    TileTaskScope(const TileTaskScope&) = delete;
+    TileTaskScope& operator=(const TileTaskScope&) = delete;
+};
+
 struct TriangleSoup {
     std::vector<osg::Vec3d> v;   // 每 3 个为一个三角形
     std::size_t size() const { return v.size() / 3; }
@@ -63,6 +74,8 @@ struct ErrorResult {
     double p99M = 0.0;
     double maxSampleM = 0.0;
     std::size_t samplesUsed = 0;
+    double bvhBuildSeconds = 0.0;  // 仪表：双向目标侧建树总耗时
+    double workerCpuSeconds = 0.0; // 仪表：节点内并行 worker 线程 CPU 秒（不含调用线程）
     bool certified = false;        // 区间收敛到容差内
     bool boundLoose = false;       // 达到采样预算，上界仍然保守
     const char* status = "UNKNOWN";
@@ -83,6 +96,8 @@ public:
         double lower = 0.0, upper = 0.0, p95 = 0.0, p99 = 0.0, maxSample = 0.0;
         std::size_t samples = 0;
         bool budgetExhausted = false;
+        double bvhBuildSeconds = 0.0;   // 仪表：目标侧建树耗时，不参与判定
+        double workerCpuSeconds = 0.0;  // 仪表：分块 worker 线程的 CPU 秒之和（不含父线程）
         std::vector<double> all;
     };
     DirectionResult evaluateDirection(const TriangleSoup& from, const TriangleSoup& to) const;

@@ -24,6 +24,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace osgGISPlugins {
 namespace production {
@@ -59,6 +60,38 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// 单瓦片子阶段计时（AUDIT A-47）
+//
+// 阶段级 micro_* 是全体瓦片的累加，看得到"评估占 97 %"但看不出关键路径：
+// 一个 1 200 s 的 straggler 和 600 个 2 s 的瓦片在累加里无法区分，
+// 而"最低能压到多少小时"只由前者决定。这里按瓦片落一份，纯观测，
+// 不参与任何验收判定。
+// ---------------------------------------------------------------------------
+struct TileTimings {
+    double heavySec = 0.0;        // processTileHeavy 全程
+    double materializeSec = 0.0;  // 叶：_model.materialize
+    double proxyBuildSec = 0.0;   // 内节点：ProxyMeshBuilder::build 全程
+    double collectSec = 0.0;
+    double evaluateSec = 0.0;
+    double bvhBuildSec = 0.0;
+    double writeSec = 0.0;        // 主线程 writeContent
+    double finalizeSec = 0.0;     // 主线程 finalizeTileFromWork 全程
+    // CPU 秒口径（本线程 GetThreadTimes 的 user+kernel）。只有这套能和进程
+    // CPU 秒对账：壁钟那套在 8 路并行时把 8 份工作量记成 1 份。
+    double heavyCpuSec = 0.0;
+    double materializeCpuSec = 0.0;
+    double proxyBuildCpuSec = 0.0;
+    double collectCpuSec = 0.0;
+    double evaluateCpuSec = 0.0;  // 含 worker 线程 CPU
+    double evaluateWorkerCpuSec = 0.0;  // 只有 worker 线程，heavyCpuSec 之外的一份
+    double writeCpuSec = 0.0;
+    double finalizeCpuSec = 0.0;
+    std::uint64_t evaluateSamples = 0;
+
+    json toJson() const;
+};
+
+// ---------------------------------------------------------------------------
 // 最终输出树的一个节点
 // ---------------------------------------------------------------------------
 struct ProductionTile {
@@ -81,6 +114,7 @@ struct ProductionTile {
 
     unsigned triangles = 0;
     std::uint64_t contentBytes = 0;
+    TileTimings timing;
 
     std::vector<int> children;
     std::string refine = "REPLACE";
@@ -140,6 +174,13 @@ public:
     // 非 const：失败项要记进 _failures，供调用方打印。
     bool selfValidate(const std::string& tilesetJsonPath);
 
+    // 超限瓦片的纹理降档阶梯（从 256 折到 proxyTextureFloorEdgePx）。
+    // textureMaxEdgePx 是本瓦片首轮已经用过的边长上限：代理瓦片传 512 时档位只剩
+    // 256/128/64，叶瓦片传 0 时一档都不能少（少了就等于废掉超限兜底）。
+    // 单独成函数是为了让"叶瓦片必须保留全部档位"这条能被单元测试钉住——
+    // 集成用例走的是三角形超限分支，观察不到字节阶梯。
+    static std::vector<unsigned> textureDownscaleLadder(unsigned textureMaxEdgePx);
+
 private:
     ProductionProfile _profile;
     Options _opt;
@@ -155,6 +196,30 @@ private:
     std::vector<std::string> _failures;
     std::vector<std::string> _warnings;
     int _root = -1;
+
+    // proxy_encode_error 阶段内细分仪表（手册 13.3"各阶段耗时"）：
+    // 数值随 TileHeavyWork 带回，主线程收尾时串行累加；只观测，不参与任何判定。
+    double _microProxySimplifySec = 0.0;
+    double _microProxyAggregateSec = 0.0;
+    double _microHeavySec = 0.0;
+    double _microMaterializeSec = 0.0;
+    double _microProxyBuildSec = 0.0;
+    double _microWriteSec = 0.0;
+    double _microEvaluateSec = 0.0;
+    double _microCollectSec = 0.0;
+    std::uint64_t _microAggregateCandidates = 0;
+    std::uint64_t _microEvaluateSamples = 0;
+    double _microBvhBuildSec = 0.0;
+    double _microFinalizeSec = 0.0;
+    // CPU 秒版累加器（AUDIT A-47：闭合"仪表 vs 进程 CPU 秒"这条算式）
+    double _microHeavyCpuSec = 0.0;
+    double _microMaterializeCpuSec = 0.0;
+    double _microProxyBuildCpuSec = 0.0;
+    double _microCollectCpuSec = 0.0;
+    double _microEvaluateCpuSec = 0.0;
+    double _microEvaluateWorkerCpuSec = 0.0;
+    double _microWriteCpuSec = 0.0;
+    double _microFinalizeCpuSec = 0.0;
 
     int buildB3dmTree(int partitionNode);
     std::map<int, int> _pnToTileId;   // partition 节点 -> tile id（并行预分配）
@@ -175,7 +240,8 @@ private:
         bool isProxy = false;
         bool aggregate = false;
         bool leaf = false;
-        bool texturesDropped = false;  // 内节点代理预估超限，构建时即去纹理
+        bool texturesDropped = false;  // 内节点代理连下限分辨率纹理都装不下，构建时去纹理
+        unsigned texturesCappedPx = 0; // 内节点代理写出时纹理边长上限（0 = 不额外降分辨率）
         std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
         std::vector<FeatureId> sourceScope;
         double measuredProxyErrorM = 0.0;
@@ -186,6 +252,25 @@ private:
         bool boundLoose = false;
         double p95M = 0.0;
         std::string failure;   // proxy 生成失败原因
+        // 细分仪表（随工作带回主线程累加）
+        // 壁钟（Sec）与 CPU 秒（CpuSec）是两套量：瓦片之间 8 路并行时
+        // Σ 壁钟 = 1× 工作量，Σ CPU 秒才等于进程 user 秒。对账用后者。
+        double microHeavySec = 0.0;
+        double microHeavyCpuSec = 0.0;
+        double microMaterializeSec = 0.0;
+        double microMaterializeCpuSec = 0.0;
+        double microProxyBuildSec = 0.0;
+        double microProxyBuildCpuSec = 0.0;
+        double microProxySimplifySec = 0.0;
+        double microProxyAggregateSec = 0.0;
+        std::uint64_t microAggregateCandidates = 0;
+        double microCollectSec = 0.0;
+        double microCollectCpuSec = 0.0;
+        double microEvaluateSec = 0.0;
+        double microEvaluateCpuSec = 0.0;   // 调用线程 + worker 线程
+        double microEvaluateWorkerCpuSec = 0.0;  // 只有 worker 线程（micro_total_cpu 加这一份）
+        std::uint64_t microEvaluateSamples = 0;
+        double microBvhBuildSec = 0.0;
     };
     TileHeavyWork processTileHeavy(int pn, int id);
     // 3) 主线程串行收尾：writeContent + 状态聚合 + seam 校验
@@ -200,7 +285,13 @@ private:
         std::vector<FeatureId> featureOrder;
         std::string error;
     };
-    WriteOutcome writeContent(osg::Node* node, const std::string& relUri, bool isInstanceTile);
+    // textureMaxEdgePx：本瓦片单张纹理的最大边长（0 = 用命令行 -tw/-th 的全局值）。
+    // 只给内节点代理传，叶瓦片保持原始分辨率。
+    // foldTextureTransform：写出前把图集子矩形的 KHR_texture_transform 折进
+    // TEXCOORD_0（A-51 方案 A，共用同一张贴图的 drawable 才能合并材质）。
+    // 同样只给代理开：叶瓦片按手册 7.4 只允许无损重建，改写 UV 属有损重编码。
+    WriteOutcome writeContent(osg::Node* node, const std::string& relUri, bool isInstanceTile,
+                              unsigned textureMaxEdgePx = 0, bool foldTextureTransform = false);
 
     std::uint64_t _peakRss = 0;
 };

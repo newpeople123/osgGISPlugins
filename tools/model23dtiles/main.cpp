@@ -371,18 +371,23 @@ void printUsage()
 	// =================== Performance Limits ===================
 	osg::notify(osg::NOTICE) << "performance limits:" << std::endl;
 		osg::notify(osg::NOTICE) << "    -tri <number>       - Max triangles per tile. Default is 200000" << std::endl;
-		osg::notify(osg::NOTICE) << "    -dc <number>        - Max draw calls per tile. Default is 20" << std::endl;
+		osg::notify(osg::NOTICE) << "    -dc <number>        - Max draw calls per tile. Default is 24" << std::endl;
+		osg::notify(osg::NOTICE) << "                          Production path (-sp): profile maxPrimitivesPerTile;" << std::endl;
+		osg::notify(osg::NOTICE) << "                          legacy HLOD path: TileBuilder per-tile drawcall cap." << std::endl;
 		osg::notify(osg::NOTICE) << "    -mb <number>        - Max bytes of a single tile content (b3dm/i3dm). Default is 8388608 (8MiB)" << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 
 	// =================== Texture Size ===================
 	osg::notify(osg::NOTICE) << "texture size:" << std::endl;
-	osg::notify(osg::NOTICE) << "    -tw <number>        - Max texture width (power of 2). Default is 256" << std::endl;
-	osg::notify(osg::NOTICE) << "    -th <number>        - Max texture height (power of 2). Default is 256" << std::endl;
+	osg::notify(osg::NOTICE) << "    -tw <number>        - Max texture width (power of 2). Default is 2048" << std::endl;
+	osg::notify(osg::NOTICE) << "    -th <number>        - Max texture height (power of 2). Default is 2048" << std::endl;
 	osg::notify(osg::NOTICE) << "    -aw <number>        - Max texture atlas width. Default is 2048" << std::endl;
 	osg::notify(osg::NOTICE) << "                          Must be power of 2 and >= tw, otherwise no atlas is created" << std::endl;
 	osg::notify(osg::NOTICE) << "    -ah <number>        - Max texture atlas height. Default is 2048" << std::endl;
 	osg::notify(osg::NOTICE) << "                          Must be power of 2 and >= th, otherwise no atlas is created" << std::endl;
+	osg::notify(osg::NOTICE) << "    -ptw <number>       - Max texture edge for inner-node (far-LOD) proxy tiles. Default is 512" << std::endl;
+	osg::notify(osg::NOTICE) << "                          Leaves keep -tw/-th; proxies step down 512->256->128->64" << std::endl;
+	osg::notify(osg::NOTICE) << "                          only while the tile exceeds -mb; below 64 the proxy drops textures" << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 
 	// =================== Material ===================
@@ -482,9 +487,17 @@ int main(int argc, char** argv)
 	const int maxTextureHeight = parseArgument(arguments, "-th", 2048);
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-aw", 2048);
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-ah", 2048);
+	// 内节点代理（远景 LOD）单张纹理边长上限：叶瓦片保持 -tw/-th，代理只降
+	// 分辨率、不整张删纹理（降到 -mb 装不下的下限才去纹理）。
+	const int proxyTextureMaxEdge = parseArgument(arguments, "-ptw", 512);
 
 	const unsigned int maxTriangleCount = parseArgument(arguments, "-tri", 200000);
-	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-dc", 20);
+	// 默认与 ProductionProfile 的 maxPrimitivesPerTile / 手册 §3 的 ≤24 对齐：
+	// 下面会无条件用这个值覆盖 profile.budget.maxPrimitivesPerTile，取 20 会让
+	// 声明的 24 永远不生效（用户 2026-10-21 裁定抬到 24）。
+	// 副作用：不带 -sp 的遗留 HLOD 路径（:759）也继承这个上限，
+	// TreeBuilder.cpp:579 的 min((level+1)*InitDrawcallCommandCount, 本值) 由 20 抬到 24。
+	const unsigned int maxDrawcallCommandCount = parseArgument(arguments, "-dc", 24);
 	// 单瓦片内容字节上限（默认 8 MiB）。手册 7.3：超过硬上限必须明确失败，
 	// 不允许输出超限瓦片；这个开关就是用来构造超限场景验证该行为的。
 	const unsigned int maxTileContentBytes = parseArgument(arguments, "-mb", 8u * 1024u * 1024u);
@@ -660,6 +673,9 @@ int main(int argc, char** argv)
 			profile.budget.maxAtlasDimension = std::max<unsigned>(maxTextureAtlasWidth, maxTextureAtlasHeight);
 			profile.budget.targetAtlasDimension =
 				std::min<unsigned>(profile.budget.targetAtlasDimension, profile.budget.maxAtlasDimension);
+			// 代理纹理上限：与 -tw/-th 取小由写出阶段按瓦片做，这里如实记录用户值，
+			// 低于 64px 下限的输入交给 profile.validate() 明确拒绝（不静默夹取）。
+			profile.budget.proxyTextureMaxEdgePx = static_cast<unsigned>(proxyTextureMaxEdge);
 			if (arguments.find("-strictIdentity") > 0) { profile.strictIdentity = true; }
 
 			ProductionPipeline::Options popt;

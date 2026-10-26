@@ -16,6 +16,7 @@ json ResourceBudget::toJson() const
         {"targetMaterialsPerTile", targetMaterialsPerTile},
         {"maxAtlasDimension", maxAtlasDimension},
         {"targetAtlasDimension", targetAtlasDimension},
+        {"proxyTextureMaxEdgePx", proxyTextureMaxEdgePx},
         {"maxTreeDepth", maxTreeDepth},
         {"maxInstancesPerTile", maxInstancesPerTile},
         {"maxVerticesPerTile", maxVerticesPerTile},
@@ -75,6 +76,8 @@ void ProductionProfile::validate() const
     require(budget.maxMaterialsPerTile > 0, "maxMaterialsPerTile must be > 0");
     require(budget.maxAtlasDimension >= 256, "maxAtlasDimension too small");
     require(budget.targetAtlasDimension <= budget.maxAtlasDimension, "atlas target > hard limit");
+    require(budget.proxyTextureMaxEdgePx >= proxyTextureFloorEdgePx,
+            "proxyTextureMaxEdgePx must be >= proxyTextureFloorEdgePx");
     require(budget.maxTreeDepth >= 1 && budget.maxTreeDepth <= 48,
             "maxTreeDepth must be within [1,48]");
     require(budget.maxInstancesPerTile > 0, "maxInstancesPerTile must be > 0");
@@ -89,12 +92,19 @@ json ConversionReport::toJson() const
 {
     json js = json::array();
     for (const auto& s : stages) { js.push_back(s.toJson()); }
+    json jc = json::array();
+    for (const auto& c : counters) { jc.push_back(c.toJson()); }
     return json{
         {"inputFile", inputFile},
         {"outputDir", outputDir},
         {"profile", profile.toJson()},
         {"stages", js},
+        {"counters", jc},
         {"totalSeconds", totalSeconds},
+        {"processCpuSeconds", processCpuSeconds},
+        {"processUserSeconds", processUserSeconds},
+        {"processKernelSeconds", processKernelSeconds},
+        {"processWallSeconds", processWallSeconds},
         {"peakRssBytes", peakRssBytes},
         {"inputBytes", inputBytes},
         {"outputBytes", outputBytes},
@@ -116,6 +126,7 @@ json ConversionReport::toJson() const
         {"featuresMissingFromLeaves", featuresMissingFromLeaves},
         {"proxyDroppedFeatureCount", proxyDroppedFeatureCount},
         {"proxySkippedCount", proxySkippedCount},
+        {"proxyTextureCappedCount", proxyTextureCappedCount},
         {"warnings", warnings},
         {"errors", errors}
     };

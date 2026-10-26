@@ -8,10 +8,20 @@
 #include <osgDB/FileUtils>
 #include <osgDB/WriteFile>
 #include <iomanip>
+#include <sstream>
+#include <cstdlib>
 #include <unordered_set>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
 #include <osgdb_gltf/material/GltfPbrSGMaterial.h>
 #include <numeric>
+#include <atomic>
+#include <chrono>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 #ifndef OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 #ifdef _WIN32
 #define OSG_GIS_PLUGINS_PATH_SPLIT_STRING "\\"
@@ -21,6 +31,446 @@
 #endif // !OSG_GIS_PLUGINS_PATH_SPLIT_STRING
 
 using namespace osgGISPlugins;
+
+namespace {
+// 纹理落盘仪表（AUDIT A-47 判据①：CPU 秒要有归属）。
+// 为什么要单独量：exportImage 里那次 writeImageFile 对 .ktx2 会走进
+// ktxTexture2_CompressBasisEx，而它自己起 threadCount =
+// hardware_concurrency 个线程（src/osgdb_ktx/LoadTextureKTX.cpp:630）。
+// 生产侧所有 micro_* 仪表都是**调用线程**的 CPU 秒，这批第三方线程一秒都不在里面。
+// 所以这里同时记调用线程秒与**进程**秒：两者之差才是这些线程吃掉的量。
+// 进程口径在写出期间会把并行瓦片的 worker 秒也算进来，因此它是上界；
+// 用作归因时看的是"差值是否与未归属量同数量级"。
+std::atomic<unsigned long long> g_texFiles{ 0 };
+std::atomic<unsigned long long> g_texWallNs{ 0 };
+std::atomic<unsigned long long> g_texThreadNs{ 0 };
+std::atomic<unsigned long long> g_texProcessNs{ 0 };
+
+double fileTimeSec(const FILETIME& ft)
+{
+	ULARGE_INTEGER v;
+	v.LowPart = ft.dwLowDateTime;
+	v.HighPart = ft.dwHighDateTime;
+	return static_cast<double>(v.QuadPart) / 1.0e7;
+}
+
+double currentProcessCpuSec()
+{
+#ifdef _WIN32
+	FILETIME creation, exitT, kernel, user;
+	if (GetProcessTimes(GetCurrentProcess(), &creation, &exitT, &kernel, &user))
+	{
+		return fileTimeSec(user) + fileTimeSec(kernel);
+	}
+#endif
+	return 0.0;
+}
+
+double currentThreadCpuSec()
+{
+#ifdef _WIN32
+	FILETIME creation, exitT, kernel, user;
+	if (GetThreadTimes(GetCurrentThread(), &creation, &exitT, &kernel, &user))
+	{
+		return fileTimeSec(user) + fileTimeSec(kernel);
+	}
+#endif
+	return 0.0;
+}
+
+class TextureExportProbe {
+public:
+	TextureExportProbe()
+		: _t0(std::chrono::steady_clock::now())
+		, _process0(currentProcessCpuSec())
+		, _thread0(currentThreadCpuSec())
+	{
+	}
+	void finish()
+	{
+		using namespace std::chrono;
+		g_texWallNs += static_cast<unsigned long long>(
+			duration_cast<nanoseconds>(steady_clock::now() - _t0).count());
+		g_texThreadNs += static_cast<unsigned long long>((currentThreadCpuSec() - _thread0) * 1.0e9);
+		g_texProcessNs += static_cast<unsigned long long>((currentProcessCpuSec() - _process0) * 1.0e9);
+		g_texFiles += 1;
+	}
+private:
+	std::chrono::steady_clock::time_point _t0;
+	double _process0 = 0.0;
+	double _thread0 = 0.0;
+};
+}
+
+GltfOptimizer::TextureExportStats GltfOptimizer::textureExportStats()
+{
+	TextureExportStats s;
+	s.files = g_texFiles.load();
+	s.wallSeconds = static_cast<double>(g_texWallNs.load()) / 1.0e9;
+	s.threadCpuSeconds = static_cast<double>(g_texThreadNs.load()) / 1.0e9;
+	s.processCpuSeconds = static_cast<double>(g_texProcessNs.load()) / 1.0e9;
+	return s;
+}
+
+void GltfOptimizer::resetTextureExportStats()
+{
+	g_texFiles = 0;
+	g_texWallNs = 0;
+	g_texThreadNs = 0;
+	g_texProcessNs = 0;
+}
+
+namespace {
+
+// A-51 方案 A 的数据结构：贴图变换在 OSG 侧有两个可能的宿主 ——
+// 普通 osg::Material + unit0 贴图路径把图集子矩形写在 osg::Texture 上
+// （Osg2Gltf::getOsgTexture2Material），pbr 路径写在 GltfMaterial 上
+// （Osg2Gltf::getOsgMaterial2Material）。两边都只认 enable 键为 true 的槽。
+// 键值类型必须与图集打包时 setUserValue 用的字面类型逐一对上
+// （bool / double / int）：osg::Object::getUserValue 类型不匹配时静默返回 false，
+// 读侧就会拿到默认值。
+struct TextureTransform
+{
+	double offsetX = 0.0;
+	double offsetY = 0.0;
+	double scaleX = 1.0;
+	double scaleY = 1.0;
+	int texCoord = 0;
+
+	bool isIdentity() const
+	{
+		return offsetX == 0.0 && offsetY == 0.0 && scaleX == 1.0 && scaleY == 1.0;
+	}
+	bool sameAs(const TextureTransform& other) const
+	{
+		return offsetX == other.offsetX && offsetY == other.offsetY &&
+			scaleX == other.scaleX && scaleY == other.scaleY &&
+			texCoord == other.texCoord;
+	}
+};
+
+struct TransformSlot
+{
+	osg::ref_ptr<osg::Object> holder;
+	std::string enableKey;
+	std::string offsetXKey;
+	std::string offsetYKey;
+	std::string scaleXKey;
+	std::string scaleYKey;
+	std::string texCoordKey;
+};
+
+static TransformSlot makeTransformSlot(osg::Object* holder,
+	const char* enableKey, const char* offsetXKey, const char* offsetYKey,
+	const char* scaleXKey, const char* scaleYKey, const char* texCoordKey)
+{
+	TransformSlot slot;
+	slot.holder = holder;
+	slot.enableKey = enableKey;
+	slot.offsetXKey = offsetXKey;
+	slot.offsetYKey = offsetYKey;
+	slot.scaleXKey = scaleXKey;
+	slot.scaleYKey = scaleYKey;
+	slot.texCoordKey = texCoordKey;
+	return slot;
+}
+
+// 与 include/osgdb_gltf/Extensions.h 的键名成对：tag 取 BASECOLOR / NORMAL /
+// OCCLUSION / EMISSIVE / MR / DIFFUSE / SG。
+#define OSGGIS_TRANSFORM_SLOT(holderExpr, tag)                                       \
+	makeTransformSlot(holderExpr, TEX_TRANSFORM_##tag##_TEXTURE_NAME,                 \
+		TEX_TRANSFORM_##tag##_OFFSET_X, TEX_TRANSFORM_##tag##_OFFSET_Y,               \
+		TEX_TRANSFORM_##tag##_SCALE_X, TEX_TRANSFORM_##tag##_SCALE_Y,                 \
+		TEX_TRANSFORM_##tag##_TEXCOORD)
+
+static bool transformSlotEnabled(const TransformSlot& slot)
+{
+	bool enabled = false;
+	if (!slot.holder.valid()) { return false; }
+	slot.holder->getUserValue(slot.enableKey, enabled);
+	return enabled;
+}
+
+static void readTransformSlot(const TransformSlot& slot, double& offsetX, double& offsetY,
+                              double& scaleX, double& scaleY, int& texCoord)
+{
+	slot.holder->getUserValue(slot.offsetXKey, offsetX);
+	slot.holder->getUserValue(slot.offsetYKey, offsetY);
+	slot.holder->getUserValue(slot.scaleXKey, scaleX);
+	slot.holder->getUserValue(slot.scaleYKey, scaleY);
+	slot.holder->getUserValue(slot.texCoordKey, texCoord);
+}
+
+static void clearTransformSlot(const TransformSlot& slot)
+{
+	// 只清 enable 键：写手（getOsgTexture2Material / getOsgMaterial2Material）
+	// 见 enableExtension=false 就沿用 offsetX=0,offsetY=0,scaleX=1,scaleY=1 的
+	// 局部默认值，再统一乘一次 flipGltfTextureYAxis。因此"清键"与"折进 UV"
+	// 必须同时发生，单独清键会让这个 drawable 采到图集的错误位置。
+	slot.holder->setUserValue(slot.enableKey, false);
+}
+
+class TextureTransformFolder : public osg::NodeVisitor
+{
+public:
+	explicit TextureTransformFolder(GltfOptimizer::TextureUvBackup& backup)
+		: osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+		, _backup(backup)
+	{
+	}
+
+	// 把 uvBackup 里的原始 TEXCOORD_0 装回各自的几何。
+	// 条目持几何引用，所以裸 key 与 entry.geometry 必然同地址，直接按条目走即可。
+	unsigned restore()
+	{
+		unsigned restored = 0;
+		for (auto& entry : _backup)
+		{
+			if (entry.second.geometry.valid() && entry.second.originalTexCoords.valid())
+			{
+				entry.second.geometry->setTexCoordArray(0, entry.second.originalTexCoords.get());
+			}
+			// 键值也要装回：折叠对恒等变换唯一的改动就是清键，
+			// 还原之后节点必须和折叠前逐值相同。
+			for (const GltfOptimizer::FoldedSlotState& slot : entry.second.slots)
+			{
+				if (!slot.holder.valid()) { continue; }
+				slot.holder->setUserValue(slot.enableKey, slot.enabled);
+				slot.holder->setUserValue(slot.offsetXKey, slot.offsetX);
+				slot.holder->setUserValue(slot.offsetYKey, slot.offsetY);
+				slot.holder->setUserValue(slot.scaleXKey, slot.scaleX);
+				slot.holder->setUserValue(slot.scaleYKey, slot.scaleY);
+				slot.holder->setUserValue(slot.texCoordKey, slot.texCoord);
+			}
+			++restored;
+		}
+		_backup.clear();
+		return restored;
+	}
+
+	struct Candidate
+	{
+		osg::ref_ptr<osg::Geometry> geom;
+		std::vector<TransformSlot> slots;
+		TextureTransform transform;
+		bool foldable = false;
+		bool needsBake = false;
+
+		std::vector<osg::Object*> holderKeys() const
+		{
+			std::vector<osg::Object*> keys;
+			keys.reserve(slots.size());
+			for (const TransformSlot& s : slots) { keys.push_back(s.holder.get()); }
+			return keys;
+		}
+	};
+
+	unsigned fold(osg::Node* node)
+	{
+		if (!node) { return 0; }
+		_candidates.clear();
+		// 契约：一次 (optimize → write) 只折一遍，且折叠前 UV 必须是原始值。
+		// 先整体还原上一轮的折叠结果，本轮的烘焙永远建立在原始 UV 上，
+		// 变换不可能叠两次。
+		restore();
+		node->accept(*this);
+
+		// 一个宿主对象（贴图或材质）可能被多个 drawable 引用，变换值就存在宿主上，
+		// 所以引用它的 drawable 天然读到同一个变换。清 enable 键会影响该宿主的全部
+		// 引用者 —— 只有当每个引用者都能折时才允许清。
+		// 反例：贴图被两个 drawable 共用，其中一个 TEXCOORD_0 是 Vec3Array，
+		// 单独清共享宿主的键会让它按原始 UV 采到图集里的错误子矩形。
+		std::unordered_map<osg::Object*, bool> holderAllFoldable;
+		for (const Candidate& c : _candidates)
+		{
+			for (osg::Object* key : c.holderKeys())
+			{
+				auto it = holderAllFoldable.find(key);
+				if (it == holderAllFoldable.end()) { holderAllFoldable[key] = c.foldable; }
+				else { it->second = it->second && c.foldable; }
+			}
+		}
+
+		unsigned folded = 0;
+		for (Candidate& c : _candidates)
+		{
+			bool apply = c.foldable;
+			if (apply)
+			{
+				for (osg::Object* key : c.holderKeys())
+				{
+					if (!holderAllFoldable[key]) { apply = false; break; }
+				}
+			}
+			if (applyOne(c, apply)) { ++folded; }
+		}
+		return folded;
+	}
+
+	void apply(osg::Drawable& drawable) override
+	{
+		osg::Geometry* geom = drawable.asGeometry();
+		if (!geom) { return; }
+
+		Candidate c;
+		c.geom = geom;
+		osg::StateSet* ss = effectiveStateSet(drawable);
+		if (ss)
+		{
+			collectEnabledSlots(*ss, c.slots);
+		}
+		if (!c.slots.empty())
+		{
+			bool uniform = true;
+			bool scalesValid = true;
+			bool texCoordIsZero = true;
+			bool firstSlot = true;
+			for (const TransformSlot& slot : c.slots)
+			{
+				TextureTransform t;
+				readTransformSlot(slot, t.offsetX, t.offsetY, t.scaleX, t.scaleY, t.texCoord);
+				if (firstSlot) { c.transform = t; firstSlot = false; }
+				else if (!c.transform.sameAs(t)) { uniform = false; }
+				if (t.scaleX <= 0.0 || t.scaleY <= 0.0) { scalesValid = false; }
+				if (t.texCoord != 0) { texCoordIsZero = false; }
+			}
+			// 恒等变换不需要改写 UV：清掉 enable 键后写手仍会输出同一个（翻转后的）
+			// 恒等 extension，材质值不变，但省掉"这个槽还在生效"造成的材质分裂。
+			c.needsBake = !(uniform && c.transform.isIdentity());
+			c.foldable = uniform && scalesValid && texCoordIsZero &&
+				(!c.needsBake || hasVec2TexCoords(*geom));
+		}
+		_candidates.push_back(c);
+	}
+
+private:
+	// 写手（Osg2Gltf::pushStateSet/_ssStack）取的是"drawable 自己的 StateSet，
+	// 没有则继承最近一个非空父节点 StateSet"，这里按同一条规则解析。
+	// 父链用 getParent(0) 并有深度上限：多父节点（共享子图）时无法唯一确定继承链，
+	// 与写手存在偏差，此时宁可因为读不到键而不折叠。
+	static osg::StateSet* effectiveStateSet(osg::Node& node)
+	{
+		if (node.getStateSet()) { return node.getStateSet(); }
+		for (unsigned i = 0; i < node.getNumParents(); ++i)
+		{
+			osg::Node* parent = node.getParent(i);
+			for (int depth = 0; parent && depth < 256; ++depth)
+			{
+				if (parent->getStateSet()) { return parent->getStateSet(); }
+				parent = parent->getNumParents() ? parent->getParent(0) : nullptr;
+			}
+		}
+		return nullptr;
+	}
+
+	static void collectEnabledSlots(osg::StateSet& ss, std::vector<TransformSlot>& out)
+	{
+		const osg::ref_ptr<osg::Texture> texture = dynamic_cast<osg::Texture*>(
+			ss.getTextureAttribute(0, osg::StateAttribute::TEXTURE));
+		if (texture.valid())
+		{
+			const TransformSlot basecolor =
+				OSGGIS_TRANSFORM_SLOT(static_cast<osg::Object*>(texture.get()), BASECOLOR);
+			if (transformSlotEnabled(basecolor)) { out.push_back(basecolor); }
+		}
+
+		const osg::ref_ptr<osg::Material> material =
+			dynamic_cast<osg::Material*>(ss.getAttribute(osg::StateAttribute::MATERIAL));
+		const osg::ref_ptr<GltfMaterial> gltfMaterial =
+			material.valid() ? dynamic_cast<GltfMaterial*>(material.get()) : nullptr;
+		if (gltfMaterial.valid())
+		{
+			osg::Object* holder = static_cast<osg::Object*>(gltfMaterial.get());
+			const TransformSlot slots[] = {
+				OSGGIS_TRANSFORM_SLOT(holder, BASECOLOR),
+				OSGGIS_TRANSFORM_SLOT(holder, NORMAL),
+				OSGGIS_TRANSFORM_SLOT(holder, OCCLUSION),
+				OSGGIS_TRANSFORM_SLOT(holder, EMISSIVE),
+				OSGGIS_TRANSFORM_SLOT(holder, DIFFUSE),
+				OSGGIS_TRANSFORM_SLOT(holder, SG),
+			};
+			for (const TransformSlot& slot : slots)
+			{
+				if (transformSlotEnabled(slot)) { out.push_back(slot); }
+			}
+			if (dynamic_cast<GltfPbrMRMaterial*>(gltfMaterial.get()))
+			{
+				const TransformSlot mr = OSGGIS_TRANSFORM_SLOT(holder, MR);
+				if (transformSlotEnabled(mr)) { out.push_back(mr); }
+			}
+		}
+	}
+
+	static bool hasVec2TexCoords(const osg::Geometry& geom)
+	{
+		return dynamic_cast<const osg::Vec2Array*>(geom.getTexCoordArray(0)) != nullptr;
+	}
+
+	// 只在"手上这份数组是原始 UV"的前提下烘焙（fold() 已先整体还原）。
+	bool applyOne(Candidate& c, bool apply)
+	{
+		if (!apply) { return false; }
+
+		const osg::ref_ptr<osg::Vec2Array> original =
+			dynamic_cast<osg::Vec2Array*>(c.geom->getTexCoordArray(0));
+		if (c.needsBake && !original.valid()) { return false; }
+
+		GltfOptimizer::TextureUvBackupEntry entry;
+		entry.geometry = c.geom;
+		entry.originalTexCoords = original;
+		for (const TransformSlot& slot : c.slots)
+		{
+			GltfOptimizer::FoldedSlotState saved;
+			saved.holder = slot.holder;
+			saved.enableKey = slot.enableKey;
+			saved.offsetXKey = slot.offsetXKey;
+			saved.offsetYKey = slot.offsetYKey;
+			saved.scaleXKey = slot.scaleXKey;
+			saved.scaleYKey = slot.scaleYKey;
+			saved.texCoordKey = slot.texCoordKey;
+			saved.enabled = true;
+			readTransformSlot(slot, saved.offsetX, saved.offsetY, saved.scaleX,
+			                  saved.scaleY, saved.texCoord);
+			entry.slots.push_back(saved);
+			clearTransformSlot(slot);
+		}
+		_backup[c.geom.get()] = entry;
+		if (!c.needsBake) { return true; }
+
+		osg::ref_ptr<osg::Vec2Array> baked = new osg::Vec2Array;
+		baked->reserve(original->size());
+		for (const osg::Vec2& uv : *original.get())
+		{
+			// OSG 口径的正变换：u' = sx·u + ox, v' = sy·v + oy。
+			// 写手随后无条件乘的那次 Y 翻转（offsetY=1-offsetY, scaleY=-scaleY）
+			// 在折叠前后都同样作用，所以采到的是同一个纹素；
+			// 差异只有 float 舍入（把乘加折进一次转换），在 ≤512px 的代理贴图上是亚像素量。
+			baked->push_back(osg::Vec2(
+				static_cast<float>(c.transform.scaleX * uv.x() + c.transform.offsetX),
+				static_cast<float>(c.transform.scaleY * uv.y() + c.transform.offsetY)));
+		}
+		// 新数组，不改原数组：和 osg::Image 一样，TEXCOORD_0 在瓦片克隆时也可能被共用。
+		c.geom->setTexCoordArray(0, baked.get());
+		return true;
+	}
+
+	GltfOptimizer::TextureUvBackup& _backup;
+	std::vector<Candidate> _candidates;
+};
+
+} // namespace
+
+unsigned GltfOptimizer::foldTextureTransformsIntoUv(osg::Node* node, TextureUvBackup& uvBackup)
+{
+	TextureTransformFolder folder(uvBackup);
+	return folder.fold(node);
+}
+
+unsigned GltfOptimizer::restoreFoldedTextureUvs(TextureUvBackup& uvBackup)
+{
+	TextureTransformFolder folder(uvBackup);
+	return folder.restore();
+}
 
 void GltfOptimizer::optimize(osg::Node* node, unsigned int options)
 {
@@ -865,6 +1315,7 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::re
 			options->setOptionString("PNG_COMPRESSION 5");
 		}
 
+		TextureExportProbe probe;
 		if (!osgDB::writeImageFile(*img.get(), fullPath, options))
 		{
 			fullPath = fallbackPath;
@@ -880,6 +1331,7 @@ std::string GltfOptimizer::TextureAtlasBuilderVisitor::exportImage(const osg::re
 				}
 			}
 		}
+		probe.finish();
 	}
 
 	if (img->getFileName().empty())
@@ -978,7 +1430,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTexture(const osg::re
 			osg::ref_ptr<osg::Image> image = texture->getImage();
 			if (image.valid())
 			{
-				resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+				image = resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+				// 缩放走的是私有副本：把副本挂回本 drawable 克隆出来的纹理上，
+				// 否则后续图集/导出读到的还是源模型里那张原图。
+				if (image != texture->getImage())
+				{
+					texture->setImage(image.get());
+				}
 				if (_options.packTexture)
 				{
 					bool bBuildTexturePacker = true;
@@ -1044,7 +1502,11 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::optimizeOsgTextureSize(osg::ref_
 				osg::ref_ptr<osg::Image> image = texture->getImage(0);
 				if (image.valid())
 				{
-					resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+					image = resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+					if (image != texture->getImage(0))
+					{
+						texture->setImage(0, image.get());
+					}
 				}
 			}
 		}
@@ -1261,7 +1723,7 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packOsgTextures()
 			if (packedImage.valid() && deleteImgs.size())
 			{
 				const double oldWidth = packedImage->s(), oldHeight = packedImage->t();
-				resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+				packedImage = resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 				const int width = packedImage->s(), height = packedImage->t();
 				const double scaleWidth = width / oldWidth, sclaeHeight = height / oldHeight;
 				packer.setScales(scaleWidth, sclaeHeight);
@@ -1515,7 +1977,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::addImageFromTexture(const osg::r
 				}
 				if (bAdd)
 				{
-					resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+					image = resizeImageToPowerOfTwo(image, _options.maxTextureWidth, _options.maxTextureHeight);
+					// 图集回填时按 texture->getImage() 取 packer id，所以缩放出来的
+					// 私有副本必须挂回这张纹理，否则打包坐标对不上。
+					if (image != texture->getImage(0))
+					{
+						texture->setImage(0, image.get());
+					}
 					imgs.push_back(image);
 				}
 			}
@@ -1540,21 +2008,47 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::processTextureImages(std::vector
 	try {
 		removeRepeatImages(images);
 
+		// 诊断用：WB_ATLAS_TRACE=1 时把每轮进打包器的图像键序列和落盘页名打出来，
+		// 用来判"A/B 两次的差别出在收图阶段还是装配阶段"。不参与任何决策。
+		const bool atlasTrace = std::getenv("WB_ATLAS_TRACE") != nullptr;
 		while (!images.empty()) {
+			if (atlasTrace) {
+				std::ostringstream oss;
+				oss << "[atlas] type=" << static_cast<int>(type) << " n=" << images.size() << " keys=";
+				for (size_t i = 0; i < images.size(); ++i) {
+					if (i) { oss << ","; }
+					// 全长键 + 内容哈希：只打 imageOrderKey 的前若干字符会把
+					// "D:\BaiduNetdiskDownload\..." 这种公共前缀全部折叠成同一个字符串，
+					// 从而把"输入不同"误判成"输入相同"。
+					osg::Image* im = images[i].get();
+					// name() 也打出来：TexturePacker::getId 用 name()+尺寸+格式做匹配，
+					// 而 computeImageHash 不含 name()，两者不一致时页内容会跟着变。
+					oss << imageOrderKey(im) << "|nm=" << im->getName()
+					    << '|' << im->s() << 'x' << im->t()
+					    << '|' << TexturePacker::computeImageHash(images[i]);
+				}
+				OSG_NOTICE << oss.str() << std::endl;
+			}
 			TexturePacker packer(_options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 			std::vector<osg::ref_ptr<osg::Image>> deleteImgs;
 			osg::ref_ptr<osg::Image> packedImage = packImges(packer, images, deleteImgs);
+			if (atlasTrace) {
+				OSG_NOTICE << "[atlas] packed=" << deleteImgs.size()
+				           << " dims=" << (packedImage.valid() ? packedImage->s() : -1) << "x"
+				           << (packedImage.valid() ? packedImage->t() : -1) << std::endl;
+			}
 
 			if (packedImage && !deleteImgs.empty()) {
 				const double oldWidth = packedImage->s();
 				const double oldHeight = packedImage->t();
-				resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
+				packedImage = resizeImageToPowerOfTwo(packedImage, _options.maxTextureAtlasWidth, _options.maxTextureAtlasHeight);
 				const int width = packedImage->s();
 				const int height = packedImage->t();
 				const double scaleWidth = width / oldWidth;
 				const double scaleHeight = height / oldHeight;
 				packer.setScales(scaleWidth, scaleHeight);
 				const std::string fullPath = exportImage(packedImage, type);
+				if (atlasTrace) { OSG_NOTICE << "[atlas] page -> " << fullPath << std::endl; }
 
 
 				for (auto it = geometryGltfMaterialMap.begin(); it != geometryGltfMaterialMap.end();) {
@@ -1717,9 +2211,13 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::packImages(osg::ref_ptr<osg::Ima
 	}
 }
 
-void GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight)
+osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const osg::ref_ptr<osg::Image>& img, const int maxWidth, const int maxHeight)
 {
 	try {
+		if (!img.valid())
+		{
+			return img;
+		}
 		int originalWidth = -1;
 		int originalHeight = -1;
 		img->getUserValue(ORIGIN_WIDTH, originalWidth);
@@ -1728,31 +2226,60 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageToPowerOfTwo(const os
 		{
 			originalWidth = img->s();
 			originalHeight = img->t();
-			img->setUserValue(ORIGIN_WIDTH, originalWidth);
-			img->setUserValue(ORIGIN_HEIGHT, originalHeight);
 		}
 		int newWidth = osg::Image::computeNearestPowerOfTwo(originalWidth);
 		int newHeight = osg::Image::computeNearestPowerOfTwo(originalHeight);
 
 		newWidth = newWidth > maxWidth ? maxWidth : newWidth;
 		newHeight = newHeight > maxHeight ? maxHeight : newHeight;
-		if (newWidth != originalWidth || newHeight != originalHeight)
+		if (newWidth == originalWidth && newHeight == originalHeight)
 		{
-			img->scaleImage(newWidth, newHeight, img->r());
+			// 不需要动像素，也就不动这张图：连 ORIGIN_* 都不往上面写。
+			// 写用户值同样是改共享对象，会让后续瓦片看到"来自别处的原始尺寸"。
+			return img;
 		}
+		// 必须私有化后再缩放：源模型里同一张贴图会被多个瓦片/多个 drawable 共用，
+		// 瓦片克隆 StateSet 只克隆到 osg::Texture 层（osg::Image 依旧共享，实测），
+		// 就地 scaleImage 等于让第一个降分辨率的瓦片改掉它后面所有瓦片的贴图。
+		osg::ref_ptr<osg::Image> copy = new osg::Image(*img.get(), osg::CopyOp::SHALLOW_COPY);
+		copy->setUserValue(ORIGIN_WIDTH, originalWidth);
+		copy->setUserValue(ORIGIN_HEIGHT, originalHeight);
+		copy->scaleImage(newWidth, newHeight, copy->r());
+		return copy;
 	}
 	catch (const std::exception& e) {
 		OSG_NOTICE << e.what() << std::endl;
+		return img;
 	}
+}
+
+std::string GltfOptimizer::TextureAtlasBuilderVisitor::imageOrderKey(osg::Image* img)
+{
+	if (!img) { return std::string(); }
+	if (!img->getFileName().empty()) { return "f:" + img->getFileName(); }
+	const char* const cacheKey = "osgGIS_atlasOrderKey";
+	std::string cached;
+	if (img->getUserValue<std::string>(cacheKey, cached)) { return cached; }
+	cached = "h:" + TexturePacker::computeImageHash(osg::ref_ptr<osg::Image>(img));
+	img->setUserValue(cacheKey, cached);
+	return cached;
 }
 
 bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2)
 {
-	if (img1->t() == img2->t())
+	if (img1->t() != img2->t())
+	{
+		return img1->t() > img2->t();
+	}
+	if (img1->s() != img2->s())
 	{
 		return img1->s() > img2->s();
 	}
-	return img1->t() > img2->t();
+	// 同尺寸在这里是常态，而 packImges 用的是不保序的 std::sort：只比尺寸时，并列组内
+	// 谁先落地由进图顺序（= 场景图遍历序 / 地址序）决定 ⇒ 子图位置变 ⇒ 整页内容哈希变
+	// ⇒ 图集页名换、引用它的瓦片字节跟着换，同二进制两次跑不逐位相同（A-52）。
+	// 补一条纯内容派生的末级键，让顺序只由内容决定。
+	return imageOrderKey(img1.get()) < imageOrderKey(img2.get());
 }
 
 /** MergeTransformVisitor */

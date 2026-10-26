@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <map>
 #include <numeric>
@@ -44,7 +45,7 @@ bool proxyDebug()
 // 简化受锁边限制收敛不到三角形目标，只看三角形数会漏掉字节超限。
 struct ByteEstimateVisitor : public osg::NodeVisitor
 {
-    std::uint64_t tris = 0, verts = 0, texBytes = 0;
+    std::uint64_t tris = 0, verts = 0, texBytes = 0, texBytesFloor = 0;
     std::set<const osg::Geometry*> seen;
     std::set<const osg::Image*> seenImgs;
     ByteEstimateVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
@@ -64,7 +65,15 @@ struct ByteEstimateVisitor : public osg::NodeVisitor
             // 纹理字节按解码 RGBA8 的 1/8 折算（KTX2/ETC1S 经验压缩率），
             // atlas 合并收益不扣（保守）。纹理总是内嵌 glb bufferView
             //（Osg2Gltf 固定行为），大聚合瓦片纹理字节占大头，不能漏估。
-            texBytes += img->getTotalSizeInBytes() / 8ull;
+            const std::uint64_t decoded = img->getTotalSizeInBytes() / 8ull;
+            texBytes += decoded;
+            // 降到下限分辨率后按面积折算：远景代理可以先降分辨率再考虑去纹理
+            const unsigned edge = std::max<unsigned>(img->s(), img->t());
+            const double ratio = edge <= proxyTextureFloorEdgePx
+                ? 1.0
+                : (static_cast<double>(proxyTextureFloorEdgePx) / edge)
+                  * (static_cast<double>(proxyTextureFloorEdgePx) / edge);
+            texBytesFloor += static_cast<std::uint64_t>(decoded * ratio);
         }
     }
     void apply(osg::Geode& geode) override
@@ -90,29 +99,23 @@ struct ByteEstimateVisitor : public osg::NodeVisitor
         }
     }
 };
-struct BytesSplit { std::uint64_t geo = 0, tex = 0; };
+} // namespace
 
-BytesSplit estimateBytesSplit(osg::Node* node)
+ProxyBytes ProxyMeshBuilder::estimateBytes(osg::Node* node)
 {
-    if (!node) { return {}; }
+    ProxyBytes s;
+    if (!node) { return s; }
     ByteEstimateVisitor v;
     node->accept(v);
-    BytesSplit s;
     // 几何部分：200 B/三角形覆盖 position/normal/uv/索引/容器开销，
     // 实测 longxiang 超限瓦片 116~242 B/tri。
     s.geo = v.tris * 200ull + v.verts * 48ull;
     // 纹理部分：内嵌 glb 的 KTX2 字节按解码 /8 折算（lugouqiao 实测
     // 纹理密集瓦片字节为纯几何估算的 10 倍以上，漏估会直接超限）。
-    s.tex = v.texBytes;
+    s.texFull = v.texBytes;
+    s.texFloor = v.texBytesFloor;
     return s;
 }
-
-std::uint64_t estimateContentBytes(osg::Node* node)
-{
-    const BytesSplit s = estimateBytesSplit(node);
-    return s.geo + s.tex;
-}
-} // namespace
 
 double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
                                       double targetErrorMeters, bool lockBorders) const
@@ -638,22 +641,23 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         return res;
     }
 
-    // 硬字节限是按编码后内容判的，而内节点代理的纹理随时可以整体去掉
-    // （远景 LOD 常规做法，调用方会剥纹理并记 warning）。所以绑定约束是
-    // **纯几何字节**：几何达标就接受，只是要不要剥纹理的差别；把纹理算成
+    // 硬字节限是按编码后内容判的，而内节点代理的纹理随时可以降分辨率、
+    // 甚至整体去掉（远景 LOD 常规做法，调用方按 proxyTextureMaxEdgePx 降采样，
+    // 只有降到下限仍装不下才剥纹理并记 warning）。所以绑定约束是
+    // **纯几何字节**：几何达标就接受，只是纹理留多少的差别；把纹理算成
     // 硬约束会让聚合 fallback 在纹理密集模型上永远收不敛
     // （longxiang 123 张纹理、node 20 实测 32.5 MB 估算是纯几何的 6 倍）。
     const std::uint64_t maxBytes = _profile.budget.maxTileContentBytes;
 
     if (tris <= targetTriangles)
     {
-        const BytesSplit bs = estimateBytesSplit(node.get());
+        const ProxyBytes bs = estimateBytes(node.get());
         if (bs.geo <= maxBytes)
         {
             res.node = node;
             res.identity = true;
             res.appliedRatio = 1.0;
-            res.needsTextureless = (bs.geo + bs.tex > maxBytes);
+            res.fitsWithFloorTextures = (bs.geo + bs.texFloor <= maxBytes);
             return res;
         }
     }
@@ -670,6 +674,7 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
     unsigned bestTris = tris;
     double bestRatio = 1.0;
     {
+        const auto tSimp = std::chrono::steady_clock::now();
         osg::ref_ptr<osg::Node> attempt = _model.materialize(_prims, items, true);
         if (attempt.valid())
         {
@@ -678,9 +683,11 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
             best = attempt;
             bestTris = countTriangles(attempt.get());
         }
+        res.metrics.simplifySeconds +=
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - tSimp).count();
     }
 
-    const BytesSplit bestBytes = best.valid() ? estimateBytesSplit(best.get()) : BytesSplit{};
+    const ProxyBytes bestBytes = best.valid() ? estimateBytes(best.get()) : ProxyBytes{};
     const bool triOk = bestTris > 0 && bestTris <= targetTriangles;
     const bool bytesOk = bestBytes.geo <= maxBytes;
     if ((triOk && bytesOk) || !allowAggregate)
@@ -688,7 +695,7 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         res.node = best;
         res.triangles = bestTris;
         res.appliedRatio = bestRatio;
-        res.needsTextureless = (bestBytes.geo + bestBytes.tex > maxBytes);
+        res.fitsWithFloorTextures = (bestBytes.geo + bestBytes.texFloor <= maxBytes);
         if (bestTris == 0)
         {
             res.failure = "proxy collapsed to zero triangles during simplification";
@@ -722,6 +729,7 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
                              ? byteTriCap : targetTriangles;
     unsigned lastAggTris = 0;
     std::string lastReason;
+    const auto tAgg = std::chrono::steady_clock::now();
     for (double factor : sizeFactors)
     {
         const double cellSize = diag * 0.25 * factor;
@@ -731,14 +739,15 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
             std::map<FeatureId, std::vector<FeatureId>> sources;
             osg::ref_ptr<osg::Node> agg = buildAggregate(items, cellSize, sources, merge, aggTarget);
             unsigned aggTris = countTriangles(agg.get());
+            ++res.metrics.aggregateCandidates;
             lastAggTris = aggTris;
             if (!agg.valid() || aggTris == 0 || sources.empty())
             {
                 lastReason = "aggregate produced no geometry";
                 continue;
             }
-            BytesSplit bs = estimateBytesSplit(agg.get());
-            // 绑定约束是**几何字节**（纹理可整体剥掉）；但静态 200 B/tri 折算
+            ProxyBytes bs = estimateBytes(agg.get());
+            // 绑定约束是**几何字节**（纹理可以先降分辨率再剥）；但静态 200 B/tri 折算
             // 仍偏乐观（t03 根代理实测 41943 面 / geo 9.58 MB），所以按当前实测
             // geo bytes/tri 反推下一轮目标，最多收敛 3 轮。
             // 不锁边：聚合代理已经不代表任何单个源对象，cell 间缝合没有意义；
@@ -757,7 +766,7 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
                 if (want == 0) { break; }
                 simplifyNode(agg.get(), want, cellSize * 0.1, false);
                 aggTris = countTriangles(agg.get());
-                bs = estimateBytesSplit(agg.get());
+                bs = estimateBytes(agg.get());
                 lastAggTris = aggTris;
                 if (aggTris == 0) { break; }
             }
@@ -765,7 +774,7 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
             {
                 OSG_NOTICE << "[proxydbg] aggregate factor=" << factor << " merge=" << merge
                            << " aggTris=" << aggTris << " geoBytes=" << bs.geo
-                           << " texBytes=" << bs.tex << " target=" << aggTarget << std::endl;
+                           << " texBytes=" << bs.texFull << " target=" << aggTarget << std::endl;
             }
             if (aggTris > targetTriangles)
             {
@@ -783,13 +792,17 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
             res.triangles = aggTris;
             res.aggregate = true;
             res.aggregateSources = sources;
-            res.needsTextureless = (bs.geo + bs.tex > maxBytes);
+            res.fitsWithFloorTextures = (bs.geo + bs.texFloor <= maxBytes);
             res.appliedRatio = static_cast<double>(aggTris) / static_cast<double>(tris);
+            res.metrics.aggregateSeconds +=
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - tAgg).count();
             return res;
         }
     }
 
     // 仍超预算：如实失败，绝不输出超限瓦片（手册 7.3 第 6 点）
+    res.metrics.aggregateSeconds +=
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - tAgg).count();
     res.triangles = lastAggTris;
     res.node = nullptr;
     res.failure = "proxy still over budget after aggregate fallback: " + lastReason;
