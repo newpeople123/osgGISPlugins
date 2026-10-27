@@ -135,9 +135,12 @@ double ProxyMeshBuilder::simplifyNode(osg::Node* node, unsigned targetTriangles,
     // 收敛不了，正是 lugouqiao_v11 六轮聚合卡在 50 万面的根因）。
     // 这里按 4 倍递增误差重试直到达到面数目标（上限取节点对角线）；
     // 真实误差始终由 GeometryErrorEvaluator 独立复核，不在这里虚报（手册 9.1）。
+    // 重试次数由 profile.maxProxyAttempts 决定（0 = 只保形一次都不加压，
+    // 代理会停在原始面数；默认 8 与历史硬编码值相同）。
+    unsigned attempts = static_cast<unsigned>(std::max<std::size_t>(0, _profile.maxProxyAttempts));
     unsigned after = before;
     double err = std::max(1e-6, targetErrorMeters);
-    for (int step = 0; step < 8 && after > targetTriangles; ++step)
+    for (unsigned step = 0; step < attempts && after > targetTriangles; ++step)
     {
         const double ratio = static_cast<double>(targetTriangles)
                            / static_cast<double>(std::max<unsigned>(after, 1u));

@@ -99,7 +99,10 @@ struct ProductionProfile {
     bool strictIdentity = false;      // true: 禁止 aggregate proxy，无法达标即失败
     bool allowTriangleClip = false;   // true: 允许沿平面切开三角形（默认不切）
     bool lockSeamBorder = true;       // 简化时锁定边界
-    std::size_t maxProxyAttempts = 8; // 代理简化尝试次数上限
+    // 代理简化加压阶梯的重试次数上限，由 ProxyMeshBuilder::simplifyNode 读取
+    // （0 = 不进入阶梯，代理保持原始面数）。默认 8 是本次改动前的硬编码值，
+    // 因此默认配置下产物逐位不变。当前没有命令行开关，只能改代码或 profile 构造处。
+    std::size_t maxProxyAttempts = 8;
 
     // 内部：写 tileset 用
     std::string generator = "osgGISPlugins/production";

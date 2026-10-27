@@ -292,6 +292,8 @@ GeometryErrorEvaluator::DirectionResult
 GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const TriangleSoup& to) const
 {
     DirectionResult res;
+    res.fromTriangles = from.size();
+    res.toTriangles = to.size();
     MeshBVH target;
     const auto tBvh = std::chrono::steady_clock::now();
     target.build(to);
@@ -409,6 +411,7 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
             }
             if (cpuOut != nullptr) { *cpuOut = threadCpuSeconds() - cpu0; }
         };
+        const auto tQuery = std::chrono::steady_clock::now();
         const unsigned threads = (n * perTri >= 50000) ? intraNodeThreads() : 1u;
         if (threads > 1 && n >= 2)
         {
@@ -431,14 +434,20 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         {
             queryBlock(base, hi, nullptr);
         }
+        res.initQuerySeconds += std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - tQuery).count();
 
+        const auto tPush = std::chrono::steady_clock::now();
         for (std::size_t t = base; t < hi; ++t)
         {
             const osg::Vec3d& a = from.v[t * 3];
             const osg::Vec3d& b = from.v[t * 3 + 1];
             const osg::Vec3d& c = from.v[t * 3 + 2];
-            Patch p{a, b, c, 0.0, 0.0, 0};
+            Patch p;
+            p.a = a; p.b = b; p.c = c;
             const double* dd = &initDist[(t - base) * perTri];
+            // perTri 恒 ≥ 3（顶点必查），所以三个角点距离一定都在这一批里
+            p.cornerDist = {{dd[0], dd[1], dd[2]}};
             const bool keep = (t % keepEvery == 0);
             for (std::size_t k = 0; k < perTri; ++k)
             {
@@ -457,7 +466,10 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
             if (key > globalLower + _cfg.toleranceMeters) { heap.push({key, p}); }
             else { prunedUpper = std::max(prunedUpper, key); }
         }
+        res.pushSeconds += std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - tPush).count();
     }
+    res.initSamples = samples;
 
     // 出账口径：最终上界 = 堆里剩余 patch 的最大 key ∪ 被剪枝/被深度上限截断的
     // patch 的 key。子 patch 精确覆盖父 patch，所以父 patch 一旦展开就不再计入
@@ -467,6 +479,7 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
     double upper = prunedUpper;
 
     // 自适应细分：优先处理上界最高的 patch
+    const auto tRefine = std::chrono::steady_clock::now();
     unsigned iterations = 0;
     bool depthCapped = false;
     while (!heap.empty() && iterations < _cfg.maxRefineIterations
@@ -489,35 +502,50 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         const double l2 = (p.a - p.c).length2();
         Patch c1, c2;
         c1.depth = c2.depth = p.depth + 1;
+        osg::Vec3d mid;
+        int midIdx1 = 0, midIdx2 = 0;   // mid 落在子 patch 的哪个角上
         if (l0 >= l1 && l0 >= l2)
         {
-            const osg::Vec3d m = (p.a + p.b) * 0.5;
-            c1.a = p.a; c1.b = m; c1.c = p.c;
-            c2.a = m; c2.b = p.b; c2.c = p.c;
+            mid = (p.a + p.b) * 0.5;
+            c1.a = p.a; c1.b = mid; c1.c = p.c;
+            c2.a = mid; c2.b = p.b; c2.c = p.c;
+            c1.cornerDist = {{p.cornerDist[0], 0.0, p.cornerDist[2]}};
+            c2.cornerDist = {{0.0, p.cornerDist[1], p.cornerDist[2]}};
+            midIdx1 = 1; midIdx2 = 0;
         }
         else if (l1 >= l2)
         {
-            const osg::Vec3d m = (p.b + p.c) * 0.5;
-            c1.a = p.a; c1.b = p.b; c1.c = m;
-            c2.a = p.a; c2.b = m; c2.c = p.c;
+            mid = (p.b + p.c) * 0.5;
+            c1.a = p.a; c1.b = p.b; c1.c = mid;
+            c2.a = p.a; c2.b = mid; c2.c = p.c;
+            c1.cornerDist = {{p.cornerDist[0], p.cornerDist[1], 0.0}};
+            c2.cornerDist = {{p.cornerDist[0], 0.0, p.cornerDist[2]}};
+            midIdx1 = 2; midIdx2 = 1;
         }
         else
         {
-            const osg::Vec3d m = (p.c + p.a) * 0.5;
-            c1.a = p.a; c1.b = p.b; c1.c = m;
-            c2.a = m; c2.b = p.b; c2.c = p.c;
+            mid = (p.c + p.a) * 0.5;
+            c1.a = p.a; c1.b = p.b; c1.c = mid;
+            c2.a = mid; c2.b = p.b; c2.c = p.c;
+            c1.cornerDist = {{p.cornerDist[0], p.cornerDist[1], 0.0}};
+            c2.cornerDist = {{0.0, p.cornerDist[1], p.cornerDist[2]}};
+            midIdx1 = 2; midIdx2 = 0;
         }
+        // 细分只引入 1 个新顶点：两个子 patch 的另外 4 个角点都是父 patch 的角点，
+        // 它们在父 patch 建立时已经查过（见初始采样里的 cornerDist 赋值）。
+        // d(x, P) 是 (x, 固定的目标 BVH) 的纯函数，复用与重查逐位相同；下面的
+        // res.all / samples / maxSampleDist / 堆 key 写入顺序保持原样，
+        // 所以上下界、P95/P99、预算判定和产物都不受影响——省掉的只是查询次数。
+        const double dMid = target.distance(mid);
+        c1.cornerDist[midIdx1] = dMid;
+        c2.cornerDist[midIdx2] = dMid;
         for (int k = 0; k < 2; ++k)
         {
             Patch& np = (k == 0) ? c1 : c2;
             np.maxSampleDist = p.maxSampleDist;   // 继承父 patch 的已知采样最大值
-            const osg::Vec3d pts[3] = {
-                np.a, np.b, np.c,
-            };
-            // 只新增 3 个顶点（父 patch 的采样已计入）
             for (int q = 0; q < 3; ++q)
             {
-                const double d = target.distance(pts[q]);
+                const double d = np.cornerDist[q];
                 np.maxSampleDist = std::max(np.maxSampleDist, d);
                 res.all.push_back(d);
                 ++samples;
@@ -529,6 +557,10 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         }
         ++iterations;
     }
+    res.refineSeconds += std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - tRefine).count();
+    res.refineIterations = iterations;
+    res.refineSamples = samples - res.initSamples;
 
     if (!heap.empty())
     {
@@ -546,6 +578,7 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         || (!heap.empty() && (samples >= _cfg.maxSamplesPerNode
                               || iterations >= _cfg.maxRefineIterations));
 
+    const auto tQuant = std::chrono::steady_clock::now();
     if (!res.all.empty())
     {
         std::vector<double> sorted = res.all;
@@ -553,6 +586,8 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         res.p95 = sorted[static_cast<std::size_t>(sorted.size() * 0.95)];
         res.p99 = sorted[static_cast<std::size_t>(sorted.size() * 0.99)];
     }
+    res.quantileSeconds += std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - tQuant).count();
     return res;
 }
 
@@ -606,6 +641,15 @@ ErrorResult GeometryErrorEvaluator::evaluate(const TriangleSoup& source, const T
     out.bvhBuildSeconds = s2p.bvhBuildSeconds + p2s.bvhBuildSeconds;
     out.workerCpuSeconds = s2p.workerCpuSeconds + p2s.workerCpuSeconds;
     out.boundLoose = s2p.budgetExhausted || p2s.budgetExhausted;
+    // 仪表合计（A-55）：s2p 的 from 是源侧、p2s 的 from 是代理侧，两个方向的
+    // "被采样面数"就是祖先重复覆盖同一批源三角形的工作量口径
+    out.initQuerySeconds = s2p.initQuerySeconds + p2s.initQuerySeconds;
+    out.pushSeconds = s2p.pushSeconds + p2s.pushSeconds;
+    out.refineSeconds = s2p.refineSeconds + p2s.refineSeconds;
+    out.quantileSeconds = s2p.quantileSeconds + p2s.quantileSeconds;
+    out.refineIterations = s2p.refineIterations + p2s.refineIterations;
+    out.sourceTriangles = s2p.fromTriangles;
+    out.proxyTriangles = p2s.fromTriangles;
 
     const double gap = out.upperBoundM - out.lowerBoundM;
     out.certified = (gap <= _cfg.toleranceMeters)

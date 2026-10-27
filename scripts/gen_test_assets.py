@@ -62,17 +62,21 @@ class ObjBuilder:
         self.mat = material
         self.lines.append("usemtl %s" % material)
 
+    # 返回 0 基下标：面索引一律以 0 基登记，由 dump() 统一 +1 转成 OBJ 的 1 基。
+    # 早先这里返回 len(...)（即 1 基），而 dump() 又 +1，于是凡是用返回值当下标的
+    # 面（box 的 12 个面、cylinder 的两个盖）整体偏移一个顶点：轻则面指错顶点，
+    # 重则最后一个面引用到不存在的 v，读模后越界解引用（A-56 的源头）。
     def vert(self, x, y, z):
         self.v.append((x, y, z))
-        return len(self.v)
+        return len(self.v) - 1
 
     def texcoord(self, u, v):
         self.vt.append((u, v))
-        return len(self.vt)
+        return len(self.vt) - 1
 
     def normal(self, x, y, z):
         self.vn.append((x, y, z))
-        return len(self.vn)
+        return len(self.vn) - 1
 
     def face(self, idx, tex=None, nrm=None):
         self.faces.append((self.obj, self.mat, idx, tex, nrm))
@@ -100,7 +104,12 @@ class ObjBuilder:
 
     def cylinder(self, name, cx, cy, cz, radius, height, seg, material=None):
         self.object(name, material)
+        # 顶点 / UV / 法线各有各的起点：每环 2 顶点 + 1 法线 + 2 UV，三者数量不相等，
+        # 早先只用 len(self.v) 一个 base 去索引 vt 与 vn，非首个 cylinder 的 UV/法线
+        # 会指到别的对象上甚至越出数组（t02 的 spike_* 实测引用到 vn=889 > 270）。
         base = len(self.v)
+        tbase = len(self.vt)
+        nbase = len(self.vn)
         for i in range(seg):
             a = 2.0 * math.pi * i / seg
             s = math.sin(a)
@@ -114,10 +123,10 @@ class ObjBuilder:
             j = (i + 1) % seg
             b0 = base + i * 2
             b1 = base + j * 2
-            self.face([b0, b1, b1 + 1], [base + i * 2, base + j * 2, base + j * 2 + 1],
-                      [base + i, base + j, base + j])
-            self.face([b0, b1 + 1, b0 + 1], [base + i * 2, base + j * 2 + 1, base + i * 2 + 1],
-                      [base + i, base + j, base + i])
+            self.face([b0, b1, b1 + 1], [tbase + i * 2, tbase + j * 2, tbase + j * 2 + 1],
+                      [nbase + i, nbase + j, nbase + j])
+            self.face([b0, b1 + 1, b0 + 1], [tbase + i * 2, tbase + j * 2 + 1, tbase + i * 2 + 1],
+                      [nbase + i, nbase + j, nbase + i])
         # caps
         ct = self.vert(cx, cy + height * 0.5, cz)
         cb = self.vert(cx, cy - height * 0.5, cz)
@@ -132,6 +141,7 @@ class ObjBuilder:
         """由 height_fn(i,j) -> y 生成 nx*nz 网格（2*(nx-1)*(nz-1) 个三角形）。"""
         self.object(name, material)
         base = len(self.v)
+        tbase = len(self.vt)     # 每顶点一个 UV，数量相同但起点必须各自取
         for j in range(nz):
             for i in range(nx):
                 x = -size * 0.5 + size * i / float(nx - 1)
@@ -146,8 +156,9 @@ class ObjBuilder:
                 b = a + 1
                 c = a + nx + 1
                 d = a + nx
-                self.face([a, d, c], [a, d, c], [ni, ni, ni])
-                self.face([a, c, b], [a, c, b], [ni, ni, ni])
+                at = tbase + j * nx + i
+                self.face([a, d, c], [at, at + nx, at + nx + 1], [ni, ni, ni])
+                self.face([a, c, b], [at, at + nx + 1, at + 1], [ni, ni, ni])
 
     def dump(self, path):
         out = list(self.lines)

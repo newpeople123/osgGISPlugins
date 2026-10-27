@@ -114,6 +114,29 @@ struct PrimRef {
 };
 
 // ---------------------------------------------------------------------------
+// 越界顶点索引的一次丢弃记录（一个 primitiveSet 一条）
+//
+// 索引由外部读取器直接写进 DrawElements（osgdb_obj 的 `f` 行就是 1 基索引，
+// 越界面在历史上真实存在），而 SourceModel 之后每一个 (*pos)[idx] 解引用都不
+// 做边界比较：A-56 实测一个越界三角形把一个垃圾顶点送进包围盒 / 质心 /
+// geometricError，切分树随之漂移（t06 31→33 瓦片、t11 半轴 -2→-6.83）。
+//
+// 语义（用户裁定）：丢弃越界三角形 + 显式记账 + 计入报告。不钳位、不伪造几何、
+// 不静默丢弃。
+// ---------------------------------------------------------------------------
+struct IndexViolation
+{
+    FeatureId globalFeatureId = INVALID_FEATURE;
+    std::string nodeName;
+    std::string nodePath;
+    unsigned drawableIndex = 0;        // 该 Geode 内的 drawable 序号
+    unsigned primitiveSetIndex = 0;    // 该 Geometry 内的 primitiveSet 序号
+    unsigned vertexCount = 0;          // 顶点数组长度（合法上界）
+    unsigned droppedTriangles = 0;     // 因引用越界索引而被丢弃的三角形数
+    unsigned maxOffendingIndex = 0;    // 观测到的最大越界索引
+};
+
+// ---------------------------------------------------------------------------
 // 源模型
 // ---------------------------------------------------------------------------
 class SourceModel {
@@ -124,6 +147,9 @@ public:
     std::vector<PrimRef> prims;                 // 所有 primitive 级单元
     std::map<FeatureId, unsigned> featureToObject;
     osg::BoundingBox bounds;
+    // build() 期间丢弃的越界索引记录，按遍历顺序（确定性）追加；
+    // ProductionPipeline 把它们折进 conversion-report 的 counters + warnings。
+    std::vector<IndexViolation> indexViolations;
 
     // 从 OSG 场景树构建（会烘焙世界变换）
     bool build(osg::Node* root);

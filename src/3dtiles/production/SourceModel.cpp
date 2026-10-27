@@ -444,6 +444,53 @@ bool SourceModel::build(osg::Node* root)
                 sps.materialId = materialId;
                 expandPrimitiveSet(geom->getPrimitiveSet(p), sps.tris);
                 if (sps.tris.empty()) { continue; }
+
+                // 越界索引校验：不通过的这个三角形直接丢弃，并记一条账。
+                // 顶点下标来自外部读取器，越界后每一次 (*pos)[idx] 解引用读的都是
+                // 数组外的内存（A-56 的产品级表现：垃圾顶点污染包围盒、质心与
+                // geometricError，切分树随进程堆布局漂移）。
+                const std::size_t nv = mesh.positions->size();
+                std::vector<unsigned> kept;
+                kept.reserve(sps.tris.size());
+                IndexViolation viol;
+                for (std::size_t i = 0; i + 2 < sps.tris.size(); i += 3)
+                {
+                    bool inRange = true;
+                    unsigned offend = 0;
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        const unsigned idx = sps.tris[i + k];
+                        if (idx < nv) { continue; }
+                        inRange = false;
+                        offend = std::max(offend, idx);
+                    }
+                    if (inRange)
+                    {
+                        kept.push_back(sps.tris[i]);
+                        kept.push_back(sps.tris[i + 1]);
+                        kept.push_back(sps.tris[i + 2]);
+                        continue;
+                    }
+                    ++viol.droppedTriangles;
+                    viol.maxOffendingIndex = std::max(viol.maxOffendingIndex, offend);
+                }
+                if (viol.droppedTriangles > 0)
+                {
+                    viol.globalFeatureId = obj.globalFeatureId;
+                    viol.nodeName = obj.name;
+                    viol.nodePath = obj.nodePath;
+                    viol.drawableIndex = d;
+                    viol.primitiveSetIndex = p;
+                    viol.vertexCount = static_cast<unsigned>(nv);
+                    indexViolations.push_back(viol);
+                    OSG_WARN << "[SourceModel] node '" << obj.name << "' drawable " << d
+                             << " primitiveSet " << p << ": " << viol.droppedTriangles
+                             << " triangle(s) reference vertex index >= " << nv
+                             << " (max " << viol.maxOffendingIndex
+                             << "); dropped and reported." << std::endl;
+                }
+                if (kept.empty()) { continue; }
+                sps.tris.swap(kept);
                 mesh.primSets.push_back(sps);
             }
             if (mesh.primSets.empty()) { continue; }
@@ -716,6 +763,9 @@ SourceModel::NormalRepairCounts SourceModel::repairZeroNormals(
     std::vector<osg::Vec3d> unit(nTri, osg::Vec3d(0.0, 0.0, 0.0));
     for (std::size_t t = 0; t < nTri; ++t)
     {
+        // 本函数也被测试与外部以任意索引表调用，越界索引按退化面处理（面积 0 ⇒
+        // 不参与修复，也不读数组外内存）。生产路径的索引已由 build() 校验过。
+        if (tris[t * 3] >= nv || tris[t * 3 + 1] >= nv || tris[t * 3 + 2] >= nv) { continue; }
         const osg::Vec3& a = (*pos)[tris[t * 3]];
         const osg::Vec3& b = (*pos)[tris[t * 3 + 1]];
         const osg::Vec3& cc = (*pos)[tris[t * 3 + 2]];

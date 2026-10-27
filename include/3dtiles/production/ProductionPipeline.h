@@ -87,6 +87,16 @@ struct TileTimings {
     double writeCpuSec = 0.0;
     double finalizeCpuSec = 0.0;
     std::uint64_t evaluateSamples = 0;
+    // 评估内部四段（A-55）：micro_evaluate 只说明"评估占九成"，分不清是
+    // 距离查询、入堆剪枝、细分循环还是分位数排序在吃时间；重复覆盖同一批
+    // 源三角形的工作量也只有 evalSourceTriangles 能直接看出来。
+    double evalInitSec = 0.0;
+    double evalPushSec = 0.0;
+    double evalRefineSec = 0.0;
+    double evalQuantileSec = 0.0;
+    std::uint64_t evalRefineIterations = 0;
+    std::uint64_t evalSourceTriangles = 0;
+    std::uint64_t evalProxyTriangles = 0;
 
     json toJson() const;
 };
@@ -210,6 +220,14 @@ private:
     std::uint64_t _microAggregateCandidates = 0;
     std::uint64_t _microEvaluateSamples = 0;
     double _microBvhBuildSec = 0.0;
+    // 评估内部四段与重复覆盖口径（A-55）
+    double _microEvalInitSec = 0.0;
+    double _microEvalPushSec = 0.0;
+    double _microEvalRefineSec = 0.0;
+    double _microEvalQuantileSec = 0.0;
+    std::uint64_t _microEvalRefineIterations = 0;
+    std::uint64_t _microEvalSourceTriangles = 0;
+    std::uint64_t _microEvalProxyTriangles = 0;
     double _microFinalizeSec = 0.0;
     // CPU 秒版累加器（AUDIT A-47：闭合"仪表 vs 进程 CPU 秒"这条算式）
     double _microHeavyCpuSec = 0.0;
@@ -271,6 +289,14 @@ private:
         double microEvaluateWorkerCpuSec = 0.0;  // 只有 worker 线程（micro_total_cpu 加这一份）
         std::uint64_t microEvaluateSamples = 0;
         double microBvhBuildSec = 0.0;
+        // 评估内部成本分解（A-55）：把 micro_evaluate 拆成四段，纯观测不参与判定
+        double microEvalInitSec = 0.0;
+        double microEvalPushSec = 0.0;
+        double microEvalRefineSec = 0.0;
+        double microEvalQuantileSec = 0.0;
+        std::uint64_t microEvalRefineIterations = 0;
+        std::uint64_t microEvalSourceTriangles = 0;  // 子树源三角形（重复覆盖口径）
+        std::uint64_t microEvalProxyTriangles = 0;
     };
     TileHeavyWork processTileHeavy(int pn, int id);
     // 3) 主线程串行收尾：writeContent + 状态聚合 + seam 校验

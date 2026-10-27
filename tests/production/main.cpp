@@ -180,6 +180,227 @@ void testSourceModelBaking()
     }
 }
 
+// A-56：越界顶点索引必须"丢图元 + 显式记账 + 计入报告"（用户裁定的语义）。
+// 夹具侧的 7 个 OBJ 有 `f` 行引用不存在的 v（t06 的 4825 越出 4824），旧代码在
+// PrimRef 指标的 (*pos)[idx[k]] 处直接解引用，读到数组外的垃圾顶点，污染
+// pr.aabb / centroid，切分树随进程堆布局漂移（t06 31→33 瓦片、t11 半轴漂移）。
+void testIndexValidationDropsOffendingTriangles()
+{
+    std::cout << "[indexGuard] out-of-range vertex index: drop + account" << std::endl;
+
+    auto geomOf = [](osg::Vec3Array* pos, osg::PrimitiveSet* ps) {
+        osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+        g->setVertexArray(pos);
+        g->addPrimitiveSet(ps);
+        return g;
+    };
+    auto quadPos = []() {
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
+        pos->push_back(osg::Vec3(4.0f, 0.0f, 0.0f));
+        pos->push_back(osg::Vec3(0.0f, 3.0f, 0.0f));
+        pos->push_back(osg::Vec3(9.0f, 9.0f, 0.0f));
+        return pos;
+    };
+    auto sceneOf = [](const std::string& name, osg::Geometry* g) {
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName(name);
+        geode->addDrawable(g);
+        root->addChild(geode.get());
+        return root;
+    };
+
+    // 1) 全部合法：一条账都不许多记，一个三角形都不许多丢
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        idx->push_back(2); idx->push_back(3); idx->push_back(0);
+        SourceModel m;
+        check(m.build(sceneOf("legal", geomOf(pos.get(), idx.get())).get()), "legal scene builds");
+        check(m.indexViolations.empty(), "legal scene records no violation",
+              "got " + std::to_string(m.indexViolations.size()));
+        check(m.totalTriangles() == 2, "legal scene keeps both triangles",
+              "got " + std::to_string(m.totalTriangles()));
+    }
+
+    // 2) 一个越界三角形：丢它、留合法的、记账字段齐、顶点数组一个字节不动
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        idx->push_back(2); idx->push_back(3); idx->push_back(4);   // 4 >= vertexCount(4)
+        SourceModel m;
+        check(m.build(sceneOf("bad_one", geomOf(pos.get(), idx.get())).get()),
+              "scene with one offending triangle builds");
+        check(m.indexViolations.size() == 1, "one violation accounted",
+              "got " + std::to_string(m.indexViolations.size()));
+        if (m.indexViolations.size() == 1)
+        {
+            const IndexViolation& v = m.indexViolations[0];
+            check(v.droppedTriangles == 1, "one triangle dropped",
+                  "got " + std::to_string(v.droppedTriangles));
+            check(v.vertexCount == 4, "accounted vertex bound",
+                  "got " + std::to_string(v.vertexCount));
+            check(v.maxOffendingIndex == 4, "accounted offending index",
+                  "got " + std::to_string(v.maxOffendingIndex));
+            check(v.nodeName == "bad_one", "accounted node name", "got '" + v.nodeName + "'");
+            const bool sameFeature = !m.objects.empty()
+                && v.globalFeatureId == m.objects[0].globalFeatureId;
+            check(sameFeature, "accounted feature id points at the offending object");
+        }
+        check(m.totalTriangles() == 1, "only the valid triangle survives",
+              "got " + std::to_string(m.totalTriangles()));
+        if (!m.meshes.empty() && !m.meshes[0].primSets.empty())
+        {
+            const std::vector<unsigned>& tris = m.meshes[0].primSets[0].tris;
+            bool allInRange = true;
+            for (unsigned i : tris) { if (i >= 4u) { allInRange = false; } }
+            check(allInRange, "no stored index reaches past the vertex array");
+            check(tris.size() == 3, "kept primitive set is exactly one triangle",
+                  "got " + std::to_string(tris.size()));
+        }
+        check(!m.meshes.empty() && m.meshes[0].positions->size() == 4,
+              "vertex array itself is neither truncated nor padded");
+        // 旧缺陷的产品级症状：垃圾顶点被算进 PrimRef 指标
+        if (!m.prims.empty())
+        {
+            check(m.prims[0].triCount == 1, "prim metric counts only kept triangles",
+                  "got " + std::to_string(m.prims[0].triCount));
+            const osg::BoundingBox& bb = m.prims[0].aabb;
+            check(bb.xMin() == 0.0f && bb.xMax() == 4.0f
+                    && bb.yMin() == 0.0f && bb.yMax() == 3.0f
+                    && bb.zMin() == 0.0f && bb.zMax() == 0.0f,
+                  "prim aabb holds no out-of-array vertex",
+                  "got [" + std::to_string(bb.xMin()) + "," + std::to_string(bb.xMax()) + ","
+                  + std::to_string(bb.yMin()) + "," + std::to_string(bb.yMax()) + "]");
+        }
+    }
+
+    // 3) 整图元全越界：几何没了、对象也没有几何，但账必须还在（不许静默丢弃）
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(4); idx->push_back(5); idx->push_back(6);
+        SourceModel m;
+        m.build(sceneOf("bad_all", geomOf(pos.get(), idx.get())).get());
+        check(m.indexViolations.size() == 1, "fully offending primitive set still accounted",
+              "got " + std::to_string(m.indexViolations.size()));
+        check(m.indexViolations.empty() || m.indexViolations[0].droppedTriangles == 1,
+              "offending triangle count accounted");
+        check(m.totalTriangles() == 0, "no fabricated geometry kept");
+        check(m.prims.empty(), "no prim refers to an emptied primitive set");
+    }
+
+    // 4) QUADS：过滤发生在展开后的三角形上，一个越界角点废掉整个四边形的两个面。
+    //    UShort 索引 9 在 ushort 范围内、但越出顶点数组——正是 osgdb_obj 的实际形态。
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+        osg::ref_ptr<osg::DrawElementsUShort> idx =
+            new osg::DrawElementsUShort(osg::PrimitiveSet::QUADS);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2); idx->push_back(3);
+        idx->push_back(1); idx->push_back(2); idx->push_back(9); idx->push_back(0);
+        SourceModel m;
+        m.build(sceneOf("bad_quad", geomOf(pos.get(), idx.get())).get());
+        check(m.totalTriangles() == 2, "good quad kept, offending quad dropped",
+              "got " + std::to_string(m.totalTriangles()));
+        const unsigned dropped = m.indexViolations.empty()
+            ? 0u : m.indexViolations[0].droppedTriangles;
+        check(dropped == 2, "both derived triangles of the bad quad accounted",
+              "got " + std::to_string(dropped));
+        check(m.indexViolations.empty() || m.indexViolations[0].maxOffendingIndex == 9,
+              "ushort-sourced offending index accounted");
+    }
+
+    // 5) 记账顺序确定：同一场景两次 build 得到逐字段相同的清单
+    {
+        auto twice = [&](SourceModel& m) {
+            osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+            osg::ref_ptr<osg::DrawElementsUInt> idx =
+                new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+            idx->push_back(0); idx->push_back(1); idx->push_back(2);
+            idx->push_back(2); idx->push_back(3); idx->push_back(7);
+            m.build(sceneOf("det", geomOf(pos.get(), idx.get())).get());
+        };
+        SourceModel a, b;
+        twice(a);
+        twice(b);
+        check(!a.indexViolations.empty()
+                && a.indexViolations.size() == b.indexViolations.size(),
+              "both runs account the same number of sets");
+        bool same = a.indexViolations.size() == b.indexViolations.size();
+        for (std::size_t i = 0; same && i < a.indexViolations.size(); ++i)
+        {
+            same = a.indexViolations[i].globalFeatureId == b.indexViolations[i].globalFeatureId
+                && a.indexViolations[i].nodeName == b.indexViolations[i].nodeName
+                && a.indexViolations[i].droppedTriangles == b.indexViolations[i].droppedTriangles
+                && a.indexViolations[i].vertexCount == b.indexViolations[i].vertexCount
+                && a.indexViolations[i].maxOffendingIndex == b.indexViolations[i].maxOffendingIndex;
+        }
+        check(same, "accounting is a pure function of the input, not of the heap");
+    }
+
+    // 6) 静态入口 repairZeroNormals 同样不许被越界索引带出数组外
+    {
+        osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+        osg::ref_ptr<osg::Vec3Array> nrm = new osg::Vec3Array;
+        for (unsigned i = 0; i < 4; ++i) { nrm->push_back(osg::Vec3(0.0f, 0.0f, 0.0f)); }
+        std::vector<unsigned> tris = {0, 1, 2, 2, 3, 40};
+        const auto rc = SourceModel::repairZeroNormals(pos.get(), nrm.get(), tris);
+        check(rc.fromFaces == 3 && rc.fromPrimitive == 1 && rc.leftZero == 0,
+              "offending triangle treated as degenerate, not read",
+              "fromFaces=" + std::to_string(rc.fromFaces)
+              + " fromPrimitive=" + std::to_string(rc.fromPrimitive)
+              + " leftZero=" + std::to_string(rc.leftZero));
+        for (unsigned v = 0; v < 4; ++v)
+        {
+            checkNear((*nrm)[v].length(), 1.0, 1e-5, "vertex v" + std::to_string(v) + " repaired");
+        }
+    }
+
+    // 7) 记账要一路走到 conversion-report 的 warnings + counters（"计入报告"）
+    {
+        Utils::registerFileAliases();
+        ProductionProfile profile;
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        root->addChild(makeGrid(1, 1, 1.0).get());
+        osg::ref_ptr<osg::Vec3Array> pos = quadPos();
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        idx->push_back(2); idx->push_back(3); idx->push_back(4);
+        root->addChild(sceneOf("reported_bad", geomOf(pos.get(), idx.get())).get());
+
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_pipeline_indexguard";
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        pipeline.run(root.get(), opt);
+
+        bool hasSummary = false;
+        for (const std::string& w : pipeline.warnings())
+        {
+            if (w.find("index validation: dropped 1 triangle") != std::string::npos) { hasSummary = true; }
+        }
+        check(hasSummary, "report carries the index-validation warning",
+              joinMessages(pipeline.warnings()));
+        std::uint64_t reported = 0;
+        for (const StageCount& c : pipeline.report().counters)
+        {
+            if (c.name == "outOfRangeIndexTriangles") { reported = c.value; }
+        }
+        check(reported == 1, "report counter says one triangle dropped",
+              "got " + std::to_string(reported));
+    }
+}
+
 // A-43：源法线数组里的零长度向量，写出侧必须重算成面法线，否则官方 validator
 // 对整个内容文件判 severity=ERROR（lugouqiao_v17 实测 26 个文件 / 195 条）。
 void testZeroNormalRepair()
@@ -685,6 +906,121 @@ void testErrorBoundSoundness()
           std::string("status=") + rc.status + " upper=" + std::to_string(rc.upperBoundM));
 }
 
+// 独立基准：把 from 的每个三角形按重心坐标切成 n×n 份，逐点用"单三角形 BVH 取最小"
+// 求到 to 的精确距离。单三角形子树必然是叶子、order 恒等，所以这条路径不经过
+// 评估器实际使用的多三角形剪枝遍历，能独立证伪"上界跌破真实误差"。
+double denseMaxDistanceTo(const TriangleSoup& from, const TriangleSoup& to, int n)
+{
+    std::vector<MeshBVH> single(to.size());
+    for (std::size_t t = 0; t < to.size(); ++t)
+    {
+        TriangleSoup one;
+        one.add(to.v[t * 3], to.v[t * 3 + 1], to.v[t * 3 + 2]);
+        single[t].build(one);
+    }
+    double best = 0.0;
+    for (std::size_t t = 0; t < from.size(); ++t)
+    {
+        const osg::Vec3d& a = from.v[t * 3];
+        const osg::Vec3d& b = from.v[t * 3 + 1];
+        const osg::Vec3d& c = from.v[t * 3 + 2];
+        for (int i = 0; i <= n; ++i)
+        {
+            for (int j = 0; j + i <= n; ++j)
+            {
+                const double u = static_cast<double>(i) / n;
+                const double v = static_cast<double>(j) / n;
+                const osg::Vec3d p = a * (1.0 - u - v) + b * u + c * v;
+                double d = std::numeric_limits<double>::max();
+                for (const MeshBVH& bvh : single) { d = std::min(d, bvh.distance(p)); }
+                best = std::max(best, d);
+            }
+        }
+    }
+    return best;
+}
+
+// A-55 V2：细分一个 patch 只引入 1 个新顶点（被细分那条边的中点），子 patch 的
+// 另外 4 个角点在父 patch 建立时就已经查过距离，直接复用即可把每轮 6 次 BVH 查询
+// 压成 1 次。省的是查询次数，值必须逐位不变，所以这里的判据是"独立测出的真实误差
+// 仍被上界覆盖 + 样本记账不变"，而不是速度。
+//
+// 几何刻意选成三个角点距离互不相等、且首轮流到三条不同细分分支的三角形：
+// 角点下标一旦写错，子 patch 的 maxSampleDist 会偏小、上界跌破真实误差，
+// 第 (2) 条当场失败；样本数/堆里样本口径写错则第 (3) 条失败。
+void testRefineReusesCornerDistances()
+{
+    std::cout << "[refineReuse] subdivision reuses parent corner distances" << std::endl;
+
+    TriangleSoup src;
+    // 最长边分别是 ab / bc / ca，覆盖细分循环里的三条切法分支
+    src.add(osg::Vec3d(0, 0, 0),  osg::Vec3d(10, 0, 0), osg::Vec3d(3, 1, 0));
+    src.add(osg::Vec3d(20, 0, 0), osg::Vec3d(30, 0, 0), osg::Vec3d(20, 10, 0));
+    src.add(osg::Vec3d(40, 0, 0), osg::Vec3d(41, 0, 0), osg::Vec3d(42, 9, 0));
+    // 目标面绕 y 轴倾斜：同一个源三角形三个角点的距离两两不等
+    TriangleSoup dst;
+    dst.add(osg::Vec3d(0, 0, 5), osg::Vec3d(60, 0, 0), osg::Vec3d(0, 60, 5));
+
+    ErrorEvalConfig cfg;
+    cfg.maxSamplesPerNode = 60000;   // 足够跑很多轮细分，又能当场跑完
+    cfg.maxRefineIterations = 20000;
+    GeometryErrorEvaluator ev(cfg);
+
+    const GeometryErrorEvaluator::DirectionResult dr = ev.evaluateDirection(src, dst);
+
+    // 1) 阳性对照：这个用例必须真的跑过细分，否则下面两条都是空话
+    check(dr.refineIterations > 0, "refinement actually ran (positive control)",
+          "iterations=" + std::to_string(dr.refineIterations)
+          + " lower=" + std::to_string(dr.lower) + " upper=" + std::to_string(dr.upper));
+    check(dr.initSamples >= src.size() * 3,
+          "initial pass sampled every vertex",
+          "initSamples=" + std::to_string(dr.initSamples));
+
+    // 2) 独立性判据：上界必须覆盖独立稠密采样实测出的最大距离
+    const double measured = denseMaxDistanceTo(src, dst, 40);
+    check(dr.upper >= measured - 1e-9, "reused corner distances keep the upper bound sound",
+          "upper=" + std::to_string(dr.upper) + " denseMeasured=" + std::to_string(measured));
+    check(dr.lower <= measured + 1e-9 && dr.lower >= 0.0, "lower bound stays under the max",
+          "lower=" + std::to_string(dr.lower) + " denseMeasured=" + std::to_string(measured));
+
+    // 3) 记账不变：每轮细分固定贡献 6 个样本值（两个子 patch × 3 个角点），
+    //    其中只有 1 个是新查询；all 里留下的值也必须与样本数一致
+    check(dr.refineSamples == dr.refineIterations * 6,
+          "each refinement iteration still books 6 sample values",
+          "refineSamples=" + std::to_string(dr.refineSamples)
+          + " iterations=" + std::to_string(dr.refineIterations));
+    check(dr.samples == dr.initSamples + dr.refineSamples,
+          "samples == initSamples + refineSamples",
+          "samples=" + std::to_string(dr.samples));
+    check(dr.all.size() == dr.samples,
+          "every sample value is retained in this small-soup case",
+          "all=" + std::to_string(dr.all.size()) + " samples=" + std::to_string(dr.samples));
+
+    // 4) 同输入同二进制必须逐位相同（复用缓存后尤其要确认没有引入未初始化值）
+    const GeometryErrorEvaluator::DirectionResult dr2 = ev.evaluateDirection(src, dst);
+    const bool bitSame =
+        std::memcmp(&dr.lower, &dr2.lower, sizeof(double)) == 0
+        && std::memcmp(&dr.upper, &dr2.upper, sizeof(double)) == 0
+        && std::memcmp(&dr.p95, &dr2.p95, sizeof(double)) == 0
+        && std::memcmp(&dr.p99, &dr2.p99, sizeof(double)) == 0
+        && dr.samples == dr2.samples && dr.refineIterations == dr2.refineIterations
+        && dr.all.size() == dr2.all.size()
+        && (dr.all.empty() || std::memcmp(dr.all.data(), dr2.all.data(),
+                                         dr.all.size() * sizeof(double)) == 0);
+    check(bitSame, "two runs are bit-identical",
+          "upper1=" + std::to_string(dr.upper) + " upper2=" + std::to_string(dr2.upper));
+
+    // 5) 双向聚合后的对外字段同样不能被复用改小
+    const ErrorResult er = ev.evaluate(src, dst);
+    const ErrorResult er2 = ev.evaluate(src, dst);
+    check(er.upperBoundM >= measured - 1e-9, "aggregated upper covers measured error",
+          "upper=" + std::to_string(er.upperBoundM) + " denseMeasured=" + std::to_string(measured));
+    check(std::memcmp(&er.upperBoundM, &er2.upperBoundM, sizeof(double)) == 0
+          && std::memcmp(&er.lowerBoundM, &er2.lowerBoundM, sizeof(double)) == 0
+          && er.samplesUsed == er2.samplesUsed,
+          "aggregated result is bit-identical across runs");
+}
+
 void testFeatureManifest()
 {
     std::cout << "[manifest] tile-local batchId mapping" << std::endl;
@@ -943,6 +1279,73 @@ void testSimplifierMultiplePrimitiveSets()
 // 的几何被静默丢弃 —— 远景 LOD 会出现整块对象消失（手册 15 节 HOLE），
 // 且违反 0.1「不能丢失源几何」与 7.3「代理构建失败不能导致几何丢失」。
 // ---------------------------------------------------------------------------
+// 阶段 2 裁定项：profile.maxProxyAttempts 必须真的驱动 simplifyNode 的加压阶梯。
+// 在 ffbb3fe 里这个字段只被 toJson() 回显，循环写死 step < 8，属于无效配置。
+void testProxyAttemptsIsEffective()
+{
+    std::cout << "[proxy] maxProxyAttempts actually drives the simplify ladder" << std::endl;
+
+    const int N = 64;                       // 64x64 网格 -> 2*(N-1)^2 = 8192 三角形
+    const unsigned FULL = 2 * static_cast<unsigned>(N - 1) * static_cast<unsigned>(N - 1);
+    osg::ref_ptr<osg::Group> root = new osg::Group;
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    geode->setName("grid");
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    for (int j = 0; j < N; ++j)
+        for (int i = 0; i < N; ++i)
+            pos->push_back(osg::Vec3(static_cast<float>(i), static_cast<float>(j), 0.0f));
+    osg::ref_ptr<osg::DrawElementsUInt> idx =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    auto v = [N](int i, int j) { return static_cast<unsigned>(j * N + i); };
+    for (int j = 0; j + 1 < N; ++j)
+        for (int i = 0; i + 1 < N; ++i)
+        {
+            idx->push_back(v(i, j)); idx->push_back(v(i + 1, j)); idx->push_back(v(i + 1, j + 1));
+            idx->push_back(v(i, j)); idx->push_back(v(i + 1, j + 1)); idx->push_back(v(i, j + 1));
+        }
+    geom->setVertexArray(pos.get());
+    geom->addPrimitiveSet(idx.get());
+    geode->addDrawable(geom.get());
+    root->addChild(geode.get());
+
+    SourceModel m;
+    check(m.build(root.get()), "grid scene build");
+    std::vector<std::uint32_t> items;
+    for (std::size_t i = 0; i < m.prims.size(); ++i) { items.push_back(static_cast<std::uint32_t>(i)); }
+
+    const unsigned target = 200;
+    auto runWith = [&](std::size_t attempts) -> ProxyResult {
+        ProductionProfile p;
+        p.maxProxyAttempts = attempts;
+        p.budget.targetTrianglesPerTile = target;
+        p.budget.maxTrianglesPerTile = FULL;
+        ProxyMeshBuilder b(m, p, m.prims);
+        // allowAggregate=false：只走身份保持型路径，结果面数完全由阶梯次数决定
+        return b.build(items, target, false);
+    };
+
+    const ProxyResult r8 = runWith(8);
+    const ProxyResult r1 = runWith(1);
+    const ProxyResult r0 = runWith(0);
+
+    check(r0.node.valid() && r1.node.valid() && r8.node.valid(), "all three ladders produced a node");
+    check(r0.triangles == FULL, "attempts=0 leaves the proxy un-simplified",
+          std::to_string(r0.triangles) + " vs " + std::to_string(FULL));
+    check(r1.triangles < FULL, "attempts=1 simplifies once", std::to_string(r1.triangles));
+    check(r8.triangles <= r1.triangles, "more attempts never increase the triangle count",
+          std::to_string(r8.triangles) + " > " + std::to_string(r1.triangles));
+    check(r8.triangles < r1.triangles, "the attempt budget changes the outcome (config is live)",
+          std::to_string(r8.triangles) + " == " + std::to_string(r1.triangles));
+    check(r8.triangles <= target, "the 8-step ladder still reaches the triangle target",
+          std::to_string(r8.triangles));
+    check(ProductionProfile().maxProxyAttempts == 8,
+          "profile default stays 8 == the value hard-coded before this change");
+    const ProxyResult r8b = runWith(8);
+    check(r8b.triangles == r8.triangles && r8b.appliedRatio == r8.appliedRatio,
+          "same attempts -> same proxy size", std::to_string(r8b.triangles));
+}
+
 void testProxyAggregateCoversSourceScope()
 {
     std::cout << "[proxy] aggregate fallback covers source scope" << std::endl;
@@ -2560,6 +2963,7 @@ int main(int argc, char** argv)
     };
     run("profile", &testProfileValidation);
     run("sourceModel", &testSourceModelBaking);
+    run("indexGuard", &testIndexValidationDropsOffendingTriangles);
     run("nrmRepair", &testZeroNormalRepair);
     run("partition", &testPartitionCoverageAndDeterminism);
     run("giant", &testGiantSingleMeshSplits);
@@ -2567,10 +2971,12 @@ int main(int argc, char** argv)
     run("bvh", &testMeshBVHMatchesBruteForce);
     run("bvhOrder", &testMeshBVHTraversalBitExact);
     run("error-soundness", &testErrorBoundSoundness);
+    run("refineReuse", &testRefineReusesCornerDistances);
     run("manifest", &testFeatureManifest);
     run("batchid", &testBatchIdVisitorPreservesAttrib0);
     run("simplifier", &testSimplifierMultiplePrimitiveSets);
     run("proxyAggregate", &testProxyAggregateCoversSourceScope);
+    run("proxyAttempts", &testProxyAttemptsIsEffective);
     run("proxyTexture", &testProxyTextureBudget);
     run("proxyTextureLadder", &testProxyTextureLadder);
     run("texResize", &testOptimizerResizeIsolation);

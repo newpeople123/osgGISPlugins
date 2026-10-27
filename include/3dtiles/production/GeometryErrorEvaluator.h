@@ -76,6 +76,14 @@ struct ErrorResult {
     std::size_t samplesUsed = 0;
     double bvhBuildSeconds = 0.0;  // 仪表：双向目标侧建树总耗时
     double workerCpuSeconds = 0.0; // 仪表：节点内并行 worker 线程 CPU 秒（不含调用线程）
+    // ---- 仪表（A-55）：评估内部成本分解，双向合计，全部不参与任何判定 ----
+    double initQuerySeconds = 0.0;   // 初始采样的距离查询
+    double pushSeconds = 0.0;        // 初始采样的建 patch + 入堆/剪枝遍历
+    double refineSeconds = 0.0;      // 自适应细分循环
+    double quantileSeconds = 0.0;    // p95/p99 统计（含排序）
+    std::uint64_t refineIterations = 0;
+    std::uint64_t sourceTriangles = 0;  // 源侧被采样的面数（祖先重复覆盖的口径）
+    std::uint64_t proxyTriangles = 0;   // 代理侧面数
     bool certified = false;        // 区间收敛到容差内
     bool boundLoose = false;       // 达到采样预算，上界仍然保守
     const char* status = "UNKNOWN";
@@ -98,6 +106,16 @@ public:
         bool budgetExhausted = false;
         double bvhBuildSeconds = 0.0;   // 仪表：目标侧建树耗时，不参与判定
         double workerCpuSeconds = 0.0;  // 仪表：分块 worker 线程的 CPU 秒之和（不含父线程）
+        // ---- 仪表（A-55）：把"评估 97 %"拆成可归因的四段 + 计数，不参与判定 ----
+        double initQuerySeconds = 0.0;  // 分块距离查询（并行段含 join 等待）
+        double pushSeconds = 0.0;       // 建 patch、算 key、入堆或剪枝
+        double refineSeconds = 0.0;     // 自适应细分 while 循环
+        double quantileSeconds = 0.0;   // res.all 排序 + p95/p99 取值
+        std::size_t initSamples = 0;    // 初始阶段样本数
+        std::size_t refineSamples = 0;  // 细分阶段新增样本数
+        std::size_t refineIterations = 0;
+        std::size_t fromTriangles = 0;  // 被采样侧的面数
+        std::size_t toTriangles = 0;    // 目标 BVH 的面数
         std::vector<double> all;
     };
     DirectionResult evaluateDirection(const TriangleSoup& from, const TriangleSoup& to) const;
@@ -109,6 +127,9 @@ private:
         osg::Vec3d a, b, c;          // 当前 patch 三角形（细分后为子三角形）
         double maxSampleDist = 0.0;  // patch 内已取样点的最大距离
         double radius = 0.0;         // patch 内任意点到最近取样点的保守上界
+        // 三个角点到目标表面的距离（与 a/b/c 一一对应）。细分只引入一个新顶点，
+        // 其余角点距离直接复用，避免同一个点被重复查询。纯缓存，不参与判定。
+        std::array<double, 3> cornerDist{{0.0, 0.0, 0.0}};
         int depth = 0;
     };
 };

@@ -847,6 +847,13 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         w.microEvaluateWorkerCpuSec = er.workerCpuSeconds;
         w.microEvaluateSamples = er.samplesUsed;
         w.microBvhBuildSec = er.bvhBuildSeconds;
+        w.microEvalInitSec = er.initQuerySeconds;
+        w.microEvalPushSec = er.pushSeconds;
+        w.microEvalRefineSec = er.refineSeconds;
+        w.microEvalQuantileSec = er.quantileSeconds;
+        w.microEvalRefineIterations = er.refineIterations;
+        w.microEvalSourceTriangles = er.sourceTriangles;
+        w.microEvalProxyTriangles = er.proxyTriangles;
         TRACE("evaluate done");
         w.measuredProxyErrorM = er.geometricErrorM();
         w.errorLowerM = er.lowerBoundM;
@@ -884,6 +891,13 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
     _microEvaluateWorkerCpuSec += w.microEvaluateWorkerCpuSec;
     _microEvaluateSamples += w.microEvaluateSamples;
     _microBvhBuildSec += w.microBvhBuildSec;
+    _microEvalInitSec += w.microEvalInitSec;
+    _microEvalPushSec += w.microEvalPushSec;
+    _microEvalRefineSec += w.microEvalRefineSec;
+    _microEvalQuantileSec += w.microEvalQuantileSec;
+    _microEvalRefineIterations += w.microEvalRefineIterations;
+    _microEvalSourceTriangles += w.microEvalSourceTriangles;
+    _microEvalProxyTriangles += w.microEvalProxyTriangles;
     // 逐瓦片一份（A-47）：阶段级 micro_* 只有总和，看不出关键路径在哪个瓦片上
     _tiles[id].timing.heavySec = w.microHeavySec;
     _tiles[id].timing.heavyCpuSec = w.microHeavyCpuSec;
@@ -898,6 +912,13 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
     _tiles[id].timing.evaluateWorkerCpuSec = w.microEvaluateWorkerCpuSec;
     _tiles[id].timing.bvhBuildSec = w.microBvhBuildSec;
     _tiles[id].timing.evaluateSamples = w.microEvaluateSamples;
+    _tiles[id].timing.evalInitSec = w.microEvalInitSec;
+    _tiles[id].timing.evalPushSec = w.microEvalPushSec;
+    _tiles[id].timing.evalRefineSec = w.microEvalRefineSec;
+    _tiles[id].timing.evalQuantileSec = w.microEvalQuantileSec;
+    _tiles[id].timing.evalRefineIterations = w.microEvalRefineIterations;
+    _tiles[id].timing.evalSourceTriangles = w.microEvalSourceTriangles;
+    _tiles[id].timing.evalProxyTriangles = w.microEvalProxyTriangles;
     // 身份与覆盖范围先落账：即使这个瓦片随后降级成"无内容"，它覆盖的源
     // feature 范围仍然要能被报告和自检看到（A-31 的"子树仍然覆盖"不能只
     // 活在 warning 文案里）。
@@ -1390,6 +1411,50 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     _report.addStage("import_normalize_cpu", cImport.elapsed());
     _report.sourceFeatureCount = _model.featureCount();
 
+    // 读模阶段丢弃的越界三角形必须出现在报告里（约束 §2.4：不得静默丢弃源对象；
+    // 钳位或伪造几何同样禁止）。逐条明细只列前若干条，避免畸形输入把报告撑爆。
+    if (!_model.indexViolations.empty())
+    {
+        std::uint64_t droppedTris = 0;
+        std::set<FeatureId> affected;
+        for (const IndexViolation& v : _model.indexViolations)
+        {
+            droppedTris += v.droppedTriangles;
+            affected.insert(v.globalFeatureId);
+        }
+        _report.addCounter("outOfRangeIndexTriangles", droppedTris);
+        _report.addCounter("outOfRangeIndexPrimitiveSets", _model.indexViolations.size());
+        _report.addCounter("outOfRangeIndexFeatures", affected.size());
+        std::ostringstream ids;
+        std::size_t listed = 0;
+        for (const FeatureId fid : affected)
+        {
+            if (listed == 16) { ids << ",+" << (affected.size() - listed) << " more"; break; }
+            ids << (listed ? "," : "") << fid;
+            ++listed;
+        }
+        _warnings.push_back("index validation: dropped " + std::to_string(droppedTris)
+            + " triangle(s) referencing a vertex index beyond the array, in "
+            + std::to_string(_model.indexViolations.size()) + " primitive set(s) of "
+            + std::to_string(affected.size()) + " feature(s) [" + ids.str()
+            + "]; input geometry is malformed and was neither clamped nor rebuilt");
+        for (std::size_t i = 0; i < std::min<std::size_t>(10, _model.indexViolations.size()); ++i)
+        {
+            const IndexViolation& v = _model.indexViolations[i];
+            _warnings.push_back("index validation: node '" + v.nodeName + "' path '" + v.nodePath
+                + "' drawable " + std::to_string(v.drawableIndex) + " primitiveSet "
+                + std::to_string(v.primitiveSetIndex) + ": dropped "
+                + std::to_string(v.droppedTriangles) + " triangle(s), vertexCount="
+                + std::to_string(v.vertexCount) + " maxOffendingIndex="
+                + std::to_string(v.maxOffendingIndex));
+        }
+        if (_model.indexViolations.size() > 10)
+        {
+            _warnings.push_back("index validation: ... and "
+                + std::to_string(_model.indexViolations.size() - 10) + " more primitive set(s)");
+        }
+    }
+
     Timer tSeam;
     CpuTimer cSeam;
     TRACE("seams");
@@ -1439,6 +1504,13 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     _microAggregateCandidates = 0;
     _microEvaluateSamples = 0;
     _microBvhBuildSec = 0.0;
+    _microEvalInitSec = 0.0;
+    _microEvalPushSec = 0.0;
+    _microEvalRefineSec = 0.0;
+    _microEvalQuantileSec = 0.0;
+    _microEvalRefineIterations = 0;
+    _microEvalSourceTriangles = 0;
+    _microEvalProxyTriangles = 0;
     _microFinalizeSec = 0.0;
     GltfOptimizer::resetTextureExportStats();
     TRACE("buildTrees");
@@ -1449,10 +1521,12 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     TRACE("i3dmRoot=" << i3dmRoot);
     _report.addStage("proxy_encode_error", tBuild.elapsed());
     // 细分仪表（micro_* 前缀）：stages 只放秒数，层级关系求和时只能取一层——
-    //   micro_total           = 各瓦片 processTileHeavy 全程（并行侧总 CPU 秒）
+    //   micro_total           = 各瓦片 processTileHeavy 全程的**壁钟**累加（并行侧
+    //                           Σ 工作量，不是进程 CPU 秒；CPU 秒口径见下面同层的
+    //                           micro_total_cpu）。8 路并行时 Σ 壁钟 ≈ 1 份工作量。
     //     ├─ micro_materialize + micro_proxy_build + micro_collect_triangles + micro_evaluate
     //     │    （micro_proxy_simplify / micro_proxy_aggregate 在 proxy_build 之内，
-    //     │      micro_bvh_build 在 micro_evaluate 之内）
+    //     │      micro_bvh_build / micro_eval_* 在 micro_evaluate 之内）
     //     └─ 残差 = 身份范围收集 / 代理字节预估 / 去纹理等未单列的小段
     //   micro_finalize_encode = 主线程收尾全程，micro_write 是其中的编码写出段
     _report.addStage("micro_total", _microHeavySec);
@@ -1463,6 +1537,11 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     _report.addStage("micro_evaluate", _microEvaluateSec);
     _report.addStage("micro_collect_triangles", _microCollectSec);
     _report.addStage("micro_bvh_build", _microBvhBuildSec);
+    // 评估内部四段（A-55）：micro_evaluate 之内按"查询 / 入堆剪枝 / 细分 / 分位数"拆开
+    _report.addStage("micro_eval_init", _microEvalInitSec);
+    _report.addStage("micro_eval_push", _microEvalPushSec);
+    _report.addStage("micro_eval_refine", _microEvalRefineSec);
+    _report.addStage("micro_eval_quantile", _microEvalQuantileSec);
     _report.addStage("micro_finalize_encode", _microFinalizeSec);
     _report.addStage("micro_write", _microWriteSec);
     // 同一层的 CPU 秒口径（AUDIT A-47 闭合判据）。壁钟那套在并行下必然小于
@@ -1493,6 +1572,11 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     // 按秒求和会把 4.4 亿候选当成 4.4 亿秒加进已归属时间（AUDIT A-47）。
     _report.addCounter("micro_aggregate_candidates", _microAggregateCandidates);
     _report.addCounter("micro_evaluate_samples", _microEvaluateSamples);
+    // 重复覆盖口径（A-55）：Σ evalSourceTriangles 是"所有祖先各自重评一遍子树源面"
+    // 的总量，与源模型真实三角形数之比就是重复倍数
+    _report.addCounter("micro_eval_refine_iterations", _microEvalRefineIterations);
+    _report.addCounter("micro_eval_source_triangles", _microEvalSourceTriangles);
+    _report.addCounter("micro_eval_proxy_triangles", _microEvalProxyTriangles);
 
     // 远景代理纹理降分辨率是**成片**发生的（每个内节点代理一次），逐瓦片
     // warning 会把真正需要看的告警淹掉：这里只出一条汇总，逐瓦片明细在
@@ -1721,7 +1805,14 @@ json TileTimings::toJson() const
         {"evaluateWorkerCpuSec", r(evaluateWorkerCpuSec)},
         {"writeCpuSec", r(writeCpuSec)},
         {"finalizeCpuSec", r(finalizeCpuSec)},
-        {"evaluateSamples", evaluateSamples}
+        {"evaluateSamples", evaluateSamples},
+        {"evalInitSec", r(evalInitSec)},
+        {"evalPushSec", r(evalPushSec)},
+        {"evalRefineSec", r(evalRefineSec)},
+        {"evalQuantileSec", r(evalQuantileSec)},
+        {"evalRefineIterations", evalRefineIterations},
+        {"evalSourceTriangles", evalSourceTriangles},
+        {"evalProxyTriangles", evalProxyTriangles}
     };
 }
 
