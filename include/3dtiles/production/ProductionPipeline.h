@@ -235,6 +235,14 @@ private:
     std::uint64_t _microEvalRefineIterations = 0;
     std::uint64_t _microEvalSourceTriangles = 0;
     std::uint64_t _microEvalProxyTriangles = 0;
+    // 真实查询计数与 BVH 工作量（本轮 §6.1）：与 microEvaluateSamples 是两个口径
+    std::uint64_t _microEvalDistanceCalls = 0;
+    std::uint64_t _microEvalInitDistanceCalls = 0;
+    std::uint64_t _microEvalRefineDistanceCalls = 0;
+    std::uint64_t _microEvalBvhNodeVisits = 0;
+    std::uint64_t _microEvalBvhTriangleTests = 0;
+    double _microEvalInitParallelSec = 0.0;   // 含 worker 查询时间，不是纯开销
+    double _microEvalInitThreadCreateSec = 0.0;
     double _microFinalizeSec = 0.0;
     // CPU 秒版累加器（AUDIT A-47：闭合"仪表 vs 进程 CPU 秒"这条算式）
     double _microHeavyCpuSec = 0.0;
@@ -304,6 +312,16 @@ private:
         std::uint64_t microEvalRefineIterations = 0;
         std::uint64_t microEvalSourceTriangles = 0;  // 子树源三角形（重复覆盖口径）
         std::uint64_t microEvalProxyTriangles = 0;
+        // 真实 distance() 调用次数与 BVH 工作量（本轮）：samples 是逻辑采样记录，
+        // 这里才是"算过多少个点"。initThreadOverheadSec 是 initQuerySeconds 里
+        // 可分离出来的建线程/join 墙钟。
+        std::uint64_t microEvalDistanceCalls = 0;
+        std::uint64_t microEvalInitDistanceCalls = 0;
+        std::uint64_t microEvalRefineDistanceCalls = 0;
+        std::uint64_t microEvalBvhNodeVisits = 0;
+        std::uint64_t microEvalBvhTriangleTests = 0;
+        double microEvalInitParallelSec = 0.0;
+        double microEvalInitThreadCreateSec = 0.0;
     };
     TileHeavyWork processTileHeavy(int pn, int id);
     // 3) 主线程串行收尾：writeContent + 状态聚合 + seam 校验

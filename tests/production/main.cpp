@@ -39,6 +39,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cstring>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <set>
@@ -760,6 +761,198 @@ void testObjIntegrityPrecheck()
     }
 }
 
+// ---------------------------------------------------------------------------
+// UTF-8 路径的**失败清理**（A-59 遗留项）：CLI 的 return 3 分支会调
+// discardStaging()（remove_all）和空纹理目录的 remove()。这两处只在失败时走，
+// 成功路径的验证覆盖不到。这里用 CJK 目录做同等动作：造一个暂存目录 + 空纹理
+// 目录，跑一次注定失败（无几何）的管线，再按 CLI 的顺序清理，断言都没了。
+// 口径：这是**单元级**证据（同一个函数、同一个 Utils::utf8ToPath 入口），
+// 不是 "CLI 端到端强行失败" 的证据。
+// ---------------------------------------------------------------------------
+void testCjkFailureCleanup()
+{
+    std::cout << "[cjkCleanup] UTF-8 staging cleanup on the failure path" << std::endl;
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / fs::u8path(u8"测试_失败清理_中文目录");
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / fs::u8path(u8"暂存") / fs::u8path(u8"瓦片"), ec);
+    fs::create_directories(root / fs::u8path(u8"纹理"), ec);
+    {
+        std::ofstream f(root / fs::u8path(u8"暂存") / fs::u8path(u8"瓦片") / "t0.b3dm", std::ios::binary);
+        f << "not a real tile";
+    }
+    check(fs::exists(root / fs::u8path(u8"暂存")), "CJK staging tree was created",
+          root.u8string());
+
+    // 空几何 -> run() 失败（与 CLI 里 pipeline.run() 返回 false 同一分支）
+    osg::ref_ptr<osg::Group> empty = new osg::Group;
+    ProductionProfile profile;
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = root.u8string();
+    opt.stagingDir = (root / fs::u8path(u8"暂存")).u8string();
+    const bool ok = pipeline.run(empty.get(), opt);
+    check(!ok, "a scene without geometry fails the pipeline (positive control)");
+
+    pipeline.discardStaging();
+    check(!fs::exists(Utils::utf8ToPath(opt.stagingDir), ec),
+          "CJK staging dir is gone after discardStaging()",
+          opt.stagingDir + " ec=" + ec.message());
+    check(!fs::exists(Utils::utf8ToPath(opt.stagingDir + "/瓦片/t0.b3dm"), ec),
+          "the b3dm written into the CJK staging dir was removed too");
+
+    // CLI 的第二个清理点：空纹理目录
+    const std::string texDir = (root / fs::u8path(u8"纹理")).u8string();
+    check(fs::is_directory(Utils::utf8ToPath(texDir), ec), "CJK texture dir exists before cleanup");
+    if (fs::is_directory(Utils::utf8ToPath(texDir), ec)
+        && fs::directory_iterator(Utils::utf8ToPath(texDir), ec) == fs::directory_iterator())
+    {
+        fs::remove(Utils::utf8ToPath(texDir), ec);
+    }
+    check(!fs::exists(Utils::utf8ToPath(texDir), ec),
+          "empty CJK texture dir is removed by the failure-path cleanup",
+          texDir + " ec=" + ec.message());
+
+    fs::remove_all(root, ec);
+}
+
+// ---------------------------------------------------------------------------
+// 坐标有效性（手册 §4.1/§4.2）：世界变换后的 double 有限不等于 float 有限。
+// 1e38f 顶点 × 缩放 10 = 1e39，double 侧 isfinite 为真，转 float 就是 inf；
+// 旧代码只查了第一级，那个 inf 会一路进 aabb / 质心 / 切分器 / BVH / POSITION。
+// 语义要求：整条 drawable 丢弃 + 逐条记账 + 进报告，不裁剪、不搬移、不伪造。
+// ---------------------------------------------------------------------------
+void testCoordinateValidity()
+{
+    std::cout << "[coordValidity] float overflow after world transform must be caught" << std::endl;
+
+    auto triGeom = [](const osg::Vec3& a, const osg::Vec3& b, const osg::Vec3& c) {
+        osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(a); pos->push_back(b); pos->push_back(c);
+        g->setVertexArray(pos.get());
+        g->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, 3));
+        return g;
+    };
+    auto sceneOf = [](std::initializer_list<std::pair<const char*, osg::Geometry*>> items) {
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        for (const auto& it : items)
+        {
+            osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+            geode->setName(it.first);
+            geode->addDrawable(it.second);
+            root->addChild(geode.get());
+        }
+        return root;
+    };
+
+    // 1) double 有限、float 溢出：必须丢弃并记成 floatOverflows
+    {
+        osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+        mt->setMatrix(osg::Matrix::scale(10.0, 10.0, 10.0));
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName("overflow");
+        geode->addDrawable(triGeom(osg::Vec3(1.0e38f, 0.0f, 0.0f),
+                                   osg::Vec3(0.0f, 1.0f, 0.0f),
+                                   osg::Vec3(1.0f, 0.0f, 0.0f)).get());
+        mt->addChild(geode.get());
+
+        SourceModel m;
+        check(!m.build(mt.get()), "a scene whose only geometry overflows reports no geometry");
+        check(m.nonFiniteGeometry.size() == 1, "the overflowing drawable is recorded",
+              "records=" + std::to_string(m.nonFiniteGeometry.size()));
+        if (!m.nonFiniteGeometry.empty())
+        {
+            const NonFiniteGeometry& g = m.nonFiniteGeometry[0];
+            check(g.floatOverflows == 1 && g.nonFiniteDoubles == 0,
+                  "counted as float overflow, not as a non-finite double",
+                  "ff=" + std::to_string(g.floatOverflows)
+                  + " nf=" + std::to_string(g.nonFiniteDoubles));
+            check(g.droppedTriangles == 1 && g.vertexCount == 3,
+                  "the lost triangles are accounted for",
+                  "tris=" + std::to_string(g.droppedTriangles));
+        }
+        check(m.totalTriangles() == 0, "no triangle survives from the dropped drawable",
+              "tris=" + std::to_string(m.totalTriangles()));
+    }
+
+    // 2) 源数据里就有 NaN：记成 nonFiniteDoubles（与溢出分开统计）
+    {
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        SourceModel m;
+        check(!m.build(sceneOf({{"nan_geom", triGeom(osg::Vec3(nan, 0.0f, 0.0f),
+                                                    osg::Vec3(0.0f, 1.0f, 0.0f),
+                                                    osg::Vec3(1.0f, 0.0f, 0.0f)).get()}}).get()),
+              "a scene whose only drawable is NaN reports no geometry");
+        check(m.nonFiniteGeometry.size() == 1 && m.nonFiniteGeometry[0].nonFiniteDoubles == 1,
+              "NaN is recorded as a non-finite double",
+              m.nonFiniteGeometry.empty() ? "no record"
+                  : "nf=" + std::to_string(m.nonFiniteGeometry[0].nonFiniteDoubles));
+    }
+
+    // 3) 合法的大坐标（投影坐标系级别的 1e7）不得被当成异常丢掉
+    {
+        SourceModel m;
+        check(m.build(sceneOf({{"georef", triGeom(osg::Vec3(4540000.0f, 0.0f, 0.0f),
+                                                  osg::Vec3(4540001.0f, 0.0f, 0.0f),
+                                                  osg::Vec3(4540000.0f, 1.0f, 0.0f)).get()}}).get()),
+              "large but legal coordinates build");
+        check(m.nonFiniteGeometry.empty(), "legal large coordinates are not flagged",
+              "records=" + std::to_string(m.nonFiniteGeometry.size()));
+        check(m.totalTriangles() == 1, "legal large-coordinate triangle is kept",
+              "tris=" + std::to_string(m.totalTriangles()));
+        checkNear(m.bounds.xMin(), 4540000.0, 0.5, "large coordinate lands in bounds");
+    }
+
+    // 4) 报告链路：丢弃必须出现在 counters + warnings 里（不能只在 OSG_WARN 里）
+    {
+        const std::string dir = "test_out_coord_validity";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        auto counterOf = [](const ProductionPipeline& pl, const char* name) {
+            for (const StageCount& c : pl.report().counters)
+            {
+                if (c.name == name) { return c.value; }
+            }
+            return std::uint64_t(0);
+        };
+        auto warningWith = [](const ProductionPipeline& pl, const std::string& needle) {
+            for (const std::string& w : pl.warnings())
+            {
+                if (w.find(needle) != std::string::npos) { return true; }
+            }
+            return false;
+        };
+
+        osg::ref_ptr<osg::Group> root = sceneOf({
+            {"keep_me", triGeom(osg::Vec3(0.0f, 0.0f, 0.0f), osg::Vec3(2.0f, 0.0f, 0.0f),
+                                osg::Vec3(0.0f, 2.0f, 0.0f)).get()},
+            {"drop_me", triGeom(osg::Vec3(std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f),
+                                osg::Vec3(0.0f, 1.0f, 0.0f), osg::Vec3(1.0f, 0.0f, 0.0f)).get()},
+        });
+        ProductionProfile profile;
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = dir + "/out";
+        (void)pipeline.run(root.get(), opt);
+        check(counterOf(pipeline, "nonFiniteDrawables") == 1,
+              "nonFiniteDrawables reaches the report",
+              std::to_string(counterOf(pipeline, "nonFiniteDrawables")));
+        check(counterOf(pipeline, "nonFiniteDroppedTriangles") == 1,
+              "dropped triangle count reaches the report",
+              std::to_string(counterOf(pipeline, "nonFiniteDroppedTriangles")));
+        check(counterOf(pipeline, "nonFiniteVertexCount") == 1,
+              "non-finite vertex count reaches the report",
+              std::to_string(counterOf(pipeline, "nonFiniteVertexCount")));
+        check(warningWith(pipeline, "coordinate validity: dropped"),
+              "the drop is named in warnings", joinMessages(pipeline.warnings()));
+        check(warningWith(pipeline, "nothing was clamped, moved or rebuilt"),
+              "the warning states that geometry was not silently repaired",
+              joinMessages(pipeline.warnings()));
+    }
+}
+
 // A-43：源法线数组里的零长度向量，写出侧必须重算成面法线，否则官方 validator
 // 对整个内容文件判 severity=ERROR（lugouqiao_v17 实测 26 个文件 / 195 条）。
 void testZeroNormalRepair()
@@ -1378,6 +1571,55 @@ void testRefineReusesCornerDistances()
           && std::memcmp(&er.lowerBoundM, &er2.lowerBoundM, sizeof(double)) == 0
           && er.samplesUsed == er2.samplesUsed,
           "aggregated result is bit-identical across runs");
+
+    // 6) 真实查询计数（手册 §6.1）：samples 是逻辑采样记录，distance() 调用
+    //    次数只能实测。判据用"可算死的数"，不用"看起来差不多"：
+    //    初始阶段每个三角形查 perTri 个点；细分每轮只查 1 个中点。
+    {
+        const std::size_t perTri = dr.initSamples / src.size();
+        check(dr.initDistanceCalls == src.size() * perTri,
+              "init queries == triangles x per-triangle samples",
+              "calls=" + std::to_string(dr.initDistanceCalls)
+              + " tris=" + std::to_string(src.size()) + " perTri=" + std::to_string(perTri));
+        check(dr.refineDistanceCalls == dr.refineIterations,
+              "one real query per refinement iteration (the rest are reused corners)",
+              "refineCalls=" + std::to_string(dr.refineDistanceCalls)
+              + " iterations=" + std::to_string(dr.refineIterations));
+        check(dr.distanceCalls == dr.initDistanceCalls + dr.refineDistanceCalls,
+              "distanceCalls == init + refine");
+        // 样本数恒 >= 查询数：细分一次记 6 条样本、只发 1 次查询 —— 正因为如此，
+        // 拿 samples 当查询次数会把成本高估
+        check(dr.samples >= dr.distanceCalls,
+              "logical samples are never fewer than real queries",
+              "samples=" + std::to_string(dr.samples)
+              + " calls=" + std::to_string(dr.distanceCalls));
+        // BVH 工作量：每次查询至少访问根节点、至少测 1 个三角形
+        check(dr.bvhNodeVisits >= dr.distanceCalls,
+              "every query visits at least the root node",
+              "visits=" + std::to_string(dr.bvhNodeVisits)
+              + " calls=" + std::to_string(dr.distanceCalls));
+        check(dr.bvhTriangleTests >= dr.distanceCalls,
+              "every query tests at least one triangle",
+              "tests=" + std::to_string(dr.bvhTriangleTests)
+              + " calls=" + std::to_string(dr.distanceCalls));
+        // 双向聚合必须等于两个单向之和
+        check(er.distanceCalls >= dr.distanceCalls,
+              "aggregated query count covers the single direction",
+              "agg=" + std::to_string(er.distanceCalls)
+              + " one=" + std::to_string(dr.distanceCalls));
+
+        // 7) perTri 退化路径（预算压到只能采顶点）同样要对得上
+        ErrorEvalConfig tight;
+        tight.maxSamplesPerNode = 4;   // budget/2 = 2 < 2 tris * 3 => perTri 退到 3
+        GeometryErrorEvaluator evTight(tight);
+        const auto dt = evTight.evaluateDirection(src, dst);
+        check(dt.initDistanceCalls == src.size() * 3,
+              "degraded sampling still books exactly the queries it makes",
+              "calls=" + std::to_string(dt.initDistanceCalls));
+        check(dt.initSamples == src.size() * 3,
+              "degraded sampling books one sample per query",
+              "samples=" + std::to_string(dt.initSamples));
+    }
 }
 
 void testFeatureManifest()
@@ -3323,6 +3565,8 @@ int main(int argc, char** argv)
     run("profile", &testProfileValidation);
     run("sourceModel", &testSourceModelBaking);
     run("indexGuard", &testIndexValidationDropsOffendingTriangles);
+    run("coordValidity", &testCoordinateValidity);
+    run("cjkCleanup", &testCjkFailureCleanup);
     run("objPrecheck", &testObjIntegrityPrecheck);
     run("nrmRepair", &testZeroNormalRepair);
     run("partition", &testPartitionCoverageAndDeterminism);

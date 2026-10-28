@@ -431,3 +431,96 @@ CesiumJS 1.119 + 无头 Edge + SwiftShader 软件 WebGL）实测三批：
    ③ `micro_evaluate_samples`（438 681 617）与 `micro_aggregate_candidates`（122）是**计数**，
       却通过 `_report.addStage(...)` 写进了 `stages` 这个**秒**数组
       （`ProductionPipeline.cpp:1219-1226`）——读表时这两行不是耗时。
+
+---
+
+## 2026-10-28（第二轮）：longxiang 档的真实归因与一次 SAH 提速
+
+口径先说清（不然后面的数会被误读）：
+
+1. 本节的秒数**全部来自 `conversion-report.json` 的 `stages`**，不是外部秒表；`totalSeconds`
+   只覆盖 `ProductionPipeline::run()`，`input_read` 单独一行。
+2. `micro_*` 是**瓦片并行**段：`micro_total` 是各瓦片 `processTileHeavy` 的**壁钟累加**，
+   8 路并行时它约等于 1 份工作量，不能与 `totalSeconds` 相除当占比；对账要用
+   `micro_total_cpu`（CPU 秒）。
+3. `micro_write` / `micro_finalize_encode` 是**主线程串行**段，它与并行的 `micro_total`
+   是**先后**关系，两者相加会超过 `totalSeconds` 的错觉来自第 2 条。
+
+### 1. 基线归因（HEAD，机器空闲，n=1）
+
+`longxiang.fbx`，129 瓦片 / 127 有内容，`errors=[]`，`totalSeconds=99.2`、进程 CPU 285.8 s、
+峰值 RSS 3 741 MB（`peakRssBytes`）。
+
+| 段 | 秒 | 说明 |
+|---|---|---|
+| `micro_write` | 86.9 | 主线程串行写：Osg2Gltf 编码 + b3dm 组装（127 个内容瓦片） |
+| └ `micro_texture_export` | 52.0 | 其中 KTX2 压缩（libktx 自带 `threadCount`），117 个文件 |
+| `micro_evaluate` | 51.9 | 双向误差评估，在并行段内 |
+| └ `micro_eval_init` | 29.7 | 初始采样（每三角形 3~7 个点） |
+| └ `micro_eval_refine` | 19.0 | 自适应细分（每次 1 个中点查询） |
+| └ `micro_bvh_build` | 2.2 | 双向建树 |
+| `input_read` | 2.3 | `readNodeFile`（在 `run()` 之外） |
+
+结论：**这一档的主成本是"串行写盘 + KTX2 压缩"（86.9 s，占 `totalSeconds` 的 88 %），
+不是误差评估（51.9 s，且与瓦片并行重叠）**。这与历史上"评估占 97 %"的档（卢沟桥）不是同一回事，
+不能把那条结论套到这一档。
+
+### 2. 真实查询计数（A-61）：样本数不是查询数
+
+同一次运行（候选 B，含计数器）：
+
+| 指标 | 读数 | 含义 |
+|---|---|---|
+| `micro_evaluate_samples` | 48 963 414 | 逻辑采样记录（细分一次记 6 条） |
+| `micro_eval_distance_calls` | **16 283 784** | 真实 `distance()` 调用 = init + refine |
+| └ `micro_eval_init_distance_calls` | 9 747 858 | 初始采样（≈ 源三角形 × perTri） |
+| └ `micro_eval_refine_distance_calls` | 6 535 926 | 细分迭代（每次恰 1 次） |
+| `micro_eval_refine_iterations` | 6 535 926 | 与上一行相等 ⇒ 恒等式成立 |
+| `micro_eval_bvh_node_visits` | 1.12e9（改前 3.19e9） | 平均 **69** 节点/查询（改前 196） |
+| `micro_eval_bvh_triangle_tests` | 7.18e8（改前 2.31e9） | 平均 **44** 测试/查询（改前 142） |
+
+⇒ "样本 4 896 万"被当成"查询 4 896 万次"会把查询成本高估 **3 倍**。两个数从这轮起成对出现在
+`counters` 里，报告消费者不该只读其中一个。
+
+### 3. 分段计时的真实语义（A-55 遗留的边界）
+
+- `micro_eval_init` = 分块循环的整体墙钟，**含**建线程与 join 等待；本轮把它进一步拆成
+  `micro_eval_init_parallel`（建完线程到 join 返回，**含 worker 的计算时间**）与
+  `micro_eval_init_thread_create`（只算 `std::thread` 构造）。**不要**把前者当"instrumentation
+  开销"——第一版就是这么误读的（29.1 s 看着像纯开销，实际主要是 worker 在算）。
+- `micro_eval_push` = 建 patch + 算 key + 入堆/剪枝，串行；`micro_eval_quantile` = `all` 排序取
+  p95/p99，**不参与任何判定**。
+- 瓦片级 `timing` 里同样有 `evaluateSec` / `evalInitSec` / … 逐瓦片一份，`micro_*` 是它们的和。
+
+### 4. SAH 切分（A-62）：ABBA 四次运行
+
+配置：`-sp -i D:\BaiduNetdiskDownload\longxiang.fbx -o <新目录>`（默认预算/参数），
+A = 干净 HEAD，B = 候选；同一台机器、同一套编译命令行，按 **A→B→B→A** 交替。
+
+| 轮次 | total | 进程CPU | 峰值RSS | micro_evaluate | init | refine | micro_write | 纹理导出 |
+|---|---|---|---|---|---|---|---|---|
+| A1 | 99.2 | 285.8 | 3 741 MB | 51.9 | 29.7 | 19.0 | 86.9 | 52.0 |
+| B1 | 112.7 | 257.1 | 3 733 MB | **23.0** | 12.9 | 7.0 | 105.9 | 65.8 |
+| B2 | 92.5 | 251.0 | 3 733 MB | **21.6** | 12.5 | 6.0 | 86.1 | 51.7 |
+| A2 | 137.3 | 301.5 | 3 745 MB | 70.5 | 42.9 | 23.7 | 122.5 | 79.8 |
+
+- **评估段**：A 51.9 / 70.5（均值 61.2），B 23.0 / 21.6（均值 22.3）⇒ **−64 %**；
+  单侧看 init −57 %/−58 %、refine −63 %/−68 %。
+- **total**：A 均值 118.3，B 均值 102.6（−13 %），但 `micro_write` 在 86.1~122.5 s 之间漂移
+  （同一二进制、同一输入），**这段波动比评估收益还大** ⇒ 本轮**只在"评估段"上下结论**，
+  不声称整体提速百分比。要拿到可信的整体数，需要把写盘段的方差压下去（串行单线程 + KTX2
+  线程竞争），那是另一个改动。
+- **产物**：4 次运行 246 个文件 sha256 **全等**（清单 md5 `9a4326be…`），
+  `report_tile_diff` 判 PASS ⇒ 提速没有换来任何数值/结构变化。
+- 新计数器的开销**含在 B 的时间里**（每次查询/节点/三角形各 +1，合计约 1.9e9 次自增），
+  所以 −64 % 是净收益，不是"把计数器关掉才有的数"。
+
+### 5. 没动的杠杆（附理由，避免下轮重复调研）
+
+| 杠杆 | 现状读数 | 为什么本轮不动 |
+|---|---|---|
+| 串行写盘（86.9 s） | 127 瓦片 / 0.68 s 每片 | 并行写出会碰共享纹理缓存、`mapper`、`report` 与 A-40/A-52 的确定性结论；无同批复测预算时不碰 |
+| KTX2 压缩（52.0 s，117 文件） | libktx 自带 24 线程 | 第三方线程，`WB_KTX2_THREADS` 已有；改它属"重写线程池"，缺证据 |
+| 重复评估（`eval_source_triangles` 1.76 M vs 源 234 K） | 7.5× 重复 | 祖先瓦片各自重评子树是被 A-31 的"子树覆盖"语义决定的，改它等于改质量口径 |
+| 代理简化/聚合 | 4.0 s / 2.1 s（< 5 %） | 不是热点 |
+

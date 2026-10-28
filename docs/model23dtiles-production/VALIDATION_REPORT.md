@@ -1069,3 +1069,68 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   longxiang 内存回退（B-7）。
   ~~写盘后 glTF primitive 数回读（B-9）~~ 已解除：`glb_prims.js` 在 v17 的 1057 个
   内容文件上违例 0（读数见 §6.2 的 v17 电池表）。
+
+---
+
+## 2026-10-28（第二轮）：真实 FBX 的产物级复验（A-60 ~ A-64 之后）
+
+### 1. 产物同一性（这是本轮最关键的一条）
+
+`longxiang.fbx` 用两个二进制各跑两遍（A = 干净 HEAD，B = 候选，A→B→B→A）：
+
+| 项 | 读数 |
+|---|---|
+| 每份产物的文件数 | 246（`tiles/` 129 + `textures/` 117 + `tileset.json` + `feature-manifest.json`，不含 `conversion-report.json`） |
+| 四份清单的 md5 | **全部 `9a4326be42c6864251a41e3690235e9c`**（逐文件 sha256 全等，跨配置、跨轮次） |
+| `report_tile_diff.js A1 B1` | **PASS**：瓦片对齐 129/129、缺失 id 0；负载/结构字段差异 **0**；误差字段差异 **0**；`upper<lower` 违例 **0**；上界"变小 0 / 变大 0 / 不变 129" |
+| 唯一差异 | `timing` 字段 127 条（耗时自然不同） |
+
+⇒ SAH 换树形、坐标记账、查询计数三处改动**没有**改变瓦片结构、绘制量、几何误差或字节内容。
+Naruto 档同样（A/B 各 1 次，4 个文件逐位相同，`outputBytes=190 915`）。
+
+### 2. 官方 validator（`scripts/run_validator.sh`）
+
+- 对象：`F:\wb_3dtiles_out\_followup_20261028\ab\lx_B1`（候选 B），报告落在
+  `…\_followup_20261028\validation\lx_B1.validator.json`。
+- 表头：`numErrors=0 / numWarnings=121 / numInfos=0`。
+- 叶层（**按"冒号后可有空格"的尺子**数，避免 A-57 那轮的死尺子）：
+  `"severity": *"ERROR"` = **0 条**；`"severity": *"WARNING"` = **1 514 条**。
+- 只验一份的理由：A1/B1/B2/A2 的产物**逐位相同**（上表），validator 的输入相同 ⇒ 输出必然相同；
+  这不等于"四个数据集都验过"，而是"验过的那份与另外三份字节全等"。
+- **视觉验收没做**：没开 CesiumJS、没有 GPU 渲染、没有截图 ⇒ **BLOCKED-VISUAL**。
+  validator 0 error **不等于**视觉通过（沿用前几轮的口径）。
+
+### 3. 坐标有效性（A-60）的真实资产读数
+
+7 个真实 FBX，`modelstats` 的 S1（局部/世界）/S3（SourceModel 烘焙后）四组统计：
+
+| 项 | 读数 |
+|---|---|
+| `nonFiniteVertices`（世界空间） | 7/7 全 **0** |
+| `floatOverflowVertices`（double 有限、float 溢出） | 7/7 全 **0** |
+| 索引越界（`indexOutOfRangeTris` / `indexViolations`） | 7/7 全 **0** |
+| 退化面（零面积） | jianzhu **28 356**、龙翔桥站厅 909、芜湖水厂 344、longxiang 15、卢沟桥 16、Naruto 0 |
+| 大坐标（合法） | 芜湖水厂 `maxAbs=75 465.9`、卢沟桥 4 337.4 —— **保留**，未按阈值丢弃 |
+
+结论按"本轮所测"写：**未检测到非有限/溢出顶点**；这不能外推成"任何输入都不会有"。
+出现时的行为由单测 `coordValidity` 钉住：整条 drawable 丢弃 + 5 个 counter + 汇总/明细 warning，
+且 warning 明写"nothing was clamped, moved or rebuilt"。
+
+### 4. UTF-8 路径（A-59 遗留 + A-63）
+
+| 场景 | 结果 |
+|---|---|
+| 中文输入 + 中文输出（`模型_中文.fbx` → `输出_中文目录\结果_甲`） | **成功**：`inputBytes=29 205 344`（与 `stat` 相等）、`tileCount=1`、`errors=[]`、`tileset.json`/`feature-manifest.json`/报告都落在中文目录 |
+| 报告里的路径字段 | `inputFile` 原样保留 UTF-8 中文路径，未乱码 |
+| **失败清理**（`discardStaging()` + 空纹理目录 `remove()`） | 单测 `cjkCleanup`：在 `%TEMP%\测试_失败清理_中文目录` 下建"暂存/瓦片/t0.b3dm"与空"纹理"目录，跑一次无几何的（必失败）管线后按 CLI 顺序清理，**6 条断言全过**（暂存目录与其内部文件都消失、空纹理目录被删） |
+| CLI 端到端"强行失败" | **PENDING**：`-mb 4096` 让分区器把 2 472 面的模型切成上百瓦片（暂存区已落 67 个 b3dm），跑到一半被本轮命令超时中止；**没有**拿到"rc=3 + 零半成品"的端到端读数，不写成通过 |
+| Debug 构建 | **BLOCKED-DEBUG**：A-63 删掉了 `#ifndef NDEBUG` 分叉（代码级已一致），但本机没有 Debug 运行库/插件，未编 Debug 二进制 |
+
+### 5. 未做 / 不可做
+
+- **视觉**：BLOCKED-VISUAL。
+- **A-54 档（卢沟桥 335 MB）**：判据未动 ⇒ 仍不可发布；本轮**没有**重跑完整转换，
+  只有 `modelstats` 只读数据（5 710 488 三角形 / 2 729 feature / 1 787 实例 / 2 747 MB 纹理驻留）。
+- **jianzhu+tietu（12.8 M 三角形）、龙翔桥站厅（2.2 GB 图像）**：只做了只读扫描，端到端 **PENDING**。
+- **A-53 堆损坏**：见 STATUS，仍 OPEN。
+

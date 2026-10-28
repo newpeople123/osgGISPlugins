@@ -1460,3 +1460,96 @@ ERROR: selfValidate: content over material budget: tiles/t8.b3dm (26 materials >
 - **A-53**（`test_production` 在 `giant` 用例上的间歇性堆损坏 `0xc0000374`）仍 **OPEN**：本轮
   全量 **383/0、rc=0** 一次通过、未复现，但样本仍然小，**不声称已消失**。
 - 视觉维度按上面的"未执行"记为 **BLOCKED-VISUAL**（不是外部阻塞，是本轮没做）。
+
+## 2026-10-28（第二轮）：真实 FBX 坐标审计 + 真实查询计数 + SAH 切分（A-60 ~ A-64）
+
+起点 HEAD `4b8af62e`，工作区只有用户那份 `.gitignore`（1637 行追加，现 1693 行）未提交，
+本轮**原样保留**、不 reset、不清理、不入库。产物/日志一律落在仓库外
+`F:\wb_3dtiles_out\_followup_20261028\`；`D:\BaiduNetdiskDownload` 只读，未改名、未移动、未写入。
+
+### 构建环境（必须写清，否则读数无法复现）
+
+本机安全策略会杀掉 **MSBuild/cmake 派生的子进程**（`cmake -S -B` 与 `cl` 在
+`TrackedVCToolTask` 下都以 `0xC0000409` 退出），所以 `cmake --build` 在本轮**不可用**。
+替代路径：用 `cl.exe`/`link.exe` **重放 MSBuild 自己记在
+`build/tools/*/*.dir/Release/*.tlog/CL.command.1.tlog` 里的命令行**，再用 vcxproj 的
+`<Link>` 设置链接（脚本 `F:\wb_3dtiles_out\_followup_20261028\msvc_build.py`）。
+两个坑记在这里，避免下轮重踩：
+1. 该 tlog 里还混着**另一份检出**（`E:\dev\C++\osgGISPlugins`，没有 `-gpt` 后缀）的旧命令行，
+   同名 `.obj` 会覆盖本树的产物 ⇒ 必须按 `ROOT` 前缀过滤（本轮实际过滤掉 19 条）。
+2. `link` 的**响应文件里不按 `;` 拆库名**，一个 `.lib` 必须占一行，否则报
+   `LNK1181 无法打开输入文件 "…osg.lib;…osgDB.lib"`。
+
+构建证据：A = 干净 HEAD（`Release/model23dtiles_A.exe`，1 252 352 B，14:48 链出）；
+B = 本轮候选（`Release/model23dtiles_B.exe`，含 5 处改动）；`test_production` 同法构建。
+**注意**：11:50 那份用户构建的 `Release/model23dtiles.exe` 本轮被重新构建覆盖过，
+基线副本留在 `F:\wb_3dtiles_out\_followup_20261028\bin_baseline\`。
+
+### 真实资产清单（`modelstats` 只读，7/7 读取成功）
+
+| 文件 | 字节 | 节点 | Geode | primSet | 顶点 | 三角形(图/IR) | 纹理 | 纹理驻留 | feature | 实例 | maxAbs |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Naruto.fbx | 29 205 344 | 140 | 3 | 3 | 2 024 | 2 472 / 2 472 | 6 | 2.4 MB | 3 | 0 | 90.8 |
+| longxiang.fbx | 65 764 688 | 437 | 145 | 260 | 314 125 | 234 828 / 234 798 | 216 | 499 MB | 145 | 10 | 144.8 |
+| 龙翔桥站.fbx | 65 764 688 | 437 | 145 | 260 | 314 125 | 234 828 / — | 216 | 499 MB | — | — | 144.8 |
+| 芜湖水厂总装.fbx | 132 484 352 | 176 | 87 | 143 | 297 351 | 223 372 / 132 501 | 143 | 679 MB | 87 | 19 | **75 465.9** |
+| 龙翔桥站厅.fbx | 220 709 520 | 1 270 | 469 | 893 | 775 260 | 584 457 / 537 876 | 782 | 2 249 MB | 469 | 72 | 142.5 |
+| 20240529卢沟桥分洪枢纽.fbx | 335 435 216 | 5 632 | 2 729 | 3 328 | 6 938 931 | 5 710 488 / 3 337 373 | 2 833 | 2 747 MB | 2 729 | 1 787 | 4 337.4 |
+| jianzhu+tietu.FBX | 432 952 384 | 97 | 48 | 48 | 32 160 694 | 12 829 475 / 12 829 475 | 47 | 159 MB | 48 | 0 | 3 136.0 |
+
+坐标结论（本轮实测，不是"算法上安全"的声明）：**7/7 个模型的
+`nonFiniteVertices=0`、`floatOverflowVertices=0`、索引越界 `0`**；`零面积` 三角形确实存在
+（jianzhu 28 356、龙翔桥站厅 909、芜湖水厂 344、longxiang 15），属源数据退化面，不是本轮
+改动引入。**"本轮所测模型未检测到"≠"任何输入都不会出现"**——A-60 的两级检查现在会把
+出现的那一例记进报告，而不是静默写进 POSITION。
+`龙翔桥站.fbx` 与 `longxiang.fbx` 字节数、顶点数、三角形数、纹理数全部相同，判定为同一份
+资产的两个文件名；只对 `longxiang.fbx` 做端到端，另一份记为 **SKIPPED（重复资产）**。
+
+### 端到端与状态
+
+| 资产 | 只读扫描 | 端到端转换 | 判定 |
+|---|---|---|---|
+| Naruto.fbx | ✓ | ✓（A 与 B 各 1 次，产物 4 文件逐位相同） | **PASS** |
+| 长翔 longxiang.fbx | ✓ | ✓（ABBA 4 次，246 文件逐位相同） | **PASS** |
+| 芜湖水厂总装.fbx | ✓ | ✗ | **PENDING**（大坐标 + 19 实例档，本轮未跑端到端） |
+| 龙翔桥站厅.fbx | ✓ | ✗ | **PENDING**（782 纹理 / 2.2 GB 图像驻留，机器与时间不够） |
+| 卢沟桥 335 MB | ✓ | ✗（按 A-54 裁定不重跑） | **FAIL/BLOCKED**（判据未动，仍是不可发布） |
+| jianzhu+tietu.FBX | ✓ | ✗ | **PENDING**（12.8 M 三角形，单跑成本未评估） |
+| 龙翔桥站.fbx | ✓ | ✗ | **SKIPPED**（与 longxiang 重复） |
+
+### 本轮改动（5 处，全部有单测/读数）
+
+1. **A-60** 坐标有效性两级检查 + `NonFiniteGeometry` 逐条记账 + 报告五连（counter/warning）。
+2. **A-61** 真实 `distance()` 计数（线程私有）+ BVH 节点/三角形测试计数，进 `counters`。
+3. **A-62** BVH 切分改分箱 SAH（只换树形）：`micro_evaluate` **−56 % / −69 %**，节点访问 −65 %、
+   三角形测试 −69 %，产物 246 文件逐位不变。
+4. **A-63** `-i/-o` 的 argv 编码转换去掉 `#ifndef NDEBUG` 分叉（无条件转 UTF-8）。
+5. **A-64** `build()` 开头复位三个记账容器。
+
+测试：HEAD 基线 **383/0**；候选 **414/0**（新增 31 条断言：`coordValidity` 全链路、
+`cjkCleanup`、`refineReuse` 的查询恒等式）。
+
+### 产物验收
+
+- `scripts/report_tile_diff.js A1 B1` → **PASS**（129 瓦片对齐、结构/负载/误差差异全 0）。
+- 官方 validator（`scripts/run_validator.sh`）对 `lx_B1`：表头 `errors=0 / warnings=121 / infos=0`，
+  叶层 `"severity": *"ERROR"` **0 条**、`WARNING` **1 514 条**（尺子按"容忍空格"写，与
+  A-57 那轮的教训一致）。**未做** CesiumJS/GPU 视觉验收 ⇒ **BLOCKED-VISUAL**。
+- 中文路径：**输入 + 输出双端中文目录**端到端成功（`inputBytes=29 205 344` 与 `stat` 相等、
+  `tileCount=1`、`errors=[]`、报告落在中文目录）。失败路径的 `discardStaging()` 与空纹理目录
+  `remove()` 由新增单测 `cjkCleanup` 在中文目录上验证（6 条断言全过）；**CLI 端到端强行失败
+  没做成**：`-mb 4096` 触发分区器把 2 472 面的模型切成上百个瓦片（暂存区已写 67 个 b3dm），
+  跑到一半被本轮的命令超时杀掉 ⇒ 记 **PENDING**，不写成"失败清理已端到端验证"。
+
+### 未执行 / 阻塞
+
+- **A-53**：隔离目录单跑 `giant` **10/10**；全量套件 **3 次**（383/0、408/0、414/0）干净。
+  **保持 OPEN**：n 小、没上 PageHeap/WinDbg，不因"这轮没崩"改判。
+- **A-54**：判据未动，`lugouqiao` 仍 **不可发布**；本轮只取只读扫描数据，不重跑。
+- **Debug 构建**：本机无 Debug 版 OSG/vcpkg 运行库 + Debug `osgdb_fbx` 插件，未编 ⇒
+  A-63 只有**代码级**证据，运行级记 **BLOCKED-DEBUG**。
+- **视觉验收**：**BLOCKED-VISUAL**（没开 CesiumJS、没截图）。
+- **性能**：只对 longxiang 做了 ABBA（n=2/侧）、Naruto 做了 1 轮；`micro_write` 段在
+  86~122 s 之间漂移，**total 的差不可归因**，本轮**不声称整体提速**。
+- **提交**：本轮一条都没提交（用户未要求）；工作区保留 8 个改动文件 + 那份 `.gitignore`。
+

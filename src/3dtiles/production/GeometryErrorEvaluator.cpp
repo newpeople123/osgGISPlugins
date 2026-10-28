@@ -107,6 +107,15 @@ double boxDistanceSquared(const osg::Vec3d& bmin, const osg::Vec3d& bmax, const 
     return d;
 }
 
+// AABB 表面积（SAH 的代价单位；退化盒为 0）
+double boxArea(const osg::Vec3d& bmin, const osg::Vec3d& bmax)
+{
+    const double dx = std::max(0.0, bmax.x() - bmin.x());
+    const double dy = std::max(0.0, bmax.y() - bmin.y());
+    const double dz = std::max(0.0, bmax.z() - bmin.z());
+    return 2.0 * (dx * dy + dy * dz + dz * dx);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -174,23 +183,156 @@ int MeshBVH::buildRecursive(std::vector<std::size_t>& order, std::size_t begin, 
         _nodes[self].end = end;
         return self;
     }
-    // 沿最长轴用质心中位数切分
-    const double dx = _nodes[self].bmax.x() - _nodes[self].bmin.x();
-    const double dy = _nodes[self].bmax.y() - _nodes[self].bmin.y();
-    const double dz = _nodes[self].bmax.z() - _nodes[self].bmin.z();
-    const int axis = (dx >= dy && dx >= dz) ? 0 : ((dy >= dz) ? 1 : 2);
-    std::sort(order.begin() + begin, order.begin() + end,
-              [this, axis](std::size_t a, std::size_t b) {
-                  const std::array<std::size_t, 3>& ta = _tris[a];
-                  const std::array<std::size_t, 3>& tb = _tris[b];
-                  const osg::Vec3d ca = (_verts[ta[0]] + _verts[ta[1]] + _verts[ta[2]]) / 3.0;
-                  const osg::Vec3d cb = (_verts[tb[0]] + _verts[tb[1]] + _verts[tb[2]]) / 3.0;
-                  const double ka = (axis == 0) ? ca.x() : (axis == 1) ? ca.y() : ca.z();
-                  const double kb = (axis == 0) ? cb.x() : (axis == 1) ? cb.y() : cb.z();
-                  if (ka != kb) { return ka < kb; }
-                  return a < b;
-              });
-    const std::size_t mid = begin + count / 2;
+
+    // ---- 切分轴与切分点：按代价（面积 × 面数）选，而不是"最长轴中位数" ----
+    // 动机是实测出来的：longxiang 档 16.3 M 次查询里 BVH 访问了 3.19e9 个节点、
+    // 做了 2.31e9 次点-三角形测试（≈196 节点 / 142 测试 每次查询）。中位数切分
+    // 在质心分布偏斜时会让兄弟包围盒大量重叠，剪枝失效；代价函数直接惩罚重叠。
+    // 只影响树形，不影响结果：最近三角形的距离是"同一批 double 取最小"，
+    // 与遍历到的顺序、树的结构无关（见 distanceSquaredRecursive 的三条理由）。
+    // 确定性：轴序 0..2、bin 序 0..kBins-1 都是固定顺序，平手时保留先出现者；
+    // 分桶用 stable_partition 保序 ⇒ 同一输入建出同一棵树。
+    constexpr int kBins = 12;
+    int bestAxis = -1;
+    int bestSplit = -1;
+    double bestCost = std::numeric_limits<double>::max();
+    {
+        const osg::Vec3d& bmin = _nodes[self].bmin;
+        const osg::Vec3d& bmax = _nodes[self].bmax;
+        auto axisOf = [](const osg::Vec3d& v, int a) {
+            return a == 0 ? v.x() : (a == 1 ? v.y() : v.z());
+        };
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const double lo = axisOf(bmin, axis);
+            const double hi = axisOf(bmax, axis);
+            const double ext = hi - lo;
+            if (!(ext > 0.0) || !std::isfinite(ext)) { continue; }
+
+            int counts[kBins] = {0};
+            osg::Vec3d cmin[kBins], cmax[kBins];
+            for (int b = 0; b < kBins; ++b)
+            {
+                cmin[b].set(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
+                            std::numeric_limits<double>::max());
+                cmax[b].set(-std::numeric_limits<double>::max(), -std::numeric_limits<double>::max(),
+                            -std::numeric_limits<double>::max());
+            }
+            for (std::size_t i = begin; i < end; ++i)
+            {
+                const std::array<std::size_t, 3>& t = _tris[order[i]];
+                const osg::Vec3d& a = _verts[t[0]];
+                const osg::Vec3d& b = _verts[t[1]];
+                const osg::Vec3d& c = _verts[t[2]];
+                const osg::Vec3d cen = (a + b + c) / 3.0;
+                int k = static_cast<int>((axisOf(cen, axis) - lo) / ext * kBins);
+                if (k < 0) { k = 0; }
+                if (k >= kBins) { k = kBins - 1; }
+                ++counts[k];
+                cmin[k].x() = std::min(cmin[k].x(), std::min(a.x(), std::min(b.x(), c.x())));
+                cmin[k].y() = std::min(cmin[k].y(), std::min(a.y(), std::min(b.y(), c.y())));
+                cmin[k].z() = std::min(cmin[k].z(), std::min(a.z(), std::min(b.z(), c.z())));
+                cmax[k].x() = std::max(cmax[k].x(), std::max(a.x(), std::max(b.x(), c.x())));
+                cmax[k].y() = std::max(cmax[k].y(), std::max(a.y(), std::max(b.y(), c.y())));
+                cmax[k].z() = std::max(cmax[k].z(), std::max(a.z(), std::max(b.z(), c.z())));
+            }
+            double areaL[kBins], areaR[kBins];
+            int cntL[kBins], cntR[kBins];
+            {
+                osg::Vec3d mn(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
+                              std::numeric_limits<double>::max());
+                osg::Vec3d mx(-std::numeric_limits<double>::max(), -std::numeric_limits<double>::max(),
+                              -std::numeric_limits<double>::max());
+                int acc = 0;
+                for (int b = 0; b < kBins; ++b)
+                {
+                    if (counts[b] > 0)
+                    {
+                        mn.x() = std::min(mn.x(), cmin[b].x()); mn.y() = std::min(mn.y(), cmin[b].y());
+                        mn.z() = std::min(mn.z(), cmin[b].z());
+                        mx.x() = std::max(mx.x(), cmax[b].x()); mx.y() = std::max(mx.y(), cmax[b].y());
+                        mx.z() = std::max(mx.z(), cmax[b].z());
+                    }
+                    acc += counts[b];
+                    cntL[b] = acc;
+                    areaL[b] = boxArea(mn, mx);
+                }
+                mn.set(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
+                       std::numeric_limits<double>::max());
+                mx.set(-std::numeric_limits<double>::max(), -std::numeric_limits<double>::max(),
+                       -std::numeric_limits<double>::max());
+                acc = 0;
+                for (int b = kBins - 1; b >= 0; --b)
+                {
+                    if (counts[b] > 0)
+                    {
+                        mn.x() = std::min(mn.x(), cmin[b].x()); mn.y() = std::min(mn.y(), cmin[b].y());
+                        mn.z() = std::min(mn.z(), cmin[b].z());
+                        mx.x() = std::max(mx.x(), cmax[b].x()); mx.y() = std::max(mx.y(), cmax[b].y());
+                        mx.z() = std::max(mx.z(), cmax[b].z());
+                    }
+                    acc += counts[b];
+                    cntR[b] = acc;
+                    areaR[b] = boxArea(mn, mx);
+                }
+            }
+            for (int s = 0; s < kBins - 1; ++s)
+            {
+                if (cntL[s] == 0 || cntR[s + 1] == 0) { continue; }
+                const double cost = areaL[s] * static_cast<double>(cntL[s])
+                                  + areaR[s + 1] * static_cast<double>(cntR[s + 1]);
+                if (cost < bestCost)
+                {
+                    bestCost = cost;
+                    bestAxis = axis;
+                    bestSplit = s;
+                }
+            }
+        }
+    }
+
+    std::size_t mid = begin + count / 2;
+    if (bestAxis >= 0)
+    {
+        const double lo = (bestAxis == 0) ? _nodes[self].bmin.x()
+                        : (bestAxis == 1) ? _nodes[self].bmin.y() : _nodes[self].bmin.z();
+        const double hi = (bestAxis == 0) ? _nodes[self].bmax.x()
+                        : (bestAxis == 1) ? _nodes[self].bmax.y() : _nodes[self].bmax.z();
+        const double ext = hi - lo;
+        auto it = std::stable_partition(order.begin() + begin, order.begin() + end,
+            [this, bestAxis, bestSplit, lo, ext](std::size_t idx) {
+                const int kBinsLocal = 12;
+                const std::array<std::size_t, 3>& t = _tris[idx];
+                const osg::Vec3d cen = (_verts[t[0]] + _verts[t[1]] + _verts[t[2]]) / 3.0;
+                const double k = (bestAxis == 0) ? cen.x() : (bestAxis == 1) ? cen.y() : cen.z();
+                int b = static_cast<int>((k - lo) / ext * kBinsLocal);
+                if (b < 0) { b = 0; }
+                if (b >= kBinsLocal) { b = kBinsLocal - 1; }
+                return b <= bestSplit;
+            });
+        const std::size_t cut = static_cast<std::size_t>(it - order.begin());
+        if (cut > begin && cut < end) { mid = cut; }
+        else { bestAxis = -1; }   // 退化：落回中位数切分，别造空孩子
+    }
+    if (bestAxis < 0)
+    {
+        // 退化兜底：所有质心落在一个 bin（或某一轴跨度为 0）时按最长轴中位数切
+        const double dx = _nodes[self].bmax.x() - _nodes[self].bmin.x();
+        const double dy = _nodes[self].bmax.y() - _nodes[self].bmin.y();
+        const double dz = _nodes[self].bmax.z() - _nodes[self].bmin.z();
+        const int axis = (dx >= dy && dx >= dz) ? 0 : ((dy >= dz) ? 1 : 2);
+        std::sort(order.begin() + begin, order.begin() + end,
+                  [this, axis](std::size_t a, std::size_t b) {
+                      const std::array<std::size_t, 3>& ta = _tris[a];
+                      const std::array<std::size_t, 3>& tb = _tris[b];
+                      const osg::Vec3d ca = (_verts[ta[0]] + _verts[ta[1]] + _verts[ta[2]]) / 3.0;
+                      const osg::Vec3d cb = (_verts[tb[0]] + _verts[tb[1]] + _verts[tb[2]]) / 3.0;
+                      const double ka = (axis == 0) ? ca.x() : (axis == 1) ? ca.y() : ca.z();
+                      const double kb = (axis == 0) ? cb.x() : (axis == 1) ? cb.y() : cb.z();
+                      if (ka != kb) { return ka < kb; }
+                      return a < b;
+                  });
+    }
     _nodes[self].begin = begin;
     _nodes[self].end = end;
     _nodes[self].left = buildRecursive(order, begin, mid, depth + 1);
@@ -198,9 +340,11 @@ int MeshBVH::buildRecursive(std::vector<std::size_t>& order, std::size_t begin, 
     return self;
 }
 
-double MeshBVH::distanceSquaredRecursive(int nodeIdx, const osg::Vec3d& p, double best) const
+double MeshBVH::distanceSquaredRecursive(int nodeIdx, const osg::Vec3d& p, double best,
+                                         QueryStats* stats) const
 {
     const Node& node = _nodes[nodeIdx];
+    if (stats != nullptr) { ++stats->nodeVisits; }
     // 到盒子的最近距离平方下界
     if (boxDistanceSquared(node.bmin, node.bmax, p) > best) { return best; }
 
@@ -209,6 +353,7 @@ double MeshBVH::distanceSquaredRecursive(int nodeIdx, const osg::Vec3d& p, doubl
         for (std::size_t i = node.begin; i < node.end; ++i)
         {
             const std::array<std::size_t, 3>& t = _tris[i];
+            if (stats != nullptr) { ++stats->triangleTests; }
             const double d = pointTriangleDistanceSq(p, _verts[t[0]], _verts[t[1]], _verts[t[2]]);
             if (d < best) { best = d; }
         }
@@ -231,20 +376,27 @@ double MeshBVH::distanceSquaredRecursive(int nodeIdx, const osg::Vec3d& p, doubl
     //      这条路径永远不会被剪，返回值必然取到全局最小；
     //   3) 两种顺序取到的是同一批 double 里的同一个最小元素，与顺序无关。
     // ⇒ 与旧的"固定左先"逐位相同，不需要产物对照也能在单测里证死。
-    best = distanceSquaredRecursive(nearIdx, p, best);
-    if (farBound <= best) { best = distanceSquaredRecursive(farIdx, p, best); }
+    best = distanceSquaredRecursive(nearIdx, p, best, stats);
+    if (farBound <= best) { best = distanceSquaredRecursive(farIdx, p, best, stats); }
     return best;
 }
 
 double MeshBVH::distanceSquared(const osg::Vec3d& p) const
 {
     if (_nodes.empty()) { return std::numeric_limits<double>::infinity(); }
-    return distanceSquaredRecursive(0, p, std::numeric_limits<double>::max());
+    return distanceSquaredRecursive(0, p, std::numeric_limits<double>::max(), nullptr);
 }
 
 double MeshBVH::distance(const osg::Vec3d& p) const
 {
     const double d2 = distanceSquared(p);
+    return std::isfinite(d2) ? std::sqrt(d2) : std::numeric_limits<double>::infinity();
+}
+
+double MeshBVH::distance(const osg::Vec3d& p, QueryStats* stats) const
+{
+    if (_nodes.empty()) { return std::numeric_limits<double>::infinity(); }
+    const double d2 = distanceSquaredRecursive(0, p, std::numeric_limits<double>::max(), stats);
     return std::isfinite(d2) ? std::sqrt(d2) : std::numeric_limits<double>::infinity();
 }
 
@@ -391,7 +543,8 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         const std::size_t n = hi - base;
         initDist.assign(n * perTri, 0.0);
 
-        auto queryBlock = [&](std::size_t lo, std::size_t stop, double* cpuOut) {
+        auto queryBlock = [&](std::size_t lo, std::size_t stop, double* cpuOut,
+                              MeshBVH::QueryStats* statsOut) {
             const double cpu0 = threadCpuSeconds();
             for (std::size_t t = lo; t < stop; ++t)
             {
@@ -406,7 +559,11 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
                 double* out = &initDist[(t - base) * perTri];
                 for (std::size_t k = 0; k < perTri; ++k)
                 {
-                    out[k] = target.distance(pts[k]);
+                    // 真实查询（带 BVH 访问计数）。计数是每线程私有结构，
+                    // 不进原子变量：这一层是热循环，共享原子会把 8 路并行
+                    // 变成缓存行乒乓。
+                    out[k] = target.distance(pts[k], statsOut);
+                    ++statsOut->calls;
                 }
             }
             if (cpuOut != nullptr) { *cpuOut = threadCpuSeconds() - cpu0; }
@@ -421,18 +578,36 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
             // 只累加 worker 线程的 CPU 秒：父线程这段时间在 join，它自己的开销
             // 由调用侧的线程计时器计，两处不能重复加。
             std::vector<double> chunkCpu(starts.size(), 0.0);
+            std::vector<MeshBVH::QueryStats> chunkStats(starts.size());
             std::vector<std::thread> workers;
+            const auto tSpawn = std::chrono::steady_clock::now();
             for (std::size_t i = 0; i < starts.size(); ++i)
             {
                 const std::size_t stop = std::min(hi, starts[i] + chunk);
-                workers.emplace_back(queryBlock, starts[i], stop, &chunkCpu[i]);
+                workers.emplace_back(queryBlock, starts[i], stop, &chunkCpu[i], &chunkStats[i]);
             }
+            const auto tCreated = std::chrono::steady_clock::now();
             for (std::thread& th : workers) { th.join(); }
+            // 两笔分开记：创建线程是纯开销；从建完到 join 返回那段包含 worker 的
+            // 查询时间，不能当开销报（否则"instrumentation 很贵"是假的）。
+            res.initThreadCreateSeconds += std::chrono::duration<double>(tCreated - tSpawn).count();
+            res.initParallelSeconds += std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - tSpawn).count();
             for (double s : chunkCpu) { res.workerCpuSeconds += s; }
+            for (const MeshBVH::QueryStats& s : chunkStats)
+            {
+                res.initDistanceCalls += s.calls;
+                res.bvhNodeVisits += s.nodeVisits;
+                res.bvhTriangleTests += s.triangleTests;
+            }
         }
         else
         {
-            queryBlock(base, hi, nullptr);
+            MeshBVH::QueryStats single;
+            queryBlock(base, hi, nullptr, &single);
+            res.initDistanceCalls += single.calls;
+            res.bvhNodeVisits += single.nodeVisits;
+            res.bvhTriangleTests += single.triangleTests;
         }
         res.initQuerySeconds += std::chrono::duration<double>(
             std::chrono::steady_clock::now() - tQuery).count();
@@ -480,6 +655,7 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
 
     // 自适应细分：优先处理上界最高的 patch
     const auto tRefine = std::chrono::steady_clock::now();
+    MeshBVH::QueryStats refineStats;   // 细分阶段只有中点查询，逐次累计
     unsigned iterations = 0;
     bool depthCapped = false;
     while (!heap.empty() && iterations < _cfg.maxRefineIterations
@@ -536,7 +712,8 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         // d(x, P) 是 (x, 固定的目标 BVH) 的纯函数，复用与重查逐位相同；下面的
         // res.all / samples / maxSampleDist / 堆 key 写入顺序保持原样，
         // 所以上下界、P95/P99、预算判定和产物都不受影响——省掉的只是查询次数。
-        const double dMid = target.distance(mid);
+        const double dMid = target.distance(mid, &refineStats);
+        ++res.refineDistanceCalls;
         c1.cornerDist[midIdx1] = dMid;
         c2.cornerDist[midIdx2] = dMid;
         for (int k = 0; k < 2; ++k)
@@ -561,6 +738,10 @@ GeometryErrorEvaluator::evaluateDirection(const TriangleSoup& from, const Triang
         std::chrono::steady_clock::now() - tRefine).count();
     res.refineIterations = iterations;
     res.refineSamples = samples - res.initSamples;
+    res.bvhNodeVisits += refineStats.nodeVisits;
+    res.bvhTriangleTests += refineStats.triangleTests;
+    // 查询总数 = 初始采样 + 细分中点；与 samples 是两套口径（见头文件）
+    res.distanceCalls = res.initDistanceCalls + res.refineDistanceCalls;
 
     if (!heap.empty())
     {
@@ -650,6 +831,16 @@ ErrorResult GeometryErrorEvaluator::evaluate(const TriangleSoup& source, const T
     out.refineIterations = s2p.refineIterations + p2s.refineIterations;
     out.sourceTriangles = s2p.fromTriangles;
     out.proxyTriangles = p2s.fromTriangles;
+    // 真实查询与 BVH 工作量（双向合计）。distanceCalls 恒等于 init + refine，
+    // 而 samplesUsed 是逻辑采样记录，两者不会相等（细分一次记 6 条样本、
+    // 只发 1 次查询），报告里必须成对出现，避免拿样本数当查询数用。
+    out.initDistanceCalls = s2p.initDistanceCalls + p2s.initDistanceCalls;
+    out.refineDistanceCalls = s2p.refineDistanceCalls + p2s.refineDistanceCalls;
+    out.distanceCalls = s2p.distanceCalls + p2s.distanceCalls;
+    out.bvhNodeVisits = s2p.bvhNodeVisits + p2s.bvhNodeVisits;
+    out.bvhTriangleTests = s2p.bvhTriangleTests + p2s.bvhTriangleTests;
+    out.initParallelSeconds = s2p.initParallelSeconds + p2s.initParallelSeconds;
+    out.initThreadCreateSeconds = s2p.initThreadCreateSeconds + p2s.initThreadCreateSeconds;
 
     const double gap = out.upperBoundM - out.lowerBoundM;
     out.certified = (gap <= _cfg.toleranceMeters)

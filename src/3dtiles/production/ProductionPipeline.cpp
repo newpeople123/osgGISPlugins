@@ -854,6 +854,13 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         w.microEvalRefineIterations = er.refineIterations;
         w.microEvalSourceTriangles = er.sourceTriangles;
         w.microEvalProxyTriangles = er.proxyTriangles;
+        w.microEvalDistanceCalls = er.distanceCalls;
+        w.microEvalInitDistanceCalls = er.initDistanceCalls;
+        w.microEvalRefineDistanceCalls = er.refineDistanceCalls;
+        w.microEvalBvhNodeVisits = er.bvhNodeVisits;
+        w.microEvalBvhTriangleTests = er.bvhTriangleTests;
+        w.microEvalInitParallelSec = er.initParallelSeconds;
+        w.microEvalInitThreadCreateSec = er.initThreadCreateSeconds;
         TRACE("evaluate done");
         w.measuredProxyErrorM = er.geometricErrorM();
         w.errorLowerM = er.lowerBoundM;
@@ -898,6 +905,13 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
     _microEvalRefineIterations += w.microEvalRefineIterations;
     _microEvalSourceTriangles += w.microEvalSourceTriangles;
     _microEvalProxyTriangles += w.microEvalProxyTriangles;
+    _microEvalDistanceCalls += w.microEvalDistanceCalls;
+    _microEvalInitDistanceCalls += w.microEvalInitDistanceCalls;
+    _microEvalRefineDistanceCalls += w.microEvalRefineDistanceCalls;
+    _microEvalBvhNodeVisits += w.microEvalBvhNodeVisits;
+    _microEvalBvhTriangleTests += w.microEvalBvhTriangleTests;
+    _microEvalInitParallelSec += w.microEvalInitParallelSec;
+    _microEvalInitThreadCreateSec += w.microEvalInitThreadCreateSec;
     // 逐瓦片一份（A-47）：阶段级 micro_* 只有总和，看不出关键路径在哪个瓦片上
     _tiles[id].timing.heavySec = w.microHeavySec;
     _tiles[id].timing.heavyCpuSec = w.microHeavyCpuSec;
@@ -1480,6 +1494,52 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         }
     }
 
+    // 坐标有效性的账（本项与 IndexViolation 同一套语义：丢整条 drawable + 记账）。
+    // 分三类写清楚，不允许混成一个"异常数"：
+    //   nonFiniteDouble  —— 世界变换后就是 NaN/Inf（源数据或矩阵本身有病）
+    //   floatOverflow    —— double 有限但降精度成 float 溢出（1e39 这类）
+    //   nonFiniteNormals —— 法线置零（已交给 A-43 零法线重建），不改几何
+    if (!_model.nonFiniteGeometry.empty())
+    {
+        std::uint64_t droppedTris = 0, nonFiniteDoubles = 0, floatOverflows = 0;
+        for (const NonFiniteGeometry& g : _model.nonFiniteGeometry)
+        {
+            droppedTris += g.droppedTriangles;
+            nonFiniteDoubles += g.nonFiniteDoubles;
+            floatOverflows += g.floatOverflows;
+        }
+        _report.addCounter("nonFiniteDrawables", _model.nonFiniteGeometry.size());
+        _report.addCounter("nonFiniteDroppedTriangles", droppedTris);
+        _report.addCounter("nonFiniteVertexCount", nonFiniteDoubles);
+        _report.addCounter("floatOverflowVertexCount", floatOverflows);
+        _warnings.push_back("coordinate validity: dropped " + std::to_string(_model.nonFiniteGeometry.size())
+            + " drawable(s) / " + std::to_string(droppedTris) + " triangle(s) whose vertex positions are "
+            + "not representable: " + std::to_string(nonFiniteDoubles) + " non-finite after the world "
+            + "transform, " + std::to_string(floatOverflows) + " finite in double but overflowing float; "
+            + "nothing was clamped, moved or rebuilt");
+        for (std::size_t i = 0; i < std::min<std::size_t>(10, _model.nonFiniteGeometry.size()); ++i)
+        {
+            const NonFiniteGeometry& g = _model.nonFiniteGeometry[i];
+            _warnings.push_back("coordinate validity: node '" + g.nodeName + "' path '" + g.nodePath
+                + "' drawable " + std::to_string(g.drawableIndex) + ": vertices="
+                + std::to_string(g.vertexCount) + " nonFinite=" + std::to_string(g.nonFiniteDoubles)
+                + " floatOverflow=" + std::to_string(g.floatOverflows) + " trianglesLost="
+                + std::to_string(g.droppedTriangles));
+        }
+        if (_model.nonFiniteGeometry.size() > 10)
+        {
+            _warnings.push_back("coordinate validity: ... and "
+                + std::to_string(_model.nonFiniteGeometry.size() - 10) + " more drawable(s)");
+        }
+    }
+    if (_model.nonFiniteNormalsZeroed > 0)
+    {
+        _report.addCounter("nonFiniteNormalsZeroed", _model.nonFiniteNormalsZeroed);
+        _warnings.push_back("coordinate validity: " + std::to_string(_model.nonFiniteNormalsZeroed)
+            + " normal(s) were non-finite after transform/normalize/float cast; they were zeroed and "
+            + "handed to the zero-normal rebuild (A-43) instead of being written as NaN");
+    }
+
     // 原始 OBJ 索引预检的结果必须进报告（AUDIT A-57）。**干净文件也要落计数**：
     // 否则"没扫过"和"扫过且没问题"在 conversion-report.json 里长得一模一样，
     // 与 A-58 那条"0 得像测出来的"是同一个坑。
@@ -1577,6 +1637,13 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     _microEvalRefineIterations = 0;
     _microEvalSourceTriangles = 0;
     _microEvalProxyTriangles = 0;
+    _microEvalDistanceCalls = 0;
+    _microEvalInitDistanceCalls = 0;
+    _microEvalRefineDistanceCalls = 0;
+    _microEvalBvhNodeVisits = 0;
+    _microEvalBvhTriangleTests = 0;
+    _microEvalInitParallelSec = 0.0;
+    _microEvalInitThreadCreateSec = 0.0;
     _microFinalizeSec = 0.0;
     GltfOptimizer::resetTextureExportStats();
     TRACE("buildTrees");
@@ -1643,6 +1710,17 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     _report.addCounter("micro_eval_refine_iterations", _microEvalRefineIterations);
     _report.addCounter("micro_eval_source_triangles", _microEvalSourceTriangles);
     _report.addCounter("micro_eval_proxy_triangles", _microEvalProxyTriangles);
+    // 真实查询口径（本轮 §6.1）。micro_evaluate_samples 是逻辑采样记录：
+    // 细分一次记 6 条样本但只发 1 次查询，所以 samples ≥ distanceCalls 是常态，
+    // 拿样本数当"查询次数"会把成本高估。两项必须成对读。
+    _report.addCounter("micro_eval_distance_calls", _microEvalDistanceCalls);
+    _report.addCounter("micro_eval_init_distance_calls", _microEvalInitDistanceCalls);
+    _report.addCounter("micro_eval_refine_distance_calls", _microEvalRefineDistanceCalls);
+    _report.addCounter("micro_eval_bvh_node_visits", _microEvalBvhNodeVisits);
+    _report.addCounter("micro_eval_bvh_triangle_tests", _microEvalBvhTriangleTests);
+    // initQuerySeconds 里可分离出来的线程管理墙钟（见报告口径说明）
+    _report.addStage("micro_eval_init_parallel", _microEvalInitParallelSec);
+    _report.addStage("micro_eval_init_thread_create", _microEvalInitThreadCreateSec);
 
     // 远景代理纹理降分辨率是**成片**发生的（每个内节点代理一次），逐瓦片
     // warning 会把真正需要看的告警淹掉：这里只出一条汇总，逐瓦片明细在

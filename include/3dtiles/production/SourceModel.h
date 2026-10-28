@@ -137,6 +137,30 @@ struct IndexViolation
 };
 
 // ---------------------------------------------------------------------------
+// 非有限 / 浮点溢出顶点的一次丢弃记录（一个 drawable 一条）
+//
+// 世界变换在 double 里做（`osg::Vec3d`），写回顶点数组时降到 float。两者不是
+// 同一件事：1e39 在 double 里是有限值，转成 float 就是 inf。旧实现只查了
+// double 这一侧（`std::isfinite(w.x())`），所以"double 有限 → float 溢出"的
+// 顶点能一路带着 inf 进包围盒、切分器、BVH 与 glTF POSITION。
+//
+// 语义（与 IndexViolation 一致）：整条 drawable 丢弃 + 显式记账 + 计入报告。
+// 不做裁剪、不做替换、不伪造几何。
+// ---------------------------------------------------------------------------
+struct NonFiniteGeometry
+{
+    FeatureId globalFeatureId = INVALID_FEATURE;
+    std::string nodeName;
+    std::string nodePath;
+    unsigned drawableIndex = 0;
+    unsigned vertexCount = 0;        // 该 drawable 声明的顶点数
+    unsigned droppedTriangles = 0;   // 随整条 drawable 一起丢掉的三角形数
+    unsigned nonFiniteDoubles = 0;   // 世界变换后就是 NaN/Inf 的顶点
+    unsigned floatOverflows = 0;     // double 有限、转 float 后非有限的顶点
+    unsigned nonFiniteNormals = 0;   // 法线变换/归一化/降精度后非有限的条目
+};
+
+// ---------------------------------------------------------------------------
 // 源模型
 // ---------------------------------------------------------------------------
 class SourceModel {
@@ -150,6 +174,12 @@ public:
     // build() 期间丢弃的越界索引记录，按遍历顺序（确定性）追加；
     // ProductionPipeline 把它们折进 conversion-report 的 counters + warnings。
     std::vector<IndexViolation> indexViolations;
+    // build() 期间丢弃的非有限顶点 drawable（同上，逐条追加）
+    std::vector<NonFiniteGeometry> nonFiniteGeometry;
+    // 非有限法线（未导致 drawable 丢弃）：置零后交给 A-43 的零法线重建，
+    // 计数进报告，不静默吞掉。
+    unsigned nonFiniteNormalsZeroed = 0;
+
 
     // 从 OSG 场景树构建（会烘焙世界变换）
     bool build(osg::Node* root);

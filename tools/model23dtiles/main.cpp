@@ -548,11 +548,15 @@ int main(int argc, char** argv)
 
 	std::string input = parseArgument(arguments, "-i", std::string());
 	std::string output = parseArgument(arguments, "-o", std::string());
-#ifndef NDEBUG
-#else
+	// argv 的编码边界就在这里，而且 Debug/Release 是同一个边界：
+	// main(int,char**) 的实参由 CRT 从 GetCommandLineA 拆出来，编码是进程的
+	// ANSI 代码页（本机 cp936），与是否定义 NDEBUG 无关。以前这段只有在
+	// Release 下才转成 UTF-8，Debug 构建拿着 GBK 字符串去走
+	// Utils::utf8ToPath()（内部按 UTF-8 → UTF-16 解码），中文路径必然解错。
+	// 进入业务代码之后，项目内部一律按 UTF-8 处理路径（A-59），所以转换
+	// 必须无条件执行。
 	input = osgDB::convertStringFromCurrentCodePageToUTF8(input.c_str());
 	output = osgDB::convertStringFromCurrentCodePageToUTF8(output.c_str());
-#endif // !NDEBUG
 
 	if (input.empty() || output.empty()) {
 		OSG_NOTICE << "Input or output path is missing!" << '\n';

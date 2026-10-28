@@ -260,6 +260,11 @@ bool SourceModel::build(osg::Node* root)
     prims.clear();
     featureToObject.clear();
     bounds.init();
+    // 记账容器必须跟着 build() 一起复位，否则同一个 SourceModel 重建会把上一轮
+    // 的越界/非有限记录累加进去（报告里的"丢了几个三角形"会翻倍）。
+    indexViolations.clear();
+    nonFiniteGeometry.clear();
+    nonFiniteNormalsZeroed = 0;
 
     SourceModelVisitor v;
     root->accept(v);
@@ -369,24 +374,55 @@ bool SourceModel::build(osg::Node* root)
             SourceMesh mesh;
             mesh.positions = new osg::Vec3Array;
             mesh.positions->reserve(srcPos3->size());
-            bool finite = true;
+            // 两级有限性：世界变换后的 double，以及降精度写进 float 之后。
+            // 只查前一级会把 "double 有限、float 溢出"（例如 1e39）放过去，
+            // 那个 inf 随后污染 aabb / 质心 / 切分器 / BVH / POSITION accessor。
+            unsigned nonFiniteDoubles = 0;
+            unsigned floatOverflows = 0;
             for (const osg::Vec3& p : *srcPos3)
             {
                 const osg::Vec3d w = osg::Vec3d(p) * f.worldMatrix;
                 if (!std::isfinite(w.x()) || !std::isfinite(w.y()) || !std::isfinite(w.z()))
                 {
-                    finite = false;
-                    break;
+                    ++nonFiniteDoubles;
+                    continue;
                 }
-                mesh.positions->push_back(osg::Vec3(static_cast<float>(w.x()),
-                                                    static_cast<float>(w.y()),
-                                                    static_cast<float>(w.z())));
-                mesh.aabb.expandBy((*mesh.positions)[mesh.positions->size() - 1]);
+                const osg::Vec3 f3(static_cast<float>(w.x()),
+                                   static_cast<float>(w.y()),
+                                   static_cast<float>(w.z()));
+                // 降精度之后再查一次：float 侧的 inf/NaN 只能在这里拦住
+                if (!std::isfinite(f3.x()) || !std::isfinite(f3.y()) || !std::isfinite(f3.z()))
+                {
+                    ++floatOverflows;
+                    continue;
+                }
+                mesh.positions->push_back(f3);
+                mesh.aabb.expandBy(f3);
             }
-            if (!finite)
+            if (nonFiniteDoubles > 0 || floatOverflows > 0)
             {
-                OSG_WARN << "[SourceModel] non-finite vertex position in node '" << obj.name
-                         << "'; drawable skipped and reported." << std::endl;
+                // 整条 drawable 丢弃（保留半条会让索引整体错位）。丢弃范围必须
+                // 进报告：源侧数据缺陷不能让产物"看起来干净"。
+                NonFiniteGeometry rec;
+                rec.globalFeatureId = obj.globalFeatureId;
+                rec.nodeName = obj.name;
+                rec.nodePath = obj.nodePath;
+                rec.drawableIndex = d;
+                rec.vertexCount = static_cast<unsigned>(srcPos3->size());
+                rec.nonFiniteDoubles = nonFiniteDoubles;
+                rec.floatOverflows = floatOverflows;
+                for (unsigned ps = 0; ps < geom->getNumPrimitiveSets(); ++ps)
+                {
+                    if (const osg::PrimitiveSet* pset = geom->getPrimitiveSet(ps))
+                    {
+                        rec.droppedTriangles += pset->getNumPrimitives();
+                    }
+                }
+                nonFiniteGeometry.push_back(rec);
+                OSG_WARN << "[SourceModel] node '" << obj.name << "' drawable " << d
+                         << ": " << nonFiniteDoubles << " non-finite and " << floatOverflows
+                         << " float-overflow vertex position(s); drawable dropped ("
+                         << rec.droppedTriangles << " triangle(s)) and reported." << std::endl;
                 continue;
             }
 
@@ -395,12 +431,24 @@ bool SourceModel::build(osg::Node* root)
             if (srcNrm && srcNrm->size() == srcPos3->size())
             {
                 mesh.normals = new osg::Vec3Array(*srcNrm);
-                // 法线用旋转部分变换（忽略平移）
+                // 法线用旋转部分变换（忽略平移）。归一化后仍要查有限性：奇异矩阵
+                // （det=0）或超大幅度矩阵会把法线推到 inf/NaN，再降成 float 写进
+                // NORMAL accessor —— 那是 validator 判 ERROR 的输入。
+                // 非有限条目置零，交给 A-43 的零法线重建（按入射面/图元均值），
+                // 并逐条计数，不静默保留 NaN。
                 for (osg::Vec3& n : *mesh.normals)
                 {
                     osg::Vec3d r = osg::Matrixd::transform3x3(osg::Vec3d(n), f.worldMatrix);
                     r.normalize();
-                    n.set(static_cast<float>(r.x()), static_cast<float>(r.y()), static_cast<float>(r.z()));
+                    const osg::Vec3 fn(static_cast<float>(r.x()), static_cast<float>(r.y()),
+                                       static_cast<float>(r.z()));
+                    if (!std::isfinite(fn.x()) || !std::isfinite(fn.y()) || !std::isfinite(fn.z()))
+                    {
+                        ++nonFiniteNormalsZeroed;
+                        n.set(0.0f, 0.0f, 0.0f);
+                        continue;
+                    }
+                    n = fn;
                 }
             }
             const osg::Vec2Array* srcUV = dynamic_cast<const osg::Vec2Array*>(geom->getTexCoordArray(0));

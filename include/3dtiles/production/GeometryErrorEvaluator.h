@@ -44,12 +44,23 @@ struct TriangleSoup {
 // 轻量 AABB BVH，支持点到三角形最近距离
 class MeshBVH {
 public:
+    // 查询侧计数（可选）。热循环里只有两个整数自增，调用方不用时传 nullptr。
+    // 存在的理由：`samples` 是"算法采样记录"口径，一次细分只新增 1 个真实查询
+    // 却记 6 条样本，所以样本数**不能**当成 distance() 调用次数（手册 §6.1）。
+    struct QueryStats {
+        std::uint64_t calls = 0;          // distance() 实际被调用的次数
+        std::uint64_t nodeVisits = 0;     // 访问过的 BVH 节点数（含被剪枝前的那次判定）
+        std::uint64_t triangleTests = 0;  // 真正做了点到三角形距离测试的次数
+    };
+
     void build(const TriangleSoup& soup);
     bool empty() const { return _tris.empty(); }
 
     // 返回 soup 中最近三角形的距离平方；未构建返回 inf
     double distanceSquared(const osg::Vec3d& p) const;
     double distance(const osg::Vec3d& p) const;
+    // 同上，顺带把节点访问数 / 三角形测试数累进 stats（线程私有，无原子操作）
+    double distance(const osg::Vec3d& p, QueryStats* stats) const;
 
     std::size_t triangleCount() const { return _tris.size(); }
 
@@ -64,7 +75,8 @@ private:
     std::vector<osg::Vec3d> _verts;
 
     int buildRecursive(std::vector<std::size_t>& order, std::size_t begin, std::size_t end, int depth);
-    double distanceSquaredRecursive(int node, const osg::Vec3d& p, double best) const;
+    double distanceSquaredRecursive(int node, const osg::Vec3d& p, double best,
+                                    QueryStats* stats) const;
 };
 
 struct ErrorResult {
@@ -84,6 +96,21 @@ struct ErrorResult {
     std::uint64_t refineIterations = 0;
     std::uint64_t sourceTriangles = 0;  // 源侧被采样的面数（祖先重复覆盖的口径）
     std::uint64_t proxyTriangles = 0;   // 代理侧面数
+    // ---- 仪表（本轮）：真实 distance() 调用与 BVH 工作量，全部不参与判定 ----
+    // 与 samplesUsed 的区别：样本是"逻辑采样记录"（细分一次记 6 条，其中 5 条
+    // 是复用的父角点距离），查询是真正算过的点。两者不可互相替代（手册 §6.1）。
+    std::uint64_t distanceCalls = 0;       // 双向合计 = init + refine
+    std::uint64_t initDistanceCalls = 0;   // 初始采样阶段的真实查询
+    std::uint64_t refineDistanceCalls = 0; // 自适应细分阶段的真实查询
+    std::uint64_t bvhNodeVisits = 0;       // 双向合计的节点访问数
+    std::uint64_t bvhTriangleTests = 0;    // 双向合计的点-三角形距离测试数
+    // 初始并行段的两笔时间（都含在 initQuerySeconds 里，手册 §6.2）：
+    //   initParallelSeconds     —— 从建线程到 join 全部返回的墙钟：**含 worker 的
+    //                              实际查询时间**，不是"纯开销"
+    //   initThreadCreateSeconds —— 只算 std::thread 构造（不含 worker 计算）
+    // 分开记是因为把前者当"线程开销"会高估 instrumentation 成本。
+    double initParallelSeconds = 0.0;
+    double initThreadCreateSeconds = 0.0;
     bool certified = false;        // 区间收敛到容差内
     bool boundLoose = false;       // 达到采样预算，上界仍然保守
     const char* status = "UNKNOWN";
@@ -116,6 +143,14 @@ public:
         std::size_t refineIterations = 0;
         std::size_t fromTriangles = 0;  // 被采样侧的面数
         std::size_t toTriangles = 0;    // 目标 BVH 的面数
+        // 真实查询计数（本轮）：与 samples 是两个不同口径，见 ErrorResult 的注释
+        std::uint64_t distanceCalls = 0;
+        std::uint64_t initDistanceCalls = 0;
+        std::uint64_t refineDistanceCalls = 0;
+        std::uint64_t bvhNodeVisits = 0;
+        std::uint64_t bvhTriangleTests = 0;
+        double initParallelSeconds = 0.0;      // 含 worker 计算，不是纯开销
+        double initThreadCreateSeconds = 0.0;  // 只有线程构造
         std::vector<double> all;
     };
     DirectionResult evaluateDirection(const TriangleSoup& from, const TriangleSoup& to) const;

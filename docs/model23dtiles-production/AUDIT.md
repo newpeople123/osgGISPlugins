@@ -2095,3 +2095,59 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
   `obj_precheck` stage / `objPrecheck*` 计数 —— 与 A-58 的"不可用要标不可用，不许用 0 冒充
   测量"是同一条纪律（t05 `.osg` 实测确认）。
 
+---
+
+## 2026-10-28（第二轮）：坐标有效性 / 真实查询计数 / BVH 切分 / Debug 编码分支
+
+前置：HEAD `4b8af62e`（A-57/A-59 已并入），工作区只保留用户那份 **1637 行 `.gitignore`
+改动**（现 1693 行），未提交、未清理、未格式化。本轮把 A-57/A-59 从"代码已落地"推进到
+"真实 FBX 上的行为已复验"，并新增 A-60 ~ A-64。
+
+> **A-57 / A-59 的旧表述更正**：`AUDIT.md` 与 `STATUS.md` 里"（未提交，2026-10-28）"
+> 这类写法指的是**上一轮会话结束时的工作区状态**。这两个提交点现在都在 `4b8af62e` 里，
+> 不该再被读成"当前未提交"。本轮**没有**重做它们的验收，只复用其结论，见各行末尾的
+> "本轮复核"。
+
+| ID | 主题 | 文件:函数:行 | 状态 | 手册条款 | 严重度 |
+|---|---|---|---|---|---|
+| A-60 | **坐标有效性只查了 double，没查降精度后的 float**：`osg::Vec3d w = p * worldMatrix` 之后 `isfinite(w)` 为真就 `static_cast<float>` 写入顶点数组。`1e38f` 顶点 × 缩放 10 = `1e39`：double 有限、float 溢出成 `inf`。那个 `inf` 会进 `mesh.aabb`（→ `bounds` → 切分器）、`PrimRef::aabb/centroid`（→ 分区代价）、`collectTriangles`（→ BVH 的 AABB 全变 inf）、glTF `POSITION` accessor。形态上"丢整条 drawable"是对的（保留半条会让索引错位），但连"丢了多少"都没有记账，只在 `OSG_WARN` 里留一句。法线侧同样只做了 `normalize()`，没有查有限性 | `src/3dtiles/production/SourceModel.cpp::build`（顶点循环 / 法线循环）；记账容器在 `SourceModel.h` | **FIXED（本轮）**：改为**两级检查**（double 侧 NaN/Inf 计数 + 降精度后 NaN/Inf 计数），新增 `NonFiniteGeometry` 逐条记录（node/drawable/顶点数/丢失三角形数/两类计数），法线非有限则置零并交给 A-43 的零法线重建、单独计数。管线把它们折进 `nonFiniteDrawables` / `nonFiniteDroppedTriangles` / `nonFiniteVertexCount` / `floatOverflowVertexCount` / `nonFiniteNormalsZeroed` 五个 counter + 一条汇总 warning + 前 10 条明细。判据仍**不引入任何绝对坐标阈值**（大坐标合法：芜湖水厂 `maxAbs=75 465.9`、卢沟桥 `4 337.4` 全部保留）。单测 `coordValidity` 覆盖「double 有限→float 溢出（记 ff=1、nf=0）」「源数据 NaN（记 nf=1）」「1e7 级合法大坐标不被丢」以及"计数器真的进报告"四条链路 | 4.1 / 4.2 / 12 | 高 |
+| A-61 | **`samples` 被当成"距离查询次数"用**：`micro_evaluate_samples` / `ErrorResult::samplesUsed` 是**逻辑采样记录**——细分一次固定记 6 条样本（两个子 patch × 3 个角点），而实际只发 1 次 `target.distance()`（另外 5 条是复用的父角点距离缓存）。拿它当查询次数会把成本高估 3 倍以上，也让"Query 段占多少"这类归因无法自洽 | `include/3dtiles/production/GeometryErrorEvaluator.h`、`src/3dtiles/production/GeometryErrorEvaluator.cpp`、`ProductionPipeline.cpp`（=`_report.addCounter` 段） | **FIXED（本轮）**：`MeshBVH::distance(p, QueryStats*)` 在热循环里用**线程私有**结构计 `calls / nodeVisits / triangleTests`（不用共享原子，8 路并行下会缓存行乒乓），当前线程与 worker 分块各自累加后汇总；改名/新增 counter：`micro_eval_distance_calls`、`micro_eval_init_distance_calls`、`micro_eval_refine_distance_calls`、`micro_eval_bvh_node_visits`、`micro_eval_bvh_triangle_tests`。单测 `refineReuse` 新增 9 条断言，把恒等式钉死：`init == 三角形数 × perTri`、`refine == 细分迭代数`、`distanceCalls == init + refine`、`samples ≥ distanceCalls`、`nodeVisits ≥ distanceCalls`、`triangleTests ≥ distanceCalls`，并覆盖 `maxSamplesPerNode` 压到 perTri=3 的退化分支 | 6.1 | 中 |
+| A-62 | **BVH 切分只有"最长轴 + 质心中位数"**：质心分布偏斜时兄弟包围盒大量重叠，剪枝几乎失效。实测（longxiang，16.28 M 次查询，见 A-61 的新计数器）：**节点访问 3.19e9、点-三角形测试 2.31e9 ⇒ 196 节点 / 142 测试 每次查询**——一个只有几千三角形的目标网格被"扫"了 3.5 % | `GeometryErrorEvaluator.cpp::MeshBVH::buildRecursive` | **FIXED（本轮，仅换树形，不改任何数值）**：改为**分箱 SAH**（12 箱/轴，代价 = 左右子树表面积 × 各自面数，轴序 0..2、箱序固定、`stable_partition` 保序，退化时回落到原来的中位数切分）。结果不变的理由是结构性的：最近距离是"同一批 double 取全局最小"，与遍历顺序和树形无关；本轮还用 4 次真实运行证实（见下"A-62 的实测"）。**实测**：节点访问 3.19e9 → **1.12e9（−65 %）**、三角形测试 2.31e9 → **7.18e8（−69 %）**；`micro_evaluate` 51.9/70.5 s（A，n=2）→ 23.0/21.6 s（B，n=2），单侧查询段 `micro_eval_init` 29.7→12.9 / 42.9→12.5、`micro_eval_refine` 19.0→7.0 / 23.7→6.0（后一个数是 A2/B2） | 6.1 / 9.2 | 中 |
+| A-63 | **`argv` 的 UTF-8 转换被 `#ifndef NDEBUG` 分叉**：`tools/model23dtiles/main.cpp` 只在 Release 下把 `-i/-o` 从 ANSI 代码页转成 UTF-8；Debug 下字符串仍是 GBK，而 `Utils::utf8ToPath()` 内部按 UTF-8→UTF-16 解码 ⇒ **Debug 构建读中文路径必错**。A-59 只修了 Release 侧的调用点，没碰这个分叉 | `tools/model23dtiles/main.cpp`（`-i/-o` 解析后） | **FIXED（代码级）**：删掉条件编译，**无条件**转换。依据是编码边界本身：`main(int,char**)` 的实参由 CRT 从 `GetCommandLineA` 拆出，编码是进程 ANSI 代码页，**与是否定义 NDEBUG 无关**；同一仓库的 `tools/modelstats/main.cpp:946` 一直是无条件转换、且本轮在中文目录下读通了 7 个真实 FBX——这两点是"Debug 分支原来为什么会错"的独立证据，不是"把 Release 的代码抄一份"。**未证**：Debug 二进制本轮没编（缺 Debug 版 vcpkg/OSG 运行库与 `osgdb_fbx` 插件），Debug 侧的运行表现记 **BLOCKED-DEBUG** | 7 / 12 | 中 |
+| A-64 | **`SourceModel` 的记账容器不在 `build()` 开头复位**：`indexViolations` 只 push 不清空，同一个 `SourceModel` 被 build 两次会把上一轮的记录累加进去（报告里"丢了几个三角形"翻倍）。新增的 `nonFiniteGeometry` 若照抄会有同样的坑 | `SourceModel.cpp::build`（函数开头） | **FIXED（本轮，顺带）**：`build()` 开头一并清空 `indexViolations` / `nonFiniteGeometry` / `nonFiniteNormalsZeroed`。生产路径每条管线只 build 一次，所以这条不影响既有产物（A/B 246 个文件逐位相同即为证） | 5.1 / 12 | 低 |
+
+### A-62 的实测（同批真实 FBX、同配置、ABBA 交替）
+
+`D:\BaiduNetdiskDownload\longxiang.fbx`（65 764 688 B，234 828 三角形、145 feature、216 张纹理），
+`-sp -i … -o …` 默认参数，A = 干净 HEAD 构建，B = 本轮候选，两者同一套编译命令行（见 STATUS 的构建小节）。
+按 **A→B→B→A** 跑 4 次，避免机器状态漂移：
+
+| 轮次 | 二进制 | total | micro_evaluate | micro_eval_init | micro_eval_refine | micro_write | 备注 |
+|---|---|---|---|---|---|---|---|
+| A1 | HEAD | 99.2 | 51.9 | 29.7 | 19.0 | 86.9 | 机器最闲 |
+| B1 | 候选 | 112.7 | **23.0** | **12.9** | **7.0** | 105.9 | |
+| B2 | 候选 | 92.5 | **21.6** | **12.5** | **6.0** | 86.1 | |
+| A2 | HEAD | 137.3 | **70.5** | 42.9 | 23.7 | 122.5 | 机器变慢（写盘段同涨） |
+
+读法（不许只看 total）：
+1. **评估段的差是稳定的**：A 51.9/70.5 vs B 23.0/21.6，**−56 % / −69 %**；同一次运行里
+   `micro_write` 在 86.1~122.5 s 之间摆动（±20 s），比评估段的收益（29~47 s）还大 ⇒
+   **total 的差不可归因**，本报告不据此声称"整体提速 x %"。这条限制写进 VALIDATION_REPORT。
+2. B 的评估时间**已经包含** A-61 新计数器的开销（每次查询 +1、每次节点访问 +1、
+   每次三角形测试 +1，longxiang 合计约 1.1e9+7.2e8+1.6e7 次自增）⇒ 上面的百分比是**净收益**。
+3. **产物逐位相同**：4 次运行（A1/B1/B2/A2）的 `tiles/`+`textures/`+`tileset.json`+
+   `feature-manifest.json` 共 **246 个文件 sha256 全等**（4 份清单 md5 相同：
+   `9a4326be42c6864251a41e3690235e9c`）；`scripts/report_tile_diff.js` 对 A1/B1 判
+   **PASS**（129 瓦片对齐、负载/结构字段差异 0、误差字段差异 0、`upper<lower` 违例 0、
+   上界 129/129 不变）。⇒ "只改树形不改数值"这条不是推论，是有对照的读数。
+
+### 本轮**没有**闭合的（别读成通过）
+
+- **A-53**（`test_production` 间歇性堆损坏）：隔离目录单跑 `giant` **10/10 通过**，
+  全量套件本轮 3 次（383/0、408/0、414/0）都干净；样本仍小，**保持 OPEN**，未做 PageHeap/WinDbg。
+- **A-54**（`lugouqiao` 335 MB 档）：判据没动 ⇒ 结论不变（当前不可发布）。本轮只做了
+  `modelstats` 只读扫描（5 710 488 三角形 / 2 729 feature / 1 787 实例 / 2.7 GB 纹理驻留），
+  **没有**重跑完整转换。
+- **Debug 构建**、**CLI 端到端"强行失败"**、**视觉验收**：见 STATUS 的"未执行/阻塞"。
+
+
