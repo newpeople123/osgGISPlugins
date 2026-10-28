@@ -2150,4 +2150,62 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
   **没有**重跑完整转换。
 - **Debug 构建**、**CLI 端到端"强行失败"**、**视觉验收**：见 STATUS 的"未执行/阻塞"。
 
+---
+
+## 2026-10-28（第三轮）：基线复核 / 浮点边界 / 失败清理 / A-53 验证
+
+### 0. 基线核验（先核对再动手）
+
+| 项 | 读数 |
+|---|---|
+| 分支 | `prod/model23dtiles-production`，跟踪 `origin/…`，**ahead 1** |
+| HEAD | `3092db6f6d90ae37751e93359f43f1de6d4bca1f`（上一轮提交，`4b8af62e` 之后） |
+| 工作区 | `M .gitignore`（1693 行，用户改动，**本轮未动、未提交**）、`?? .workbuddy/`、`?? dev_main_tmp.cpp`（非本轮产物） |
+| 关键二进制 | `Release/model23dtiles.exe` 15:41（1 281 024 B，sha256 `…`）、`Release/test_production.exe` 15:49、`Release/modelstats.exe` 14:26 |
+| 另一份检出污染 | `E:\dev\C++\osgGISPlugins`（**无 `-gpt`**）真实存在，编译树 `.tlog` 里混有它的 19 条旧命令 —— 构建脚本已按根路径过滤，见 STATUS 的构建小节 |
+
+结论：工作树 = 上一轮提交 + 用户 `.gitignore`，源码与报告一致；上一轮说的"5 处修改未提交"已不成立（都进了 `3092db6`）。
+
+### 1. 上一轮 5 项修改逐项核对
+
+| # | 项 | 源码位置 | 当前实现 | 对应测试 | 实测证据 | 尚存风险 |
+|---|---|---|---|---|---|---|
+| 1 | double/float 双重有限性 | `SourceModel.cpp:372-419` | 先查世界变换后的 double，再查降精度后的 float；任一非有限 → 整条 drawable 丢弃 + `NonFiniteGeometry` 记账 | `coordValidity`（本轮扩到 8 组断言：溢出/NaN/±Inf/近 FLT_MAX/混合场景/重复 build） | 7 个真实 FBX `nonFiniteVertices=0`、`floatOverflowVertices=0`；`nan_vertex.obj` 端到端 rc=3 且只留诊断文件 | 只按 drawable 粒度丢，丢一条是否可接受由发布策略兜底（本轮已改失败关闭，见 A-66） |
+| 2 | 真实 `distance()` 计数 | `GeometryErrorEvaluator.cpp`（`QueryStats`）、`ProductionPipeline.cpp`（counter） | 每次查询/节点访问/三角形测试各计一次，线程私有后汇总 | `refineReuse` 新增的 9 条恒等式 | longxiang：查询 16 283 784 = init 9 747 858 + refine 6 535 926；样本 48 963 414 | 计数器无溢出检查（uint64，实际用量 1e9 级，远未到界） |
+| 3 | 分箱 SAH | `GeometryErrorEvaluator.cpp:188-330` | 12 箱/轴，代价 = 表面积 × 面数，`stable_partition` 保序，退化回落中位数 | `bvh` / `bvhOrder` / `error-soundness` | 上一轮 ABBA 四次：节点访问 −65 %、三角形测试 −69 %；本轮复核产物仍逐位相同 | 建树成本随节点数上升（本轮未单独计时） |
+| 4 | `-i/-o` 编码不分叉 | `tools/model23dtiles/main.cpp:576-584` | 无条件 `convertStringFromCurrentCodePageToUTF8` | `cjkCleanup` + 中文端到端 | 中文输入 + 中文输出 rc=0、`inputBytes` 与 `stat` 相等 | **Debug 二进制本轮仍未编**（BLOCKED-DEBUG）；读取选项与 proj.db 路径仍有 2 处 NDEBUG 分叉（见 §2 观察项） |
+| 5 | build() 记账复位 | `SourceModel.cpp:265-267` | 开头清空 `indexViolations` / `nonFiniteGeometry` / `nonFiniteNormalsZeroed` | `coordValidity` 第 6 组（连续 build 两次） | 单测断言"记录不累加" | 只在同一对象复用时有意义；生产每管线一次 |
+
+### 2. 本轮新发现与修改
+
+| ID | 主题 | 位置 | 处理 | 严重度 |
+|---|---|---|---|---|
+| A-65 | `-tri` 的"是否给出"用**默认值哨兵**判断：`if (maxTriangleCount != 200000)` ⇒ 显式 `-tri 200000` 被当成没传，profile 里 120000 继续生效 | `tools/model23dtiles/main.cpp:566`、`:757` | **FIXED**：改为在 `parseArgument` **之前**取 `arguments.find("-tri") > 0`（read() 会删参数，取晚了恒为 0），按"是否给出"覆盖 profile | 中（用户以为放宽了，产物按 12 万切） |
+| A-66 | 非有限 drawable 只发 warning：丢了一整条 drawable 后仍照常发布，"剩下的够不够"没人能判断 | `ProductionPipeline.cpp`（坐标记账段） | **FIXED（语义变更，失败关闭）**：同时写 counters/warnings + `_failures` 并立即 `return false`；CLI 走 rc=3、丢弃暂存、不提交任何数据集，`conversion-failure.json` 里点名 node/drawable/丢失量 | 高（=交付缺件数据集） |
+| A-67 | 失败分支只往 stderr 写；本机进程退出被安全代理 fastfail（`0xC0000409`，模块 `tsbx.dll`），C 缓冲来不及 flush ⇒ "跑完没产物、日志是空文件" | `tools/model23dtiles/main.cpp`（两个 `return 3` 分支） | **FIXED**：新增 `writeFailureReport()`，在 `discardStaging()` **之前**把 failures/warnings/counters/stages 落成 `<output>/conversion-failure.json`（`committed:false`，不会被当成 tileset） | 中（可诊断性） |
+| A-68 | 暂存目录固定名 `.wb-staging`、从不清理：强杀后的残留 tiles 会在下一次提交时被一并搬进正式输出；同一输出目录并发跑两个任务会互删暂存区 | `ProductionPipeline.cpp::run` | **FIXED**：暂存名带 pid（`.wb-staging-<pid>`）+ `owner.pid`；开跑前只清"属主已死"的旧暂存目录；旧数据集提交前整体挪到 `.wb-previous`，成功才删、失败回滚 | 中（脏数据 / 并发互踩） |
+| A-69 | build() 失败（全部 drawable 被丢）时先 `return false`，坐标记账还没跑 ⇒ 用户只看到 "no geometry" | `ProductionPipeline.cpp:1523-1535` | **FIXED**：先记账再判失败；失败文案补"all drawables were dropped by the coordinate-validity check" | 低（可诊断性） |
+
+**观察项（本轮记录、未改，避免顺手重构）**：
+- `tools/model23dtiles/main.cpp:161` 读取选项仍按 `NDEBUG` 分叉：Debug 下 FBX 不加 `TessellatePolygons`、改加 `ShowProgress` ⇒ **Debug 产物可能与 Release 不同**（不只是路径问题）。
+- `main.cpp:323` 的 `proj.db` 搜索路径同样分叉（Debug `./share/proj`，Release `<cwd>\share\proj`）⇒ Debug 下 `-epsg` 可能找不到 proj.db。
+- `main.cpp:821`/`:908` 把 TBB 并行度**硬编码 8**，与 `WB_JOBS` 不联动：用户设 `WB_JOBS=16` 时 TBB 仍只给 8。
+- 同一模型两次运行，`textures/` 副本目录出现/缺失不一致（b3dm 内嵌字节相同、`tileset.json` 不引用外部 `.ktx2`）—— 见 VALIDATION_REPORT 的"未闭合"，本轮未定位。
+
+### 3. 浮点安全的边界覆盖（`coordValidity`）
+
+| 用例 | 期望 | 结果 |
+|---|---|---|
+| 正常有限坐标 | 保留 | PASS |
+| `NaN` 顶点 | 记 `nonFiniteDoubles`，整条丢弃 | PASS |
+| `+Inf` / `-Inf` 两条 drawable | 各记 1，共 2 条记录 | PASS |
+| double 有限 → float 溢出（`1e38 × 10`） | 记 `floatOverflows=1`、`nonFiniteDoubles=0` | PASS |
+| 接近 `FLT_MAX`（3e38） | **保留**，不因"数值大"被丢 | PASS |
+| 坏 drawable 与好 drawable 并存 | 好几何保留、`bounds` 有限、feature 数只算好的 | PASS |
+| 同一对象连续 build 两次 | 记账不累加 | PASS |
+| 报告链路 | 5 个 counter + 汇总/明细 warning + failure | PASS |
+
+语义边界（手册 4.2 要求回答的问题）：丢弃粒度是**整条 drawable**（保留半条会让索引整体错位）；被丢的可能是主体（无法判定比例）⇒ 所以本轮把"仅 warning"改成**失败关闭**（A-66），宁可不出盘也不交付缺件数据集；实例/材质/feature 不受影响（drawable 在 `SourceModel::build` 早期就被丢弃，不会进入 objects/meshes/prims/instances）。
+
+
 

@@ -1553,3 +1553,60 @@ B = 本轮候选（`Release/model23dtiles_B.exe`，含 5 处改动）；`test_pr
   86~122 s 之间漂移，**total 的差不可归因**，本轮**不声称整体提速**。
 - **提交**：本轮一条都没提交（用户未要求）；工作区保留 8 个改动文件 + 那份 `.gitignore`。
 
+## 2026-10-28（第三轮）：5 项核对 / 浮点边界 / 失败关闭 / 暂存卫生 / A-53 验证
+
+起始 HEAD `3092db6`（上一轮提交），工作区只有用户那份 `.gitignore`（1693 行）未提交，本轮继续保留。
+
+### 构建（环境限制照旧，未做任何系统级变更）
+
+`cmake -S -B` / MSBuild 派生子进程在本机一律被安全代理 fastfail（`0xC0000409`，模块 `tsbx.dll`），
+`cmake --build` 不可用；仍用 `cl.exe`/`link.exe` 重放 `.tlog` 命令行的方式构建
+（脚本 `F:\wb_3dtiles_out\_followup_20261028\msvc_build.py`，按根路径过滤掉 `E:\dev\C++\osgGISPlugins`
+的 19 条旧命令）。本轮构建：`model23dtiles.exe` 15:41、`test_production.exe` 16:01。
+**Debug 仍未构建**（缺 Debug 运行库/插件）——所有"Debug 通过"的说法都不存在。
+
+### 本轮改动（6 处）
+
+1. **A-65** `-tri` 的覆盖判据从"值 ≠ 默认值"改成"参数是否出现"（`parseArgument` 之前取
+   `arguments.find("-tri")`，因为 `read()` 会删参数）。
+2. **A-66** 非有限 drawable 从"只发 warning"改为**失败关闭**：counter + warning + `_failures` +
+   立即 `return false`，不提交任何数据集。
+3. **A-67** 失败分支新增 `conversion-failure.json`（在 `discardStaging()` 之前落盘），
+   解决"进程被 fastfail、日志是空文件"的可诊断性问题。
+4. **A-68** 暂存目录带 pid + `owner.pid`；开跑前清"属主已死"的残留；旧数据集提交前挪
+   `.wb-previous`，成功才删、失败回滚。
+5. **A-69** `SourceModel::build` 失败时先落坐标记账再判失败（不再只剩一句 "no geometry"）。
+6. 单测 +8 条（`staging`）+ 修订 2 处受暂存目录名影响的测试。
+
+### 本轮实测
+
+| 项 | 读数 |
+|---|---|
+| 单元测试 | **435 / 0**（上一轮 427，+8 条暂存卫生断言） |
+| 芜湖水厂端到端 | **PASS**：62 瓦片/60 内容、深度 7、144 s、峰值 3.09 GB、`errors=[]`、4 条 warning |
+| 芜湖水厂 validator | **errors=0**、叶层 ERROR **0**、WARNING 514（表头 60） |
+| 龙翔桥站厅端到端 | **FAIL**：22/392 个内容瓦片超 primitive 预算（最坏 49 > 24）、505 s、峰值 13.8 GB、**未提交** |
+| 浮点故障注入 | `nan_vertex.obj` → **rc=3**，输出目录只有 `conversion-failure.json`（含 node/drawable/丢失三角形数） |
+| A-53（PageHeap） | Application Verifier（Heaps+Handles+Core）下 `giant` **5/5 通过**、全量套件 **1 次 427/0**，**无 verifier 断点** |
+| 中文路径 | 输入+输出双端中文：rc=0、`inputBytes` 与 `stat` 相等；失败清理由 `cjkCleanup` 6 条断言覆盖 |
+
+### 未执行 / 阻塞
+
+- **jianzhu+tietu（12.8 M 三角形）**：本轮启动了完整转换，时间窗内未跑完（19 分钟时已写
+  646 个瓦片 / 952 MB 暂存，仍在写盘），被主动中止，记 **PENDING**；不写成 PASS/FAIL。
+  中止后残留的暂存目录被下一次运行**自动清扫**（真实 952 MB 残留，非单测构造），
+  这条同时作为 A-68 的现场证据。
+- **卢沟桥 335 MB**：判据未动 ⇒ 不重跑，沿用 FAIL；本轮在龙翔桥站厅上复现了同一根因（见 VALIDATION_REPORT §3）。
+- **Debug 构建**：BLOCKED-DEBUG（无 Debug 依赖）。另记两处 `NDEBUG` 分叉（读取选项、proj.db 路径）
+  **未修**，属观察项。
+- **视觉验收**：BLOCKED-VISUAL（没开 CesiumJS）。
+- **`textures/` 副本目录时有时无**：同一模型两次运行，一份有 112 张 `.ktx2`、一份没有；
+  b3dm 字节相同、tileset 不引用外部纹理 ⇒ 不影响加载，但属未定位现象，记 **OPEN**。
+
+### 提交状态
+
+本轮**未提交**（用户此前只授权提交上一轮改动；本轮结束后如需提交请明确）。工作区新增修改：
+`src/3dtiles/production/ProductionPipeline.cpp`、`tools/model23dtiles/main.cpp`、
+`tests/production/main.cpp` 与四份文档。
+
+

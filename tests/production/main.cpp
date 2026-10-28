@@ -762,6 +762,77 @@ void testObjIntegrityPrecheck()
 }
 
 // ---------------------------------------------------------------------------
+// 暂存目录卫生（本节新增）：强杀残留的暂存目录必须能被下次运行识别并清掉；
+// 已存在的旧数据集在新版本就位前不能被破坏（失败时回滚）。
+// 这两条都只在"异常/重复运行"时才会踩到，平时跑不出来，所以必须显式构造。
+// ---------------------------------------------------------------------------
+void testStagingHygiene()
+{
+    std::cout << "[staging] stale staging sweep + previous-dataset protection" << std::endl;
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "wb_staging_hygiene";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+    Utils::registerFileAliases();   // 没有它，b3dm 写出插件不注册，管线写盘必失败
+
+    // 1) 造一个"属主已死"的旧暂存目录（owner.pid = 一个不可能存在的 pid）
+    const fs::path stale = root / ".wb-staging-4294967294";
+    fs::create_directories(stale / "tiles", ec);
+    {
+        std::ofstream f(stale / "owner.pid");
+        f << "4294967294";
+        std::ofstream t(stale / "tiles" / "orphan.b3dm", std::ios::binary);
+        t << "stale tile that must never reach the published dataset";
+    }
+
+    // 2) 造一个上一版数据集（tileset.json + tiles/）
+    fs::create_directories(root / "tiles", ec);
+    {
+        std::ofstream f(root / "tileset.json"); f << "{\"asset\":{\"version\":\"1.0\"},\"old\":true}";
+        std::ofstream t(root / "tiles" / "old.b3dm", std::ios::binary); t << "old";
+    }
+
+    // 3) 跑一次真实管线（小场景）
+    ProductionProfile profile;
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = root.u8string();
+    const bool ok = pipeline.run(makeGrid(2, 2, 1.0).get(), opt);
+    check(ok, "pipeline runs on an output dir that already holds a dataset");
+    // 提交（搬盘）发生在 finalize()，不调它根本走不到"替换旧数据集"这段
+    const bool committed = pipeline.finalize();
+    check(committed, "finalize commits into an output dir that already holds a dataset",
+          joinMessages(pipeline.failures()));
+
+    check(!fs::exists(stale, ec), "a staging dir whose owner process is gone is swept",
+          stale.u8string());
+    check(!fs::exists(root / ".wb-previous", ec),
+          "the .wb-previous backup is removed after a successful commit",
+          (root / ".wb-previous").u8string());
+    // 旧 tiles/ 里的 old.b3dm 不该混进新数据集（新内容整体替换 tiles/）
+    {
+        std::string listing;
+        for (const auto& e : fs::directory_iterator(root / "tiles", ec))
+        {
+            listing += e.path().filename().string() + ",";
+        }
+        check(!fs::exists(root / "tiles" / "old.b3dm", ec),
+              "the previous tiles/ is replaced, not merged", "tiles/ = " + listing);
+    }
+    check(fs::exists(root / "tileset.json", ec), "a new tileset.json is in place");
+
+    // 4) 收尾：commit 之后再跑一次（重复执行）必须同样成功
+    ProductionPipeline again(profile);
+    ProductionPipeline::Options opt2;
+    opt2.outputDir = root.u8string();
+    check(again.run(makeGrid(2, 2, 1.2).get(), opt2), "re-running into the same dir still works");
+    check(!fs::exists(root / ".wb-previous", ec), "no backup left behind after the second commit");
+
+    fs::remove_all(root, ec);
+}
+
+// ---------------------------------------------------------------------------
 // UTF-8 路径的**失败清理**（A-59 遗留项）：CLI 的 return 3 分支会调
 // discardStaging()（remove_all）和空纹理目录的 remove()。这两处只在失败时走，
 // 成功路径的验证覆盖不到。这里用 CJK 目录做同等动作：造一个暂存目录 + 空纹理
@@ -905,7 +976,75 @@ void testCoordinateValidity()
         checkNear(m.bounds.xMin(), 4540000.0, 0.5, "large coordinate lands in bounds");
     }
 
-    // 4) 报告链路：丢弃必须出现在 counters + warnings 里（不能只在 OSG_WARN 里）
+    // 4) 边界：接近 float 上限但可表示的坐标必须留下（不能"看着大就丢"）
+    {
+        const float nearMax = 3.0e38f;
+        SourceModel m;
+        check(m.build(sceneOf({{"near_max", triGeom(osg::Vec3(nearMax, 0.0f, 0.0f),
+                                                    osg::Vec3(nearMax, 1.0f, 0.0f),
+                                                    osg::Vec3(nearMax, 0.0f, 1.0f)).get()}}).get()),
+              "coordinates near FLT_MAX are representable and build");
+        check(m.nonFiniteGeometry.empty(), "near-FLT_MAX is not flagged",
+              "records=" + std::to_string(m.nonFiniteGeometry.size()));
+        check(m.totalTriangles() == 1, "near-FLT_MAX triangle is kept",
+              "tris=" + std::to_string(m.totalTriangles()));
+    }
+
+    // 5) 正负无穷分别计数（与 NaN 一样记成 non-finite double）
+    {
+        const float pinf = std::numeric_limits<float>::infinity();
+        SourceModel m;
+        (void)m.build(sceneOf({{"pinf", triGeom(osg::Vec3(pinf, 0.0f, 0.0f),
+                                                osg::Vec3(1.0f, 0.0f, 0.0f),
+                                                osg::Vec3(0.0f, 1.0f, 0.0f)).get()},
+                               {"ninf", triGeom(osg::Vec3(-pinf, 0.0f, 0.0f),
+                                                osg::Vec3(1.0f, 0.0f, 0.0f),
+                                                osg::Vec3(0.0f, 1.0f, 0.0f)).get()}}).get());
+        check(m.nonFiniteGeometry.size() == 2, "both +inf and -inf drawables are recorded",
+              "records=" + std::to_string(m.nonFiniteGeometry.size()));
+        std::uint64_t nf = 0;
+        for (const NonFiniteGeometry& g : m.nonFiniteGeometry) { nf += g.nonFiniteDoubles; }
+        check(nf == 2, "each infinite vertex is counted once", "nf=" + std::to_string(nf));
+    }
+
+    // 6) 同一个 SourceModel 连续 build 两次：记账不得累加（A-64 的回归）
+    {
+        SourceModel m;
+        const osg::ref_ptr<osg::Group> scene = sceneOf({
+            {"good", triGeom(osg::Vec3(0, 0, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0)).get()},
+            {"nan", triGeom(osg::Vec3(std::numeric_limits<float>::quiet_NaN(), 0, 0),
+                            osg::Vec3(0, 1, 0), osg::Vec3(1, 0, 0)).get()},
+        });
+        (void)m.build(scene.get());
+        const std::size_t first = m.nonFiniteGeometry.size();
+        (void)m.build(scene.get());
+        check(first == 1 && m.nonFiniteGeometry.size() == 1,
+              "rebuilding the same model does not accumulate records",
+              "first=" + std::to_string(first) + " second="
+              + std::to_string(m.nonFiniteGeometry.size()));
+    }
+
+    // 7) 坏 drawable 与好 drawable 并存：好的必须完整保留，包围盒只反映好几何
+    {
+        SourceModel m;
+        const bool built = m.build(sceneOf({
+            {"good", triGeom(osg::Vec3(0, 0, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0)).get()},
+            {"bad", triGeom(osg::Vec3(std::numeric_limits<float>::quiet_NaN(), 0, 0),
+                            osg::Vec3(0, 1, 0), osg::Vec3(1, 0, 0)).get()},
+        }).get());
+        check(built, "a mixed scene still builds from its good geometry");
+        check(m.totalTriangles() == 1, "exactly the good triangle survives",
+              "tris=" + std::to_string(m.totalTriangles()));
+        check(m.featureCount() == 1, "the dropped drawable creates no feature",
+              "features=" + std::to_string(m.featureCount()));
+        check(std::isfinite(m.bounds.xMin()) && std::isfinite(m.bounds.xMax())
+              && std::isfinite(m.bounds.yMin()) && std::isfinite(m.bounds.yMax()),
+              "bounds stay finite after the drop");
+        check(m.nonFiniteGeometry.size() == 1 && m.nonFiniteGeometry[0].droppedTriangles == 1,
+              "the dropped triangle is accounted for");
+    }
+
+    // 8) 报告链路：丢弃必须出现在 counters + warnings 里（不能只在 OSG_WARN 里）
     {
         const std::string dir = "test_out_coord_validity";
         std::error_code ec;
@@ -935,7 +1074,19 @@ void testCoordinateValidity()
         ProductionPipeline pipeline(profile);
         ProductionPipeline::Options opt;
         opt.outputDir = dir + "/out";
-        (void)pipeline.run(root.get(), opt);
+        const bool ok = pipeline.run(root.get(), opt);
+        // 失败关闭：丢掉一条 drawable 后无法判断"剩下的够不够"，因此拒绝发布，
+        // 而不是发个 warning 就把缺件的产物交出去（本轮语义变更）。
+        check(!ok, "a scene with a dropped drawable fails the pipeline (fail closed)");
+        {
+            bool named = false;
+            for (const std::string& f : pipeline.failures())
+            {
+                if (f.find("refusing to publish") != std::string::npos) { named = true; }
+            }
+            check(named, "the failure says it refuses to publish a partial dataset",
+                  joinMessages(pipeline.failures()));
+        }
         check(counterOf(pipeline, "nonFiniteDrawables") == 1,
               "nonFiniteDrawables reaches the report",
               std::to_string(counterOf(pipeline, "nonFiniteDrawables")));
@@ -3427,6 +3578,9 @@ void testPrimitiveBudgetGate()
     ProductionPipeline pipeline(profile);
     ProductionPipeline::Options opt;
     opt.outputDir = out.string();
+    // 暂存目录名现在带 pid（多任务不撞车），测试要按路径检查暂存区，
+    // 所以这里显式指定一个固定名字（Options 里本来就允许覆盖）。
+    opt.stagingDir = (out / ".wb-staging").string();
     const bool ran = pipeline.run(makeGrid(4, 4, 1.0).get(), opt);
     check(ran, "budget gate fixture builds", joinMessages(pipeline.failures()));
 
@@ -3567,6 +3721,7 @@ int main(int argc, char** argv)
     run("indexGuard", &testIndexValidationDropsOffendingTriangles);
     run("coordValidity", &testCoordinateValidity);
     run("cjkCleanup", &testCjkFailureCleanup);
+    run("staging", &testStagingHygiene);
     run("objPrecheck", &testObjIntegrityPrecheck);
     run("nrmRepair", &testZeroNormalRepair);
     run("partition", &testPartitionCoverageAndDeterminism);

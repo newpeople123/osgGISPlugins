@@ -22,9 +22,34 @@
 #include <tbb/global_control.h>
 #include <filesystem>
 #include <system_error>
+#include <fstream>
 #include <cmath>
 
 using namespace osgGISPlugins;
+
+// 失败诊断落盘。**不是数据集**：文件名固定为 conversion-failure.json，且带
+// committed:false / exitCode，加载器不会把它当成 tileset。
+// 存在的理由：生产版在失败分支只往 stderr 写，而本机进程退出会被安全代理
+// fastfail 掉（0xC0000409，模块 tsbx.dll），CRT 缓冲来不及 flush —— 结果就是
+// "跑了两小时、产物没出、日志是空文件"。失败时留下一份可读的收尾状态，
+// 才能回答"卡在哪个阶段、哪条失败、丢了什么"。
+static void writeFailureReport(const osgGISPlugins::production::ProductionPipeline& pipeline,
+                              const std::string& outputDir, int exitCode)
+{
+	using namespace osgGISPlugins::production;
+	if (outputDir.empty()) { return; }
+	json j = pipeline.report().toJson();
+	j["committed"] = false;
+	j["exitCode"] = exitCode;
+	j["note"] = "diagnostic only: this dataset was NOT published";
+	j["failures"] = pipeline.failures();
+	j["warnings"] = pipeline.warnings();
+	std::ofstream f(Utils::utf8ToPath(outputDir + "/conversion-failure.json"), std::ios::binary);
+	if (!f) { return; }
+	const std::string text = j.dump(2);
+	f.write(text.data(), static_cast<std::streamsize>(text.size()));
+	f.flush();
+}
 
 // TEMP DEBUG: crash stack printer（定位剥纹理段错误用，问题闭环后删除）
 #ifdef _WIN32
@@ -534,6 +559,11 @@ int main(int argc, char** argv)
 	// 分辨率、不整张删纹理（降到 -mb 装不下的下限才去纹理）。
 	const int proxyTextureMaxEdge = parseArgument(arguments, "-ptw", 512);
 
+	// -tri 的"是否显式给出"必须在 parseArgument 之前取：osg::ArgumentParser::read()
+	// 会把匹配到的参数从表里删掉，之后 find("-tri") 恒为 0。
+	// 不能用"值 != 默认值"当哨兵：显式传 -tri 200000 与默认值相同，会被判成"没传"，
+	// profile 里 120000 的上限继续生效 —— 用户以为放宽了，产物却按 12 万切。
+	const bool triangleBudgetGiven = arguments.find("-tri") > 0;
 	const unsigned int maxTriangleCount = parseArgument(arguments, "-tri", 200000);
 	// 默认与 ProductionProfile 的 maxPrimitivesPerTile / 手册 §3 的 ≤24 对齐：
 	// 下面会无条件用这个值覆盖 profile.budget.maxPrimitivesPerTile，取 20 会让
@@ -748,8 +778,10 @@ int main(int argc, char** argv)
 			using namespace osgGISPlugins::production;
 
 			ProductionProfile profile;
-			// 命令行覆盖硬上限（用户给的值优先，且不会被自动放宽，手册第 3 节）
-			if (maxTriangleCount != 200000) { profile.budget.maxTrianglesPerTile = maxTriangleCount; }
+			// 命令行覆盖硬上限（用户给的值优先，且不会被自动放宽，手册第 3 节）。
+			// 判据是"有没有传 -tri"，不是"值等不等于默认值"：旧写法下
+			// `-tri 200000` 与默认 200000 撞车，profile 的 120000 会继续生效。
+			if (triangleBudgetGiven) { profile.budget.maxTrianglesPerTile = maxTriangleCount; }
 			profile.budget.targetTrianglesPerTile =
 				std::min<unsigned>(profile.budget.targetTrianglesPerTile, profile.budget.maxTrianglesPerTile);
 			profile.budget.maxPrimitivesPerTile = std::max<unsigned>(maxDrawcallCommandCount, 1);
@@ -805,6 +837,10 @@ int main(int argc, char** argv)
 			}
 			std::cerr << "Failed converted " + input + " to 3dtiles (production pipeline)."
 				<< std::endl;
+			// 先落诊断（此时 staging 还在，报告里的阶段秒数/计数器才有意义），
+			// 再清暂存目录。顺序不能反：discardStaging 之后只剩内存里的对象，
+			// 进程一旦被外部杀掉就什么也不剩。
+			writeFailureReport(pipeline, output, 3);
 			pipeline.discardStaging();
 			// 纹理缓存目录是跑管线前就建的，失败时里面是空的。
 			// 空目录不会让 3D Tiles 加载器误判成数据集，但清掉更干净。
@@ -832,6 +868,7 @@ int main(int argc, char** argv)
 				}
 			OSG_NOTICE << "Failed converted " + input + " to 3dtiles (production pipeline, "
 				<< "output not committed)." << std::endl;
+			writeFailureReport(pipeline, output, 3);
 			pipeline.discardStaging();
 			{
 				const std::string& tc = config.tileConfig.gltfTextureOptions.cachePath;

@@ -25,12 +25,84 @@
 #include <filesystem>
 #include <set>
 #include <sstream>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>   // 只用于判断"暂存目录的属主进程是否还活着"
+#endif
 #include "utils/Utils.h"
 #include "utils/GltfOptimizer.h"
 #include "osgdb_gltf/Extensions.h"
 #include "osgdb_gltf/b3dm/BatchIdVisitor.h"
 
 namespace {
+
+// ---------------------------------------------------------------------------
+// 暂存目录的属主与清扫（本轮：失败 / 强杀场景）
+//
+// 旧实现在 `<output>/.wb-staging` 这个**固定名字**下建暂存区，也从不检查上一次
+// 是不是被强杀过：进程被杀后残留的 tiles，会在下一次运行结束时被一并"搬进"
+// 正式输出（tileset 不引用它们，但目录里多出一堆无主瓦片）。同一输出目录并发
+// 跑两个任务时，还会互相清掉对方的暂存区。
+//
+// 现在：暂存目录名带 pid（`.wb-staging-<pid>`），里面写 `owner.pid`；每次开跑前
+// 只清理**属主进程已经不在**的旧暂存目录，活着的（别人的任务）一律不碰。
+// 限制：pid 可能被系统复用，所以这里只做"清理残留"这一件低风险的事，
+// 不作为任何数据安全的唯一依据。
+// ---------------------------------------------------------------------------
+unsigned currentProcessId()
+{
+#ifdef _WIN32
+    return static_cast<unsigned>(GetCurrentProcessId());
+#else
+    return 0u;
+#endif
+}
+
+bool processAlive(unsigned pid)
+{
+#ifdef _WIN32
+    if (pid == 0) { return false; }
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (h == nullptr) { return false; }   // 打不开 = 已经不在
+    DWORD code = 0;
+    const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+    CloseHandle(h);
+    return alive;
+#else
+    (void)pid;
+    return true;   // 非 Windows 不猜：宁可不清理
+#endif
+}
+
+void writeOwnerPid(const std::filesystem::path& stagingDir)
+{
+    std::ofstream f(stagingDir / "owner.pid", std::ios::binary);
+    if (f) { f << currentProcessId(); }
+}
+
+// 清掉 outputDir 下属于"已死进程"的旧暂存目录；`keep` 永不触碰。
+void sweepStaleStagingDirs(const std::filesystem::path& outDir, const std::filesystem::path& keep)
+{
+    std::error_code ec;
+    if (!std::filesystem::is_directory(outDir, ec)) { return; }
+    for (const auto& e : std::filesystem::directory_iterator(outDir, ec))
+    {
+        if (ec) { break; }
+        if (!e.is_directory(ec)) { continue; }
+        const std::string name = e.path().filename().string();
+        if (name.rfind(".wb-staging", 0) != 0) { continue; }
+        if (e.path() == keep) { continue; }
+        unsigned pid = 0;
+        {
+            std::ifstream f(e.path() / "owner.pid");
+            if (f) { f >> pid; }
+        }
+        if (pid != 0 && processAlive(pid)) { continue; }   // 活着的任务，别动
+        std::error_code ecRemove;
+        std::filesystem::remove_all(e.path(), ecRemove);
+    }
+}
+
 // 清除纹理对象上的导出缓存名（exportOsgTextureIfNeeded 以此判断是否
 // 已导出过），强制下一次 optimize 重新导出——配合降采样的 textureOptions
 // 会生成新内容 hash 的新文件，不与共享缓存冲突。
@@ -1394,7 +1466,18 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     // 暂存目录：<outputDir>/.wb-staging（可在 Options 里覆盖）
     if (_opt.stagingDir.empty())
     {
-        _opt.stagingDir = _opt.outputDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + ".wb-staging";
+        // 名字带 pid：两个进程跑同一个输出目录时不会共用一个暂存区
+        _opt.stagingDir = _opt.outputDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING
+                        + ".wb-staging-" + std::to_string(currentProcessId());
+    }
+    {
+        // 先清扫上一次被强杀留下的暂存目录（只清"属主已死"的），再建自己的
+        const std::filesystem::path outDir = Utils::utf8ToPath(_opt.outputDir);
+        const std::filesystem::path mine = Utils::utf8ToPath(_opt.stagingDir);
+        sweepStaleStagingDirs(outDir, mine);
+        std::error_code ecMake;
+        std::filesystem::create_directories(mine, ecMake);
+        writeOwnerPid(mine);
     }
     osgDB::makeDirectory(_opt.stagingDir);
     try
@@ -1441,11 +1524,11 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     Timer tImport;
     CpuTimer cImport;
     TRACE("model.build");
-    if (!_model.build(input))
-    {
-        _failures.push_back("SourceModel build failed (no geometry)");
-        return false;
-    }
+    // 先不急着因"没几何"退出：build() 失败最常见的原因就是所有 drawable 都被
+    // 坐标有效性检查丢掉了。若在这里直接 return，用户只会看到一句
+    // "no geometry"，而"哪个节点、哪条 drawable、丢了几个三角形"全在
+    // _model.nonFiniteGeometry 里没被落账。所以先记账，再判失败。
+    const bool modelBuilt = _model.build(input);
     _report.addStage("import_normalize", tImport.elapsed());
     _report.addStage("import_normalize_cpu", cImport.elapsed());
     _report.sourceFeatureCount = _model.featureCount();
@@ -1494,11 +1577,15 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         }
     }
 
-    // 坐标有效性的账（本项与 IndexViolation 同一套语义：丢整条 drawable + 记账）。
-    // 分三类写清楚，不允许混成一个"异常数"：
-    //   nonFiniteDouble  —— 世界变换后就是 NaN/Inf（源数据或矩阵本身有病）
-    //   floatOverflow    —— double 有限但降精度成 float 溢出（1e39 这类）
-    //   nonFiniteNormals —— 法线置零（已交给 A-43 零法线重建），不改几何
+    // 坐标有效性的账。语义（本轮从"只发 warning"改成**失败关闭**）：
+    // 一条 drawable 里只要有一个不可表示的顶点，整条就被丢掉——这是无法局部修补的
+    // 数据缺陷。丢掉之后**没有人能判断"剩下的还够不够"**：它可能是 1/3000 的装饰件，
+    // 也可能就是这个模型的主体。把这种不确定性包装成 warning 后照常发布，等于交付一个
+    // "看起来完整、实际少了一块"的数据集（手册 14.17 失败关闭、7.3 不出超限/残缺产物）。
+    // 所以这里同时记 counters + warnings（诊断用）**并置位 failure**：管线返回 false，
+    // CLI 走 rc=3、丢弃暂存目录、不提交任何正式输出。用户要么修源数据，要么先把
+    // 问题 drawable 单独摘出去再来一遍——而不是拿到一个悄悄缺件的产物。
+    // 法线非有限不算失败：那是置零后交给 A-43 重建的，几何与拓扑没变。
     if (!_model.nonFiniteGeometry.empty())
     {
         std::uint64_t droppedTris = 0, nonFiniteDoubles = 0, floatOverflows = 0;
@@ -1517,6 +1604,13 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
             + "not representable: " + std::to_string(nonFiniteDoubles) + " non-finite after the world "
             + "transform, " + std::to_string(floatOverflows) + " finite in double but overflowing float; "
             + "nothing was clamped, moved or rebuilt");
+        // 失败项必须点名到节点/drawable/丢失量，否则用户无法定位要修哪一块
+        _failures.push_back("coordinate validity: " + std::to_string(_model.nonFiniteGeometry.size())
+            + " drawable(s) dropped (" + std::to_string(droppedTris) + " triangle(s), "
+            + std::to_string(nonFiniteDoubles) + " non-finite + " + std::to_string(floatOverflows)
+            + " float-overflow vertex position(s)); refusing to publish a dataset that is silently "
+            + "missing geometry (first: node '" + _model.nonFiniteGeometry.front().nodeName
+            + "', drawable " + std::to_string(_model.nonFiniteGeometry.front().drawableIndex) + ")");
         for (std::size_t i = 0; i < std::min<std::size_t>(10, _model.nonFiniteGeometry.size()); ++i)
         {
             const NonFiniteGeometry& g = _model.nonFiniteGeometry[i];
@@ -1531,6 +1625,9 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
             _warnings.push_back("coordinate validity: ... and "
                 + std::to_string(_model.nonFiniteGeometry.size() - 10) + " more drawable(s)");
         }
+        // 立即收工，不再往下切分/建代理/写盘：这一批数据注定发布不了，
+        // 让 335 MB 的模型先跑两小时再被 finalize 拒掉是纯粹的浪费。
+        return false;
     }
     if (_model.nonFiniteNormalsZeroed > 0)
     {
@@ -1538,6 +1635,15 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         _warnings.push_back("coordinate validity: " + std::to_string(_model.nonFiniteNormalsZeroed)
             + " normal(s) were non-finite after transform/normalize/float cast; they were zeroed and "
             + "handed to the zero-normal rebuild (A-43) instead of being written as NaN");
+    }
+
+    if (!modelBuilt)
+    {
+        // 坐标记账已经在上面落过（如果就是这个原因）；这里补一条总口径
+        _failures.push_back("SourceModel build failed (no geometry)"
+            + std::string(_model.nonFiniteGeometry.empty() ? "" :
+                          " - all drawables were dropped by the coordinate-validity check"));
+        return false;
     }
 
     // 原始 OBJ 索引预检的结果必须进报告（AUDIT A-57）。**干净文件也要落计数**：
@@ -2564,6 +2670,13 @@ bool ProductionPipeline::finalize()
     if (!selfValidate(tsPath)) { TRACE("finalize: selfValidate FAILED (" << _failures.size() << " failures)"); discardStaging(); return false; }
     TRACE("finalize: selfValidate ok");
 
+    // 属主标记不进产物、也不进 outputBytes 统计
+    {
+        std::error_code ecOwner;
+        std::filesystem::remove(std::filesystem::path(Utils::utf8ToPath(_opt.stagingDir)) / "owner.pid",
+                                ecOwner);
+    }
+
     // report 必须在自校验之后落盘：覆盖计数与聚合抽稀 warning 都是校验阶段才产生的
     // outputBytes 的口径（AUDIT A-58，固定下来不再随版本变）：自校验通过、写报告之前，
     // 暂存目录里**全部已存在文件**的字节和——tileset.json、feature-manifest.json、
@@ -2615,11 +2728,83 @@ bool ProductionPipeline::finalize()
     {
         entries.push_back(e.path());
     }
+
+    // ---- 提交保护（本轮）：旧产物不得在"新版本就位前"被破坏 ----
+    // 原来的顺序是"逐条 remove_all(dst) → rename"，进程在两条之间死掉，旧数据集就
+    // 少了 `tiles/` 又没拿到新的 —— 留下一个"看起来是数据集、实际半残"的目录，
+    // 正是手册 14.17 禁止的形态。现在先把上一版**整体**挪到 <output>/.wb-previous
+    // （同卷 rename，单条目录操作），新内容全部就位后才删备份；中途失败就回滚。
+    // 限制（如实写进文档）：多条目提交做不到严格原子，进程被强杀仍可能停在
+    // "旧的在备份里、新的只搬了一半"的中间态；但此时旧数据**还在** `.wb-previous`，
+    // 可以人工恢复，且下一轮跑之前会先清掉残留备份。
+    const std::filesystem::path backupDir = outDir / ".wb-previous";
+    auto isDatasetEntry = [](const std::filesystem::path& p) {
+        const std::string n = p.filename().string();
+        // 注意**不含 textures/**：那是跑管线时就写在 output 里的纹理缓存
+        // （内容寻址、可能被别的任务共用），不是"上一版数据集"的组成部分；
+        // 把它挪进备份再靠暂存区搬回来，等于把刚压好的纹理连同备份一起删掉。
+        return n == "tileset.json" || n == "feature-manifest.json"
+            || n == "conversion-report.json" || n == "conversion-failure.json"
+            || n == "tiles";
+    };
+    std::vector<std::string> backedUp;
+    {
+        std::filesystem::remove_all(backupDir, ec);   // 上一轮崩在这里留下的残留
+        ec.clear();
+        for (const auto& e : std::filesystem::directory_iterator(outDir, ec))
+        {
+            if (ec) { break; }
+            if (!isDatasetEntry(e.path())) { continue; }
+            std::filesystem::create_directories(backupDir, ec);
+            if (ec) { break; }
+            std::error_code ecMove;
+            std::filesystem::rename(e.path(), backupDir / e.path().filename(), ecMove);
+            if (ecMove)
+            {
+                // 挪不动就退回复制+删除，仍然失败则放弃备份（宁可继续，也不要留半个备份）
+                std::filesystem::copy(e.path(), backupDir / e.path().filename(),
+                                      std::filesystem::copy_options::recursive
+                                      | std::filesystem::copy_options::overwrite_existing, ecMove);
+                if (!ecMove) { std::filesystem::remove_all(e.path(), ecMove); }
+            }
+            if (!ecMove) { backedUp.push_back(e.path().filename().string()); }
+        }
+        if (!backedUp.empty())
+        {
+            _warnings.push_back("output commit: moved the previous dataset ("
+                + std::to_string(backedUp.size()) + " entr(y/ies)) to "
+                + backupDir.u8string() + " before publishing the new one; it is removed only "
+                + "after a successful commit, so a crash mid-commit leaves the old dataset "
+                + "recoverable there");
+        }
+    }
+    auto rollback = [&]() {
+        // 把已经搬进来的新内容挪回暂存目录，再把备份挪回来
+        for (const std::filesystem::path& src : entries)
+        {
+            const std::filesystem::path dst = outDir / src.filename();
+            std::error_code e2;
+            if (std::filesystem::exists(dst, e2)) { std::filesystem::remove_all(dst, e2); }
+        }
+        for (const std::string& name : backedUp)
+        {
+            std::error_code e3;
+            std::filesystem::rename(backupDir / name, outDir / name, e3);
+            if (e3)
+            {
+                _warnings.push_back("output commit rollback: could not restore " + name
+                                    + " from " + backupDir.u8string() + " (" + e3.message() + ")");
+            }
+        }
+        std::filesystem::remove_all(backupDir, ec);
+    };
+
     for (const std::filesystem::path& src : entries)
     {
         const std::filesystem::path dst = outDir / src.filename();
         TRACE("finalize: move " << src.filename().string());
-        // 目标已存在时先删掉，rename 不会覆盖
+        // 目标已存在时先删掉，rename 不会覆盖（数据集条目已被挪进 .wb-previous，
+        // 这里剩下的只可能是 _i/_o 里非数据集的文件）
         std::filesystem::remove_all(dst, ec);
         ec.clear();
         std::filesystem::rename(src, dst, ec);
@@ -2633,11 +2818,14 @@ bool ProductionPipeline::finalize()
             {
                 _failures.push_back("finalize: cannot move " + src.string() + " -> "
                                     + dst.string() + ": " + ec.message());
+                rollback();
                 discardStaging();
                 return false;
             }
         }
     }
+    // 全部就位，备份可以删了
+    std::filesystem::remove_all(backupDir, ec);
     discardStaging();
     return true;
 }
