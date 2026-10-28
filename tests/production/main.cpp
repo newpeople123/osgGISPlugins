@@ -20,6 +20,7 @@
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/Group>
+#include <osg/Material>
 #include <osg/MatrixTransform>
 #include <osg/Array>
 #include <osg/PrimitiveSet>
@@ -3561,6 +3562,97 @@ void testAtlasCanvasZeroed()
               + " rounds=" + std::to_string(rounds));
 }
 
+void testPrimitiveBudgetProxyDegrades()
+{
+    std::cout << "[budgetGate] over-budget far-LOD primitive/material count degrades" << std::endl;
+    Utils::registerFileAliases();
+
+    // 预算 1：叶瓦片一个对象 = 1 primitive / 1 material，能发布；
+    // 任何内节点代理都要覆盖多个对象，导出后必然 > 1 个宿主。
+    // 判据必须按导出产物说话——源 prim 数在预算内不能当成代理达标。
+    ProductionProfile profile;
+    profile.budget.maxPrimitivesPerTile = 1;
+    profile.budget.targetPrimitivesPerTile = 1;
+    profile.budget.maxMaterialsPerTile = 1;
+    profile.budget.targetMaterialsPerTile = 1;
+
+    const std::filesystem::path out =
+        std::filesystem::temp_directory_path() / "wb_budget_degrades";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+
+    ProductionPipeline pipeline(profile);
+    ProductionPipeline::Options opt;
+    opt.outputDir = out.string();
+    opt.stagingDir = (out / ".wb-staging").string();
+    // 每个对象一份互不相同的材质：同材质在写出端会被 GltfMerger 融成一个
+    // primitive，区分不出宿主数；这里要的是"导出后确实是多个 primitive"。
+    osg::ref_ptr<osg::Node> scene = makeGrid(8, 8, 1.0);
+    unsigned tintId = 0;
+    struct Tint : public osg::NodeVisitor
+    {
+        explicit Tint(unsigned& id) : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), id(id) {}
+        void apply(osg::Geode& g) override
+        {
+            // 普通 osg::Material 不会被 Osg2Gltf 当成 glTF 材质导出（实测 0 materials），
+            // 必须用 GltfPbrMRMaterial；baseColorFactor 不同 => 不同材质。
+            osg::ref_ptr<GltfPbrMRMaterial> m = new GltfPbrMRMaterial;
+            const double t = static_cast<double>((id++ % 60u) + 1u) / 61.0;
+            m->baseColorFactor = { t, 1.0 - t, 0.5, 1.0 };
+            g.getOrCreateStateSet()->setAttributeAndModes(m.get(), osg::StateAttribute::ON);
+            traverse(g);
+        }
+        unsigned& id;
+    } tint(tintId);
+    scene->accept(tint);
+
+    const bool ran = pipeline.run(scene.get(), opt);
+    check(ran, "fixture builds with primitive budget 1", joinMessages(pipeline.failures()));
+    const bool fin = pipeline.finalize();
+    check(fin, "over-budget far-LOD proxies degrade instead of failing the dataset",
+          joinMessages(pipeline.failures()));
+    check(pipeline.report().proxySkippedCount >= 1, "skipped proxy counter is non-zero",
+          std::to_string(pipeline.report().proxySkippedCount));
+
+    bool explained = false;
+    for (const std::string& w : pipeline.warnings())
+    {
+        if (w.find("primitives=") != std::string::npos) { explained = true; break; }
+    }
+    check(explained, "the primitive-budget degradation is explained in warnings",
+          std::to_string(pipeline.warnings().size()) + " warnings");
+
+    unsigned publishedLeaves = 0;
+    for (const ProductionTile& t : pipeline.tiles())
+    {
+        if (t.hasContent && t.isLeaf) { ++publishedLeaves; }
+    }
+    check(publishedLeaves > 0, "leaves still publish", std::to_string(publishedLeaves));
+
+    // 边界对照：把预算抬到 60（本夹具根代理导出正好 60 个宿主），
+    // 等于预算必须放行、且一个代理都不该被降级——否则上面的"超限必降级"
+    // 可能只是把"所有代理"一律删掉造成的假绿。
+    ProductionProfile atCap = profile;
+    atCap.budget.maxPrimitivesPerTile = 60;
+    atCap.budget.targetPrimitivesPerTile = 60;
+    atCap.budget.maxMaterialsPerTile = 60;
+    atCap.budget.targetMaterialsPerTile = 60;
+    const std::filesystem::path out2 =
+        std::filesystem::temp_directory_path() / "wb_budget_at_cap";
+    std::filesystem::remove_all(out2, ec);
+    ProductionPipeline pipeline2(atCap);
+    ProductionPipeline::Options opt2;
+    opt2.outputDir = out2.string();
+    opt2.stagingDir = (out2 / ".wb-staging").string();
+    const bool ran2 = pipeline2.run(scene.get(), opt2);
+    check(ran2, "at-cap fixture builds", joinMessages(pipeline2.failures()));
+    check(pipeline2.finalize(), "tile exactly at the primitive budget still publishes",
+          joinMessages(pipeline2.failures()));
+    check(pipeline2.report().proxySkippedCount == 0,
+          "nothing is skipped when every proxy fits the budget",
+          std::to_string(pipeline2.report().proxySkippedCount));
+}
+
 void testPrimitiveBudgetGate()
 {
     std::cout << "[budgetGate] glTF primitive / material budget" << std::endl;
@@ -3746,6 +3838,7 @@ int main(int argc, char** argv)
     run("noLocalPaths", &testArtifactsCarryNoLocalPaths);
     run("foldUv", &testFoldTextureTransformIntoUv);
     run("budgetGate", &testPrimitiveBudgetGate);
+    run("budgetDegrade", &testPrimitiveBudgetProxyDegrades);
     run("atlasCanvas", &testAtlasCanvasZeroed);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;

@@ -1605,8 +1605,121 @@ B = 本轮候选（`Release/model23dtiles_B.exe`，含 5 处改动）；`test_pr
 
 ### 提交状态
 
-本轮**未提交**（用户此前只授权提交上一轮改动；本轮结束后如需提交请明确）。工作区新增修改：
+本轮当轮未提交（用户随后指示提交，改动随 `98eeddb` 一并进入仓库）。工作区当时的新增修改：
 `src/3dtiles/production/ProductionPipeline.cpp`、`tools/model23dtiles/main.cpp`、
 `tests/production/main.cpp` 与四份文档。
+
+
+## 2026-10-28（第四轮）：proxy 宿主预算按产物判定 / NDEBUG 分叉统一 / `textures/` 语义
+
+### 基线（实测，不是沿用上轮文字）
+
+| 项 | 读数 |
+|---|---|
+| 分支 / HEAD | `prod/model23dtiles-production` @ `98eeddb60fa1a562f6fa77fe357068d97b5da512`（第三轮提交；相对 origin **ahead 0**，已推送） |
+| 工作区 | `M .gitignore`（1693 行，用户改动，本轮未动、未提交）、`?? dev_main_tmp.cpp`、`?? .workbuddy/`；源码无脏项 |
+| 构建方式 | `cmake -S/-B` 与 MSBuild 派生子进程仍被安全代理 fastfail（`0xC0000409`，`tsbx.dll`）；继续用 `cl.exe`/`link.exe` 重放 `.tlog`（本轮 Node 版驱动 `r4_20261028/msvc_build.js`，因为本机已没有可用 Python：`python` 是 WindowsApps 商店别名，`py` 不存在） |
+| 构建器陷阱 | `tests/production` 的 `.tlog` **不含** `tests/production/main.cpp`（只有 17 个库源文件）；只跑重放脚本会静默链接 15:59 的旧 `MAIN.obj`。本轮用上轮同一条手工批处理 `c_test_production_0.bat` 单独编 `MAIN.CPP` 再 link，才算把新用例编进去 |
+| 二进制（本轮最终） | 证据跑使用 17:21 / sha256 `c76525764b2eca34…`；注释更正后 17:57 重编为 sha256 `413d2e50e1075464…`（行为零变化）。`Release/test_production.exe` 17:28 / `ffa6fab67ea1f197…` |
+| 旧二进制归档 | `r4_20261028/bin_r3_archive/`（16:14 的 `model23dtiles.exe`、15:59 的 `test_production.exe`、`modelstats.exe`） |
+| 注释级差异 | 17:21 构建之后又更正了 A-70 里一条与实测相反的注释（“分区器看到 prim/mat 在预算内” → 实际是父节点源负载超预算、导出宿主数超限）；17:57 已重编，源码与二进制同源。 |
+
+### 本轮改动（3 个源文件 + 1 个测试文件）
+
+1. **A-70：primitive/材质预算按实际导出产物判定，内节点代理超限降级。**
+   `ProductionPipeline.cpp` 写出后读回 b3dm/i3dm 的 glTF JSON（与 `selfValidate` 同一套
+   `glbJsonRange`/`forEachGltfJsonChunk`），若内节点代理 `primitives` 或 `materials`
+   超预算，沿用已有的“删文件、该层无内容、子节点仍覆盖同一 source scope”策略
+   （与 triangles/bytes 超限同一条路径），并写 warning + `proxySkippedCount++`；
+   叶瓦片仍交给 `selfValidate` 失败关闭。判定仍是 24/24，**没有放宽任何闸门**。
+2. **A-70 诊断：** `WB_KEEP_FAILED_CONTENT=1` 时把越限瓦片内容拷到
+   `<output>/failed-content/`；失败瓦片额外写一条 `budget breakdown` warning，
+   同时给出**分区负载**与**导出宿主数**（pn、leaf、aggregate、tri/vert/prim/mat/estBytes、
+   exported prims/materials）。不设变量、不失败时行为不变。
+3. **A-71：Debug/Release 的 `NDEBUG` 分叉统一。** FBX 的 `TessellatePolygons`
+   改成两种构建都加（Debug 只保留 `ShowProgress` 这类纯日志差异）；`proj.db`
+   搜索路径统一为 cwd 的 UTF-8 绝对路径 `…\share\proj`。Release 行为不变；
+   **Debug 仍未构建（BLOCKED-DEBUG）**，没有 Debug 实测。
+4. **单测 +1 组（8 条断言）**：`budgetDegrade`。用互不相同的 `GltfPbrMRMaterial`
+   让导出后确实是多个宿主；预算 1 时全部内节点代理降级、叶仍发布、warning 可解释；
+   预算 60 时根代理正好 60 个宿主必须放行、零降级（边界对照，防“一律删代理”的假绿）。
+   注意普通 `osg::Material` 不会被 `Osg2Gltf` 导出成材质（实测 0 materials），
+   测试必须用 `GltfPbrMRMaterial`。
+
+### 根因（龙翔桥站厅，实测数据流）
+
+`hall_before2/conversion-failure.json` 的 22 条 `budget breakdown` 显示：
+
+| 例子 | 分区负载（tri/vert/prim/mat/estBytes） | 导出产物 | 类型 |
+|---|---|---|---|
+| t9 / pn=9 | 127 105 / 235 526 / **358 / 332** / 331 069 186 | **49 primitives / 49 materials** | 聚合代理 |
+| t13 / pn=13 | 19 486 / 48 733 / **106 / 104** / 80 275 447 | 33 / 33 | 身份代理 |
+| t222 / pn=222 | 2 183 / 2 568 / **72 / 67** / 63 556 439 | 27 / 27 | 身份代理 |
+
+结论：**内节点代理的源负载本来就超预算**（父节点覆盖整个子树，这是 proxy 的定义，不是分区器
+漏算）；真正越限的是“保纹理后导出的宿主数”。身份代理按 `(globalFeatureId, materialId)`
+物化，聚合代理再按 cell 复制宿主；`GltfMerger` 最终按 `世界矩阵 × 材质索引 × 属性名集合`
+分桶，`Osg2Gltf::getCurrentMaterial` 用 `tinygltf::Material` 全等去重（含
+`KHR_texture_transform`，折叠只消掉图集子矩形，统一的 Y 翻转仍在）。单个 2048 图集页
+即可成为独立材质，49 个宿主就是 49 个真实不同的纹理/因子组合，无法在不丢内容的前提下
+合并到 24。旧实现只在 `selfValidate` 看到它，于是整批数据集被 22 个远景代理判死。
+
+### 实测
+
+| 项 | 读数 |
+|---|---|
+| 单测（普通） | **443 / 0**（上一轮 435，+8 条 `budgetDegrade` 断言） |
+| 单测（Verifier 尝试） | **443 / 0**，但 appverif **未能启用**，见下；这行**不算**验证器证据 |
+| 龙翔桥站厅 before | FAIL：394 瓦片 / 392 内容，22 个越限（最坏 t9 = 49/49），total 512.0 s、峰值 13.77 GB，未提交 |
+| 龙翔桥站厅 after | **PASS**：394 瓦片 / **370 内容**、**22 个远景代理降级为无内容内节点**、`errors=0`、`featuresMissingFromLeaves=0`、`maxContentBytes=2 738 192`、`maxTrianglesInTile=34 050`、输出 225 859 432 B、total 441.9 s、峰值 13.77 GB |
+| 发布产物复验 | 335 个 b3dm 的 primitive 分布最大 **22**（≤24），材质同值；实例瓦片由 `selfValidate` 一并校验 |
+| 官方 validator | `errors=0`、warnings 364（全部是 validator 尚不认 `KHR_texture_basisu`/`image/ktx2` 的 schema 滞后，含 4 条 INFO） |
+| wuhu 三次复现 | 62 瓦片/60 内容/0 降级；`textures/` **3/3 都是 112 个文件**；60 个瓦片与 112 个纹理 **三次逐字节相同**；total 132.4 s、峰值 3.09 GB、输出 67 592 182 B |
+| 同输入二进制对照 | 16:14 归档二进制 vs 本轮 17:21 二进制，在**同一份输入拷贝**上 60 瓦片 + 112 纹理 **0 差异** ⇒ 本轮代码不改产物字节 |
+| jianzhu+tietu | **PASS**：1089 瓦片/1089 内容、0 降级、358 个聚合代理、depth 11、`errors=0`、`featuresMissingFromLeaves=0`、`maxContentBytes=3 880 504`、`maxTrianglesInTile=39 099`、输出 1 828 692 494 B、total 1 336.4 s、峰值 **19.55 GB**；544 个内节点代理纹理压到 ≤512 px。发布 1089 个 b3dm 最大 **15 primitives**（≤24）；官方 validator **errors=0** / warnings 1088（全部 KTX2 schema 滞后） |
+| 卢沟桥 335 MB | 未重跑（完整转换历史读数 28 485 s）；判据未动，结论仍是不可发布，见 VALIDATION_REPORT §4 |
+
+### A-53 与 Application Verifier：BLOCKED-VERIFIER
+
+`appverif.exe -enable Heaps -for Release\test_production.exe`（先 `-disable *`、`-delete settings`
+清理过）在本机一律返回：
+
+```
+AVRF: Error: Cannot enable layer [Core] (error 0x1C)
+Test [Heaps] not enabled.
+```
+
+换目标（`modelstats.exe`）同样报 Core 层失败；`C:\Windows\System32\vfbasics.dll` 存在。
+结论：**本轮没能启用验证器**，`verifier_full_suite*.log` 里的 443/0 只是普通运行，
+不能当作 Verifier 证据。上一轮（15:42）的 giant 5/5 与全量 427/0 仍是历史证据；
+A-53 **保持 OPEN**，没有根因、没有关闭。
+
+### `textures/`：语义与非复现
+
+- **语义（源码 + 产物）**：`main.cpp` 在跑管线前无条件建 `<output>/textures`，作为
+  `GltfOptimizer` 的内容寻址导出缓存（`cachePath`）；b3dm 内嵌全部纹理，
+  `tileset.json`/`feature-manifest.json` 对 `textures/` 的引用数为 **0**（hall_after 实测），
+  提交时 `.wb-previous` 备份集**明确排除** `textures/`。⇒ 它**不是正式数据集契约的一部分**。
+- **可复现性**：当前 HEAD + 本轮二进制，wuhu 连跑 3 次，`textures/` 均为 112 个文件且
+  三次逐字节相同。源码里唯一会删它的路径是“失败分支且目录为空”，成功路径没有删除逻辑。
+- **上轮 `wuhu_final` 缺目录**：该次报告 `micro_texture_export_files=112`、阶段耗时与正常跑
+  几乎相同，说明文件当时确实写出过；但目录如今不存在，且当前代码**无法**复现。
+  真因**未定位**（证据缺口：没有该次运行结束后的目录快照；不能排除上轮会话的外部清理）。
+  记录为 **OPEN（不可复现）**，不宣布已解决。
+- 输入路径敏感性（顺带发现）：FBX 内部记录的是作者机绝对纹理路径
+  （`E:\QWP\…\总装\总装.fbm\…`），把输入复制到别的目录后，**一个 2048×1024 图集页内容**
+  会变化（尺寸/宿主数/其余页不变）；这不是本轮代码引起的（同输入新旧二进制逐字节相同）。
+  复现确定性结论只能在**同一输入路径**下成立。
+
+### 未闭合 / 裁定点
+
+- 卢沟桥未重跑（FAIL/BLOCKED）；视觉验收 BLOCKED-VISUAL（jianzhu/站厅/芜湖都没开 CesiumJS 截图）。
+- Debug 构建 BLOCKED-DEBUG（缺 Debug 运行库/插件）；A-71 只有代码级证据。
+- Application Verifier BLOCKED-VERIFIER（Core 层 0x1C）；A-53 仍 OPEN。
+- `textures/` 非契约、但目录是否应该移出 `<output>`（避免“同一输入两次文件集合不同”的
+  观感）属设计题，**需用户裁定**；本轮只记录语义，不改布局。
+- 本轮改动**已提交**（用户指示）：`ProductionPipeline.cpp`、`tools/model23dtiles/main.cpp`、
+  `tests/production/main.cpp`、四份文档；`.gitignore`/`dev_main_tmp.cpp`/`.workbuddy/`
+  为用户或会话外内容，未动、未提交。
 
 

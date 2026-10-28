@@ -1245,4 +1245,110 @@ selfValidate: content over primitive budget: tiles/t7.b3dm (46 primitives > 24)
 
 - jianzhu+tietu 端到端、卢沟桥重跑、Debug 构建、视觉验收：见 STATUS。
 
+## 2026-10-28（第四轮）：A-70 产物级预算 / A-71 读取分叉 / A-72 纹理缓存
+
+### 1. 环境与证据目录
+
+- 证据根：`F:\wb_3dtiles_out\_followup_20261028\r4_20261028\`（不覆盖上一轮 `r2/a53/validation_r3`）。
+- 二进制：证据跑使用 `Release\model23dtiles.exe` 17:21 / `c76525764b2eca34…`；
+  注释更正后 17:57 重编为 `413d2e50e1075464…`（行为零变化，证据不重跑）；
+  `Release\test_production.exe` 17:28 / `ffa6fab67ea1f197…`（旧二进制归档在 `bin_r3_archive/`）。
+- 构建：`node r4_20261028/msvc_build.js model23dtiles --jobs=6`；
+  `test_production` 先重放 17 个库源，再单独编 `tests/production/main.cpp`
+  （该文件不在 `.tlog` 源清单里，必须手工补），最后 `--link-only`。
+  `.tlog` 里 19 条属于 `E:\dev\C++\osgGISPlugins` 的旧命令按根路径过滤。
+
+### 2. 单元测试与边界
+
+| 套件 | 结果 | 证据 |
+|---|---|---|
+| `test_production.exe`（普通） | **443 / 0** | `test_after_budgetfix3.log`（440/0）+ `budgetDegrade` 8 条；最终二进制 443/0 见 `verifier_full_suite2.log` |
+| `budgetDegrade`（新增） | 预算 1：内节点代理全部降级、叶发布、warning 可解释；预算 60：根代理正好 60 宿主放行、零降级 | `test_budgetdegrade_boundary.log` |
+| Application Verifier | **BLOCKED-VERIFIER**：`-enable Heaps` 也报 `Cannot enable layer [Core] (error 0x1C)`，`-query` 显示 not enabled；`verifier_full_suite*.log` 的 443/0 只是普通运行 | `verifier_enable3.log`、`verifier_query_before3.txt`、`appverif_query_*.txt` |
+
+### 3. 龙翔桥站厅（真实 220 MB FBX，SHA-256 `5003996a80480937…`）
+
+命令（默认预算：tri 120000 / primitives 24 / materials 24 / 8 MiB）：
+
+```
+WB_KEEP_FAILED_CONTENT=1 Release\model23dtiles.exe -sp \
+  -i r4_20261028\input_hall.fbx -o r4_20261028\hall_after
+```
+
+| 项 | before（`hall_before2`） | after（`hall_after`） |
+|---|---|---|
+| 结果 | FAIL（`selfValidate` 拒绝，未提交） | **PASS**（已提交） |
+| 瓦片 / 内容 | 394 / 392 | 394 / **370** |
+| 越限瓦片 | 22（最坏 t9 = 49 primitives/49 materials） | 0（22 个远景代理降级为无内容内节点） |
+| errors / failures | 44 条 selfValidate 失败 | 0 / 0 |
+| maxContentBytes / maxTriangles | 4 108 584 / 34 979 | 2 738 192 / 34 050 |
+| 发布 b3dm 的 primitive 分布 | 不适用（未提交） | 最大 **22**（335 个 b3dm，1–22），材质同值 |
+| 输出字节 / 峰值 RSS / total | 0 / 13.77 GB / 512.0 s | 225 859 432 / 13.77 GB / 441.9 s |
+| warning | 29（seam + 纹理 cap） | 39（seam + cap + **22 条 `over-budget far-LOD file removed`**） |
+
+诊断读数（`hall_before2/conversion-failure.json` 的 `budget breakdown`）证明不是分区器漏算：
+
+- t9/pn=9：分区 tri=127 105、vert=235 526、**prim=358、mat=332**、estBytes=331 069 186；
+  导出 **49 primitives / 49 materials**，aggregate=1。
+- t13/pn=13：分区 prim=106 / mat=104，导出 33/33，aggregate=0。
+- t222/pn=222：tri=2 183、prim=72、mat=67，导出 27/27，aggregate=0。
+- 22/22 条失败都是“内节点代理宿主数 > 24”；父节点源负载超预算是 proxy 语义的必然结果。
+
+官方 validator（`bash scripts/run_validator.sh …/hall_after …/validation_hall_after`）：
+
+- `errors=0`、warnings **364**（全部为 validator schema 不认 `KHR_texture_basisu` /
+  `image/ktx2`；含 4 条 INFO），rc=0。不能把 0 error 当成视觉正确：
+  **BLOCKED-VISUAL**（没开 CesiumJS、没截图）。
+
+### 4. 卢沟桥 335 MB
+
+- 判据未动（24/24），本轮**没有重跑**完整转换（历史完整读数 `totalSeconds=28 485 s`）；
+  历史失败 `t8 = 26 primitives / 26 materials` 与站厅同一形态。
+- 因此结论保持 **FAIL/BLOCKED**；A-70 理论上会把该内节点代理降级而不是整批失败，
+  但**没有实测**，不写成“已修复”。最小复现命令仍为
+  `Release\model23dtiles.exe -sp -i <lugouqiao>.fbx -o <out>`，需小时级窗口。
+
+### 5. `textures/` 三次复现（A-72）
+
+同一输入（SHA-256 `1b2b66ace9bb9f9c…`）、默认预算、独立输出的 wuhu 三次：
+
+| 运行 | 瓦片/内容/降级 | `textures/` 文件数 | 输出字节 | total / 峰值 |
+|---|---|---|---|---|
+| `wuhu_rep1` | 62 / 60 / 0 | **112** | 67 592 182 | 132.4 s / 3.09 GB |
+| `wuhu_rep2` | 62 / 60 / 0 | **112** | 67 592 182 | 同量级 |
+| `wuhu_rep3` | 62 / 60 / 0 | **112** | 67 592 182 | 同量级 |
+
+- 60 个瓦片 + 112 个纹理：**rep1/rep2/rep3 逐字节相同**（diff 0）。
+- `tileset.json` / `feature-manifest.json` 对 `textures/` 引用数为 **0**（hall_after 同验）；
+  纹理全部内嵌在 b3dm；提交备份集排除该目录。⇒ 非正式契约。
+- 上轮 `wuhu_final` 缺目录**不可复现**（当前代码成功路径无删除逻辑，
+  该次报告 `micro_texture_export_files=112`）；真因未定位，保持 OPEN。
+- 同输入二进制对照：**16:14 归档二进制**与 **17:21 本轮二进制**在同一输入拷贝上
+  60 瓦片 + 112 纹理 **0 差异**；与上轮 `wuhu_v2` 的差异定位到**输入路径搬移**
+  （FBX 内嵌作者机绝对纹理路径；一处 2048×1024 图集页内容变化，尺寸/宿主数不变），
+  不是 A-70/A-71 引起。
+- 图集页差异的补充判别：把 `.fbm` 原文件夹名放回（`wuhu_withfbm`）与按输入基名命名
+  （`wuhu_withfbm2`）各跑一次，产物都仍与 `wuhu_rep1` **0 差异**、与 `wuhu_v2` 不同。
+  ⇒ 不是“外部纹理目录缺失/命名”能解释的，差异来源是输入文件路径本身
+  （FBX 内嵌路径字符串参与纹理解析顺序）。同一路径下的产物可复现性成立。
+
+### 6. jianzhu+tietu（12.8 M 三角形）　**PASS**
+
+- 完整转换（`-sp`，433 MB FBX，SHA-256 `549942e0b583f4d9…`）在 **22.4 分钟**内跑到 finalize 并提交：
+  `tileCount=1089`、`contentTileCount=1089`、`proxySkippedCount=0`、`aggregateProxyCount=358`、
+  `maxDepth=11`、`errors=[]`、`warnings=19`、`featuresMissingFromLeaves=0`、
+  `maxContentBytes=3 880 504`、`maxTrianglesInTile=39 099`、`outputBytes=1 828 692 494`、
+  `peakRssBytes=19 547 787 264`（19.55 GB）、`totalSeconds=1 336.4`、`processWallSeconds=1 366.6`、
+  `processCpuSeconds=11 866.2`。
+- 发布产物：1089 个 b3dm（无 i3dm），primitive 分布 1–15（1055 个为 1），最大 **15** ≤24；
+  材质同值；`textures/` 缓存 65 个文件（非契约，见 §5）。
+- 阶段：`partition=8.45 s`、`proxy_encode_error=1 311.3 s`、`micro_evaluate=3 559.6 s`（并行 CPU 口径）。
+- 与上一轮“19 分钟未跑完”的差别：上一轮在 finalize 前被主动中止，属于外部时间窗而非产品失败；
+  本轮同一资产完整跑通。**不把该对比当作性能回归/提升结论**（二进制与并发环境不同）。
+- validator：`bash scripts/run_validator.sh …/jianzhu_e2e …/validation_jianzhu` →
+  **errors=0**、warnings 1088、infos 1，rc=0。警告全部是
+  `Invalid value 'image/ktx2'` / `Image format not recognized` 与 validator 不认
+  `KHR_texture_basisu` 的 schema 滞后；INFO 里有未用对象与少量退化三角形计数。
+  0 error 不等于视觉正确：**BLOCKED-VISUAL**。
+
 

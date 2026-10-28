@@ -158,15 +158,18 @@ osg::ref_ptr<osg::Node> readModelFile(const std::string& input, const bool bSP) 
 	{
 		optionStr += "noReverseFaces ";
 	}
+	// TessellatePolygons 决定 FBX 的多边形面是否先三角化，属于**读取语义**，
+	// 不能随构建类型变化：以前它只在 Release 下生效（#ifndef NDEBUG），
+	// 同一份 FBX 在 Debug 与 Release 会得到不同三角形数/法线/材质分组。
+	if (bSP && ext == "fbx")
+	{
+		optionStr += "TessellatePolygons ";
+	}
 #ifndef NDEBUG
+	// 进度输出只影响日志，保留 Debug 诊断能力，不参与几何语义。
 	if (bSP)
 	{
 		optionStr += "ShowProgress ";
-	}
-#else
-	if (ext == "fbx")
-	{
-		optionStr += "TessellatePolygons ";
 	}
 #endif // !NDEBUG
 
@@ -320,12 +323,11 @@ bool applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, dou
 			OSG_NOTICE << "Error creating projection context!" << std::endl;
 			return false;
 		}
-#ifndef NDEBUG
-		const std::string projDBPath = "./share/proj";
-#else
+		// proj.db 搜索路径必须在两种构建下同源：旧实现 Debug 用相对路径
+		// "./share/proj"、Release 用 cwd 的 UTF-8 绝对路径，Debug 在中文 cwd
+		// 或换工作目录时会静默找不到库，同一个 EPSG 可能得到不同解释。
 		const std::string projDBPath = osgDB::convertStringFromCurrentCodePageToUTF8(osgDB::getCurrentWorkingDirectory()) + "\\share\\proj";
 		OSG_NOTICE << projDBPath << "\n";
-#endif // !NDEBUG
 		const char* searchPath[] = { projDBPath.c_str() };
 		proj_context_set_search_paths(ctx, 1, searchPath);
 		const char* dbPath = proj_context_get_database_path(ctx);

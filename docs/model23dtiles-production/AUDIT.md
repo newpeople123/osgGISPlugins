@@ -2207,5 +2207,79 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
 
 语义边界（手册 4.2 要求回答的问题）：丢弃粒度是**整条 drawable**（保留半条会让索引整体错位）；被丢的可能是主体（无法判定比例）⇒ 所以本轮把"仅 warning"改成**失败关闭**（A-66），宁可不出盘也不交付缺件数据集；实例/材质/feature 不受影响（drawable 在 `SourceModel::build` 早期就被丢弃，不会进入 objects/meshes/prims/instances）。
 
+## 2026-10-28（第四轮）：产物级宿主预算 / NDEBUG 分叉 / textures 缓存语义
+
+### A-70 内节点代理的 primitive/材质预算只在 selfValidate 检查 ⇒ 整批数据集被远景代理判死
+
+- **现象**：龙翔桥站厅 22/392 个内容瓦片越限（最坏 49 primitives/49 materials > 24），
+  `selfValidate` 在 `finalize` 阶段拒绝提交，`conversion-failure.json` 只有失败清单。
+- **源码依据**：分区器 `SpatialPartitioner::computeLoad` 统计的是源单元
+  `(meshId, primSetIndex)` 去重数与 `materialId` 去重数；内节点代理由
+  `SourceModel::materialize` 按 `(globalFeatureId, materialId)` 重建，聚合代理再按
+  cell 复制宿主（`ProxyMeshBuilder::buildAggregate`），写出侧 `Osg2Gltf::getCurrentMaterial`
+  用 `tinygltf::Material` 全等去重、`GltfMerger::mergeMeshes` 按
+  `世界矩阵 × 材质索引 × 属性名集合` 分桶。三点叠加后，**父节点源负载必然超预算**
+  （它覆盖整个子树），而真正受 24/24 约束的是“保纹理后的导出宿主数”。
+  修复前只有 triangles/bytes 在内节点写出后降级（删文件→无内容内节点），
+  primitive/材质没有这条路径，只能在 `selfValidate` 里整跑失败。
+- **实测（budget breakdown，hall_before2）**：t9/pn=9 分区 tri=127 105、prim=358、
+  mat=332、estBytes=331 MB，导出 **49/49**；t13/pn=13 分区 prim=106/mat=104，导出 33/33；
+  22 条失败全部呈同一形态；分区器 failures/warnings 为 0（不是“没分裂”，是父节点
+  语义决定它不可能低于源负载）。
+- **修复**：`ProductionPipeline.cpp` 在 `writeContent` 成功后读回该瓦片 glTF JSON，
+  以**实际导出的** primitives/materials 判 24/24；内节点超限沿用既有降级策略
+  （删除刚写出的文件、该层无内容、子树仍覆盖同一 source scope、warning +
+  `proxySkippedCount++`），叶瓦片仍由 `selfValidate` 失败关闭。闸门数值未改。
+- **证据**：
+  - 单测 `budgetDegrade`（8 条）：预算 1 时全部内节点代理降级、叶仍发布、
+    warning 含 `primitives=N > 1`；预算 60 时根代理正好 60 宿主放行、零降级。
+  - 龙翔桥站厅 after：PASS、394 瓦片/370 内容、22 个代理降级、`errors=0`、
+    发布 335 个 b3dm 最大 22 primitives；官方 validator errors=0（364 条 KTX2 schema warning）。
+  - 全量单测 443/0；同输入新旧二进制产物 60 瓦片 + 112 纹理 0 差异（见 A-72）。
+- **残留风险**：降级的是远景 LOD 层，视觉上会少 22 个内节点的远景代理（后代叶仍在）；
+  视觉验收 BLOCKED-VISUAL，未截图。是否接受该降级粒度由发布口径决定，
+  但“发布超限瓦片”与“整批判死”都不再发生。
+
+### A-71 Debug/Release 的 `NDEBUG` 功能分叉（读取语义与 proj.db 路径）
+
+- **代码位置**：`tools/model23dtiles/main.cpp::readModelFile`（FBX 读取选项）与
+  `applyProjection`（`proj.db` 搜索路径）。
+- **旧行为**：Debug 下 FBX **不加** `TessellatePolygons`（改加 `ShowProgress`），
+  Release 下加；Debug 的 `proj.db` 用相对路径 `./share/proj`，Release 用 cwd 的
+  UTF-8 绝对路径。前者直接改变几何解释（多边形是否三角化），后者在中文 cwd 或
+  换工作目录时静默找不到库。
+- **修复**：`TessellatePolygons` 对 FBX 在两种构建下都加（`ShowProgress` 仅 Debug，
+  纯日志）；`proj.db` 路径统一为 `convertStringFromCurrentCodePageToUTF8(getCurrentWorkingDirectory()) + "\\share\\proj"`。
+  Release 行为不变；Debug 的读取选项/路径与环境一致。
+- **证据状态**：**代码级审计 + 统一**已完成；Debug **未构建**（缺 Debug 运行库/插件），
+  记为 **BLOCKED-DEBUG**，没有 Debug 实测。Release 端补跑了一个小子集真实验证：
+  `Release\model23dtiles.exe -sp -i input_naruto.fbx -o naruto_epsg -epsg 4547`
+  （cwd=`Release`）→ rc=0、1 瓦片/3 primitives、日志打印
+  `E:\dev\C++\osgGISPlugins-gpt\Release\share\proj`；统一后的绝对路径能定位 proj.db，
+  找不到库时该路返回失败（rc=6），不是静默回退。
+- **残留风险**：Debug 运行库补齐后需实测同一 FBX 的三角形数/法线/材质分组一致，
+  以及同一 EPSG 输入的坐标一致；当前无此证据。
+
+### A-72 `textures/` 是内容寻址导出缓存，不是数据集契约；上轮“间歇缺失”不可复现
+
+- **语义（源码 + 产物）**：`main.cpp` 在跑管线前无条件建 `<output>/textures`，作为
+  `GltfOptimizer::GltfTextureOptimizationOptions::cachePath`；b3dm 内嵌纹理
+  （`Osg2Gltf` 固定行为），`tileset.json`/`feature-manifest.json` 对 `textures/` 引用数为 0；
+  `finalize` 的 `.wb-previous` 备份集明确排除 `textures/`。⇒ 不属于发布契约。
+- **三次复现**：当前 HEAD + 本轮二进制，wuhu 连跑 3 次，`textures/` 均 112 文件，
+  60 瓦片 + 112 纹理三次逐字节相同（`wuhu_rep1..3`）；成功路径没有删除该目录的代码，
+  失败路径只删“空目录”。
+- **上轮 `wuhu_final` 缺失**：该次报告 `micro_texture_export_files=112`、纹理导出阶段
+  121.4 s，与正常跑（122.6/116.0 s）同量级，说明文件写出过；目录如今不存在。
+  当前代码无法复现，**真因未定位**（无运行后目录快照；不能排除外部清理），
+  状态 **OPEN（不可复现）**，不写成已解决。
+- **输入路径敏感性（顺带发现）**：FBX 内嵌作者机绝对纹理路径
+  （`E:\QWP\…\总装\总装.fbm\…`）；把输入复制到别的目录后，一个 2048×1024 图集页内容
+  会变化（尺寸/宿主数/其余页不变）。同输入下新旧二进制逐字节相同 ⇒ 与 A-70/A-71 无关；
+  “同一输入”的可复现性结论必须绑定输入路径。
+- **建议（需用户裁定）**：若要把“同一输入两次运行文件集合不同”的观感彻底消掉，
+  可把纹理缓存移出 `<output>`（如 `<output>/.textures-cache` 或仓库外），
+  但这会改变现有使用者的目录布局，本轮不动。
+
 
 

@@ -745,6 +745,16 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     return out;
 }
 
+namespace {
+// 定义在写产出校验之后（selfValidate 段），这里先声明：
+// 写阶段也要按同样的口径读回 glTF JSON 判 primitive / 材质预算。
+bool readU32LE(const std::string& buf, std::size_t off, std::uint32_t& out);
+bool glbJsonRange(const std::string& bytes, std::size_t tileStart,
+                  std::size_t& jsonOff, std::uint32_t& jsonLen);
+void forEachGltfJsonChunk(const std::string& bytes,
+                          const std::function<void(const std::string&)>& onJson);
+}
+
 // ---------------------------------------------------------------------------
 // tile 间并行构建（性能优化）
 //
@@ -1090,12 +1100,85 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             }
             const bool overBytes = wo.bytes > _profile.budget.maxTileContentBytes;
             const bool overTris = wo.triangles > _profile.budget.maxTrianglesPerTile;
-            if (overBytes || overTris)
+            // primitive / 材质预算必须按**实际导出的 glTF** 判，不能拿源 prim 数
+            // 代替：内节点代理按 (feature, material) 物化，聚合代理再按 cell 复制
+            // 宿主，保纹理后每个贴图又是独立材质（GltfMerger 按 世界矩阵×材质×
+            // 属性集 分桶）。父节点的源负载**本来就会超预算**（它覆盖整个子树），
+            // 真正受 24/24 约束的是导出宿主数：龙翔桥站厅 pn=9 源 prim=358/mat=332，
+            // 导出 49/49。内节点超限沿用既有降级策略（删文件 → 无内容内节点，
+            // 子树仍覆盖同一 source scope）；叶瓦片不做这里降级，交给 selfValidate
+            // 失败关闭——叶缺件不可接受。
+            unsigned contentPrims = 0, contentMats = 0;
+            bool parsedContent = false;
+            if (!isLeaf)
             {
-                const std::string why = std::string(overBytes ? "bytes=" : "triangles=")
-                    + std::to_string(overBytes ? wo.bytes : static_cast<std::uint64_t>(wo.triangles))
-                    + " > " + std::to_string(overBytes ? _profile.budget.maxTileContentBytes
-                                                       : _profile.budget.maxTrianglesPerTile);
+                const std::string absContent = _opt.stagingDir
+                    + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+                std::ifstream cf(Utils::utf8ToPath(absContent), std::ios::binary);
+                if (cf.is_open())
+                {
+                    std::string body((std::istreambuf_iterator<char>(cf)),
+                                     std::istreambuf_iterator<char>());
+                    forEachGltfJsonChunk(body, [&](const std::string& gltfJson) {
+                        try
+                        {
+                            const json gltf = json::parse(gltfJson);
+                            if (gltf.contains("meshes") && gltf["meshes"].is_array())
+                            {
+                                for (const json& m : gltf["meshes"])
+                                {
+                                    if (m.contains("primitives") && m["primitives"].is_array())
+                                    {
+                                        contentPrims += static_cast<unsigned>(m["primitives"].size());
+                                    }
+                                }
+                            }
+                            if (gltf.contains("materials") && gltf["materials"].is_array())
+                            {
+                                contentMats += static_cast<unsigned>(gltf["materials"].size());
+                            }
+                            parsedContent = true;
+                        }
+                        catch (const std::exception&)
+                        {
+                            parsedContent = false;
+                        }
+                    });
+                }
+            }
+            const bool overPrims = parsedContent
+                && contentPrims > _profile.budget.maxPrimitivesPerTile;
+            const bool overMats = parsedContent
+                && contentMats > _profile.budget.maxMaterialsPerTile;
+            if (overBytes || overTris || overPrims || overMats)
+            {
+                std::vector<std::string> over;
+                if (overBytes)
+                {
+                    over.push_back("bytes=" + std::to_string(wo.bytes) + " > "
+                        + std::to_string(_profile.budget.maxTileContentBytes));
+                }
+                if (overTris)
+                {
+                    over.push_back("triangles=" + std::to_string(wo.triangles) + " > "
+                        + std::to_string(_profile.budget.maxTrianglesPerTile));
+                }
+                if (overPrims)
+                {
+                    over.push_back("primitives=" + std::to_string(contentPrims) + " > "
+                        + std::to_string(_profile.budget.maxPrimitivesPerTile));
+                }
+                if (overMats)
+                {
+                    over.push_back("materials=" + std::to_string(contentMats) + " > "
+                        + std::to_string(_profile.budget.maxMaterialsPerTile));
+                }
+                std::string why;
+                for (const std::string& o : over)
+                {
+                    if (!why.empty()) { why += ", "; }
+                    why += o;
+                }
                 if (isLeaf)
                 {
                     // 手册 7.3：不允许输出超限瓦片；叶超限 = 分区器没能把它切开，
@@ -2213,6 +2296,48 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
     }
 
     bool ok = true;
+    // 诊断开关：WB_KEEP_FAILED_CONTENT=1 时把越限瓦片内容拷到
+    // <output>/failed-content/。暂存目录在失败后会被整体丢弃，不拷出来就无法
+    // 解析"闸门看到的 primitive 数"到底由什么构成。不设变量时行为完全不变。
+    const bool keepFailedContent = std::getenv("WB_KEEP_FAILED_CONTENT") != nullptr;
+    const auto dumpFailedContent = [&](const std::string& uri, const std::string& abs) {
+        if (!keepFailedContent) { return; }
+        std::error_code ec;
+        const std::filesystem::path dst = Utils::utf8ToPath(_opt.outputDir)
+            / "failed-content" / Utils::utf8ToPath(uri);
+        std::filesystem::create_directories(dst.parent_path(), ec);
+        std::filesystem::copy_file(Utils::utf8ToPath(abs), dst,
+                                   std::filesystem::copy_options::overwrite_existing, ec);
+    };
+    // 预算失败时把"分区器看到的负载"和"导出后的宿主数"放在同一条 warning 里。
+    // 两者的差就是 proxy/材质保真环节放大的部分，没有这条读数就只能靠猜。
+    std::map<int, int> idToPn;
+    for (const auto& kv : _pnToTileId) { idToPn[kv.second] = kv.first; }
+    std::vector<std::string> budgetDescribed;
+    const auto describeBudget = [&](const std::string& uri, unsigned expPrims, unsigned expMats) {
+        if (std::find(budgetDescribed.begin(), budgetDescribed.end(), uri) != budgetDescribed.end())
+        {
+            return;
+        }
+        budgetDescribed.push_back(uri);
+        int tileId = -1;
+        for (const ProductionTile& t : _tiles) { if (t.uri == uri) { tileId = t.id; break; } }
+        if (tileId < 0) { return; }
+        const auto it = idToPn.find(tileId);
+        if (it == idToPn.end() || !_partitioner) { return; }
+        const PartitionNode& P = _partitioner->nodes[it->second];
+        const ProductionTile& T = _tiles[tileId];
+        _warnings.push_back("tile " + std::to_string(tileId) + " budget breakdown (pn="
+            + std::to_string(it->second) + ", leaf=" + (T.isLeaf ? "1" : "0")
+            + ", aggregate=" + (T.aggregate ? "1" : "0")
+            + "): partition tri=" + std::to_string(P.triangles)
+            + " vert=" + std::to_string(P.vertices)
+            + " prim=" + std::to_string(P.primitiveCount)
+            + " mat=" + std::to_string(P.materialCount)
+            + " estBytes=" + std::to_string(P.byteEstimate)
+            + "; exported prims=" + std::to_string(expPrims)
+            + " materials=" + std::to_string(expMats));
+    };
     // 1) 所有 content URI 必须在暂存目录里真实存在
     std::vector<std::string> uris;
     std::function<void(const json&)> walk = [&](const json& t) {
@@ -2249,6 +2374,7 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
             _failures.push_back("selfValidate: content over hard byte limit: " + u
                                 + " (" + std::to_string(bytes) + " > "
                                 + std::to_string(_profile.budget.maxTileContentBytes) + ")");
+            dumpFailedContent(u, abs);
             ok = false;
         }
 
@@ -2295,13 +2421,17 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
             _failures.push_back("selfValidate: content over primitive budget: " + u + " ("
                                 + std::to_string(prims) + " primitives > "
                                 + std::to_string(_profile.budget.maxPrimitivesPerTile) + ")");
+            dumpFailedContent(u, abs);
+            describeBudget(u, prims, mats);
             ok = false;
         }
-        else if (mats > _profile.budget.maxMaterialsPerTile)
+        if (mats > _profile.budget.maxMaterialsPerTile)
         {
             _failures.push_back("selfValidate: content over material budget: " + u + " ("
                                 + std::to_string(mats) + " materials > "
                                 + std::to_string(_profile.budget.maxMaterialsPerTile) + ")");
+            dumpFailedContent(u, abs);
+            describeBudget(u, prims, mats);
             ok = false;
         }
     }
