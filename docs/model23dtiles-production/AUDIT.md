@@ -2281,5 +2281,67 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
   可把纹理缓存移出 `<output>`（如 `<output>/.textures-cache` 或仓库外），
   但这会改变现有使用者的目录布局，本轮不动。
 
+## 2026-10-28（第五轮）：叶/实例瓦片宿主预算、输入文件名确定性、降级视觉代价
+
+### A-73 叶节点与 i3dm 实例瓦片的宿主预算没有产物级检查
+
+- **结构核查（不是推测）**：`SourceModel::build` 在 `SourceModel.cpp:546` 为每个
+  drawable 建独立 `meshId`，不存在“同一 mesh 跨 feature 共享”；重复实例被摘出 b3dm
+  走 i3dm。b3dm 叶的物化按 `(globalFeatureId, materialId)` 分组，导出端再按
+  `矩阵×材质×属性集` 合并 ⇒ 导出 primitive ≤ 组数 ≤ 源 prim 数，**b3dm 叶不会低估**。
+  共享同一 Geometry 指针的两个 feature 仍各建一份 mesh（测试 `leafSharedMesh` 锁定：
+  预算 1 时导出 2 个 primitive 并失败关闭；预算 2 时放行、manifest 两条 occurrence）。
+- **真实缺口**：`buildInstanceTree` 只查 bytes/triangles（`ProductionPipeline.cpp`
+  原 1468-1470 行附近），i3dm 的 glTF primitive/材质数没有检查；原型材质量大时只能在
+  `selfValidate` 末尾整批判死。实例不能拆、删实例=丢数据，因此正确行为是**显式失败**。
+- **修复**：`countGltfPrimsMats()` 读回单瓦片 b3dm/i3dm 的 glTF JSON；b3dm 叶/内节点与
+  i3dm 统一按实际导出的 primitives/materials 判 24/24。内节点超限→删除内容并降级；
+  叶/实例超限→`_failures` + 不提交，消息带实际计数。闸门数值未改。
+- **测试**：`leafSharedMesh` 11 条、`leafBudget` 11 条（24 放行/25 按 primSet 切分）、
+  `instanceBudget` 9 条（25 材质原型失败且无 tileset；24 材质原型发布且 i3dm 内容
+  24/24）。全量 474/0；ASan 474/0。
+- **回归**：wuhu 60/60、站厅 370/370 与上一轮逐字节相同；jianzhu 回归见 STATUS。
+- **残留**：b3dm 叶的早失败（写盘后立即判）与 `selfValidate` 双保险；大资产多一次
+  内容读回（见 PERFORMANCE_REPORT）。
+
+### A-74 FBX 输入**文件名（basename）**决定输出字节；外部 `.fbm` 不被使用
+
+- **现象**：同一 FBX 字节，`input_wuhu.fbx` 与 `芜湖水厂总装.fbx` 两套产物有
+  13 个 b3dm 不同（每个差 1 个 2048×1024 图集页内容；prim/材质/尺寸/数量不变）。
+- **隔离实验**（均同一 18:35 二进制、默认预算）：
+  - 原名放在**另一个目录**、无 `.fbm`：与上一轮 `wuhu_v2`（原目录）**逐字节相同**；
+  - 改名放在原目录：与 `input_wuhu.fbx` 版本相同（Basename 是变量，目录不是）；
+  - 把 `芜湖水厂总装.fbm` / `总装.fbm` / `input_wuhu.fbm` 三份外部目录的图片
+    **全部替换**：输出与无 `.fbm` 版本 **0 差异** ⇒ 外部文件不参与。
+  - FBX 内含 143 段 JPEG/23 段 PNG（内嵌纹理）；代码里的外部解析顺序
+    （`_dir/name` → 绝对 → `_dir/relative` → `_dir/simpleName`）在本资产上没有命中。
+- **结论/契约**：字节级可复现要求**输入 basename 固定**；搬移目录本身安全；不要用
+  外部 `.fbm` 修改来改纹理（无效）。根因（内嵌纹理提取/命名为何受 basename 影响）
+  未完全定位，记为观察项。
+- **关联**：上一轮“输入路径搬移导致一处图集页变化”的归因修正为 **basename**，
+  不是目录或外部纹理缺失。
+
+### A-75 降级代理的视觉代价（站厅 22 个）
+
+- 22/394 瓦片（12.4% 的 far-LOD 代理），全部 `REPLACE`、无 content、2 个 children；
+  GE 0.13–40.38 m；省略内容 60 134 936 B（最多 49/49 宿主）；包围盒并集覆盖根 AABB
+  99.8%（高层代理，不是局部小洞）。
+- 视觉对照（参考集 = 把 22 个失败内容注回已发布拷贝，仅渲染用；Qoder 内置浏览器，
+  Cesium 1.119，226 帧/侧）：30/224 帧剪影差 >5%，最大 **-50.1%**；300–2300 m
+  远景/中景成片缺失；240 m 差 2.8%，126 m 差 0.1%，无地面永久空洞；
+  大差异帧 `settleIters=2`（非加载时序）。
+- **裁定点**：接受“可发布 + 远景层缺失”，还是要求改进 proxy 宿主合并/分区反馈、
+  或对特定资产禁止降级并失败关闭。本轮不改策略。
+
+### A-76 剩余 `NDEBUG` 分叉（观察，不阻塞生产）
+
+- 生产工具 `model23dtiles`：只剩 `ShowProgress` 纯日志差异；A-71 已统一读取语义。
+- 辅助工具 `b3dm2gltf` / `simplifier` / `texturepacker` / `gui` 仍有
+  “Release 才做 argv UTF-8 转换”的分叉（与 A-59 同类）；不影响 `model23dtiles`
+  生产路径，本轮未改（Debug 也仍不可构建）。
+- `src/3dtiles/Tileset.cpp:89` 的 `#ifndef NDEBUG` 只决定 `json::dump(4)` 还是
+  `dump()`（缩进/字节不同，语义相同）。
+- Debug 仍旧 **BLOCKED-DEBUG**，没有两种构建的几何/坐标一致性实测。
+
 
 

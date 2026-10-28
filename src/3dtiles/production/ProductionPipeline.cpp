@@ -753,6 +753,45 @@ bool glbJsonRange(const std::string& bytes, std::size_t tileStart,
                   std::size_t& jsonOff, std::uint32_t& jsonLen);
 void forEachGltfJsonChunk(const std::string& bytes,
                           const std::function<void(const std::string&)>& onJson);
+
+// 单瓦片内容的 glTF primitive / 材质计数（按实际产物，不按源单元）。
+// 解析失败返回 false：预算无法证明时交给 selfValidate 失败关闭，绝不当作“没超”。
+bool countGltfPrimsMats(const std::string& absPath, unsigned& prims, unsigned& mats)
+{
+    prims = 0;
+    mats = 0;
+    std::ifstream cf(Utils::utf8ToPath(absPath), std::ios::binary);
+    if (!cf.is_open()) { return false; }
+    std::string body((std::istreambuf_iterator<char>(cf)),
+                     std::istreambuf_iterator<char>());
+    bool parsed = false;
+    forEachGltfJsonChunk(body, [&](const std::string& gltfJson) {
+        try
+        {
+            const json gltf = json::parse(gltfJson);
+            if (gltf.contains("meshes") && gltf["meshes"].is_array())
+            {
+                for (const json& m : gltf["meshes"])
+                {
+                    if (m.contains("primitives") && m["primitives"].is_array())
+                    {
+                        prims += static_cast<unsigned>(m["primitives"].size());
+                    }
+                }
+            }
+            if (gltf.contains("materials") && gltf["materials"].is_array())
+            {
+                mats += static_cast<unsigned>(gltf["materials"].size());
+            }
+            parsed = true;
+        }
+        catch (const std::exception&)
+        {
+            parsed = false;
+        }
+    });
+    return parsed;
+}
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,46 +1145,11 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             // 属性集 分桶）。父节点的源负载**本来就会超预算**（它覆盖整个子树），
             // 真正受 24/24 约束的是导出宿主数：龙翔桥站厅 pn=9 源 prim=358/mat=332，
             // 导出 49/49。内节点超限沿用既有降级策略（删文件 → 无内容内节点，
-            // 子树仍覆盖同一 source scope）；叶瓦片不做这里降级，交给 selfValidate
-            // 失败关闭——叶缺件不可接受。
+            // 子树仍覆盖同一 source scope）；叶瓦片没有可丢的层，只能失败关闭。
             unsigned contentPrims = 0, contentMats = 0;
-            bool parsedContent = false;
-            if (!isLeaf)
-            {
-                const std::string absContent = _opt.stagingDir
-                    + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
-                std::ifstream cf(Utils::utf8ToPath(absContent), std::ios::binary);
-                if (cf.is_open())
-                {
-                    std::string body((std::istreambuf_iterator<char>(cf)),
-                                     std::istreambuf_iterator<char>());
-                    forEachGltfJsonChunk(body, [&](const std::string& gltfJson) {
-                        try
-                        {
-                            const json gltf = json::parse(gltfJson);
-                            if (gltf.contains("meshes") && gltf["meshes"].is_array())
-                            {
-                                for (const json& m : gltf["meshes"])
-                                {
-                                    if (m.contains("primitives") && m["primitives"].is_array())
-                                    {
-                                        contentPrims += static_cast<unsigned>(m["primitives"].size());
-                                    }
-                                }
-                            }
-                            if (gltf.contains("materials") && gltf["materials"].is_array())
-                            {
-                                contentMats += static_cast<unsigned>(gltf["materials"].size());
-                            }
-                            parsedContent = true;
-                        }
-                        catch (const std::exception&)
-                        {
-                            parsedContent = false;
-                        }
-                    });
-                }
-            }
+            const std::string absContent = _opt.stagingDir
+                + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+            const bool parsedContent = countGltfPrimsMats(absContent, contentPrims, contentMats);
             const bool overPrims = parsedContent
                 && contentPrims > _profile.budget.maxPrimitivesPerTile;
             const bool overMats = parsedContent
@@ -1467,7 +1471,17 @@ int ProductionPipeline::buildInstanceTree()
             _tiles[childId].timing.writeCpuSec = cInstWrite.elapsed();
             const bool overBytes = wo.bytes > _profile.budget.maxTileContentBytes;
             const bool overTris = wo.triangles > _profile.budget.maxTrianglesPerTile;
-            if (wo.ok && !overBytes && !overTris)
+            // i3dm 是叶瓦片：原型若有过多材质，实例瓦片的 glTF primitive/材质数
+            // 同样会超 24/24。实例不能拆、删掉等于丢实例，只能按实际产物显式失败。
+            unsigned contentPrims = 0, contentMats = 0;
+            const std::string absInst = _opt.stagingDir
+                + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+            const bool parsedContent = countGltfPrimsMats(absInst, contentPrims, contentMats);
+            const bool overPrims = parsedContent
+                && contentPrims > _profile.budget.maxPrimitivesPerTile;
+            const bool overMats = parsedContent
+                && contentMats > _profile.budget.maxMaterialsPerTile;
+            if (wo.ok && !overBytes && !overTris && !overPrims && !overMats)
             {
                 _tiles[childId].hasContent = true;
                 _tiles[childId].uri = std::string("tiles/") + "i" + std::to_string(childId) + ".i3dm";
@@ -1495,13 +1509,19 @@ int ProductionPipeline::buildInstanceTree()
                 _failures.push_back("instance tile " + std::to_string(childId)
                                     + " over hard budget: "
                                     + std::to_string(wo.bytes) + " bytes / "
-                                    + std::to_string(wo.triangles) + " triangles ("
+                                    + std::to_string(wo.triangles) + " triangles / "
+                                    + std::to_string(contentPrims) + " primitives / "
+                                    + std::to_string(contentMats) + " materials ("
                                     + std::to_string(end - start) + " x prototype "
                                     + std::to_string(protoTris) + " triangles), limit "
                                     + std::to_string(_profile.budget.maxTileContentBytes)
                                     + " bytes / "
                                     + std::to_string(_profile.budget.maxTrianglesPerTile)
-                                    + " triangles");
+                                    + " triangles / "
+                                    + std::to_string(_profile.budget.maxPrimitivesPerTile)
+                                    + " primitives / "
+                                    + std::to_string(_profile.budget.maxMaterialsPerTile)
+                                    + " materials");
             }
             else
             {

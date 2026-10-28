@@ -3653,6 +3653,340 @@ void testPrimitiveBudgetProxyDegrades()
           std::to_string(pipeline2.report().proxySkippedCount));
 }
 
+// 叶节点预算回归用的小工具：N 个 drawable、每个一份互不相同的 PBR 材质。
+osg::ref_ptr<osg::Geode> makeMultiMaterialGeode(const std::string& name, unsigned n,
+    const std::vector<osg::ref_ptr<osg::StateSet>>* sharedStates = nullptr)
+{
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    geode->setName(name);
+    for (unsigned i = 0; i < n; ++i)
+    {
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        const float x = static_cast<float>(i) * 2.0f;
+        pos->push_back(osg::Vec3(x, 0.0f, 0.0f));
+        pos->push_back(osg::Vec3(x + 1.0f, 0.0f, 0.0f));
+        pos->push_back(osg::Vec3(x + 1.0f, 1.0f, 0.0f));
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        geom->setVertexArray(pos.get());
+        geom->addPrimitiveSet(idx.get());
+        if (sharedStates && i < sharedStates->size())
+        {
+            geom->setStateSet((*sharedStates)[i].get());
+        }
+        else
+        {
+            osg::ref_ptr<GltfPbrMRMaterial> m = new GltfPbrMRMaterial;
+            const double t = (static_cast<double>(i % 60u) + 1.0) / 61.0;
+            m->baseColorFactor = { t, 1.0 - t, 0.5, 1.0 };
+            geom->setStateSet(new osg::StateSet);
+            geom->getStateSet()->setAttributeAndModes(m.get(), osg::StateAttribute::ON);
+        }
+        geode->addDrawable(geom.get());
+    }
+    return geode;
+}
+
+// 读回已写出瓦片（b3dm 或 i3dm）的 glTF primitive / 材质计数。
+bool tilePrimsMats(const std::filesystem::path& p, unsigned& prims, unsigned& mats)
+{
+    std::ifstream in(p, std::ios::binary);
+    if (!in.is_open()) { return false; }
+    const std::vector<char> b((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+    if (b.size() < 32) { return false; }
+    std::size_t header = 0;
+    if (std::memcmp(b.data(), "b3dm", 4) == 0) { header = 28; }
+    else if (std::memcmp(b.data(), "i3dm", 4) == 0) { header = 32; }
+    else { return false; }
+    const std::uint32_t ftj = readU32(b, 12), ftb = readU32(b, 16);
+    const std::uint32_t btj = readU32(b, 20), btb = readU32(b, 24);
+    const std::size_t glb = header + static_cast<std::size_t>(ftj + ftb + btj + btb);
+    if (glb + 20 > b.size() || std::memcmp(b.data() + glb, "glTF", 4) != 0) { return false; }
+    const std::uint32_t jsonLen = readU32(b, glb + 12);
+    if (glb + 20 + jsonLen > b.size()) { return false; }
+    const json j = json::parse(std::string(b.data() + glb + 20, jsonLen));
+    prims = 0;
+    mats = 0;
+    if (j.contains("meshes") && j["meshes"].is_array())
+    {
+        for (const json& m : j["meshes"])
+        {
+            if (m.contains("primitives") && m["primitives"].is_array())
+            {
+                prims += static_cast<unsigned>(m["primitives"].size());
+            }
+        }
+    }
+    if (j.contains("materials") && j["materials"].is_array())
+    {
+        mats = static_cast<unsigned>(j["materials"].size());
+    }
+    return true;
+}
+
+void testLeafSharedGeometryBudget()
+{
+    std::cout << "[budget] shared geometry across two features stays within leaf budget" << std::endl;
+    Utils::registerFileAliases();
+
+    // 两个 Geode 共用同一份 Geometry：SourceModel 仍为每个 drawable 建独立 mesh，
+    // 源 prim 数不会因为共享指针被合并。材质放在 Geode 上且互不相同，
+    // 导出端就不会把两个 feature 融成一个 primitive。
+    auto build = []() {
+        osg::ref_ptr<osg::Geometry> shared = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
+        pos->push_back(osg::Vec3(1.0f, 0.0f, 0.0f));
+        pos->push_back(osg::Vec3(1.0f, 1.0f, 0.0f));
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        shared->setVertexArray(pos.get());
+        shared->addPrimitiveSet(idx.get());
+
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        for (unsigned k = 0; k < 2; ++k)
+        {
+            osg::ref_ptr<osg::Geode> g = new osg::Geode;
+            g->setName("shared_" + std::to_string(k));
+            g->addDrawable(shared.get());
+            osg::ref_ptr<GltfPbrMRMaterial> m = new GltfPbrMRMaterial;
+            m->baseColorFactor = { k == 0 ? 0.8 : 0.2, k == 0 ? 0.2 : 0.8, 0.5, 1.0 };
+            g->setStateSet(new osg::StateSet);
+            g->getStateSet()->setAttributeAndModes(m.get(), osg::StateAttribute::ON);
+            root->addChild(g.get());
+        }
+        return root;
+    };
+
+    auto runBudget = [&](unsigned cap, const std::string& tag) {
+        ProductionProfile profile;
+        profile.budget.maxPrimitivesPerTile = cap;
+        profile.budget.targetPrimitivesPerTile = cap;
+        profile.budget.maxMaterialsPerTile = cap;
+        profile.budget.targetMaterialsPerTile = cap;
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / ("wb_leaf_shared_" + tag);
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        const bool ran = pipeline.run(build().get(), opt);
+        return std::make_tuple(ran, out, pipeline.failures(), pipeline.report().sourceFeatureCount);
+    };
+
+    // 预算 1：源 prim=2（共享指针没有合并计数），叶节点导出 2 个宿主，
+    // 不能切（两个 feature 的质心完全相同），必须失败关闭、不得提交。
+    {
+        auto [ran, out, failures, features] = runBudget(1, "over");
+        check(!ran, "shared geometry does not silently merge into one source prim");
+        check(features == 2, "both shared-geometry features are registered",
+              std::to_string(features));
+        bool explained = false;
+        for (const std::string& f : failures)
+        {
+            if (f.find("primitives=2 > 1") != std::string::npos) { explained = true; break; }
+        }
+        check(explained, "over-budget leaf names the actual exported primitives",
+              joinMessages(failures));
+        check(!std::filesystem::exists(out / "tileset.json"),
+              "no dataset is committed when a leaf exceeds the budget");
+    }
+
+    // 预算 2：同一份共享几何必须放行，且 manifest 仍记录两个 feature。
+    {
+        ProductionProfile profile;
+        profile.budget.maxPrimitivesPerTile = 2;
+        profile.budget.targetPrimitivesPerTile = 2;
+        profile.budget.maxMaterialsPerTile = 2;
+        profile.budget.targetMaterialsPerTile = 2;
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_leaf_shared_at_cap";
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline p(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        const bool ran2 = p.run(build().get(), opt);
+        check(ran2, "shared geometry at budget rebuilds", joinMessages(p.failures()));
+        check(p.finalize(), "shared geometry at budget publishes", joinMessages(p.failures()));
+        check(p.report().sourceFeatureCount == 2, "both features are registered",
+              std::to_string(p.report().sourceFeatureCount));
+        check(p.report().featuresMissingFromLeaves == 0, "no feature lost");
+        unsigned maxPrims = 0, contentTiles = 0;
+        for (const auto& e : std::filesystem::directory_iterator(out / "tiles", ec))
+        {
+            unsigned pr = 0, mm = 0;
+            if (tilePrimsMats(e.path(), pr, mm)) { maxPrims = std::max(maxPrims, pr); ++contentTiles; }
+        }
+        check(contentTiles == 1, "shared geometry fits in one leaf at budget 2",
+              std::to_string(contentTiles));
+        check(maxPrims == 2, "shared geometry exports two primitives (not one)",
+              std::to_string(maxPrims));
+        const json manifest = json::parse([&]() {
+            std::ifstream f(out / "feature-manifest.json");
+            return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        }());
+        check(manifest["occurrenceCount"].get<std::size_t>() == 2,
+              "manifest records both features from the shared geometry",
+              manifest["occurrenceCount"].dump());
+    }
+}
+
+void testLeafMultiMaterialBudget()
+{
+    std::cout << "[budget] per-feature multi-material leaves at/over the budget" << std::endl;
+    Utils::registerFileAliases();
+
+    auto runCase = [](unsigned drawables, const std::string& tag,
+                      bool expectManyLeaves) -> unsigned {
+        ProductionProfile profile;
+        profile.budget.maxPrimitivesPerTile = 24;
+        profile.budget.maxMaterialsPerTile = 24;
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / ("wb_leaf_multi_" + tag);
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        root->addChild(makeMultiMaterialGeode("multi_" + tag, drawables).get());
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        const bool ran = pipeline.run(root.get(), opt);
+        check(ran, tag + " fixture builds", joinMessages(pipeline.failures()));
+        check(pipeline.finalize(), tag + " fixture publishes", joinMessages(pipeline.failures()));
+        check(pipeline.report().featuresMissingFromLeaves == 0, tag + " keeps its feature");
+
+        unsigned maxPrims = 0, contentTiles = 0;
+        for (const auto& e : std::filesystem::directory_iterator(out / "tiles", ec))
+        {
+            unsigned p = 0, m = 0;
+            if (tilePrimsMats(e.path(), p, m)) { maxPrims = std::max(maxPrims, p); ++contentTiles; }
+        }
+        check(maxPrims <= 24, tag + " leaves stay within 24 primitives",
+              std::to_string(maxPrims));
+        if (expectManyLeaves)
+        {
+            check(contentTiles >= 2, tag + " is split into multiple leaves",
+                  std::to_string(contentTiles));
+        }
+        return contentTiles;
+    };
+
+    // 正好等于预算：必须放行，而且只有一个叶瓦片。
+    const unsigned atCap = runCase(24, "at_cap", false);
+    check(atCap == 1, "a 24-host leaf is emitted as one tile", std::to_string(atCap));
+    // 超 1 个：分区器按 primitiveSet 切开，两个叶瓦片都不超预算。
+    const unsigned over = runCase(25, "over_one", true);
+    check(over >= 2, "a 25-host feature is split by primitiveSet", std::to_string(over));
+}
+
+void testInstanceHostBudget()
+{
+    std::cout << "[budget] i3dm prototype primitive/material budget" << std::endl;
+    Utils::registerFileAliases();
+
+    auto buildScene = [](unsigned drawables) {
+        // 两个实例必须被识别成"同一原型"：这里让两份 Geode 共享同一批
+        // StateSet 指针（compareStateSet 的快路径），避免测试夹具落进
+        // "相等但非同一对象的 PBR StateSet 比较" 这条与本用例无关的路径。
+        std::vector<osg::ref_ptr<osg::StateSet>> states;
+        for (unsigned i = 0; i < drawables; ++i)
+        {
+            osg::ref_ptr<GltfPbrMRMaterial> m = new GltfPbrMRMaterial;
+            const double t = (static_cast<double>(i % 60u) + 1.0) / 61.0;
+            m->baseColorFactor = { t, 1.0 - t, 0.5, 1.0 };
+            osg::ref_ptr<osg::StateSet> ss = new osg::StateSet;
+            ss->setAttributeAndModes(m.get(), osg::StateAttribute::ON);
+            states.push_back(ss);
+        }
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        for (unsigned k = 0; k < 2; ++k)
+        {
+            osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+            mt->setMatrix(osg::Matrixd::translate(static_cast<double>(k) * 100.0, 0.0, 0.0));
+            mt->addChild(makeMultiMaterialGeode("proto_" + std::to_string(k), drawables, &states).get());
+            root->addChild(mt.get());
+        }
+        return root;
+    };
+    {
+        SourceModel probe;
+        osg::ref_ptr<osg::Node> scene = buildScene(25);
+        probe.build(scene.get());
+        check(probe.instances.size() == 1,
+              "fixture is recognized as one prototype + one instance",
+              std::to_string(probe.instances.size()));
+    }
+
+    // 超限：原型 25 个材质 ⇒ i3dm 内容 25 primitives > 24。实例不能拆，
+    // 必须显式失败关闭，且不得提交 tileset。
+    {
+        ProductionProfile profile;
+        profile.budget.maxPrimitivesPerTile = 24;
+        profile.budget.maxMaterialsPerTile = 24;
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_instance_over_budget";
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        const bool ran = pipeline.run(buildScene(25).get(), opt);
+        check(!ran, "25-material prototype fails the run");
+        bool explained = false;
+        for (const std::string& f : pipeline.failures())
+        {
+            if (f.find("instance tile") != std::string::npos
+                && f.find("25 primitives") != std::string::npos) { explained = true; break; }
+        }
+        check(explained, "failure names the actual exported primitive count",
+              joinMessages(pipeline.failures()));
+        check(!std::filesystem::exists(out / "tileset.json", ec),
+              "no dataset is committed on an over-budget instance tile");
+    }
+
+    // 边界：原型正好 24 个材质 ⇒ 必须发布，i3dm 内容 24/24。
+    {
+        ProductionProfile profile;
+        profile.budget.maxPrimitivesPerTile = 24;
+        profile.budget.maxMaterialsPerTile = 24;
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_instance_at_budget";
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        const bool ran = pipeline.run(buildScene(24).get(), opt);
+        check(ran, "24-material prototype builds", joinMessages(pipeline.failures()));
+        check(pipeline.finalize(), "24-material prototype publishes",
+              joinMessages(pipeline.failures()));
+        check(pipeline.report().instanceTileCount == 1, "one i3dm tile published",
+              std::to_string(pipeline.report().instanceTileCount));
+        std::filesystem::path tile;
+        for (const auto& e : std::filesystem::directory_iterator(out / "tiles", ec))
+        {
+            if (e.path().extension() == ".i3dm") { tile = e.path(); }
+        }
+        check(!tile.empty(), "i3dm file exists", tile.string());
+        unsigned p = 0, m = 0;
+        check(!tile.empty() && tilePrimsMats(tile, p, m) && p == 24 && m == 24,
+              "i3dm content is exactly at 24 primitives / 24 materials",
+              std::to_string(p) + "/" + std::to_string(m));
+    }
+}
+
 void testPrimitiveBudgetGate()
 {
     std::cout << "[budgetGate] glTF primitive / material budget" << std::endl;
@@ -3838,6 +4172,9 @@ int main(int argc, char** argv)
     run("noLocalPaths", &testArtifactsCarryNoLocalPaths);
     run("foldUv", &testFoldTextureTransformIntoUv);
     run("budgetGate", &testPrimitiveBudgetGate);
+    run("leafSharedMesh", &testLeafSharedGeometryBudget);
+    run("leafBudget", &testLeafMultiMaterialBudget);
+    run("instanceBudget", &testInstanceHostBudget);
     run("budgetDegrade", &testPrimitiveBudgetProxyDegrades);
     run("atlasCanvas", &testAtlasCanvasZeroed);
 

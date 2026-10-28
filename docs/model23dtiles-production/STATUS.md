@@ -1722,4 +1722,124 @@ A-53 **保持 OPEN**，没有根因、没有关闭。
   `tests/production/main.cpp`、四份文档；`.gitignore`/`dev_main_tmp.cpp`/`.workbuddy/`
   为用户或会话外内容，未动、未提交。
 
+## 2026-10-28（第五轮）：叶/实例瓦片预算闭环、站厅降级视觉验收、输入文件名确定性
+
+### 基线（实测）
+
+| 项 | 读数 |
+|---|---|
+| 分支 / HEAD | `prod/model23dtiles-production` @ `a909a49`（第四轮提交；origin 已同步） |
+| 工作区 | `M .gitignore`（用户改动，未动）、`?? dev_main_tmp.cpp`、`?? .workbuddy/`；源码无脏项 |
+| 二进制（本轮） | `Release\model23dtiles.exe` 18:35 / sha256 `832ffb896a9eb873…`；`Release\test_production.exe` 19:19 / `6e0784ffd553b65e…` |
+| 构建陷阱（复现） | `tests/production` 的 `.tlog` **仍不含** `tests/production/main.cpp`；必须手工补编 `MAIN.CPP`（`r5_20261028/logs/main_cpp*.log`），否则会静默链接旧对象 |
+| 证据根 | `F:\wb_3dtiles_out\_followup_20261028\r5_20261028\`（不覆盖 r2/r4 历史证据） |
+
+### A-73 叶节点/实例瓦片的宿主预算：结构核查 + i3dm 缺口修复
+
+- **结构核查**：`SourceModel::build` 为**每个 drawable 分配唯一 meshId**
+  （`SourceModel.cpp:546`），同一 mesh 不会跨 feature 复用；实例被摘出 b3dm 走 i3dm。
+  因此 b3dm 叶的导出 primitive ≤ `(feature, material)` 组数 ≤ 源 prim 数，**不会低估**。
+  共享 Geometry 的两个 feature 仍各建一份 mesh，源 prim=2；测试锁定。
+- **真实缺口**：i3dm 实例瓦片此前只查 bytes/triangles，不查 primitive/材质；原型若 >24
+  个材质，只有 `selfValidate` 在整跑末尾判死。本轮把“按实际导出 glTF 读回”提取为
+  `countGltfPrimsMats()`，**所有内容瓦片**（b3dm 叶/内节点 + i3dm）统一按产物判：
+  内节点超限→降级为无内容内节点；叶/实例超限→失败关闭并给出实际计数。
+- **测试**：新增 `leafSharedMesh`（11 条）、`leafBudget`（11 条）、`instanceBudget`
+  （9 条）——共享 Geometry、24/25 材质边界、i3dm 24 放行 / 25 失败且不提交、
+  manifest 与最终 b3dm/i3dm 产物一起校验。全量 **474 / 0**（普通），
+  **ASan 下 474 / 0**。
+- **回归**：wuhu 与上一轮产物 **60/60 瓦片逐字节相同**（112 纹理相同）；
+  站厅 **370/370 瓦片逐字节相同**、tileset 哈希相同、22 个降级不变、errors=0；
+  jianzhu 回归见 §“jianzhu”。
+
+### 站厅 22 个降级代理：tileset 语义 + 视觉验收（首次可执行）
+
+- **tileset 语义**：22 个节点全部 `refine=REPLACE`、无 `content`、各 2 个子节点，
+  `geometricError` 0.13–40.38 m（父节点同值或更高），包围体仍覆盖后代
+  （`selfValidate` 的父盒覆盖子盒检查通过）。22/394 瓦片 = 5.6%，占 178 个
+  far-LOD 代理的 12.4%；被省略代理合计 60 134 936 B（最大 4.1 MB，最多 49/49 宿主）；
+  22 个节点的包围盒并集覆盖根 AABB 的 99.8%（它们位于高层，缺失的是远景层而不是局部小洞）。
+- **视觉方法**：把 `hall_before2/failed-content/tiles` 的 22 个 b3dm 注回一份已发布
+  拷贝，构造**仅用于渲染的参考集**（仍超 24/24，不可发布）。用仓库既有
+  `docs/visual-acceptance/index.html` + 本地 CesiumJS 1.119，在 **Qoder 内置浏览器**
+  跑同 4 条路径（far-to-near / lod-threshold / feature-approach / oblique-high）。
+  msedge headless 在本机连 `--version` 都无输出（安全代理），已记为不可用；内置浏览器
+  两次各 **226 帧**、0 空洞、0 控制台错误、0 加载失败。
+- **读数（after vs reference，同帧）**：224 帧可比；**30 帧** 剪影差 >5%、
+  69 帧 >20 px，最大 **-50.1%**（far-to-near 3.15R / 4.35R、lod-threshold 2.3R）；
+  差距集中在 **约 300–2300 m** 的远景/中景；到 240 m（2.28R）差 2.8%，
+  到 126 m（1.2R）差 0.1%，feature-approach 近端差 0.14%。大差异帧 `settleIters=2`
+  （内容已就绪，不是加载时序）。⇒ **没有地面永久空洞，但远景/中景存在明显整片缺失**。
+- **裁定依据**：22/178 代理、57 MB 远景内容被省略，换来站厅由“整批失败”变为
+  “可发布 + 22 个远景层空洞”。是否接受该降级，需用户裁定（见文末未闭合）。
+
+### 卢沟桥：历史失败根因与当前修复的适用性（未完整重跑）
+
+- 历史失败日志 `lugouqiao_v20.log`：`selfValidate: tiles/t8.b3dm (26 primitives > 24)`，
+  整跑失败、输出目录只剩 `textures/`（失败关闭）；日志同时有
+  `tile 8: seam vertices preserved` 与 `tile 8: far-LOD proxy built without textures`，
+  v19 的 tileset 里 `t8` 有 2 个子节点 ⇒ **t8 是内节点代理**，正是 A-70 的降级路径。
+- 当前代码对“内节点代理实际导出 26>24”会删文件并降级，不再整批失败（`budgetDegrade`
+  已覆盖同形态）。但卢沟桥**没有重跑**（历史 v19 成功跑完约 77 分钟 / 峰值 7.45 GB；
+  v20 失败），因此结论只能写“根因已确认、修复在站厅/合成案例有效，卢沟桥未完整验证”。
+
+### `textures/` 与 FBX 纹理：缓存语义不变，新增“文件名决定字节”的确定性结论
+
+- `textures/` 仍是 `<output>` 下的内容寻址导出缓存，不属发布契约；上一轮三次稳定
+  结论不变；历史整目录缺失仍 **OPEN（不可复现）**。
+- 本轮定位输入路径问题：同一 FBX **字节**，把文件名从 `input_wuhu.fbx` 改回
+  `芜湖水厂总装.fbx`（换目录、无 `.fbm`）→ 产物与上轮 `wuhu_v2` **逐字节相同**；
+  用 `input_wuhu.fbx`（无论目录、无论是否放 `.fbm`）→ 同一份另一产物
+  （13 个 b3dm 差、1 个图集页内容不同，尺寸/宿主数/材质数不变）。
+- 把 `芜湖水厂总装.fbm` / `总装.fbm` / `input_wuhu.fbm` 三份外部目录里的图片
+  **全部替换**后再跑：输出仍与 `input_wuhu.fbx` 版本 **0 差异** ⇒ 外部 `.fbm`
+  文件在本机**不被使用**；FBX 内含 143 段 JPEG/23 段 PNG（内嵌纹理）。
+  ⇒ 契约：**字节级可复现要求输入文件名（basename）稳定**；目录搬移本身不改变产物，
+  外部纹理目录也不能用来替换内嵌纹理。根因（内嵌纹理提取/命名如何受 basename 影响）
+  未完全追到，记录为观察。
+
+### Debug/Release 与 A-53
+
+- A-71 统一保持：生产路径 `model23dtiles` 的 FBX 三角化选项、proj.db 路径不再分叉；
+  剩余 `NDEBUG` 分叉均为**辅助工具**（b3dm2gltf/simplifier/texturepacker/gui 的
+  argv UTF-8 转换）与 `Tileset.cpp` 的 JSON 缩进（语义相同、字节不同）。
+  Debug 仍 **BLOCKED-DEBUG**。
+- Application Verifier 仍 `Cannot enable layer [Core] (error 0x1C)`，不再作为证据。
+  **本轮首次用 MSVC AddressSanitizer**（`/fsanitize=address`，独立 `test_production_asan.exe`）
+  跑全量：**474/0、无 ASan 报告**；`giant` 压力 **5/5** 无报告。A-53 仍 **OPEN**
+  （没有根因定位；ASan 是新增的强证据，不等于关闭）。
+
+### 本轮实测汇总
+
+| 项 | 读数 |
+|---|---|
+| 单测（普通） | **474 / 0** |
+| 单测（ASan） | **474 / 0**、giant 5/5 |
+| 站厅回归 | 394 瓦片/370 内容/22 降级/errors=0；370 个瓦片与上轮**逐字节相同**；validator errors=0、warnings 364（KTX2 schema） |
+| wuhu 回归 | 同输入 60/60 瓦片、112 纹理与上轮逐字节相同 |
+| jianzhu 回归 | **PASS**：1089 瓦片/1089 内容/0 降级/0 实例/errors=0；1089 个瓦片与上一轮**逐字节相同**、tileset.json 哈希相同；total 1470.9 s、峰值 18.82 GB（环境不同，不构成性能结论） |
+| 视觉 | after/reference 各 226 帧；0 空洞；最大剪影差 50.1%，近景收敛 0.1–0.3% |
+| 卢沟桥 | 历史 t8=26/24 内节点代理；未重跑；修复适用性为“可解释但未实测” |
+
+### jianzhu 回归（本轮）
+
+- 使用 18:35 二进制、默认预算完整跑通：`tileCount=1089`、`contentTileCount=1089`、
+  `proxySkippedCount=0`、`instanceCount=0`、`errors=[]`、`maxContentBytes=3 880 504`、
+  `maxTrianglesInTile=39 099`、`outputBytes=1 828 692 494`、
+  `totalSeconds=1 470.9 / wall=1 503.8 / CPU=11 553.8 / peak=18.82 GB`。
+- 与上一轮 `jianzhu_e2e` 对比：**1089/1089 个瓦片逐字节相同**，`tileset.json` 哈希相同。
+  ⇒ 新增的叶/实例预算检查不改既有产物，也没有误伤 1089 个叶内容。
+- validator：`validation_jianzhu_r5`（见 VALIDATION_REPORT §7）。
+
+### 未闭合 / 裁定点
+
+- 站厅 22 个远景代理降级造成的视觉影响（远景/中景最多 ~50% 剪影缺失，近景收敛）
+  是否接受，需用户裁定；备选：改进 proxy 宿主合并/延长分区反馈、或对特定资产禁止降级。
+- 卢沟桥未完整重跑（历史成本约 77 分钟量级起，v20 为失败读数）。
+- Debug 构建 BLOCKED-DEBUG；Application Verifier BLOCKED-VERIFIER（Core 0x1C）；
+  A-53 OPEN（ASan 证据增强，但无根因）。
+- `textures/` 历史缺失仍不可复现；输入 **basename** 影响输出字节的机理未完全定位。
+- 本轮改动**已提交**（用户指示）：`ProductionPipeline.cpp`、`tests/production/main.cpp`、
+  四份文档；`.gitignore`/临时文件未动、未提交。
+
 

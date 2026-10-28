@@ -1351,4 +1351,98 @@ WB_KEEP_FAILED_CONTENT=1 Release\model23dtiles.exe -sp \
   `KHR_texture_basisu` 的 schema 滞后；INFO 里有未用对象与少量退化三角形计数。
   0 error 不等于视觉正确：**BLOCKED-VISUAL**。
 
+## 2026-10-28（第五轮）：叶/实例预算、真实资产回归、视觉与 ASan
+
+### 1. 基线、构建与二进制来源
+
+- 分支 `prod/model23dtiles-production`，HEAD `a909a49`（origin 同步）；工作区仅用户
+  `.gitignore` 与未跟踪文件。
+- 构建仍用 `cl/link` 重放 `.tlog`（MSBuild 被 `0xC0000409`/`tsbx.dll` 拦截）；
+  `tests/production` 的 `.tlog` **缺 `tests/production/main.cpp`**，必须单独编译
+  `MAIN.CPP`（本轮用 `c_test_production_0.bat`），否则链接旧对象。
+- 二进制：`Release\model23dtiles.exe` 18:35 / `832ffb896a9eb873…`；
+  `Release\test_production.exe` 19:19 / `6e0784ffd553b65e…`。
+- 命令：
+  ```
+  node r4_20261028/msvc_build.js test_production --jobs=6 --no-link
+  cmd /c c_test_production_0.bat          # 补 MAIN.CPP
+  node r4_20261028/msvc_build.js test_production --link-only
+  node r4_20261028/msvc_build.js model23dtiles --jobs=6
+  ```
+
+### 2. 单元测试（普通 + ASan）
+
+| 套件 | 结果 | 证据 |
+|---|---|---|
+| `test_production.exe` | **474 / 0** | `r5_20261028/test_full.log`；新用例 `leafSharedMesh` 11、`leafBudget` 11、`instanceBudget` 9 |
+| `test_production_asan.exe`（`/fsanitize=address`） | **474 / 0**、无 ASan 报告 | `test_asan_full2.log`；`giant` 5/5 无报告（`asan_giant_1..5.log`） |
+| Application Verifier | 仍 BLOCKED：`-enable Heaps` → `Cannot enable layer [Core] (error 0x1C)`，查询确认未启用 | 不用作证据 |
+
+ASan 构建：`msvc_build_asan.js`（tlog 标志加 `/fsanitize=address /Z7`，链接
+`clang_rt.asan_dynamic-x86_64.lib` + runtime thunk，DLL 复制到 `Release\`），
+运行需 `ASAN_OPTIONS=detect_leaks=0`（Windows ASan 不支持 leak 检测）。
+
+### 3. 真实资产回归（18:35 二进制）
+
+| 资产 | 命令 | 结果 | 与上一轮产物 |
+|---|---|---|---|
+| wuhu | `model23dtiles.exe -sp -i input_wuhu.fbx -o r5_20261028/wuhu_regress` | rc=0；62 瓦片/60 内容/0 降级/19 实例/errors=0 | 60 瓦片 + 112 纹理 **逐字节相同** |
+| 龙翔桥站厅 | `… -i input_hall.fbx -o r5_20261028/hall_regress` | rc=0；394 瓦片/370 内容/**22 降级**/errors=0；outputBytes=225 859 432 | **370/370 瓦片逐字节相同**、tileset.json 哈希相同 |
+| jianzhu+tietu | `… -i D:\…\jianzhu+tietu.FBX -o r5_20261028/jianzhu_regress` | rc=0；1089 瓦片/1089 内容/0 降级/0 实例/errors=0；maxBytes=3 880 504、maxTri=39 099、output=1 828 692 494；total 1470.9 s、peak 18.82 GB | **1089/1089 瓦片逐字节相同**、tileset.json 哈希相同 |
+
+- 站厅 validator：`r5_20261028/validation_hall_r5` → **errors=0**、warnings 364
+  （全部 KTX2 schema）、infos 4，rc=0。
+- 时间不可跨会话比较：站厅 r5 `total=754.2 s / wall=760.5 s / CPU=2014.3 s`，
+  上一轮 441.9 s；本轮与视觉/其他任务并发，且新增了内容读回，**不构成性能结论**。
+
+### 4. 站厅 22 个降级代理的视觉对照（首次执行）
+
+- 参考集：`build_visual_reference.js` 把 `hall_before2/failed-content/tiles` 的 22 个
+  b3dm 注回已发布拷贝（`r5_20261028/hall_reference`；仍超 24/24，**只用于渲染**）。
+- 渲染：仓库 `docs/visual-acceptance/index.html` + 本地 Cesium 1.119；**msedge headless
+  在本机无任何输出（安全代理），改用 Qoder 内置浏览器**；两侧同一 camera 路径：
+  `far-to-near, lod-threshold, feature-approach, oblique-high`。
+- 产物：`docs/visual-acceptance/runs/mcp_after/`、`mcp_reference/`（各 226 PNG +
+  `summary.json`）；汇总 `r5_20261028/visual_compare.json`。
+- 读数：
+  - 两侧 `holes=0`、`zeroCoverageFrames=0`、`console=0`、`failedFrames=0`。
+  - 224 个同帧可比：30 帧剪影差 >5%、69 帧 >20 px；最大 **-50.1%**；
+    差异集中在 **300–2300 m**（R≈105 m：3.15R/4.35R/2.3R 等）。
+  - 近景收敛：2.28R（240 m）差 2.8%、1.66R 差 1.9%、1.20R（126 m）差 0.1%；
+    feature-approach 近端差 0.14%。
+  - 大差异帧 `settleIters=2`（内容已就绪），不是流式加载时序。
+- **判定**：无地面永久空洞；远景/中景成片缺失是真实视觉代价（22 个高层代理的
+  包围盒并集覆盖根 AABB 99.8%）。是否接受需用户裁定。
+
+### 5. 卢沟桥受控验证
+
+- `lugouqiao_v20.log`：`tiles/t8.b3dm (26 primitives > 24)`，失败关闭，输出目录仅
+  `textures/`；同日志有 `tile 8: seam…` 与 `tile 8: far-LOD proxy built without textures`；
+  v19 tileset 中 `t8` 有 2 个子节点 ⇒ **内节点代理**。
+- 当前 A-70/A-73 对该形态会“删除代理内容并降级发布”；合成用例已覆盖，但卢沟桥
+  **未重跑**（v19 完整跑完约 77 分钟 / 峰值 7.45 GB；v20 失败）。结论级别：
+  **根因确认 + 代表性修复有效，卢沟桥未完整验证**。
+
+### 6. `textures/` 与 FBX 纹理路径实验
+
+- `textures/` 仍为内容寻址缓存（非契约）；wuhu 三次历史稳定；本轮回归仍 112 文件。
+  历史整目录缺失 **OPEN（不可复现）**。
+- 输入 **basename** 实验（18:35 二进制）：
+  - `input_wuhu.fbx`（F:，无 `.fbm`）→ 产物 A；`芜湖水厂总装.fbx`（F:，无 `.fbm`）→
+    与上一轮 `wuhu_v2`（D: 原路径）**逐字节相同**；
+  - 三份外部 `.fbm` 图片全部替换 → 仍为产物 A（**0 差异**）；
+  - 结论：目录无关、外部 `.fbm` 无效，**basename 决定 13 个 b3dm / 1 个图集页**；
+    FBX 内嵌 143 段 JPEG + 23 段 PNG。字节级可复现需固定输入文件名。
+
+### 7. jianzhu 回归
+
+- 使用 18:35 二进制完整跑通（默认预算）：1089 瓦片/1089 内容、0 降级、0 实例、
+  `errors=[]`、`maxContentBytes=3 880 504`、`maxTrianglesInTile=39 099`、
+  `outputBytes=1 828 692 494`；`total=1 470.9 s`、`wall=1 503.8 s`、
+  `CPU=11 553.8 s`、`peak=18.82 GB`。
+- 与上一轮 `jianzhu_e2e`：**1089/1089 个瓦片逐字节相同**，tileset.json 哈希相同
+  ⇒ 叶/实例预算检查不改产物、不误伤。
+- validator：`validation_jianzhu_r5` → **errors=0**、warnings 1088、infos 1，rc=0；
+  警告与上一轮同类（`image/ktx2` / `KHR_texture_basisu` schema 滞后）。
+
 
