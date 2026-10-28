@@ -289,6 +289,25 @@ bash scripts/wb_build.sh test_production
 > "GLB 节点不带 TRS"）与 A-42 的 `noLocalPaths`（9 条，其中 3 条是路径探测器的**自检正例**）。
 > 计数轨迹 118 → 130 → 141 → 150，各档证据文件同目录保留。
 >
+> **2026-10-20（下午）复测：passed=181 failed=0**，退出码 **0**（`./Release/test_production.exe`；
+> 二进制 13:08，含未提交的 #6/#7 与误差侧两处修复，见 STATUS 同名小节）。
+> 计数上升来自两组**新用例 + 阳性对照**：
+> `testMeshBVHMatchesBruteForce`（64 三角形 × 6 探针，oracle = 每面一个单三角形
+> BVH 的最小距离——单三角形必为叶子，所以精确）与
+> `testErrorBoundSoundness`（三段：① 环带 + 内接等边三角形，`maxSamplesPerNode=3`
+> 把密度压到"只剩顶点"、细分预算 0，此时上界完全由覆盖半径撑起，口径错就露馅；
+> ② 一个 20×20 平面上 60 001 个完全吻合的三角形 + 1 个 z=50 的离群面，
+> 验证"密集抽样会漏掉的那一面必须同时进上下界"（旧实现按固定步长抽样，步长没落在
+> 它头上时 50 m 的偏差会被整条吞掉）；
+> ③ 饥饿预算必须 `BOUND_LOOSE`、放宽 `toleranceMeters=0.05` 必须 `CERTIFIED`）。
+> **两组都有阳性对照，不是空跑**：A-45 修复前 ① 精确失败在
+> `upper=0.577350 want>=0.980000` —— `0.577350` 就是 `L/3`（`L = √3`），
+> 而只剩顶点时合法系数是 `L/√3 = 1.000`，**旧口径把上界写小了**；
+> A-44 修复前失败的是 `testMeshBVHMatchesBruteForce`，6 个探针里 **4 个**
+> 报出的最近距离大于暴力法真值。
+> ③ 用 0.05 m 而非默认 1 mm 是有意的：1 mm 绝对收敛在 1 m 三角形上要 ~2^19 个子块，
+> 单测跑不完，这条用例的职责是"两种状态都到得了"，不是"默认门槛能过"。
+>
 > **harness 的一次真 bug**：加进包围体用例后全量跑一度只报 71 条、后来干脆
 > 中途没输出。原因不是"用例互相干扰"，而是 `is >> json` 解析 `1e999` 会抛
 > `json.exception.out_of_range.406`（nlohmann 不把溢出折成 +inf），异常穿出用例
@@ -332,6 +351,33 @@ bash scripts/wb_build.sh test_production
   轴号**、负半轴拒绝、NaN 半轴序列化后拒绝、几何合法时零命中。
   探针只统计包围体类失败，否则 URI/预算/覆盖检查会把"闸有没有生效"淹成"总共
   报了几条"。
+
+> **2026-10-21 复测：passed=228 failed=0**，退出码 **0**（二进制 11:06，含未提交的
+> A-47/A-48/A-49/A-50 与 L1；`bash scripts/wb_build.sh test_production && ./Release/test_production.exe`）。
+> 本轮新增/常驻的四组与逐组计数（用过滤器单跑得出来的）：
+> - `proxyTexture` **13 条**（用这个过滤器跑会**连带命中** `proxyTextureLadder`，
+>   所以 13 = 本体 7 + ladder 6）：代理纹理字节按 `osg::Image*` 去重、下限分辨率折算、
+>   阳性对照（不去重就会判成超限）。
+> - `proxyTextureLadder` **6 条**：字节超限时的降分辨率档位链，且**叶瓦片必须保留全部档位**。
+> - `texResize` **11 条**：把上一轮"用完即删"的克隆语义探针换成常驻回归——
+>   先钉住前提（`osg::clone(StateSet, …|DEEP_COPY_TEXTURES)` 出来的纹理
+>   `getImage()` **仍是同一张图**），再钉 `resizeImageToPowerOfTwo` 的
+>   copy-on-write：源像素/尺寸不动、不往共享图上写 `ORIGIN_*`、副本记录原始尺寸、
+>   达上限的图原样返回、300 px 的"低于上限但非 2 的幂"必须仍然拷贝（阳性对照）、
+>   空指针透传。见 AUDIT A-49。
+> - `bvhOrder` **16 条**（L1）：同一批样本、任意遍历顺序，结果逐位一致。
+> - `pipelineCoverage` 里 **5 条仪表接线断言**（A-47）：`micro_texture_export*` 三项阶段存在、
+>   `micro_materialize`/`micro_total_cpu` 存在、逐瓦片 `timing` 非零、
+>   `micro_evaluate_samples` 在 `counters`、`stages` 里不含 `samples`/`candidates` 字样。
+>   **这 5 条只证"接上线"，不证"算得准"**——数值闭合是产物级读数（AUDIT A-47 闭合读数段）。
+>
+> **一处没有对上的账，如实记**：上一档 181（10-20 13:08 二进制）与本轮 228 之间差 47 条，
+> **无法逐条对账**：`proxyTexture` 这个过滤器会**同时**命中 `proxyTextureLadder`
+> （13 = 两组之和，不是 13+6），而工作区在 10-20 下午之后还被并发改动过，
+> 会话里另有 212 / 223 两次中途读数（223 是 `texResize` 落地后拿的）。
+> 所以这里只报"当前实测 228/228 + 逐组过滤器读数"，**不声称能拆到每一条**。
+> 要拆账得把 HEAD 的版本单独取出来在别处构建基线（**共享工作区不要用 `git stash`**）。
+
 
 ## 3b. 包围体发布闸的边界：JSON 装不下非有限值
 
@@ -465,6 +511,55 @@ node scripts/va_paths.js <sessionFilter>                                        
   部件瞬现（pop-in）必须靠真实 GPU 人眼验收**，本机只有 SwiftShader
   软件 WebGL → 该项记 STATUS.md B-6，标 BLOCKED-VISUAL，不写"符合预期"；
 - 其余 10 个资产 rel errMax ≤ 56 %，与场景量级一致。
+
+> **本节整张表的误差列已作废（2026-10-20 下午）**。上表是**修复前**二进制的读数，
+> 当时 `MeshBVH` 的叶子按数组位置取三角形（`buildRecursive` 只重排了 `order`），
+> 最近距离被系统性放大到最多 **3.7 倍**。修复后的同输入矩阵读数见 **§5b**。
+> 表中两条依赖绝对误差大小的判读要按新数重述：
+> ① "t08 rel 100 % / t11 rel 99 % = 根代理无法表达孤立部件"——**不是**真实几何关系，
+> 是新数 **0.037 % / 0.11 %** 说明那两行主要是索引缺陷的产物；
+> ② `certified` 那一列的"上界含真实采样"在这份代码下**不可能达成**（见 §5b 末段），
+> 所以旧表的 63/13/3 这类合格证计数**不是**可比指标。
+
+## 5b. 修复后逐资产误差实测（`F:/wb_3dtiles_out/mx_bvh`，exe 13:09，2026-10-20 下午）
+
+同一 12 资产输入、同一命令，唯一变量是两处误差侧修复（`MeshBVH` 叶子索引 = AUDIT **A-44** +
+覆盖半径口径 = AUDIT **A-45**；另有 **A-46** 那条 `maxSamplesPerNode=0` 的加固，
+默认配置下不参与本表差分）。机制与阳性对照见 STATUS 的"2026-10-20（下午）"一节、§3。
+
+| 资产 | errMax 修复前 → **后** (m) | rel errMax% 后 | certified 前 → **后** | boundLoose 前 → **后** |
+|---|---|---|---|---|
+| t01 / t05 / t07 / t12 | 0 → **0** | 0 | 0 → 0 | 0 → 0 |
+| t02_thin_features | 40.35 → **1.276** | 0.90 | 3 → **0** | 1 → **3** |
+| t03_giant_single_mesh | 131.27 → **105.561** | 18.66 | 0 → 0 | 3 → 3 |
+| t04_many_objects | 317.14 → **17.360** | 3.05 | 63 → **0** | 59 → **63** |
+| t06_nonuniform | 754.27 → **8.699** | 0.43 | 13 → **0** | 13 → **15** |
+| t08_big_coords | 1.607e+7 → **5 993.585** | **0.037** | 3 → **0** | 3 → 3 |
+| t09_cross_tile_object | 386.77 → **4.513** | 0.36 | 3 → **0** | 3 → 3 |
+| t10_material_heavy | 123.29 → **1.104** | 0.40 | 3 → **0** | 3 → 3 |
+| t11_sparse_outlier | 5 643.16 → **6.387** | **0.11** | 7 → **0** | 6 → **7** |
+
+（`rel errMax%` 用 §5 的对角线列重算，量纲不变。）
+
+**结构侧完全没动**（这是本次修复的关键安全点）：
+`tileCount` 12/12 与修复前逐个相同；b3dm/i3dm **内容文件字节级改动 0 个**；
+逐瓦片差分 215 个瓦片里**自身上界 100 个变小、0 个变大、115 个不变**，
+`upper < lower` 违例 **0**——即修复只把以前虚高的保守上界往下收，
+**没有**任何一处把上界写得比实际更接近源表面（不违反手册"不得私自降低上界"，
+方向是反的：以前是过保守）。
+`node scripts/tileset_bounds.js F:/wb_3dtiles_out/mx_bvh` → **12/12 数据集干净**；
+官方 validator `bash scripts/run_validator.sh F:/wb_3dtiles_out/mx_bvh F:/wb_3dtiles_out/validation_mx_bvh`
+→ 12 个 tileset **errors=0**（仅 t12_big_texture 1 条 warning），逐份报告在
+`F:/wb_3dtiles_out/validation_mx_bvh/*.validator.json`。
+
+**待裁定（不由我代为决定）**：距离算对之后 `nodesCertified` 在 12 个资产上**全部为 0**，
+所有有内容的节点都是 `BOUND_LOOSE`。原因是 `CERTIFIED` 判据要求
+"上界 − 下界 ≤ `toleranceMeters`=1 mm 绝对值，或 ≤ 上界的 `certifyRatio`=2 %",
+而上界与下界之差就是 patch 的覆盖半径 ≈ patch 尺寸，在 `maxSamplesPerNode`=40 万的预算内
+数学上够不到。产物本身仍然安全（上界只会偏大），但"合格证"这一指标在这份代码下失效。
+合法出路只有两条：加大 `maxSamplesPerNode`（纯烧时间，与 1~2 h 目标直接冲突），
+或接受诚实的 `BOUND_LOOSE` 并改判据描述。**调低 `toleranceMeters` / 放宽 `certifyRatio`
+属于放宽验收，按手册禁止，本轮没有动。**
 
 
 ## 6. 真实 FBX 端到端（输出到 F 盘）
@@ -615,7 +710,7 @@ bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_a42fix      docs/model23d
 重算为面法线（任务 #13），**不得**改用"关掉 NORMAL 属性""把 validator 判 ERROR 的
 输入剔除"或"把 ERROR 降成 warning"这类过闸手段。
 
-**处置已于同日落地到代码，但还没有产物验证过它**（`49b6d3c`）：`SourceModel::repairZeroNormals`
+**处置已于同日落地到代码**（`49b6d3c`）：`SourceModel::repairZeroNormals`
 在 `materialize()` 的 `setNormalArray` 之前按三角形拓扑重建零长度法线——入射非退化面优先
 （v17 实测 55 条），自身全退化时退到本图元面积加权平均面法线（140 条），整图元都退化则
 **保持为零并 `OSG_WARN`**（v17 实测 **0 条**，所以不需要编造方向）。可用法线一律不动。
@@ -624,6 +719,55 @@ bash scripts/run_validator.sh F:/wb_3dtiles_out/matrix_a42fix      docs/model23d
 用的 exe 时间戳 **10:00**（早于 `49b6d3c`），同样不算验收轮。验收判据因此仍是
 **重新出盘 → `run_validator.sh` 逐资产看 `severity=ERROR` 叶层条数 → 自研电池复跑**，
 在这之前"v17/v18 未过发布闸"的记录不作废。
+
+### 2026-10-20（下午）复跑：误差侧修复后的矩阵 `mx_bvh` → 12/12 **errors=0**
+
+同一条 `bash scripts/run_validator.sh F:/wb_3dtiles_out/mx_bvh F:/wb_3dtiles_out/validation_mx_bvh`
+（`3d-tiles-validator@0.6.1`，逐资产取 `$?`，12 份报告落
+`F:/wb_3dtiles_out/validation_mx_bvh/*.validator.json`）：
+**12 个 tileset 全部 `numErrors=0`**，warnings 只有 t12_big_texture 那 1 条 KTX2 老面孔。
+这轮的变量是 §5b 的两处误差侧修复 + 未提交的 #6/#7 并行，
+所以它证明的是**这两处修复没有把格式合规性弄坏**（旁证：b3dm/i3dm 内容文件字节级改动 0 个）。
+**它不是 A-43 的产物级复验**——`mx_bvh` 的小资产本来就不含零长度法线（修复前也是 0 error），
+拦不住也验不出 A-43；v17 那一档仍需"用带 `49b6d3c` 之后代码的二进制重新出盘 → 逐资产数
+`severity=ERROR` 条数"，而那一次到现在**还没跑**（`lugouqiao_v18` 已按指令终止，
+盘上只有 `textures/`）。
+> **上面这句作废于 2026-10-20 下午**：`lugouqiao_v19` 就是那份"带修复重新出盘"，
+> A-43 的产物级复验已闭合，见下面一节。
+
+### 2026-10-20（下午）复跑：`lugouqiao_v19` **通过**，A-43 产物级复验闭合
+
+同一条 `bash scripts/run_validator.sh`，两份产物**同一轮、同一台机、同一份 validator**：
+
+| 数据集 | 头 numErrors | 叶层 `severity=ERROR` | 其中 `is not of unit length: 0` | 归组的瓦片数 | `run_validator.sh` 退出码 |
+|---|---|---|---|---|---|
+| `lugouqiao_v17`（`validation_v17_control/`，阳性对照） | 26 | **195** | **195** | 26 | 1 |
+| `lugouqiao_v19`（`validation_v19/`） | **0** | **0** | **0** | 0 | **0** |
+
+- ERROR 叶层逐条路径都是 `/meshes/N/primitives/0/attributes/NORMAL`，
+  消息 `Vector3 at accessor indices X..X+2 is not of unit length: 0.` ——与 §7 上面
+  2026-10-20 那份 v17 读数同一签名；v19 侧该模式**命中 0**。
+- **除 ERROR 之外的叶层逐类计数在两份产物之间完全相同**：
+  `This object may be unused` 1969、`Invalid value 'image/ktx2'` 1569、
+  `Image format not recognized` 1569、`KHR_texture_basisu` 不支持 691、
+  degenerate triangles 7。⇒ 这一轮改动只把零长度法线换成面法线，
+  没有顺带改变纹理、图元或索引侧任何东西（这比"v19 全绿"更有说服力）。
+- 自研尺同轮对照：`zero_normal_triage.js` 对 v17 报 **195**（退化 140 + 非退化 55），
+  对 v19 报 **0**；`zero_normal_tile_class.js` v19 `files=0 zeros=0`。
+  这条把"自研尺只统计不拦"的空档补上了：现在两侧数字与官方 validator 逐条对上。
+- v19 其余六项电池（`i3dm_pose_check` / `accessor_extents_scan` / `tileset_bounds` /
+  `glb_prims` / `check_manifest_assertions` / `path_leak_structural`）**全 rc=0 且读数达标**，
+  明细表在 STATUS 的"lugouqiao_v19 全量重跑"一节。
+- `path_leak_structural.js` 的**非空洞性**这轮用 fixture 证了：拿 v19 自己的 `t0.b3dm`
+  注入盘符 ⇒ `rc=1 LEAK（1 处）`、命中区 `glbJSON_0`；只注入相对 uri 的阴性对照 ⇒ `rc=0`。
+  v19 的 4 处裸正则命中全部落在 `glbBIN_1`（GLB 二进制 chunk），按脚本口径是字节噪声、
+  不算泄漏；`path_leak_scan.js` 报的 `t688/t840` 同一回事，歧义关闭。
+  **这条证据只覆盖 b3dm 侧**：fixture 生成器只吃 b3dm，i3dm 的分区（偏移 28 的
+  `gltfFormat`）本轮**没有**重做已知阳性验证；v19 的 126 个 i3dm 是靠"命中区表里
+  根本没有 i3dm 的裸命中" + `i3dm_pose_check.js` 独立解析通过来兜的，不等于同一把尺子验过。
+
+**仍未闭合**：v19 的**视觉验收一份都没做**，"官方 validator + 自研电池全绿"≠"发布验收通过"。
+判据本身还在重做（未闭合第 7 条）。
 
 KTX2 那批 warning 的成因这轮拿到了**validator 自己的话**，不再靠推断：
 叶层 info 里有 **691 条**（v17，= 带图的瓦片数）/ **81 条**（`longxiang_a42`）
@@ -684,13 +828,20 @@ node scripts/glb_prims.js docs/model23dtiles-production/runs/matrix_final/t0* \
 | t11_sparse_outlier | 15 | 2 | 1 824 | 1 824 | 7 296 |
 | t12_big_texture | 1 | 1 | 6 962 | 6 962 | 6 962 |
 | longxiang_covfix（真实 FBX） | 127 | 11 | 34 675 | 34 675 | 737 115 |
+| **longxiang_final512**（A-48/A-49 后，`-ptw 512`） | 127 | **32**（`t79`，6 张 >24） | 34 675 | 34 675 | 737 115 |
+| longxiang_final2048（同二进制 `-ptw 2048`） | 127 | **31**（`t79`，6 张 >24） | 34 675 | 34 675 | 737 115 |
+| longxiang_l0b（final + A-47 落盘仪表） | 127 | **32**（`t79`，6 张 >24） | 34 675 | 34 675 | 737 115 |
 | cmpt_probe（`mixed.cmpt`） | 1 | 1 | 12 | 3 588 | 3 600 |
 
 三点读法：
-1. **硬限核对全部通过**，而且是**读回真实产物**得到的，不是工具自报；
+1. **三角形两条硬限（去重/实例展开）核对全部通过**，而且是**读回真实产物**得到的，不是工具自报；
    b3dm 的"去重"列与 `conversion-report.json` 的 `maxTrianglesInTile` 逐个相等
    （t01 3 042 / t03 34 296 / t04 14 400 / longxiang 34 675 …），
-   说明写出器与统计口径没有分叉；
+   说明写出器与统计口径没有分叉。
+   **但 primitive ≤24 那一条本轮被打破了**：同一份产物 `longxiang_final512` 判 **rc=1**，
+   6 个内节点代理 25~32 个 primitive（`t0`=27/`t1`=26/`t21`=28/`t29`=25/`t79`=32/`t100`=28），
+   三角形两列与 covfix 逐值相等 ⇒ **破的是结构预算，不是负载**。旧写法"硬限核对全部通过"
+   只对 12 资产矩阵与 covfix 成立，对 2026-10-21 的纹理修复不成立 —— 定级见 AUDIT **A-51**。
 2. t05 的 `i2.i3dm` 去重只有 12 面、实例展开 3 588 面（feature table 里
    `INSTANCES_LENGTH=299`）——这两列的差就是 A-33 的量纲错配本身。
    硬限必须按展开列判；旧二进制只看字节，才会让 lugouqiao 的 507 822 面
@@ -734,6 +885,127 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
 > 所以 t08_big_coords 那种"源坐标本来就大"的数据集不会被误伤，它的越界判据是
 > 相对源尺度而非绝对值。）
 
+## 8c. 代理纹理折叠（A-51 方案 A）产物级对照（2026-10-21 下午）
+
+资产 `D:/BaiduNetdiskDownload/longxiang.fbx`（65 764 688 B，123 张贴图），
+参数一律 `-sp … -dc 24 -ptw 512`。**三组对照都是同一份源码、只差折叠开关或守卫开关**：
+
+| 目录 | 二进制 | 折叠 | 跨瓦片守卫 | 代理 prims max/mean | `prims>24` | 代理无纹理 | 叶 prims max/mean | 内容字节合计 | 墙钟 / CPU |
+|---|---|---|---|---|---|---|---|---|---|
+| `longxiang_abnofold/.wb-staging` | 15:53 前 | 关 | 无 | **32 / 12.7** | **6** | 2 | 11 / 3.6 | 87 793 600 | — / — |
+| `longxiang_fold512` | 14:55 | 开 | 无 | **24 / 9.8** | **0** | 2 | 11 / 3.6 | 87 565 848 | 120 s / 364 s |
+| `longxiang_guard512` | 15:53 | 开 | **有** | **24 / 9.8** | **0** | 2 | 11 / 3.6 | 87 563 536 | 338 s / 896 s |
+| `longxiang_nog2` | 16:54 | 开 | **摘掉**（只作计时对照） | 未测 | 未测 | 未测 | 未测 | 未测 | **329 s / 869 s** |
+
+> **最后一行为什么存在**：先前本节把 120→338 s 记成守卫的代价，**那个归因已经撤回**。
+> 16:53 备份源码后用 node 脚本把 `FoldScopeGuard` 整块摘掉、重编出 16:54 的二进制，17:00 跑出的
+> 墙钟/CPU 与 16:00、16:07 两次带守卫运行同档；且**贴图写出上游**的 `micro_evaluate`
+> 也一起翻倍（130.9 → 260.1 s，守卫根本不读 UV），而五次运行的工作量计数器逐项相同
+> （`micro_evaluate_samples` 48 963 414、`micro_texture_export_files` 121、`tileCount` 129）。
+> 当天同一资产同计数器下的墙钟跨 **119.9 – 436.4 s**（09:14=391.8、10:29=436.4、10:38=122.2、
+> 14:55=119.9、16:00=338.4、17:00=329.1）⇒ **表里这两列不是判据**，守卫的真实代价仍是未测，
+> 要量得在同一时间窗内交替跑两个二进制。
+
+- **折叠的收益**：代理图元 32→24、`>24` 违例 6→0、字节 −230 064 B（−0.26 %），
+  **纹理一条没少**（代理无纹理 2→2、叶瓦片逐值不变）——满足"顶层无贴图不可接受"。
+- **守卫为什么保留**：它是**瓦片隔离**的正确性修复，不是性能项。不加守卫时，后面瓦片的贴图
+  决策会读到前一个瓦片折叠时清掉的变换键。守卫的计时代价未测（见上），不作为保留/移除的依据。
+
+**"折叠有没有改采样"的判据（`E:/tmp/diag_all.js`，本轮新写）**：把每个代理瓦片、
+每张图集页（按 `images[].name` 内容哈希配对）的**最终采样坐标** `offset + scale·uv`
+量化到 `1e-5` 做多重集差。`guard512` vs `abnofold`：**450 组 / 505 880 顶点，有差的组 = 0**，
+最大计数偏差 0；4 组因页换名无法配对（页尺寸两侧逐值相同）。
+> **换页不是折叠造成的**：同一二进制同一参数连跑两遍也对不上 ——
+> `fold512` vs `fold512_b` 差 **5 组页 + 3 个没走折叠的叶瓦片**（`t40`/`t78`/`t119`），
+> `guard512` vs `guard512_b` 同样差 5 组 + 3 叶。机制是图集装配按
+> `unordered_map<osg::Geometry*, …>` 的指针哈希序遍历（`GltfOptimizer.cpp:2004`、`:2026`），
+> 记 **A-52**。⇒ **产物逐字节对照这把尺子对本条无效**，只能用量化坐标多重集 + 逐像素截图差。
+> 先前那把按排序索引对齐的尺子（`/tmp/fold_all.js`）报的"20 组超容差"是尺子自己的错。
+
+**OGC validator**：`longxiang_guard512` 头 `0 ERROR / 121 WARN / 0 INFO`，
+递归 `issues`+`causes` = 1514 WARNING / 837 INFO / **0 ERROR**、ERROR 文件数 0，
+与折叠前 `longxiang_final512` 的头三列逐项相同（`validation_lx_guard512/`）。
+> **口径更正（2026-10-22）**：1514 里含 **242 个带 `causes` 的结构节点**（121 告警文件 ×2 层），
+> 真叶 = **1272 WARNING / 837 INFO / 0 ERROR**。尺子 `E:/tmp/val_leaf.js` 只数无 `causes` 的节点，
+> 并用 `lugouqiao_v17` 的已知答案复算对齐（真叶 ERROR 195 / 告警文件 691 / 错误文件 26）。
+> `lx_p_a`（A-52 清零后的当前二进制）真叶读数同为 **1272 / 837 / 0** ⇒ 清零未改变校验结果。
+
+**预算闸真的在开火**：默认 `-dc 20` 跑折叠后的 longxiang → **rc=3**，
+`selfValidate` 拒 `tiles/t0.b3dm`=24、`tiles/t1.b3dm`=22（>20）。
+这条与手册 §3 的 24 之间的差值**未由我裁定**，见 A-51 与 STATUS 的 `-dc` 注记。
+
+**视觉验收（部分完成，别当成全量）**：`scripts/visual_capture.sh` + 无头 Edge/Cesium，
+`far-to-near` 4 帧采样，对照 = 同码不折叠的暂存产物；逐像素差（`sharp` raw，1280×720）：
+
+| 机位 | coverage 像素（对照 / 折叠） | 平均绝对差 | 最大差 | >8/255 通道占比 |
+|---|---|---|---|---|
+| `dist_30.00R`（纯代理 LOD） | 0 / 0 | **0.000** | **0** | 0.000 % |
+| `dist_11.42R` | 3 857 / 3 857 | 0.007 | 5 | 0.000 % |
+| `dist_3.15R` | 57 430 / 57 430 | 0.096 | 5 | 0.000 % |
+
+未见错位采样该有的大块错纹理；几何占比像素两侧逐值相同。
+**三个缺口**：①这三帧 `chromaFraction ≈ 0.0002`（画面近乎灰度），纹理判据灵敏度低；
+②折叠侧第 4 帧 `dist_1.20R`（近景）因超时未截到 ⇒ **折叠最相关的近景 LOD 边界没有像素级证据**；
+③发布资产 `lugouqiao` 的视觉验收仍未做。
+
+> ### 2026-10-22 复测：近景帧补齐（缺口 ② 闭合），并发现一把尺子缺陷
+>
+> **匹配对照换了**：上一段表的不折叠侧是**暂存产物**（`longxiang_abnofold`，走的是另一套纹理
+> 处置），且与折叠侧不同二进制档。本轮改用**同二进制、同 `-dc 100`、只差折叠入口**的一对：
+> `lx_fold_m100` vs `lx_nofold_m100`（`maxMaterialsPerTile` 两侧都置 100，只为让不折叠侧过闸，
+> 折叠与否是**唯一变量**）。四次截图落在 **09:06→09:39 同一时间窗**内。
+>
+> | 机位 | coverage 像素（折叠 / 不折叠） | 平均绝对差 | 最大差 | >8/255 通道占比 | >16/255 |
+> |---|---|---|---|---|---|
+> | `dist_30.00R` | **0** / 535 | 0.0204 | 109 | 0.0425 % | 0.0381 % |
+> | `dist_11.42R` | 3 857 / 3 857 | 0.0016 | **7** | 0.0000 % | 0 |
+> | `dist_3.15R` | 57 430 / 57 430 | 0.0231 | **9** | 0.0002 % | 0 |
+> | `dist_1.20R`（近景） | 285 856 / 285 856 | 0.0564 | **10** | 0.0033 % | **0** |
+>
+> 近景两侧 coverage / `projPx`（519.6）/ 可见瓦片清单逐值相同，差异全部落在 ≤10/255 的
+> 纹理边缘量化噪声上（`>16/255` 通道 **0 条**）——错位采样该有的成块错纹理没有出现。
+> ⇒ **缺口 ② 闭合：折叠在近景 LOD 边界上视觉中性。**
+>
+> `dist_30.00R` 那一行**不是产物差**：折叠侧那一帧是没加载出来的洞（`settleIters=12`、coverage=0），
+> 同窗内发布产物 `lx_p_a` 与不折叠侧都是 535 px ⇒ 该帧判据作废（与上一段表里"0/0 差 0"同理，
+> 两个洞相减得到的 0 不构成证据）。
+>
+> **发布产物 vs 上一轮已验收产物（同窗重截）**：`lx_p_a`（当前二进制、全默认：`-dc 24` 与 `-ptw 512` 都是默认值）对
+> `longxiang_guard512` 于 09:39 重截的 `lx_guard512_recheck`，近景 `dist_1.20R`
+> 平均 0.0230、**最大 5**、`>8/255` 通道 **0 条** ⇒ A-52 画布清零与其后的改动**未带来视觉变化**。
+>
+> **尺子缺陷（本轮新踩到，影响所有历史截图读数）**：同一份 `longxiang_guard512` 产物，
+> 10-21 16:35 截的 `silLumAvg` = 141.8 / 138.0 / 131.8，10-22 09:39 重截 = 91.3 / 80.2；
+> 而两侧 coverage（3 857 / 57 430 / 285 856）、`projPx`（54.6 / 197.8 / 519.6）、
+> 3.15R 机位可见瓦片清单（各 51 块，`only in` 两侧均空）**逐项相同**
+> ⇒ 差在**渲染曝光**，不在产物。⇒ **逐像素判据只在同一时间窗内有效**，跨窗的绝对亮度
+> （`silLumAvg`、`spread`）互不可比。上一段表里"最大差 5"仍然成立（两侧同窗），
+> 但它与本轮表不属于同一亮度档，不能拿来做趋势。
+>
+> **缺口更新**：① 仍然成立（本轮四帧 `chromaFraction` 依旧 0.0002～0.0003，画面近灰度，
+> 纹理判据灵敏度低）；② **已闭合**；③ `lugouqiao` 的视觉验收由用户裁定**停做**
+> （A-54 走"明确失败"，见 AUDIT 的 A-54 与本节 §8c）。
+
+**回归**：`test_production` **277/277**（`foldUv` 26 + `budgetGate` 9 + A-52 的 `atlasCanvas` 14；
+本段先前记的 263 是 `atlasCanvas` 落地前的读数），
+`longxiang_guard512` 的报告不变量与折叠前逐项相同（`tileCount` 129、`maxContentBytes`
+2 535 648、`errorMaxMeters` 94.515 468 985 376 81、`nodesCertified` 2 / `nodesBoundLoose` 60）。
+
+> **发布产物 `lx_p_a` 的七项自研电池（2026-10-22 逐条取 rc，全部 rc=0）**
+>
+> | 尺子 | 读数 |
+> |---|---|
+> | `scripts/glb_prims.js` | 127 个内容文件（121 b3dm + 6 i3dm）违例 + 解析失败 **0**；`max prims/tile = 24`（`t0.b3dm`，正好压在上界）、实例展开三角形最大 34 675（`t60.b3dm`）在 12 万硬限内 |
+> | `scripts/i3dm_pose_check.js` | **rc=0**：6 个 i3dm / 10 条实例位姿在**相对帧** 100 % 对上、最近邻残差最大 **7.11e-6 m**、绝对帧比对 **0 命中**（正确签名）、POSITION 全 0 瓦片 0、GLB 节点带 TRS 0、原型 `\|v\|` 最大 126.55 m ⇒ §9 那条"任何带 `.i3dm` 的既有产物一律不可发布"对**当前二进制**的 longxiang 已解除 |
+> | `scripts/check_manifest_assertions.js` | `aggProxies 10 / aggBuilt 10 / aggSkipped 0`、`occurrences 571`、断言 **PASS** |
+> | `scripts/accessor_extents_scan.js` | 1 662 个 VEC3 访问器，声明≠实算 0、非有限分量 0、`>1e6` 瓦片 b3dm/i3dm 均 0（max\|c\| 144.8 / 126.6 m） |
+> | `scripts/zero_normal_triage.js` | **零长度 NORMAL 顶点 = 0**（A-43 在这档资产上产物级为 0，不是"有但没判"） |
+> | `scripts/path_leak_structural.js` | 127 瓦片 + 3 旁证 **CLEAN**，裸命中进 JSON 区 0、padding 残留 0、尺子失效 0 |
+> | `scripts/tileset_bounds.js` | 父不覆盖子 0、NaN box 0、负半轴 0、非法 geometricError 0、子级误差大于父级 0 |
+>
+> 官方 validator 的读数在上面同一段落里（真叶 1272 WARN / 837 INFO / **0 ERROR**）
+> ⇒ **longxiang 档的验收证据就此齐了**：转换 rc=0 + 七项电池 + validator + 报告不变量 + 4 帧逐像素。
+
 ## 9. 验证结论
 
 - **实例位姿（A-41，本轮新增口径）**：代码分两段修好（flatten 掩码 exe 22:40 /
@@ -770,12 +1042,28 @@ NaN box 0、负半轴 0、非法 `geometricError` 0、**父盒不覆盖子盒 0*
   `featuresMissingFromLeaves=0` / `proxyDroppedFeatureCount=0`；
   `aggregateProxies` 补全后可由源 feature 反查代理 ID 与其代表的源集合；
 - 视觉链路：CesiumJS 加载渲染真实出图，自动化 0 错误；
+- **误差口径（2026-10-20 下午重新基线）**：`MeshBVH` 叶子索引 + 覆盖半径两处修复后，
+  12 资产矩阵 `mx_bvh` 的 `errorMax` 全线下降（t08 1.607e7→5 993.6 m、t11 5 643→6.39 m）、
+  **0 个瓦片自身上界变大**、`upper<lower` 违例 0、内容文件改动 0，
+  validator 12/12 `errors=0`（§5b/§7）。代价是一条**待用户裁定**的判据问题：
+  `nodesCertified` 在这 12 个小资产上全部变成 0，`CERTIFIED`（1 mm 绝对 / 上界 2 %）
+  在诚实距离 + 40 万样本预算下不可达；**但"全部归零"不是普适结论**，
+  `lugouqiao_v19` 仍有 63 个 CERTIFIED（450→63）。本轮**没有**为了凑合格证去动
+  `toleranceMeters`/`certifyRatio`（那属于放宽验收），也没有加大采样预算。
+- **A-51 方案 A（代理折叠）已于 2026-10-21 下午做完产物级验收**（§8c）：代理 prims
+  32/12.7→24/9.8、`>24` 违例 6→0、纹理保住、validator 叶层 0 ERROR 与折叠前逐项相同、
+  450 组 / 505 880 顶点的最终采样坐标量化多重集 **0 组有差**。
+  同轮发现并记入 **A-52**：图集装配顺序随指针哈希漂移，**同二进制同参数两遍跑产物不逐位相同**
+  （实测 5 组换页 + 3 个叶瓦片字节差），所以"产物逐字节对照"从今往后只能当阴性对照看。
+  折叠的视觉验收**近景帧已于 2026-10-22 补齐**（同二进制匹配的 m100 一对，`dist_1.20R` 最大差 10、
+  `>16/255` 通道 0 条，见 §8c 末尾）；发布资产 `lugouqiao` 的视觉验收由用户裁定停做（A-54 走明确失败）。
 - 未决：真实 GPU 人眼验收（BLOCKED-VISUAL）、Python 采集器（BLOCKED B-5）、
-  **A-43 写出侧处置的产物级复验**（修复代码已在 `49b6d3c` 落地并通过 `test_production`
-  167 条单测；官方 validator 对 `lugouqiao_v17` 判 **26 个内容文件 ERROR**、`rc=1`，见 §7，
-  零长度 NORMAL 虽判为源侧自带，但发布闸按 ERROR 计，
-  这份产物在**用修复后的二进制重新出盘并复跑 validator** 之前**不可发布**）、
-  **`lugouqiao_v17` 的视觉验收**（端到端与官方 validator 都已跑过，不再是待办）、
+  **A-43 写出侧处置的产物级复验已于 2026-10-20 下午闭合**（不再是待办）：
+  `lugouqiao_v19` 经同一 validator 判 **0 error / `rc=0`**，同轮对 `lugouqiao_v17` 复跑
+  仍是 **195 条 zero-length-normal ERROR / `rc=1`** 作阳性对照，明细见 §7 末尾。
+  **`lugouqiao_v19` 的视觉验收**（与 v17 一样还没做，validator/电池全绿不等于可发布）、
+  **`lugouqiao_v17` 不必再做视觉验收**（它已被 v19 取代，且本身没过发布闸），
+  要验的是 **v19** 这一份，而它的判据本身还在重做（未闭合第 7 条）、
   **芜湖水厂用当前 HEAD 复跑**（`wuhu_v1` 是 A-41/A-42 之前产物，已判废）、
   **433 MB 的 `jianzhu+tietu.FBX` 从未出过盘**（5 个目录只有纹理），
   longxiang 内存回退（B-7）。

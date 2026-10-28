@@ -52,7 +52,14 @@
 | A-40 | 同一二进制、同一输入，产物**不逐位一致**：t02 累计 127 次产物里 121 次落在同一基线，6 次是**整棵瓦片树变了**的变体（共 5 个互不相同的哈希；`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3 之间跳，峰值 RSS 也随之变）。变体同时出现在默认并行(jobs8)、`WB_JOBS=4`、`WB_PROXY_DEBUG=1` 三种配置，其中 jobs4 那次的哈希与旧记的"WB_PROXY_DEBUG 第 3 跑"变体**完全相同** → 变体与调试开关、与并行度都无绑定（旧结论"不是并行度本身"证据仅 n=6 已撤回）。而且**同一份 b3dm 内容会换瓦片槽位**（基线 t5 == 变体 t3，sha256 相同）——症状不是数值算错，是分类/分配次序依赖运行时时序。**本轮新增第二个样本 t09（单轮 0.75 s）**：22:40 二进制单独跑 8 次得 3 个 `t0.b3dm` 变体，矩阵内那次是第 4 个，且 `errMax` 随变体在 386.77 ↔ 331.62 之间动；6/8 次逐字节等于 22:14 那轮的树 → 变体也与**二进制版本**无关 | `ProductionPipeline::buildB3dmTree` 并行窗口 / 误差评估分支 | OPEN（非确定性来源未定位；jobs4 也复现，说明"关掉并行即可稳定"未经证实；t09 可用 8×0.75 s 廉价复现，是后续定位的首选样本） | 17 | 高 |
 | A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` / `buildInstanceTree` | FIXED（两段分开修：flatten 掩码 22:40 生效；"相对原型"那半在 22:40 是**空操作**——`pw.invert(invProto)` 把方向写反，23:53 才真正生效。验收口径同时从"命中绝对平移"改到相对帧。v15/v16 与所有 22:40 产物一律作废） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
 | A-42 | 发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` **分发出去**：lugouqiao_v15 实测 **691/1057** 个瓦片带 `F:/wb_3dtiles_out/lugouqiao_v15\textures\…`）；FBX 导入器用源文件绝对路径命名根节点，顺着 `nodePath` 进 `feature-manifest.json`（同数据集 **2729** 处 `D:/BaiduNetdiskDownload/…fbx/…`）。副作用更难查：name 进 GLB JSON chunk → 同一输入、同一代码，t12 的 `t0.b3dm` 在不同输出目录下出现过 510432/510440/510344/510304/510296 五个尺寸，**以前把这类差异算成 A-40 的噪声** | `Osg2Gltf.cpp::getTexture` + `SourceModel.cpp::SourceModelVisitor::apply(Node&)` | FIXED（exe 00:12 + 插件 00:16：两处只留文件名；`path_leak_scan.js` 复扫 `matrix_a42fix` **0/213 瓦片、0/36 json**；两个长度差 40 字符的目录产出 sha256 相同；`test_production` 150/150。**`osgdb_gltf` 是 MODULE 插件，按目标构建不会重建它**。v17 复验：结构判据 `path_leak_structural.js` 报 **1057 瓦片 CLEAN / rc=0**、旁证绝对路径 **2729→0**；`path_leak_scan.js` 那 4 处是 BIN chunk 噪声，不是泄漏，该工具降级为粗筛） | —（手册未列：交付物含本地路径） | 中（分发物带操作者目录结构；并污染"逐字节可复现"这一验收口径） |
-| A-43 | 产物里有零长度 NORMAL：`lugouqiao_v15` 实测 **195 个顶点 / 26 个瓦片**，其中 **55 个落在非退化三角形上**（法线本该算得出）。旧判据用绝对面积阈值，1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，无法定级 | **源数据本身**（非产品代码）；产物侧为忠实透传 `SourceModel.cpp:805-807`、写出闸 `:856` | 源侧定性 **CONFIRMED**，写出侧修复**已在 `49b6d3c` 实施（单测 17 条 / 全量 167 条通过，尚无产物）**：裸读源 FBX 实测 2729 个法线数组（解析失败 0）、按内容去重 626 个，其中 **7 个含零法线**（另有 29 个逐字节相同的 instance 拷贝，故原始计数是 36 个数组）；零角点 **63** 个 = **21 个整面全零三角形**（按 PVI 真实负下标边界算，不是"3 角点/面"假设），散落单角点 **0**。尺子本轮已修对（主判据 `REL×中位面积`、绝对阈值降为对照列、`make_zero_norm_fixture.js` 阳性对照、非单位列做解析自检）。已排除：简化器（`EXACT_LEAF` 瓦片带同样 3 条）、写出侧造零（`SourceModel` 只能原样带上或整条丢掉）、平滑（`-nrm` 未开，`SmoothingVisitor` 不参与）、A-38 同族（确定、可逐字节复现）。证据 `evidence/a43-source-side-fbx-probe.txt`，含源↔产物两条独立读路径在同一个 4 818 面 mesh 上对上"面数 + 3 条零" | —（手册未列：非单位法线） | 低（**成因**：输入数据缺陷 + 忠实透传，可渲染、局部 shading 异常）。**发布等级本轮上调**：2026-10-20 官方 validator 对 `lugouqiao_v17` 判 **rc=1 / 26 个内容文件 / 叶层 195 条 `not of unit length: 0` ERROR**（同工具对 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 0 error），旧写法"validator 只逐条告警、不按拒绝发布处理"已撤回——写出侧修复已于 `49b6d3c` 落地（`SourceModel::repairZeroNormals`，v17 分档实测 55 可由入射面修复 / 140 退本图元平均面法线 / 0 无解），但 v17 与在跑的 v18 都不是这份代码出的盘，重新出盘并复跑 validator 之前不可发布；禁止用丢属性或降级判据凑通过 |
+| A-43 | 产物里有零长度 NORMAL：`lugouqiao_v15` 实测 **195 个顶点 / 26 个瓦片**，其中 **55 个落在非退化三角形上**（法线本该算得出）。旧判据用绝对面积阈值，1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，无法定级 | **源数据本身**（非产品代码）；产物侧为忠实透传 `SourceModel.cpp:805-807`、写出闸 `:856` | 源侧定性 **CONFIRMED**，写出侧修复**已在 `49b6d3c` 实施，并于 2026-10-20 下午**产物级复验通过**（`lugouqiao_v19`：validator 叶层 ERROR **0** / `rc=0`；同轮对 v17 复跑仍是 195 条 / `rc=1` 作阳性对照；`zero_normal_triage.js` v17=195 → v19=0）**：裸读源 FBX 实测 2729 个法线数组（解析失败 0）、按内容去重 626 个，其中 **7 个含零法线**（另有 29 个逐字节相同的 instance 拷贝，故原始计数是 36 个数组）；零角点 **63** 个 = **21 个整面全零三角形**（按 PVI 真实负下标边界算，不是"3 角点/面"假设），散落单角点 **0**。尺子本轮已修对（主判据 `REL×中位面积`、绝对阈值降为对照列、`make_zero_norm_fixture.js` 阳性对照、非单位列做解析自检）。已排除：简化器（`EXACT_LEAF` 瓦片带同样 3 条）、写出侧造零（`SourceModel` 只能原样带上或整条丢掉）、平滑（`-nrm` 未开，`SmoothingVisitor` 不参与）、A-38 同族（确定、可逐字节复现）。证据 `evidence/a43-source-side-fbx-probe.txt`，含源↔产物两条独立读路径在同一个 4 818 面 mesh 上对上"面数 + 3 条零" | —（手册未列：非单位法线） | 低（**成因**：输入数据缺陷 + 忠实透传，可渲染、局部 shading 异常）。**发布等级本轮上调**：2026-10-20 官方 validator 对 `lugouqiao_v17` 判 **rc=1 / 26 个内容文件 / 叶层 195 条 `not of unit length: 0` ERROR**（同工具对 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 0 error），旧写法"validator 只逐条告警、不按拒绝发布处理"已撤回——写出侧修复已于 `49b6d3c` 落地（`SourceModel::repairZeroNormals`，v17 分档实测 55 可由入射面修复 / 140 退本图元平均面法线 / 0 无解），v17 与已终止的 v18 都不是这份代码出的盘，**`lugouqiao_v19` 才是**（2026-10-20 下午，ERROR 0 / rc=0）； **v19 的视觉验收仍未做**，电池与 validator 全绿不等于可发布；禁止用丢属性或降级判据凑通过 |
+| A-51 | A-48 保住代理纹理之后，内节点瓦片 glTF primitive 冲破手册 §3 的 ≤24（实测 6 张：`t0`=27/`t1`=26/`t21`=28/`t29`=25/`t79`=32/`t100`=28，修前基线最大 11），代理侧 `prims == materials` 严格 1:1、材质合并**零收益**；机制是图集路径被 `GltfOptimizer.cpp:1089-1099` 的 UV>1 判据整体挡掉（本资产 sampler 是 `REPEAT`，UV 越界合法），而 `maxPrimitivesPerTile`/`maxMaterialsPerTile` 只被 `SpatialPartitioner.cpp:16-17` 消费，**代理路径与 `selfValidate` 都没有这道闸** | `src/utils/GltfOptimizer.cpp:1089-1099`、`src/3dtiles/production/SpatialPartitioner.cpp:16-17` | **方案 A 已实施 + 产物级实测（2026-10-21）**：代理 prims 32/12.7 → **24/9.8**、`prims>24` **6 → 0**、纹理保住（代理无纹理仍 2）；`selfValidate` 的 primitive/材质闸已补。三条未决归用户：①`-dc` 默认 20 会把折叠后的 longxiang 判死（代理 max=24 > 20 → rc=3）；②折叠态跨瓦片外泄已用作用域守卫修掉（守卫**为瓦片隔离而保留**；先前记在它头上的"写出 2.4× CPU"已用同时段无守卫对照**撤回**，真实代价未测，见 §A-51 落地第 5 条）；③近景 + 发布资产视觉验收未做 | 3 / 7.3 / 17 | 高（阻塞 A-48 的产物级验收：`longxiang_final512` 不是可发布产物） |
+| A-52 | 同一二进制、同一参数连跑两遍，产物不逐位相同。首观测 `longxiang_fold512` vs `longxiang_fold512_b`（都 `-dc 24 -ptw 512`）差 5 组图集页 + 3 个**根本没走折叠**的叶瓦片字节（`t40`/`t78`/`t119`）；带守卫的 `guard512` vs `guard512_b` 同样。**原归因（`processTextureImages` 按 `unordered_map<osg::Geometry*,…>` 的指针哈希桶序装配图集）已被实测推翻**，见下"实测机理" | `src/utils/TexturePacker.cpp:100`（画布分配） | **已修，串行 + 默认并发两档均复证通过**：`lx_z_a`/`lx_z_b`（串行）与 `lx_p_a`/`lx_p_b`（并发）各 **246/246 逐字节相同、trace 差 0 行**；阳性对照用同一把尺子跑修前那对（`lx_tr2_a`/`lx_tr2_b`）仍判 **FAIL**，⇒ PASS 不是尺子失灵。机理见下方"实测机理"。**回归测试已补**：`atlasCanvas`（`tests/production/main.cpp`，14 条断言）—— 负对照实测：去掉 `TexturePacker.cpp:114` 的清零重编 → `dirty=600/3600`，3/3 次 rc=1；装回 → 14/0，3/3 次 rc=0。第一版（只污染 1 MiB 堆）在无清零时仍 10/0 通过，是空过，已重做 | 17 | 中（不影响单份产物的自洽性，影响跨运行可复现性与回归对照方法） |
+| A-53 | `test_production.exe` **间歇性堆损坏**：进程在 `[partition] giant single mesh must split` 处硬死，bash 侧只看到 rc=127。Windows 事件日志 Id 1000 记故障模块 `ntdll.dll`、异常码 **`0xc0000374` = STATUS_HEAP_CORRUPTION**，随后 Id 1001 出现 `FaultTolerantHeap`（系统在反复崩溃后启用的兜底）。单跑该用例（filter `giant`）也能死 ⇒ 与前面的套件无关 | `tests/production/main.cpp:353`（用例入口），真正越界点**未知** | **OPEN（未归因）**。旧二进制（18:01，不含 A-52 清零）：18:01 全量 **263/0**、19:03 全量 **rc=127**（当时两遍 trace 生产运行在跑）、19:30 单跑 **rc=127**、几分钟后单跑 **rc=0**。新二进制（19:37，含清零）：全量 **263/0 ×2**（rc 直接取）、单跑 `giant` **8/8 通过**。再加一轮（20:0x，含清零 + `atlasCanvas` 的二进制，无并发生产负载、串行单进程）：单跑 `giant` **20/20 通过**、全量 **277/0 ×2**。两侧样本都小，**不能声称已消失**；两次崩溃观测都有并发因素（重负载生产运行 / 同 CWD 里第二个 test 进程抢写 `test_production_progress.txt`）。资源已排除：物理可用 71 GB、提交 108/150 GB、C/E/F 盘余 288/124/3693 GB。复现时下一步：Application Verifier 页堆或 WinDbg 抓现场 | 12 / 17 | 中（不碰产物，碰的是回归结论的可信度） |
+| A-54 | 发布资产 `lugouqiao`（335 MB）在**当前二进制**（A-51 折叠 + A-48 代理纹理 + A-52 清零，默认 `-dc 24` / `-ptw 512`）下被 primitive 预算闸拒绝：`selfValidate: content over primitive budget: tiles/t8.b3dm (26 primitives > 24)`，`rc≠0`、产物**未提交**（`discardStaging()` 删掉 `tiles/`，`F:/wb_3dtiles_out/lugouqiao_v20/textures/` 只剩 939 张暂存图集页）。stderr 只有这一条 ERROR ⇒ 越界瓦片集合 = {`t8`} | `src/3dtiles/production/ProductionPipeline.cpp:1952-1958`（闸门本身按手册正确开火）；越界成因在代理写出侧：A-48 保住贴图后宿主数上升，A-51 折叠未能把 `t8` 压进 24 | **已裁定（2026-10-22，走 ③「明确失败」）：上界一条都不动，该资产当前不可发布**。对照读数：同资产 `lugouqiao_v19`（10-20 二进制，A-48/A-51 之前）**1057 个瓦片 max prims/tile = 11、0 违例** ⇒ 这 26 是"保纹理"这一侧换来的。三条出路：①显式抬 `-dc`（= 放宽手册 §3 上界，需批准）；②对 `t8` 这类瓦片继续按预算降代理纹理分辨率/合并宿主压到 24（牺牲远景清晰度）；③按 §7.3 走明确失败，该资产当前不可发布。诊断跑 `lugouqiao_v20prims`（`-dc 100`，20:42→21:06，**仅测量、不作验收产物**）换闸不掉：**`content over material budget: tiles/t8.b3dm (26 materials > 24)`，rc=3** ⇒ ①`prims == mats == 26`（1:1，折叠合不掉）、②两次都只有一行 ERROR ⇒ 越界集合 = {t8}、③**抬 `-dc` 单独不够**：`maxMaterialsPerTile` 恒 24 且 CLI 无开关（`ProductionProfile.h:34`、`main.cpp:661-679`）。口径限制：`main.cpp:666-668` 连 `targetPrimitivesPerTile` 一起改，而 `SpatialPartitioner.cpp:16-17` 消费两者 ⇒ 诊断跑的切分与出货配置不同，两个"t8"不是同一块内容。对照 `v19` 的 `t53` = 11 prims/11 mats/10 texs、`t8` = 1 prim/0 material（解析器 `E:/tmp/glb_mats.js`，阳性对照 = `glb_prims.js` 报的 t53=11 两脚本一致）。**裁定原文（2026-10-22）：走 ③「明确失败」** —— 上界一条都不动（`-dc` 默认 24、材质闸恒 24 都不改），也不再用纹理预算侧杠杆去凑通过；`lugouqiao` 这档资产**按当前判据即不可发布**，验收链就此停止（不出盘、不再跑 validator、不做该资产视觉验收），先把 `longxiang` 档的验收做完（已完成，见 §8 的 2026-10-22 复测段）。以后若要把这档资产救回来，需要的是**重新裁定判据**，不是再跑一次 | 3 / 7.3 / 17 | 高（阻塞该资产发布；对 `longxiang` 档不阻塞）|
+
+> **汇总表滞后**：本表只到 A-43 + 新加的 A-51。A-44 ~ A-50 有独立小节、没有表格行
+> （`grep '^### A-'` 为准），补表时别只补 A-51 就宣称表是完整的。
 
 ---
 
@@ -937,6 +944,27 @@ sha256 已经相同。**本节赖以立论的 t02（127 份产物）与 t09（8 
 `if (!appendElements(...)) { nrm = nullptr; }` 语义把它降级成"该属性不进合并
 几何"，是丢属性而不是写坏内存。
 
+**65 MB 真实 FBX 上的第三个样本（2026-10-21，`longxiang`）**：同一功能等价二进制、
+同参数 `-ptw 512`、各自全新输出目录的两跑
+（`longxiang_final512` vs `longxiang_l0b`，后者只多了 A-47 的落盘仪表）：
+
+- **8/129 个瓦片 `contentBytes` 不同**：叶 3 个（`t40`/`t78`/`t119`，正是以前认定
+  "与同参数对照对完全一样"的那三张）+ 代理 5 个（`t25`/`t43`/`t62`/`t105`/`t106`，
+  单张最大 −6 928 B）。**每瓦片 `triangles` 全同、五个误差字段 129/129 全同、
+  结构计数与 `errorMax/p95/mean` 逐值相同**，总字节只差 −9 920 B（0.01 %）。
+  ⇒ 噪声地板不是"3 张叶"，65 MB 档实测**最多 8 张**，且代理瓦片也会动
+  （代理的字节主要来自图集/KTX2 组合，`tbb::parallel_for` + 按文件名/哈希去重的
+  完成次序都是嫌疑；本轮未定位）。
+- **耗时也跟着动**：同输入同参数，wall 119.16 → 188.28 s、进程 CPU 秒 372.6 → 542.9 s，
+  而 `micro_evaluate_samples` 两跑**完全相同**（48 963 414）。也就是说变体不只是
+  "谁落到哪个瓦片"，**同样的样本量可以花掉 1.46 倍的 CPU 秒**——
+  这条对本条的老问题（"变的是分类/分配次序"）是新的支撑，
+  对"计时口径不可跨会话比"是新的量化。
+- **对验收闸的直接影响**：`report_tile_diff.js` 在这种纯观测改动下判 **FAIL
+  （contentBytes=8）**，是**真噪声不是回归**。所以 PERFORMANCE §2.2 那句
+  "每根杠杆 A/B 要同一杠杆重复 ≥3 次"在 65 MB 档同样成立，
+  而且**代理瓦片也要纳入对照**（以前只盯叶）。
+
 ---
 
 ## 与手册「已发现风险清单」的对应关系
@@ -1198,7 +1226,7 @@ cmpt 偏移 12 与规范的偏差目前只有 1 份样本（其余数据集 `.cm
 
 ---
 
-### A-43 产物里有零长度 NORMAL，一部分落在非退化三角形上　**源侧定性 CONFIRMED；写出侧修复已实施（`49b6d3c`，单测级），产物级复验未做**
+### A-43 产物里有零长度 NORMAL，一部分落在非退化三角形上　**源侧定性 CONFIRMED；写出侧修复 `49b6d3c` + 产物级复验通过（`lugouqiao_v19`，2026-10-20 下午）**
 
 **现象**：官方 3D Tiles validator 会对每条这样的法线报 `is not of unit length: 0`，
 但不告诉调用方那个三角形是不是退化的，所以"报了多少条"本身没有严重性信息。
@@ -1301,6 +1329,573 @@ instance 拷贝——不去重会把"7 个 mesh"说成"36 个 mesh"，那是夸�
 构建为 `cmake --build build_wb --config Release --target test_production`（rc=0），
 只建测试目标、未触碰正在出盘的 `Release/model23dtiles.exe`。
 
-**尚未闭合**：没有任何产物是带这份修复出的盘。**10:16 起跑的 `lugouqiao_v18` 用的
-exe 时间戳是 10:00**（早于 `49b6d3c`），所以 v18 预期仍会报同样 195 条，不能当验收。
-需要一次用 `49b6d3c` 之后二进制的重新出盘，再跑 `run_validator.sh` + 自研电池。
+**已于 2026-10-20 下午产物级闭合**（`lugouqiao_v19`，用含 `49b6d3c` + #6/#7 + A-44/A-45/A-46
+的那份未提交二进制出盘，`rc=0`）。官方 validator 同轮双跑对照：
+**v17 叶层 195 条 `is not of unit length: 0` ERROR / 归组 26 个内容文件 / `rc=1`**，
+**v19 叶层 ERROR = 0 / `rc=0`**；自研尺 `zero_normal_triage.js` 同轮读 v17 = **195**
+（退化 140 + 非退化 55，与 A/B/C 三档计划逐值对上）、v19 = **0**。
+更有说服力的是**非 ERROR 的叶层逐类计数两份完全相同**（1969 / 1569 / 1569 / 691 / 7），
+说明这轮只换了法线、没动纹理与图元。明细见 VALIDATION_REPORT §7 末尾。
+**仍未闭合的是视觉验收**：v19 一份都没看，"电池 + validator 全绿"不等于可发布。
+> 早期记录里"10:16 起跑的 `lugouqiao_v18` 用的 exe 时间戳 10:00（早于 `49b6d3c`），
+> 不能当验收"这句仍然成立，v18 已按指令终止、盘上只有 `textures/`，是废件。
+
+### A-44 `MeshBVH` 叶子按数组位置取三角形，最近距离系统性偏大（最高实测 3.7×）　**FIXED（未提交，2026-10-20 下午）**
+
+**机制**：`buildRecursive` 用 `_tris[order[i]]`（HEAD `GeometryErrorEvaluator.cpp:104`）
+计算节点 AABB 并按质心中位数重排 `order`，但 `distanceSquaredRecursive` 的叶子循环
+读的是 `_tris[i]`（HEAD `:166`）——**置换从来没有落到三角形数组上**。
+叶子区间 `[begin,end)` 因此按位置读到不属于这个包围盒的面片。
+
+**方向**：只会**偏大**（读到的是同一 soup 里别的面片，距离是"某些面的最小值"而不是
+全局最小值），不会偏小。所以**没有**触发手册 9.3"不得把保守上界写小"的违规，
+产物在语义上一直是安全的；但它让每一次误差评估的下界、上界、收敛判定都建立在错的距离上：
+
+- `errorMaxMeters` / `tilesetGeometricError` / `errorP95Meters` **全部虚高**，
+  跨版本不可比（VALIDATION_REPORT §5b 给了修复前后的逐资产对照，t08 1.607e7→5 993.6 m）；
+- 代理会被判得比实际粗糙（因为下界虚高 → 误差"看起来"大 → 更多轮简化/更保守的几何），
+  这直接污染性能数字的可解释性；
+- 收敛判定（`maxSampleDist + radius <= globalLower + tolerance`）里的 `globalLower` 偏大，
+  于是 CERTIFIED 曾经"太容易"拿到。
+
+**发现路径**（不是主动 review 出来的，是 A/B 的阳性对照逼出来的）：给误差上界做
+"同一输入新旧上界逐节点对比"时，正例（真值已知的小几何）里**报出的下界超过了分析真值**——
+这是不可能事件，只能来自查询本身。
+
+**修**：建树结束后把置换落到数组上（`GeometryErrorEvaluator.cpp:98-100`：
+`sorted[i] = _tris[order[i]]; _tris.swap(sorted);`），查询侧继续用位置下标，两侧口径一致。
+
+**验证**：新增 `testMeshBVHMatchesBruteForce`（8×8 网格 64 三角形 × 6 探针，
+oracle 用"每个三角形单独建一个 BVH"取最小——单三角形必为叶子，索引路径退化，因此精确）。
+**修复前 6 个探针 4 个失败**，修复后 6/6；12 资产矩阵 `mx_bvh` 复跑
+215 瓦片 **100 个自身上界变小 / 0 个变大**、`upper<lower` 违例 0、
+b3dm/i3dm **内容文件改动 0**、`tileset_bounds.js` 12/12 干净、官方 validator 12/12 `errors=0`。
+
+### A-45 覆盖半径在采样密度被降级后仍取 `L/3`，上界**不成立**（HEAD 即存在）　**FIXED（未提交，2026-10-20 下午）**
+
+**机制**：上界 = `maxSampleDist + patchRadius`，`patchRadius` 在 HEAD 里无条件返回
+`最长边 / 3`（HEAD `:232-240`，注释写"采样点集合 = 3 顶点 + 3 边中点 + 重心"）。
+`L/3` 只在**那 7 个点全采到**时成立。而 HEAD 的密度自适应是
+`while (perTri > 1 && from.size() * perTri > budget / 2) { --perTri; }`（HEAD `:253`）——
+三角形数一大，`perTri` 能一路掉到 **1**，连三个顶点都不保证查全。
+此时正确的保守系数是 `L/√3`（顶点集合覆盖：锐角外接半径 `L/(2 sin θ_max)`，
+θ_max∈[60°, 90°) ⇒ ≤ `L/√3`；钝角外接半径 `L/2`），`L/3` 会**把上界写小**，
+属于手册明令禁止的方向。这不是本轮并行改动引入的，HEAD 就是错的。
+
+**修（两条一起，缺一不可）**：
+① `perTri = 3 + extra`，**三个顶点永远查**（`GeometryErrorEvaluator.cpp:308-316`），
+密度降级只砍 3 个边中点 + 重心；
+② 系数按实际密度取（`:317-318`）：`radiusFactor = (extra == 4) ? 1/3 : 1/√3`。
+另外把"剪枝只省算力、不改口径"写死：被剪的 patch 记进 `prunedUpper`（`:403`），
+深度上限 patch 置 `depthCapped` 并把 key 计入 `upper`（`:427`），
+`budgetExhausted = depthCapped || (堆未空 && 预算耗尽)`（`:490`）。
+
+**验证**：新增 `testErrorBoundSoundness` 第一段专门把这条打出来——环带（rIn 0.98 /
+rOut 1.02）+ 40 个内接等边三角形（外接圆半径 1 ⇒ 顶点全落在环带里、顶点距离 0，
+真实误差由三角形内部贡献 ⇒ **sup ≥ 0.98**；最长边 `L = √3`）。
+配 `maxSamplesPerNode = 3`：`cap = 1` 把密度压到只剩 3 个顶点、细分预算 0，
+上界完全由覆盖半径撑起。**修复前精确失败在 `upper=0.577350`**——那正是 `L/3 = √3/3`，
+而顶点集合口径要求 `L/√3 = 1.000 ≥ 0.98`，**方向是把上界写小**，与手册禁令相符地严重。
+修复后通过并稳定判 `BOUND_LOOSE`（`ri.boundLoose` 也是断言之一：没有细分预算却不承认
+`BOUND_LOOSE` 同样算失败）。
+矩阵侧确认这个修复没有带来"上界变小以外"的异常（0 个变大、0 个 `upper<lower`）。
+
+### A-46 `maxSamplesPerNode = 0` 时误差评估静默返回 0（防御性发现，非现场缺陷）　**加固（未提交）**
+
+排查 A-45 的系数时顺路确认的边界：预算传 0 时旧实现会把"一个样本都没采"报成
+"误差为 0"，而 0 恰好是**最小的上界**——这是一条能把上界写小的通路。
+现在 `budget = (maxSamplesPerNode > 0) ? maxSamplesPerNode : 1`（`:310`），
+并且 `perTri` 下限锁 3、未采样面按 `globalLower` 进账，
+预算为 0/极小时的结果由 `testErrorBoundSoundness` 第 1、3 段钉住
+（必须 `BOUND_LOOSE` 且 `upper >=` 真值）。
+**12 资产与三份真实 FBX 的历史配置里 `maxSamplesPerNode` 均为默认 400 000，
+没有出现 0**，所以本条记为加固、不记为既有产物的缺陷。
+
+**遗留（不是缺陷，是判据）**：距离与半径都诚实之后，`nodesCertified` 在 12 个小资产矩阵上全部
+变 0——`CERTIFIED` 要求上界−下界 ≤ 1 mm（或上界的 2 %），而这个差就是覆盖半径 ≈ patch
+尺寸，40 万样本预算内数学上够不到。**335 MB 档不是归零**：`lugouqiao_v19` 仍有 63 个 CERTIFIED
+（450→63），所以这条是**资产相关**的判据问题，不是普适结论。
+**加大 `maxSamplesPerNode` 或接受诚实的 `BOUND_LOOSE`
+是仅有的两条合法出路**；调 `toleranceMeters`/`certifyRatio` 属放宽验收，未获授权前不动。
+
+### A-47 提速仪表有三个洞，其中一个会把"计数"当"秒"读　**FIXED（未提交，2026-10-21；判据①只在 65 MB 档闭合，335 MB 档待 `lugouqiao_v20` 复测。观测性缺陷，2026-10-20 下午由 v19 首份 `micro_*` 读数暴露）**
+
+**背景**：上一轮的结论"`micro*` 仪表没接进 `ConversionReport`，跑完也读不到占比"是错的，
+`ProductionPipeline.cpp:1219-1226` 一直在写。接上了之后暴露的是另外三条：
+
+1. **32 % 的 CPU 秒没有归属**。`lugouqiao_v19`：`micro_*` 六项秒数累加
+   `7510.16 + 564.71 + 89.80 + 44.59 + 25.55 + 10.02 = 8 244.83 s`，
+   而同轮 detached 监视器记的进程 CPU 秒 ≈ **12 168.6 s**（末样本 15:32:31，
+   wall 4 549 s ⇒ 平均 2.7 核）⇒ 差 **3 923.8 s（32 %）**。
+   已知漏计的地方：叶瓦片 `_model.materialize()`（`ProductionPipeline.cpp:613`）
+   **完全没有计时器**，`ProxyMeshBuilder::build()` 只回传 simplify/aggregate 两项，
+   `collectTriangles` 之外的分支归属不明。
+   **在补上之前，任何"某段是瓶颈"的说法都只能是猜测**——本轮就吃过一次：
+   旧结论"写出/最终化可能是 t04/longxiang 只提升 8 % 的原因"，
+   现在有数了，`micro_finalize_encode=564.71 s` 对 4 592.42 s 阶段 wall，**串行上限 12 %**，
+   不是主因；反过来说，若 `materialize` 那 3 924 s 才是主因，前面所有杠杆都排错过。
+2. **瓦片级耗时不可读**。`micro_evaluateSec` 只在 `finalizeTileFromWork` 里累加进
+   `_microEvaluateSec`，没有落到 `report.tiles`。于是**读不出关键路径是哪个瓦片**，
+   而 #6（乱序收割）与 #7（节点内并行）这两根杠杆的上限恰好就由关键路径决定：
+   现在只能说"评估平均吃到 1.63 核"，不能说"最后一个瓦片跑了多久、它为什么是最后一个"。
+3. **单位混淆**。`micro_evaluate_samples`（v19 实测 **438 681 617**）与
+   `micro_aggregate_candidates`（**122**）是**计数**，却通过同一个
+   `_report.addStage(name, seconds)` 写进 `stages` 这个**秒**数组。
+   危害不是难看：`stages` 里任何"按秒排序找瓶颈"的读法都会把这两行读成
+   "4.39 亿秒的巨型阶段"，而 `grep micro` 的人无法从字段名区分。
+   这是**仪表自己说谎**，比缺仪表更贵。
+
+**判据**：`micro_*` 六项秒数累加与进程 CPU 秒之差 ≤ 5 %；`report.tiles` 每瓦片有
+`evaluateSeconds`；`stages` 里不再出现非秒的量（计数走 `ConversionReport` 的独立字段）。
+
+**修法（不改生产行为，纯观测）**：① `processTileHeavy` 开头/结尾各一个 `Timer`，
+`materialize` 单独一个；② `TileHeavyWork` 已有 `microEvaluateSec`，随瓦片一起进
+`_tiles[id]` 并写进 report；③ `addStage` 之外加 `addCounter(name, value)`，
+两条计数搬过去。**先做这个再做任何提速**（`PERFORMANCE_REPORT` §2.2 的 L0）。
+
+**为什么定 OPEN 而不是"已修"**：本轮只完成了"发现并量化"，代码未动、没有复跑读数。
+本条不涉及产物质量，不影响 v19 的验收结论。
+
+#### 闭合读数（2026-10-21，**未提交**）：第三条漏的不是 `materialize`，是 libktx 的压缩线程
+
+三个洞都补了，判据②③闭合；判据①在 **65 MB 档闭合（-0.8 %）**，335 MB 档要等 `lugouqiao_v20`
+用新二进制出盘才能复测，所以这条的状态写成 **FIXED（65 MB 档实测，335 MB 档待复测）**。
+
+**加了什么仪表**（纯观测，不改生产行为）：
+① 叶瓦片 `_model.materialize()` 单独一个 `Timer`/`CpuTimer`（`micro_materialize*`）；
+② `report.tiles[].timing` 逐瓦片落 `evaluateSec / evaluateCpuSec / evaluateWorkerCpuSec /
+evaluateSamples / heavySec / materializeSec / proxyBuildSec / collectSec / bvhBuildSec /
+finalizeSec / writeSec`；
+③ `ConversionReport::counters`（`addCounter`），`micro_evaluate_samples` /
+`micro_aggregate_candidates` 从 `stages` 搬过去；
+④ **新增的第第四条**：`GltfOptimizer::textureExportStats()` 量每次纹理落盘的
+壁钟、**调用线程** CPU 秒与**进程** CPU 秒之差（`src/utils/GltfOptimizer.cpp` 的
+`TextureExportProbe`，落在 `exportImage` 真正写盘的那个分支里），
+报表项 `micro_texture_export` / `_thread_cpu` / `_process_cpu` + 计数
+`micro_texture_export_files`。
+**动机**：写 `.ktx2` 会进 `ktxTexture2_CompressBasisEx`，而它自己起
+`threadCount = hardware_concurrency` 个线程（`src/osgdb_ktx/LoadTextureKTX.cpp:630`）。
+生产侧**所有** `micro_*` 都是调用线程的 `GetThreadTimes`，这批第三方线程一秒都记不进去——
+这正是"32 % CPU 秒没有归属"的候选，而 `materialize` 不是。
+
+`longxiang_l0b`（65 MB 档，`-ptw 512`，`rc=0`，129 瓦片，全新输出目录；单轮样本）：
+
+| 量 | 读数 |
+|---|---|
+| 进程 CPU 秒 / 壁钟 | 542.91 s / 190.42 s ⇒ 平均 **2.85 核** |
+| 不重叠各层 CPU 秒相加（`micro_total_cpu` 240.84 + `micro_finalize_encode_cpu` 111.52 + `input_read_cpu` 1.88 + 串行三段 0.19） | **354.42 s** |
+| ⇒ 补仪表前无归属 | **188.5 s = 34.7 %**（与 v19 的 32 % 同一件事，不是巧合） |
+| `micro_texture_export`（壁钟 / 调用线程秒 / 进程秒） | **78.90 / 64.77 / 257.75 s**，121 个文件 |
+| ⇒ 第三方线程（进程 − 调用线程） | **192.98 s** |
+| 已归属合计 547.41 s 对进程 542.91 s | **残差 −4.50 s = −0.8 %** ✅ 判据①（≤ 5 %） |
+
+三件必须一起读的事实：
+1. **`materialize` 只值 0.09 CPU 秒**（`micro_materialize` 壁钟 0.129 s）。上一轮把它列为
+   "3 924 s 无归属的头号嫌疑"是**排错对象**：叶瓦片物化根本不贵。
+2. **写出阶段的 CPU 是调用线程读数的 4 倍**：纹理落盘 78.90 s 壁钟里，主线程只花 64.77 s，
+   进程却花掉 257.75 s。`micro_write_cpu` 那种"主线程串行秒"口径**结构性地看不见**
+   basis 压缩的量——L5（编码/写出并行）以前只按主线程秒评估，低估了。
+3. **残差为负**说明进程口径把写出窗口里并行瓦片的 worker 秒也计了一次（上界）；
+   `-0.8 %` 就是这个双重计数的量级，不是漏计。
+
+**判据②③**：129/129 瓦片都有 `timing.evaluateSec`（v19 时一个都没有）；
+`stages` 里不再有任何计数，计数三项都在 `counters`。
+
+**为什么还不写"全绿"**：判据①只在 65 MB 档实测闭合，`lugouqiao_v19` 的那 3 924 s
+是旧仪表量的，没有用新仪表复跑过；335 MB 档纹理量比 65 MB 档大一个数量级，
+第三方线程占比很可能不同。v20 复跑后本条才算真正闭合。
+**没有单测覆盖"仪表算得准"**，只有接线断言（`pipelineCoverage` 用例里 5 条：
+三项 `micro_texture_export*` 阶段存在、`micro_materialize`/`micro_total_cpu` 存在、
+逐瓦片 timing 非零、`micro_evaluate_samples` 在 `counters`、`stages` 里不含
+`samples`/`candidates` 字样）。数值闭合靠产物级复跑，`test_production` **228/228**。
+
+---
+
+### A-48 代理纹理字节按 primitive 重复计数，42/60 内节点被判"超预算"退化成无贴图灰模　**代码 FIXED / 验收 OPEN（未提交，2026-10-21；产物级新破口见 A-51）**
+
+**现象**（`longxiang.fbx`，65 张贴图被大量 primitive 共享）：顶层 `t0.b3dm` 只有 350 KB、
+**一张纹理都没有**，整棵树 60 个有内容的内节点代理里 **42 个无纹理**。用户判据：
+「顶层无贴图是不可接受的」——远景 LOD 的意义是远处先看个有颜色的轮廓，灰模不是降级
+LOD，是缺件。
+
+**根因**：`processTileHeavy` 的超限判据用 `Σ PrimRef.byteEstimate` 逐 primitive 累加纹理
+字节。同一张 2048×2048 RGBA 被 N 个 primitive 引用就算 N 次（`longxiang` 实测共享度最高
+的贴图被几十个图元引用），估算值直接放大一到两个数量级 → `geo + tex` 永远超 8 MiB →
+`FarLodTextureStripper` 把整片剥成灰模。A-30 那次拆分 `BytesSplit{geo, tex}` 修的是
+"纹理该不该算绑定约束"，没修"纹理怎么算"，所以这次爆在同一个判据的下一次调用里。
+
+**修法**（三步，全在预算判据与写出阶段，不动产物语义）：
+1. `ProxyMeshBuilder::estimateBytes()` 返回 `ProxyBytes{geo, texFull, texFloor}`，
+   纹理项**按 `osg::Image*` 去重**；`texFloor` 是"每张折到 `proxyTextureFloorEdgePx`(64 px)
+   后"的面积折算字节，给调用方"先降分辨率、最后才去纹理"的依据（手册 7.3 的顺序）。
+   `ProxyResult::needsTextureless` 换成 `fitsWithFloorTextures`（三处：identity 早返回 /
+   身份保持简化 / 聚合接受）。
+2. 新增 `ResourceBudget::proxyTextureMaxEdgePx`（默认 **512**，CLI `-ptw`）：内节点代理首轮
+   就按这个上限压纹理，叶瓦片不受影响（仍用全局 `-tw/-th`）。下限校验进
+   `ProductionProfile::validate()`：`proxyTextureMaxEdgePx < proxyTextureFloorEdgePx` 直接
+   报错而不是静默钳制——**不得私自降低上界**同样适用于下界方向的保护。
+3. 仍超硬预算时走降档阶梯 `textureDownscaleLadder()`（256→128→64，图集尺寸同步折小，
+   否则 atlas 页数不降反升），到下限还装不下才剥纹理并记 warning。
+
+**复验（产物级，`longxiang_ptw2`，2026-10-21）**：内节点有纹理 **18/60 → 58/60**，
+无纹理 **42 → 2**；剩下的 2 个（`t73`/`t74`）是**源模型本就无图**——它们整棵子树连叶
+`t75`-`t77` 都是零图，不是被剥掉的。顶层 `t0.b3dm` 350 KB 无图 → 883 KB 带 15 张图。
+内节点 >8 MiB 硬限：**0 张**，最大单文件 2 580 040 B。内节点产物字节 41 874 KB → 43 917 KB
+（**+4.9 %**），代价只发生在本该有图的地方。
+> 注：这一轮的叶字节 **33 817 KB** 比修前基线（42 036 KB）小了两成——那不是本条的收益，
+> 是 A-49 那个串瓦片的缺陷。两条分开定级、分开复验。
+
+> **本条复验的口径缺口**：上面只核了**字节**预算（内节点 >8 MiB = 0 张），没核
+> **primitive/材质结构预算**。同一批产物实测代理图元数从 ≤10 涨到 ≤32、6 张破手册 §3 的 ≤24
+> ⇒ 见 **A-51**。"纹理保住了"不等于"没违反 §7.3 的预算顺序"。
+
+**回归测试**：`test_production proxyTexture`（去重只算一次 + 阳性对照"两张不同纹理必须算两次"
++ 下限以下不缩水 + 几何项不受纹理估算污染 + 空节点为 0）、
+`proxyTextureLadder`（**叶必须保留全部档位**：判据一度写成与钳制后的全局 `-tw/-th` 比较，
+而叶瓦片拿到的正是 2048，条件恒真会让整套字节兜底对叶静默失效；集成用例走三角形超限分支
+看不见这个退化，所以把它抽成可测函数钉住）。
+
+---
+
+### A-49 代理的纹理上限顺着共享的 `osg::Image` 改掉**叶**瓦片的贴图　**FIXED（未提交，2026-10-21）**
+
+**现象**：A-48 修完，同二进制同资产两跑做 A/B（唯一变量 `-ptw 512` vs `-ptw 2048`），
+叶瓦片并没有躲过这个上限：**67 张里只有 8 张逐字节相同**，叶合计 **33 817 KB vs 42 023 KB
+（-19.5 %）**。看单瓦片 `t71.b3dm`：图集页尺寸两边完全一样（2048×2048 / 1024×2048 / 128×128），
+但 KTX2 字节 294 305 vs 534 958、160 427 vs 234 754 —— **尺寸没变、内容变小**，
+是"先缩小再塞回大图集页"的糊图特征，不是编码参数差异。
+
+**根因**（两条都要成立，都在写出阶段）：
+1. `GltfOptimizer::TextureAtlasBuilderVisitor::apply()` 每个 drawable 克隆 StateSet 用的
+   copyop 是 `DEEP_COPY_STATESETS|DEEP_COPY_STATEATTRIBUTES|DEEP_COPY_TEXTURES`，
+   **没有 `DEEP_COPY_IMAGES`**。实测（`test_production texResize` 里的前提核对）：克隆出的
+   `osg::Texture2D` 是新对象、用户值也带过来了，但 `getImage()` **仍是源模型里那张共享图**。
+2. `resizeImageToPowerOfTwo()` 用 `img->scaleImage(...)` **就地改像素**，还会把
+   `origin-width/height` 写在这张共享图上，把后续瓦片的判据基准也一并改掉。
+
+合起来：`-ptw` 让第一个代理瓦片把共享原图缩到 512，之后每个引用同一张贴图的瓦片
+（含全部叶）拿到的都是缩过的图。HEAD 之所以看不出来：只有一个全局上限时，就地缩放对所有
+瓦片是同一个目标尺寸，**幂等**；一旦上限按瓦片不同（本条正是 `-ptw` 引入的），就地缩放就
+会串瓦片。属于 A-41 同族（就地改写共享对象）。
+
+**危害定级**：产物质量缺陷。叶瓦片按手册 7.4 是"最终解码后必须保留原始表面"的那一层，
+用远景代理的预算吃掉叶的贴图分辨率，而 `conversion-report.json` 里看不见
+（`proxyTextureCappedCount` 只数代理），电池和 validator 也测不出来（几何没变）。
+
+**修法**：`resizeImageToPowerOfTwo()` 改成**返回"可安全使用"的图**——判据一字未动
+（PO2 + 上限），不需要改动时原样返回入参（不做无谓整幅拷贝，也不留两份可分别改写的像素），
+需要改动时 `new osg::Image(*img, SHALLOW_COPY)` 私有化后再 `scaleImage`，`ORIGIN_*` 只写在
+副本上。5 个调用点全部接返回值；三处贴图路径（`optimizeOsgTexture` / `optimizeOsgTextureSize`
+/ `addImageFromTexture`）把副本**挂回本瓦片克隆出来的那个纹理**——图集回填按
+`texture->getImage()` 取 `packer.getId(image)`，不挂回去打包坐标就对不上；两处图集页路径
+直接接收返回值（页是本地新建对象，本来就私有）。
+`ProductionPipeline.cpp` 里"克隆即私有"的注释按实测改写，不再声称克隆能隔离像素。
+
+**复验（产物级，2026-10-21，同机同资产同二进制，唯一变量 `-ptw`）**：
+`F:\wb_3dtiles_out\{longxiang_ptw2, longxiang_ptw2048, longxiang_iso512, longxiang_iso2048,
+longxiang_final512, longxiang_final2048}`，尺子 `leafab.js`（逐文件 md5 + 字节）。
+
+| 对比 | `-ptw` A vs B | 二进制 | 叶瓦片逐字节相同 | 叶合计字节 |
+|---|---|---|---|---|
+| `ptw2` vs `ptw2048` | 512 vs 2048 | 修前（就地缩放） | **8 / 67** | 33 817 vs 42 023 KB（**-19.5 %**） |
+| `iso512` vs `iso2048` | 512 vs 2048 | 修后 | **64 / 67** | 42 022 vs 42 021 KB |
+| `final512` vs `final2048` | 512 vs 2048 | 修后（复跑） | **64 / 67** | 42 021 vs 42 022 KB |
+| `final512` vs `iso512` | **512 vs 512**（噪声地板对照组） | 修后 | **64 / 67** | 42 021 vs 42 022 KB |
+
+- 修后三行的"64/67"与**同参数两跑的噪声地板完全一样**，差的都是同样 3 张
+  （`t40`/`t78`/`t119`）：`t40` 在四轮里给出 4 个不同 md5，属每轮都会变的抖动
+  （A-40 未闭合的表现，本条不重复定级）。差异位置每张只有 1 张图、字节
+  ±368 / ±208 / +1552，与 -20 % 那种系统性量级不是一回事。
+  ⇒ `-ptw` 对叶瓦片的影响已经降到抖动以下。
+- 代理侧收益未被削弱：内节点有纹理仍是 **58/60**（缺的 2 张 `t73`/`t74` 源模型本就无图），
+  `漏压=0` —— 内节点里 >512 的 27 张全是带非 identity `KHR_texture_transform` 的**图集页**，
+  切片本身没有超限（"≤512"说的是纹理内容分辨率，不是页的边长，别把这两件事混写）。
+- 硬预算：内节点 >8 MiB **0 张**，最大单文件 2480 KB；内节点产物字节
+  43 706 KB（512）vs 119 737 KB（2048）→ 上限本身省 63 %。
+- 峰值 RSS 3631～3645 MB 全程一个量级：私有化副本没吃到内存。
+- `test_production` **223/223**（新增 `texResize` 11 项断言，含"低于上限但非 2 次幂的图
+  同样要私有化"这条阳性对照）。
+- 计时不作证据：同参数两跑 wall 303.8 s（冷）→ 122.2 s（热），本机缓存冷热主导。
+
+**判据（后续任何人再动纹理路径时要重新成立）**：同一二进制、只有 `-ptw` 不同的两跑，
+叶瓦片逐字节相同的比例不低于"同一 `-ptw` 两跑"的抖动水平。
+
+---
+
+### A-50 报告里的 profile 是硬编码缺省值，且"降过分辨率"把空操作也算成收益　**FIXED（未提交，2026-10-21）**
+
+纯观测性，两条都会让产物**自证不了自己**：
+
+1. `ConversionReport::profile` 从来没被赋值过。`conversion-report.json` 的 `profile` 字段
+   于是恒等于代码里的缺省值：`-ptw 2048` 那一轮照样显示 `proxyTextureMaxEdgePx: 512`，
+   `-tol` / 预算 / `bins` 的覆盖同样读不出来。上一轮记忆和文档里"profile 默认值记录在
+   conversion-report.json"这句话**只对了一半**——记的是缺省值，不是生效值。
+   修法：`ProductionPipeline::run()` 里 `_report.profile = _profile;`。
+2. `proxyTextureCappedCount` 的语义是"传过上限"，不是"降过分辨率"：`-ptw >= -tw/-th`
+   时上限是空操作（`min()` 钳制后不变），却照样把 60 个代理全记成 capped，汇总 warning
+   也跟着说"capped at <= 2048 px"。修法：只有当代理上限**严格小于**全局
+   `min(maxTextureWidth, maxTextureHeight)` 时才带上，否则传 0；计数与 warning 都只反映
+   真起作用的降分辨率。
+
+**复验（产物级，2026-10-21，final 二进制两跑）**：`longxiang_final2048` 的
+`conversion-report.json` 现在写 `profile.budget.proxyTextureMaxEdgePx = 2048`
+（修前与 `-ptw 512` 那轮一样都显示 512），`proxyTextureCappedCount = 0`，日志里
+"far-LOD proxies: … capped" 这条汇总 warning 也不再出现；`longxiang_final512` 仍是
+512 / capped=60 / 有 warning。两条判据方向相反，才算数。
+
+---
+
+### A-51 保住代理纹理之后，内节点瓦片的 glTF primitive 数冲破手册 §3 的 ≤24，而生产侧对 primitive/材质**没有任何闸**　**OPEN（2026-10-21，产物级实测；阻塞 A-48 的验收）**
+
+**现象**（实测，非推断）：`node scripts/glb_prims.js F:/wb_3dtiles_out/longxiang_final512`
+→ **rc=1**，6 个内节点代理超限：`t0`=27、`t1`=26、`t21`=28、`t29`=25、`t79`=32、`t100`=28。
+同一把尺子对修前基线 `longxiang_covfix` 判 **rc=0，全库最大 11**。
+
+逐瓦片口径（`F:\wb_3dtiles_out\per_tile_prims.js`，GLB 偏移算式照抄 `glb_prims.js:87-106`，
+`纹理解析不明=0` 表示 image 索引全部解析成功，KTX2 的索引在
+`extensions.KHR_texture_basisu.source` 里而不是顶层 `.source`）：
+
+| 数据集 | 叶 prims max/mean | 代理 prims max/mean | 代理 图去重后 max/mean | 代理 prims>24 | 代理无纹理 |
+|---|---|---|---|---|---|
+| `longxiang_covfix`（修前） | 11 / 3.6 | **10 / 2.6** | 6 / 1.1 | 0 | 42 |
+| `longxiang_final512`（A-48/A-49 后） | 11 / 3.6 | **32 / 12.7** | 18 / 7.6 | **6** | 2 |
+| `longxiang_final2048` | 11 / 3.6 | 31 / 12.7 | 19 / 7.6 | 6 | 2 |
+| `longxiang_l0b` | 11 / 3.6 | 32 / 12.7 | 18 / 7.6 | 6 | 2 |
+
+三点要说清的：
+1. **叶瓦片四份产物逐值相同**（max 11 / mean 3.6）⇒ 退化完全发生在代理侧，与 A-49
+   修的那条"代理串改叶贴图"是两件独立的事，不是同一条回归。
+2. 声明的预算也一起破了：`conversion-report.json` 里 `profile.budget.maxPrimitivesPerTile = 20`
+   （desktop-web-high-quality），超限的 6 张同时 >20 与 >24；`per_tile_prims.js` 统计
+   代理里 **11 张 >20**（不止那 6 张破 24）。
+3. 代理侧 **`prims == materials` 严格 1:1**（`t79`=32p/32m、`t29`=25p/25m、`t0`=27p/27m）
+   ——一个材质都没合并。
+
+**根因链**（四步，前三条是本条的机制，第四条是它没被拦住的原因）：
+
+1. **代理的 primitive 数 = 聚合进来的源 feature 的 distinct 材质数。** 剥掉纹理时
+   （A-48 之前 `FarLodTextureStripper` 的做法）所有 drawable 的 StateSet 落到同一个纯色材质，
+   `GltfOptimizer` 的 `SHARE_DUPLICATE_STATE` / `MERGE_GEOMETRY` 把它们并成 1~10 个图元
+   （covfix 实测代理 mean 2.6）。**保住纹理后这一步不再发生** —— 所以本条是 A-48 修法的
+   必然后果，不是新写的代码坏了。
+2. **图集本来该接住这个合并，但对 `longxiang.fbx` 整条 atlas 路径被 UV 越界挡住**：
+   `src/utils/GltfOptimizer.cpp:1089-1099` 只要 drawable 有任一 TEXCOORD 分量绝对值 > 1，
+   就 `bBuildTexturePacker = false` 并转 `exportOsgTextureIfNeeded()` 单图导出。
+   实测 `t29` 图元 UV 范围 `[-71.28, 72.28]×[-5.51, 6.51]`、`[-152.23, 153.23]×[0,1]`，
+   sampler `wrapS/wrapT = 10497 (REPEAT)` ⇒ 这是**合法的 UV 重复**，不是坏数据；
+   被挡在图集外是那条判据的保守选择，不是本资产的缺陷。
+3. **共用同一张图的材质也合不动**：`t29` 里 11 个图元共用 image 6，但各自的
+   `KHR_texture_transform` 的 offset/scale 不同（`[0.25,1]×[0.25,-0.5]`、
+   `[0.875,0.375]×[0.03125,-0.0625]` 等）—— 源模型用一张大图分块贴多处的正常做法。
+   本轮按"同图 + 同 baseColorFactor + 同 metallic/roughness + 同样变换 + 同双面/透明"
+   做签名去重，实测**合并后上限 == 现有 prims**（代理 mean 12.7 → 12.7，max 32 → 32），
+   也就是说**什么都不改、只指望"重复材质归并"是零收益的**。
+4. **生产侧没有 primitive/材质闸**：`maxPrimitivesPerTile` / `maxMaterialsPerTile`
+   （`include/3dtiles/production/ProductionProfile.h:31,34`）只被
+   `src/3dtiles/production/SpatialPartitioner.cpp:16-17` 的源侧切分比例消费（叶瓦片因此没破），
+   `selfValidate` 里没有对应检查，代理路径完全不看它 —— **A-32/A-33 同族**
+   （声明的预算没有对应的闸）。这就是为什么 `glb_prims.js` 是唯一发现它的人。
+
+**危害定级**：阻塞级（对 A-48 的验收而言）。运行时影响是远层 LOD 的 draw call 从 1~10 涨到
+25~32（三角形数、实例数、`contentBytes` 都没变），属**结构性退化**而不是字节膨胀；
+`longxiang_final512` 因此**不是可发布产物**。
+
+**四条候选方向**（均未实施，需用户裁定；列 D 只为完整）：
+
+| # | 方向 | 实测上限 | 代价 / 风险 |
+|---|---|---|---|
+| A | 代理写出时把 `KHR_texture_transform` **折叠进 TEXCOORD_0**，之后共用同一张图的材质就能合并 | 代理 prims 上限 ≈ 图去重数：**max 18、mean 7.6**，全库 ≤20 也 ≤24 | REPEAT 下"先变换后 wrap"与"先折叠后 wrap"等价，但**等价性本轮只有一行推理，没实测**；且 writer 会统一加 `[1,-1]` 的 Y 翻转，折叠时不能重复应用 ⇒ 必须配"折叠前后采样等价"的单测。改的是贴图坐标，属**质量敏感路径**，要产物对照 + validator + 视觉验收 |
+| B | 给代理路径加**真的** primitive/材质预算闸，超限就把该聚合代理再细分成多个瓦片 | 硬保证 ≤ 预算 | `tileCount`/`maxDepth` 会变，与本轮"运行时细化行为不变"的质量口径冲突 ⇒ 归用户裁定 |
+| C | 只对超限的 6 张代理退化成无纹理 | 立刻 rc=0 | `t0`/`t1` 是顶层，直接撞"顶层无贴图是不可接受的"这条硬判据 ⇒ **未经用户改口不可行** |
+| D | 把 §3 的 24 上调 / 代理豁免 | — | 手册禁止，`不得私自降低上界`，我没有这个权限，列出仅为穷举 |
+
+**（2026-10-21 更新，读上表前先看这句）**：上表是裁定前的备选，用户已选 **A** 并实施完毕，
+实测结果在文末 §A-51 落地。表内 A 行那两处（"等价性只有一行推理，没实测"、"上限 max 18"）
+已被实测取代：等价性有构造推导 + 450 组产物级多重集测量，实测代理上限是 **24**（不是 18）。
+下面那句"下一步：#16 保持未完成"同样只对裁定前成立。
+
+**手册顺序上的位置**：§7.3 是"几何预算 → **材质/图元合并** → 纹理溢出处理"。A-48 那轮直接
+动了第三档（纹理），本条爆在第一档没做（合并）。所以方向 A/B 是**回到顺序里补做前一档**，
+而不是把第三档改回去。
+
+**下一步**：#16 保持未完成；提交裁定（用户）在方向选定之前不成立。
+**排序上的连带影响**：`lugouqiao_v19` 的 `glb_prims` 判 0 违例（max prims/tile = 11）——那份产物是
+**不含 A-48 的 10-20 13:09 二进制**出的，代理仍被剥成灰模。所以 `lugouqiao_v20` 一用新二进制出盘，
+这 335 MB 档**很可能同样破**（它的贴图共享度比 longxiang 更高）。方向应在 v20 之前定，
+否则 v20 又要换二进制重跑一遍。
+
+---
+
+### A-51 落地（方案 A，2026-10-21）：折叠已实施并做完产物级验收，实测把"折叠是否改采样"这个问题本身纠正了一次
+
+用户裁定：**"按照方案A执行"**（代理写出时把 `KHR_texture_transform` 折进 `TEXCOORD_0`，
+共用同一张图集页的材质因此可归并，**保纹理**）。以下每条都标了实测 / 未证实。
+
+**1. 机制更正（本条根因链第 1 条写错了合并发生在哪儿）**
+`SHARE_DUPLICATE_STATE` / `MERGE_GEOMETRY` **不在** `EXPORT_GLTF_OPTIMIZATIONS` 里
+（`include/utils/GltfOptimizer.h:155-163` 实际是 `INDEX_MESH | REDUCE_DRAWCALL_OPTIMIZATIONS`），
+所以它们不是代理图元合并的执行者。真正的合并全在写出侧：
+`Osg2Gltf::getCurrentMaterial` 用 `tinygltf::Material::operator==`（**比较 `extensions`**）去重材质，
+再由 `GltfMerger::mergeMeshes()`（`src/osgdb_gltf/GltfMerger.cpp:80`）按
+`world matrix × primitive.material × 属性名集合` 分桶融合。
+⇒ "同图不同子矩形合不动"的原因是变换进了 `extensions` 比较，折叠正是把这项差异消掉。
+实测（同码 A/B，只差折叠开关）：代理 `prims max/mean` **32 / 12.7 → 24 / 9.8**、
+`prims>24` **6 → 0**、叶瓦片 **11 / 3.6 不变**、代理无纹理 **2 → 2**（纹理一条没少）、
+内容字节 **87 793 600 → 87 563 536 B（−230 064 B，−0.26 %）**。
+A-51 表格里"上限 ≈ 图去重数 max 18"那句是**预测**，实测落在 24：图去重数本身在折叠后
+的瓦片里被 `合并后上限` 卡住（`per_tile_prims.js`：代理 `图去重 max 18`、`合并后 max 24`），
+两者不是一回事，取实测。
+
+**2. 等价性从"一行推理"升级为构造性质 + 产物级测量**
+写出侧 `Osg2Gltf::getOsgTexture2Material`（`src/osgdb_gltf/Osg2Gltf.cpp:843-872`）读
+`TEX_TRANSFORM_BASECOLOR_TEXTURE_NAME` 的 enable 键，键关就用局部默认 `(0,0,1,1)`，
+然后**无条件** `flipGltfTextureYAxis`（`offsetY=1-oy, scaleY=-sy`）。
+未折叠最终 V = `1-oy-sy·v`，折叠最终 V = `1-(sy·v+oy)` —— 逐值同式，只差一次乘加舍入
+（实测最大逐顶点偏差 **2.98e-8**）。单测 `foldUv` 8 条把烘焙算式、原始 UV 未被污染、
+同纹素等价、还原后指针同一、共用宿主必须全可折、BASECOLOR/NORMAL 不一致时拒绝、
+`texCoord!=1` 拒绝、恒等折叠仍可撤销全部钉住。
+
+**3. 产物级"折叠有没有改采样"：450 组 / 505 880 顶点，0 组有差**
+尺子 `E:/tmp/diag_all.js`（本轮新写）：对每个代理瓦片的每张图集页（按 `images[].name`
+= 内容哈希配对），把两侧**最终采样坐标** `offset + scale·uv` 量化到 `1e-5` 做多重集差。
+结果 **450 组全部相等，最大计数偏差 0**；4 组因页换名无法按页配对（页尺寸两侧逐值相同）。
+> **纠正一次自我误判**：先前那把按"排序后索引对齐"比较的尺子（`/tmp/fold_all.js`）报了
+> "20 个图组超容差"，那是**尺子的错** —— 合并图元后相同 `(u,v)` 的并列顺序会变，索引对齐
+> 就把同一批坐标错配成不同批。改成量化多重集后，最严重的两组（`t2` img5 188 顶点、
+> `t21` img5 310 顶点）差集都是 **0 / 0**，再扩到全库仍是 0。
+
+**4. 那 4 组换页不是折叠造成的 —— 新发现 A-52**
+同一二进制、同一参数连跑两遍（`fold512` vs `fold512_b`，都不含守卫）出现**同类 5 组换页 +
+3 个叶瓦片字节不同**；带守卫的 `guard512` vs `guard512_b` 也是 5 组 + 3 叶。
+⇒ 图集页身份本来就不跨运行稳定。**原归因（`GltfOptimizer.cpp:2026` 按指针哈希遍历装配）已推翻**，
+真因见 A-52 行的"实测机理"：图集画布缝隙未初始化。
+**A-52 实测机理（2026-10-21 结案）**
+判据来自 `WB_ATLAS_TRACE=1`（`GltfOptimizer.cpp:2015`，把每轮进打包器的图打印成
+`全长 fileName + name() + s×t + 逐像素内容哈希`）+ `E:/tmp/prod_ab.sh` 逐字节差分。三对同二进制对照：
+
+| 对照 | 配置 | 结果 |
+|---|---|---|
+| `lx_tr2_a` / `lx_tr2_b` | `WB_JOBS=1`，修画布前 | 138 轮 `keys=` 行（含内容哈希）**逐字节相同**、`packed=/dims=` 相同，**只有 7 个页名不同** |
+| `lx_z_a` / `lx_z_b` | `WB_JOBS=1`，画布清零后 | trace 差异 **0 行**；产物 **246/246 逐字节相同**（PASS） |
+| `lx_p_a` / `lx_p_b` | **默认并发作业数**（出货配置），清零后 | 同样 trace 差 **0 行**、产物 **246/246 相同**（PASS）；两遍 rc=0 |
+| `lx_tr2_a` / `lx_tr2_b`（同上，作阳性对照） | `WB_JOBS=1`，清零**前** | 同一把尺子判 **FAIL**：6 ↔ 7 个孤儿页 ⇒ PASS 不是量尺失灵 |
+| `lx_det_a/b`、`lx_ser_a/b`、`lx_t1_a/b` | 修画布前的并行 / 串行 / **标称** `WB_KTX2_THREADS=1`（2026-10-22 复核：该标称未生效，见下注） | 都差 6–7 页 + 6–8 瓦片 ⇒ 与作业数无关；**"与 basis 编码线程数无关"这半句本行支撑不了** |
+
+> **2026-10-22 复核标注（不改写历史，只限定其证明力）**：上表的 `lx_t1_a/b` **不是有效的
+> `WB_KTX2_THREADS=1` 对照**。当时部署的 `Release/osgdb_ktx.dll`（sha256 前缀 `1feb96f2…`，mtime 10-20 18:17）
+> 里没有这个 getenv（对 DLL 搜字符串 0 命中，同文件正对照 `ktxTexture2_CompressBasisEx` 1 命中；
+> `git show HEAD:src/osgdb_ktx/LoadTextureKTX.cpp` 查不到该变量、`git log -S'WB_KTX2_THREADS'` 无结果），
+> 而 `osgdb_*` 是 MODULE 目标、不在 `model23dtiles` 的依赖图里，`--target model23dtiles` 不会重建它
+> ⇒ 两侧执行的是同一份代码。**这一对作为"同二进制同参数的两跑"仍然有效**（它记录的 6–7 页 + 6–8 瓦片
+> 差异是真实的非确定性证据，也正是 A-52 要解释的现象），但它**不能用来排除 basis 编码线程数的影响**。
+> 2026-10-22 11:41:33 显式重建 `osgdb_ktx` 后（新 DLL 前缀 `1124d517…`，含 knob），线程配额的产物影响
+> 才第一次可被验证；当前状态与真实证据见 PERFORMANCE_REPORT 的 L7 行与 STATUS 的"提速线"小节。
+
+⇒ 根因不在收图、不在排序；"不在编码器线程"这半句当时由上面那对无效对照支撑，
+**属未被检验**（A-52 的结案另有依据：清零后同二进制两遍 246/246 逐字节相同，见上表 `lx_z_*` / `lx_p_*` 两行）：
+`TexturePacker::pack` 用
+`osg::Image::allocateImage` 建图集画布后**从不初始化**（`TexturePacker.cpp:100-109`），
+而 OSG 的 `allocateImage` 不清零。子矩形很少铺满整张画布，缝隙里留着的是上一次堆使用的
+残留字节；`exportImage` 又按**整张画布**的内容哈希命名并压缩它 ⇒ 缝隙字节变 → 页名变 →
+KTX2 编码字节/字节数变 → 引用该页的瓦片字节变。页**尺寸**两侧相同正是这个机理的特征
+（布局没变，变的只是没被写过的字节）。修复：分配后 `memset(total->data(), 0, getImageSizeInBytes())`，
+长度与 `computeImageHash` 读取的跨度一致（r=1），缝隙固定为透明黑。
+
+**这条把"产物逐字节对照"从阴性对照恢复成可用尺子**：清零后串行档两遍全等，
+所以 A-51/后续回归可以继续用逐字节 diff 做主判据；量化多重集尺子（`E:/tmp/diag_all.js`）
+降级为交叉验证。`VALIDATION_REPORT.md:51` 那次"md5 完全一致"不是假象，而是画布恰好被
+复用到相同残留字节——同一把尺子时好时坏，原因就是本节。
+
+**5. 验收过程中修掉一个真实缺陷：折叠态跨瓦片外泄**
+`writeContent` 里 `optimize()`（建图集）在 `foldBeforeWrite()` **之前**，而还原只发生在
+下一次 `fold()` 开头和超限阶梯内 ⇒ 瓦片 N 清掉的变换键会被**瓦片 N+1 的图集装配**读到。
+原代码在阶梯处已经写了"折叠态绝不能进下一轮图集"的注释，但只在同一个瓦片内守住了。
+修复：`ProductionPipeline.cpp:545-556` 的作用域守卫，`writeContent` 一返回就还原。
+守卫**保留的理由是瓦片隔离（正确性），不是性能**；它自己那一次 UV 还原值多少秒，这一轮没量到。
+
+> **撤回一条我自己写错的数**：本节先前记过"加守卫让写出阶段 2.4×、墙钟 120 → 338 s"。
+> 那个归因**错了**，错在拿两个相隔一小时的时间窗做 A/B。三条反证（全部实测）：
+> ① **守卫不在的计时器也跟着翻倍**：`micro_evaluate` 在贴图写出**上游**、根本不读 UV，
+> 130.9 s（无守卫）→ 269.2 s（有守卫）；若代价真来自守卫，它不该动。
+> ② **同时段的无守卫对照和有守卫一样慢**：16:53 备份后把守卫整块摘掉重编（exe 16:54），
+> 17:00 那次 `micro_evaluate=260.1 / micro_write=250.5 / micro_texture_export=154.0 / 墙钟 329.1 s`，
+> 与 16:00、16:07 两次带守卫的运行（269.2/257.4/159.8/338.4 与 266.2/255.1/157.7/336.3）同档。
+> ③ **工作量计数器五次运行逐项相同**（`micro_evaluate_samples` 48 963 414、
+> `micro_texture_export_files` 121、`tileCount` 129）⇒ 不是多干了活，是同一台机器在不同时刻的速率差。
+> 把当天全部 longxiang 运行按完成时刻排开，同一计数器下墙钟跨 **119.9 – 436.4 s**
+> （09:14=391.8、10:29=436.4、10:38=122.2、14:55=119.9、16:00=338.4、17:00=329.1），
+> 这正是本仓自己记过的"耗时不可跨会话比、A/B 必须同时段 + 对照 exe"
+> （`PERFORMANCE_REPORT.md:215`、`:253`，`STATUS.md:706`：同一份 longxiang、同一二进制，
+> `micro_evaluate_samples` 恒为 48 963 414，wall 仍在 122 ~ 436 s 之间跳）。
+> **守卫的真实代价 = 未测**；要量它得在同一时间窗内交替跑两个二进制，
+> 记到性能线（#10/#11）去做，不在此处用一组被污染的读数冒充。
+守卫本身的结论不变：不加守卫时那份"折叠版更快"至少有一部分是**靠污染后续瓦片的贴图决策省下来的
+编码**，与 A-48 立的"本瓦片之外的瓦片绝不能被这次降分辨率带小"同族。
+
+**6. 预算闸（A-32/A-33 同族的通用缺口）已补，并且真的在开火**
+`selfValidate` 现在解析每个内容文件的 glTF 容器（b3dm 28 B / i3dm 32 B 头 + 4 个表长 +
+GLB chunk，`cmpt` 逐内层递归）数 primitive / 材质，超 `maxPrimitivesPerTile` /
+`maxMaterialsPerTile` 即失败。单测 `budgetGate` 用假 b3dm 打正反两侧：真实写出的 b3dm
+解析得动、正好卡上限放行、多 1 个 primitive 与多 1 个材质各自必拒。
+**实测开火**：默认 `-dc 20`（`tools/model23dtiles/main.cpp:493`）跑折叠后的 longxiang →
+**rc=3**，拒的是 `t0`=24、`t1`=22 两张代理（`-dc 24` 则 rc=0）。
+⇒ **20 与 24 的差不是我能定的**：抬默认到手册 §3 的 24、或走方向 B 让分区器再切（会动树结构），
+两条都归用户。
+
+**7. validator（实测）**：`longxiang_guard512` 头 `0 ERROR / 121 WARN / 0 INFO`，
+递归 `issues`+`causes` = **1514 WARNING / 837 INFO / 0 ERROR、ERROR 文件数 0**，
+与折叠前 `longxiang_final512` 的头三列逐项相同。
+> **口径更正（2026-10-22）**：上面那组 1514/837 是"所有带 severity 的节点"，其中
+> **242 个是带 `causes` 的结构节点**（121 个告警文件 ×2 层），真叶 = **1272 WARNING / 837 INFO / 0 ERROR**。
+> 尺子 `E:/tmp/val_leaf.js` 已改为"只数没有 causes 的节点"，并用已知答案的 `lugouqiao_v17`
+> 复算对齐三个历史读数（真叶 ERROR **195**、告警文件 **691**、错误文件 **26**，均与文档记录逐项相同）。
+> ERROR=0 这条结论不受口径影响；`lx_p_a`（A-52 清零后的当前二进制，默认 `-dc 24 -ptw 512`）
+> 真叶读数 = **1272 / 837 / 0**，与上面两份折叠期产物逐项相同。
+
+**8. 视觉验收（本轮做了，但覆盖不完整）**
+无头 Edge + Cesium，`scripts/visual_capture.sh`，`far-to-near` 路径 4 帧采样，
+对照 = **同码不折叠的暂存产物**（`longxiang_abnofold/.wb-staging`）。逐像素差
+（`sharp` raw 缓冲，1280×720）：
+
+| 机位 | coverage 像素（两侧） | 平均绝对差 | 最大差 | >8/255 的通道占比 |
+|---|---|---|---|---|
+| `dist_30.00R`（纯代理 LOD） | 0 / 0 | **0.000** | **0** | 0.000 % |
+| `dist_11.42R` | 3 857 / 3 857 | 0.007 | 5 | 0.000 % |
+| `dist_3.15R` | 57 430 / 57 430 | 0.096 | 5 | 0.000 % |
+
+最大通道差 5/255、没有任何一处超过 8，且几何占比像素两侧逐值相同 ⇒ 与"折叠只挪坐标、
+差异来自图集页重新归置后的 KTX2 再编码"一致，**未见错位采样该有的大块错纹理**。
+**未覆盖（别把这条当成全量视觉验收）**：①该资产在这三个机位下 `chromaFraction ≈ 0.0002`，
+画面近乎灰度，纹理判据灵敏度低；~~②折叠侧第 4 帧（`dist_1.20R` 近景）因超时未截到，
+所以**折叠最相关的近景 LOD 边界没有像素级证据**~~ ⇒ **2026-10-22 已补**（见下）；
+③发布资产 `lugouqiao` 的视觉验收由用户裁定**停做**（A-54 走明确失败）。
+
+> **2026-10-22 复测（缺口 ② 闭合 + 一把尺子缺陷）**
+>
+> 上一段表的对照是**暂存产物**、且与折叠侧不同二进制档，匹配度不够。本轮改用
+> **同二进制、同 `-dc 100`、只差折叠入口**的一对（`lx_fold_m100` / `lx_nofold_m100`，
+> `maxMaterialsPerTile` 两侧都 100，只为让不折叠侧过材质闸）：
+> `dist_1.20R` 平均 0.0564 / 最大 **10** / `>8/255` 通道 0.0033 % / `>16/255` **0 条**，
+> coverage 285 856 / 285 856、`projPx` 519.6 / 519.6 逐值相同 ⇒ **近景 LOD 边界上折叠视觉中性**。
+> 发布产物 `lx_p_a`（默认 `-dc 24`）对同窗重截的 `longxiang_guard512`：近景平均 0.0230 /
+> 最大 **5** / `>8/255` 通道 **0 条** ⇒ A-52 清零与其后的改动无视觉变化。
+>
+> **两条口径更正**：
+> ① 上表 `dist_30.00R` 的"差 0"是**两个未加载的洞相减**（两侧 coverage=0、`settleIters=12`），
+> 不是证据；本轮 `lx_foldm100_near` 该帧同样是洞，而同窗的 `lx_p_a`/`lx_nofold_m100` 有 535 px。
+> ② **跨时间窗的绝对亮度不可比**：同一份 `longxiang_guard512` 产物，10-21 16:35 截的
+> `silLumAvg` = 141.8 / 138.0 / 131.8，10-22 09:39 重截 = 91.3 / 80.2，而两侧 coverage
+> （3 857 / 57 430 / 285 856）、`projPx`、3.15R 可见瓦片清单（各 51 块，两侧 `only in` 均空）
+> 逐项相同 ⇒ 差在渲染曝光不在产物。**逐像素判据只在同一时间窗内有效**；上表与其历史读数
+> 各自内部成立，但不可跨窗做趋势。
+
+**9. 回归**：`test_production` **263 / 0**（守卫落地后重编重跑），
+`longxiang_guard512` 报告不变量与折叠前逐项相同（`tileCount` 129、`maxContentBytes`
+2 535 648、`errorMaxMeters` 94.515 468 985 376 81、`nodesCertified` 2 / `nodesBoundLoose` 60）。
+**（读数已过期）** A-52 清零 + `atlasCanvas` 回归用例落地后为 **277 / 0**（×2，rc 直接取）。
+
+**未证实 / 待办**：~~近景与发布资产的视觉验收~~（近景已于 2026-10-22 补齐；`lugouqiao` 由用户裁定
+停做，见 A-54）；**守卫的真实 CPU 代价（先前那组 2.4× 读数已撤回，
+见第 5 条，需同时段交替 A/B 才能量）**；A-52 **已定位、修复并补了回归测试**（画布缝隙未初始化；
+串行 `lx_z_a/b` 与默认并发 `lx_p_a/b` 两档各 246/246 逐字节相同，清零前的同尺子对照仍 FAIL；
+`atlasCanvas` 用例的负对照实测：去掉清零 3/3 FAIL、装回 3/3 PASS）。
