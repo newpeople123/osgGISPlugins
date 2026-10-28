@@ -17,6 +17,7 @@
 #include "3dtiles/production/ProxyMeshBuilder.h"
 #include "3dtiles/production/GeometryErrorEvaluator.h"
 #include "3dtiles/production/TileFeatureMapper.h"
+#include "3dtiles/production/ObjIntegrityPrecheck.h"
 #include "utils/GltfOptimizer.h"
 #include <osg/Node>
 #include <osg/BoundingBox>
@@ -143,6 +144,12 @@ class ProductionPipeline {
 public:
     struct Options {
         std::string outputDir;
+        // 只用于报告身份（ConversionReport::inputFile/inputBytes）：管线自己不读这个路径，
+        // 几何由 run(input, …) 的节点带进来。留空时报告如实记"未知"，不填假值。
+        std::string sourceFile;
+        // 读模**之前**的原始 OBJ 索引预检结果（AUDIT A-57）。管线不重扫文件，只负责把
+        // 结果记进 conversion-report.json；ran=false 表示这次输入不是 OBJ。
+        ObjPrecheckResult objPrecheck;
         // 暂存目录：所有瓦片先写到这里，自校验通过后才搬到 outputDir。
         // 留空表示用 <outputDir>/.wb-staging。
         std::string stagingDir;

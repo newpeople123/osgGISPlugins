@@ -22,6 +22,7 @@
 #include <tbb/global_control.h>
 #include <filesystem>
 #include <system_error>
+#include <cmath>
 
 using namespace osgGISPlugins;
 
@@ -271,7 +272,10 @@ osg::ref_ptr<osg::MatrixTransform> applyTranslationAndUpAxis(
 }
 
 // 将投影坐标的模型进行坐标转换
-void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, double& latitude, double& longitude, double& altitude)
+// 返回 false = 地理定位这条路走不通（AUDIT A-58）。以前这三条失败分支直接 exit(0)：
+// 进程以"成功"退出，调用方/CI/回归脚本看不出任何异常，产物也没写成——
+// 与手册 14.17"失败不得留半成品、不得用成功退出码"相反，所以改成可传播的返回值。
+bool applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, double& latitude, double& longitude, double& altitude)
 {
 	if (!epsg.empty())
 	{
@@ -280,7 +284,7 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, dou
 		if (!bs.valid())
 		{
 			OSG_NOTICE << "Error:Invalid model bounding box!" << std::endl;
-			exit(0);
+			return false;
 		}
 		const osg::Vec3d center = bs.center();
 		const std::string dstEpsg = "EPSG:4326";
@@ -289,7 +293,7 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, dou
 		if (!ctx)
 		{
 			OSG_NOTICE << "Error creating projection context!" << std::endl;
-			exit(0);
+			return false;
 		}
 #ifndef NDEBUG
 		const std::string projDBPath = "./share/proj";
@@ -303,27 +307,53 @@ void applyProjection(osg::ref_ptr<osg::Node>& node, const std::string& epsg, dou
 		if (!dbPath) {
 			OSG_NOTICE << "Proj database not found. Please check your search path." << std::endl;
 			proj_context_destroy(ctx);
-			exit(0);
+			return false;
 		}
 
 		PJ* projTo4326 = createProjection(ctx, srcEpsg, dstEpsg);
+		// createProjection 两条失败路径都返回 nullptr（EPSG 不存在 / normalize 失败），
+		// 以前没查，nullptr 直接被 proj_trans 用——改成明确失败退出。
+		if (!projTo4326)
+		{
+			OSG_NOTICE << "Error: cannot build transformation " << srcEpsg << " -> " << dstEpsg << std::endl;
+			proj_context_destroy(ctx);
+			return false;
+		}
 
 		PJ_COORD inputCoord = proj_coord(center.x(), -center.z(), center.y(), 0);
 		PJ_COORD outputCoord = proj_trans(projTo4326, PJ_FWD, inputCoord);
 		latitude = outputCoord.xyz.y;
 		longitude = outputCoord.xyz.x;
 		altitude = outputCoord.xyz.z;
+		// proj_trans 失败不返回错误码，只把坐标写成 HUGE_VAL/NaN 并置 errno。这里不拦，
+		// 非有限的基准点就会流进 ENU 变换、包围盒与误差评估（P0 4.1）。
+		if (!std::isfinite(latitude) || !std::isfinite(longitude) || !std::isfinite(altitude))
+		{
+			OSG_NOTICE << "Error: projection of the model centre is not finite (EPSG:"
+				<< epsg << " -> " << dstEpsg << ", proj errno=" << proj_errno(projTo4326) << ")" << std::endl;
+			proj_destroy(projTo4326);
+			proj_context_destroy(ctx);
+			return false;
+		}
 
 		const osg::EllipsoidModel ellipsoidModel;
 		osg::Matrixd localToWorld;
 		ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(osg::DegreesToRadians(latitude), osg::DegreesToRadians(longitude), altitude, localToWorld);
 		PJ* projTo4978 = createProjection(ctx, srcEpsg, "EPSG:4978");
+		if (!projTo4978)
+		{
+			OSG_NOTICE << "Error: cannot build transformation " << srcEpsg << " -> EPSG:4978" << std::endl;
+			proj_destroy(projTo4326);
+			proj_context_destroy(ctx);
+			return false;
+		}
 		CoordinateTransformVisitor ctv(projTo4978, osg::Matrixd::inverse(localToWorld));
 		node->accept(ctv);
 		proj_destroy(projTo4326);
 		proj_destroy(projTo4978);
 		proj_context_destroy(ctx);
 	}
+	return true;
 }
 
 void printUsage()
@@ -420,6 +450,10 @@ void printUsage()
 	osg::notify(osg::NOTICE) << "    -unlit              - Enable KHR_materials_unlit extension (for baked models)" << std::endl;
 	osg::notify(osg::NOTICE) << "    -gn                 - Generate normal map (Sobel) and tangents" << std::endl;
 	osg::notify(osg::NOTICE) << "                          Improves visuals but increases processing time and file size" << std::endl;
+	osg::notify(osg::NOTICE) << "    -objcheck <mode>    - Scan raw .obj face indices BEFORE the reader runs (default: reject)" << std::endl;
+	osg::notify(osg::NOTICE) << "                          reject: out-of-range reference -> exit 7, model not read, nothing written" << std::endl;
+	osg::notify(osg::NOTICE) << "                          warn: convert anyway but record line numbers in conversion-report.json" << std::endl;
+	osg::notify(osg::NOTICE) << "                          off: skip the scan. No effect on non-obj input." << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 }
 
@@ -464,6 +498,15 @@ int main(int argc, char** argv)
 	const std::string compressLevel = parseArgument(arguments, "-cl", std::string("medium"));
 	const std::string epsg = parseArgument(arguments, "-epsg", std::string());
 	const std::string upAxis = parseArgument(arguments, "-up", std::string("Y"));
+	// 原始 OBJ 面索引预检的档位（AUDIT A-57）。非法取值立刻退出，不静默按默认跑——
+	// 用户以为开了 reject 实际跑成 off 是这类开关最坏的失效方式。
+	const std::string objCheckMode = parseArgument(arguments, "-objcheck", std::string("reject"));
+	if (objCheckMode != "reject" && objCheckMode != "warn" && objCheckMode != "off")
+	{
+		OSG_NOTICE << "Error: -objcheck must be reject, warn or off (got \"" << objCheckMode
+			<< "\")." << std::endl;
+		return 4;
+	}
 
 	const double translationX = parseArgument(arguments, "-tx", 0.0);
 	const double translationY = parseArgument(arguments, "-ty", 0.0);
@@ -528,6 +571,40 @@ int main(int argc, char** argv)
 
 	OSG_NOTICE << "Resolving parameters..." << std::endl;
 
+	// 原始 OBJ 面索引预检（AUDIT A-57），必须在 reader 之前：osgdb_obj 按引用把 `f` 指的
+	// 顶点拷进几何自己的坐标数组，越界引用因此被吸收成"合法槽位上的错误坐标拷贝"，
+	// 读模之后的索引守卫（SourceModel，第二道防线）结构性看不见。
+	// 落点选在这里是因为此刻 output 目录还没创建、模型还没读：硬拒天然零产出
+	// （手册 14.17：失败不得留半成品，也不得以成功退出码结束）。
+	osgGISPlugins::production::ObjPrecheckResult objPrecheck;
+	if (osgDB::getLowerCaseFileExtension(input) == "obj" && objCheckMode != "off")
+	{
+		objPrecheck = osgGISPlugins::production::precheckObjFile(input);
+		if (!objPrecheck.readable)
+		{
+			// 与"读模失败"同一口径：预检连文件都打不开，后面的 reader 也一样打不开。
+			OSG_NOTICE << "Error: OBJ pre-check could not open " << input << std::endl;
+			return 2;
+		}
+		for (const std::string& message : objPrecheck.messages())
+		{
+			OSG_NOTICE << "obj precheck: " << message << std::endl;
+		}
+		if (!objPrecheck.clean() && objCheckMode == "reject")
+		{
+			OSG_NOTICE << "Rejected " << input << ": " << objPrecheck.hardViolations
+				<< " invalid face reference(s) in " << objPrecheck.badFaces << " of "
+				<< objPrecheck.faces << " face(s); model not read, no output written." << std::endl;
+			return 7;
+		}
+		if (!objPrecheck.clean())
+		{
+			OSG_NOTICE << "Continuing despite " << objPrecheck.hardViolations
+				<< " invalid face reference(s) because -objcheck " << objCheckMode
+				<< "; the reader absorbs them, so tiles may carry garbage vertices." << std::endl;
+		}
+	}
+
 	OSG_NOTICE << "Reading model file..." << std::endl;
 
 	bool showProgress = true;
@@ -556,7 +633,15 @@ int main(int argc, char** argv)
 		osg::ref_ptr<osg::MatrixTransform> xtransform = applyTranslationAndUpAxis(node, translationX, translationY, translationZ, scaleX, scaleY, scaleZ, upAxis, ext);
 		osg::ref_ptr<osg::Node> tNode = xtransform->asNode();
 		osgDB::setCurrentWorkingDirectory(currentWorkingPath);//因为坐标是投影坐标系时要设置proj.db的搜索路径
-		applyProjection(tNode, epsg, latitude, longitude, altitude);
+		// 退出码约定（AUDIT A-58/A-57）：0 成功 / 1 参数缺失 / 2 读模失败 / 3 生产管线拒绝且未提交产物
+		// / 4 参数非法 / 5 取值越界 / **6 地理定位（投影）失败，未产出任何文件**
+		// / **7 原始 OBJ 面索引预检拒绝（模型未读取，未产出任何文件）**。
+		// 以前这三条投影失败走的是 exit(0)，CI 与回归脚本一律读成成功。
+		if (!applyProjection(tNode, epsg, latitude, longitude, altitude))
+		{
+			OSG_NOTICE << "Failed to geolocate " + input + " (projection error); no output written." << std::endl;
+			return 6;
+		}
 		osgDB::setCurrentWorkingDirectory(inputPath);//切换到输入文件的文件夹，以免找不到纹理等文件
 
 		Utils::GltfMaterialOptionsVisitor gmov(doubleSide, alphaMode, alphaCutoff);
@@ -680,6 +765,10 @@ int main(int argc, char** argv)
 
 			ProductionPipeline::Options popt;
 			popt.outputDir = output;
+			// 报告身份字段用（ConversionReport::inputFile/inputBytes）；管线不读这个路径
+			popt.sourceFile = input;
+			// 只用于报告记账：管线不重扫文件，ran=false 表示这次输入不是 OBJ
+			popt.objPrecheck = objPrecheck;
 			popt.latitude = latitude;
 			popt.longitude = longitude;
 			popt.altitude = altitude;
@@ -719,10 +808,10 @@ int main(int argc, char** argv)
 			{
 				const std::string& tc = config.tileConfig.gltfTextureOptions.cachePath;
 				std::error_code ec;
-				if (!tc.empty() && std::filesystem::is_directory(tc, ec)
-					&& std::filesystem::directory_iterator(tc, ec) == std::filesystem::directory_iterator())
+				if (!tc.empty() && std::filesystem::is_directory(Utils::utf8ToPath(tc), ec)
+					&& std::filesystem::directory_iterator(Utils::utf8ToPath(tc), ec) == std::filesystem::directory_iterator())
 				{
-					std::filesystem::remove(tc, ec);
+					std::filesystem::remove(Utils::utf8ToPath(tc), ec);
 				}
 			}
 			return 3;
@@ -743,10 +832,10 @@ int main(int argc, char** argv)
 			{
 				const std::string& tc = config.tileConfig.gltfTextureOptions.cachePath;
 				std::error_code ec;
-				if (!tc.empty() && std::filesystem::is_directory(tc, ec)
-					&& std::filesystem::directory_iterator(tc, ec) == std::filesystem::directory_iterator())
+				if (!tc.empty() && std::filesystem::is_directory(Utils::utf8ToPath(tc), ec)
+					&& std::filesystem::directory_iterator(Utils::utf8ToPath(tc), ec) == std::filesystem::directory_iterator())
 				{
-					std::filesystem::remove(tc, ec);
+					std::filesystem::remove(Utils::utf8ToPath(tc), ec);
 				}
 			}
 			return 3;

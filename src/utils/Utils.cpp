@@ -908,3 +908,17 @@ void Utils::GltfMaterialOptionsVisitor::apply(osg::Drawable& drawable)
 		}
 	}
 }
+
+std::filesystem::path Utils::utf8ToPath(const std::string& utf8)
+{
+#ifdef _WIN32
+	// -i/-o 在 Release 下被 main.cpp 显式转成 UTF-8，而 std::filesystem 与 fstream 的
+	// 窄字符入口按 C locale 代码页解码同一个字符串，两条路解出的是**不同**的路径：
+	// 中文资产目录因此在 "stat 说文件不存在""报告写不出" 上失败（AUDIT A-59）。
+	// Windows 的 path::value_type 就是 wchar_t（UTF-16），先解码再交给 path。
+	return std::filesystem::path(osgDB::convertUTF8toUTF16(utf8));
+#else
+	// POSIX 的原生路径字节就是 UTF-8。
+	return std::filesystem::u8path(utf8);
+#endif
+}

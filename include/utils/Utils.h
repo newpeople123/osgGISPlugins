@@ -23,6 +23,7 @@
 #include "osgdb_gltf/material/GltfPbrSGMaterial.h"
 #include <unordered_set>
 #include <unordered_map>
+#include <filesystem>
 namespace osgGISPlugins
 {
 	class Utils {
@@ -297,6 +298,9 @@ namespace osgGISPlugins
 
 		// 注册文件扩展名别名
 		static osgDB::Registry* registerFileAliases();
+
+		// 把项目内部统一的 UTF-8 路径转成可直接使用的 std::filesystem::path（AUDIT A-59）。
+		static std::filesystem::path utf8ToPath(const std::string& utf8);
 	};
 }
 #endif // !OSG_GIS_PLUGINS_UTILS_H

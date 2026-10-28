@@ -1130,6 +1130,14 @@ L5（写出并行）在 65 MB 档的上限是 67 % 而不是 12 %（资产相关
     > "等价性未实测"也已补上（450 组 / 505 880 顶点量化多重集 0 组有差 + 逐像素截图差 ≤5/255）。
     > 详见文末"2026-10-21 下午"一节与 AUDIT §A-51 落地、VALIDATION §8c。
 
+12. **A-57 / A-59（2026-10-28 落地，代码级 + 产物级都实测过，但下面四条口子没收）**：
+    ①预检只覆盖顶层 `-i` 的 `.obj`（`main.cpp:580` 按扩展名分流），**不覆盖** FBX/OSG 内嵌或
+    后续被引用的 OBJ；②本轮**没有任何真实 `.obj` 资产可跑**（审计资产树里只有 FBX/OSG），OBJ 侧
+    覆盖 = 合成夹具 + `test_assets/`，真实 OBJ 端到端**未执行**；③分组局部负索引口径未证实
+    （`osgdb_obj` 源码不在树内）；④A-59 的**失败路径站点**（`ProductionPipeline.cpp:1029`/`:1325`
+    的 `remove`、`main.cpp:811-814`/`:835-838` 的空纹理目录清理）未被 CJK 端到端触达，且
+    **Debug 构建不做 UTF-8 转换**（`#ifndef NDEBUG`），修复只在 Release 成立。详见文末 2026-10-28 一节。
+
 ## 2026-10-21 下午：A-51 方案 A 落地（代理折叠）+ 补 primitive/材质预算闸，验收过程中修出两条新问题
 
 ### 做了什么
@@ -1361,3 +1369,94 @@ ERROR: selfValidate: content over material budget: tiles/t8.b3dm (26 materials >
 而报告写在 `selfValidate` 之后 ⇒ 该档**未被验证**。
 另注：`LoadTextureKTX.cpp:635-638` 的源码注释仍写着"实测 1 与 24 线程 244/244 逐位相同"，
 其口径引用了本段已作废的实验、且只数了 `tiles/`+`textures/`；**源码注释属源码，本轮未改动**，待批准后更正。
+
+## 2026-10-28：A-57 原始 OBJ 面索引预检 + A-59 UTF-8 路径全站点（A-58 字段本轮补齐实测）
+
+本轮范围按用户裁定只有三项：**A-57**（读模前的原文索引扫描 + `-objcheck reject|warn|off` +
+退出码 7）、**A-59**（`Utils::utf8ToPath` 把 `std::filesystem` / 流入口径统一到 UTF-8，**全文件
+一起改**）、以及这两项的**回归验证**。手册 §6 仪表核实、§7 误差正确性、§8 代理/内存/线程、
+§9 同集配对 A/B、§11–12 最终报告**不在本轮**，按"未执行"记账，不写成通过。
+
+机制、判据语义与逐条读数写在 `AUDIT.md` 的 A-57 / A-58 / A-59 三行 + 文末"2026-10-28 轮"小节；
+本节只按分栏给状态，避免两处各说一套。
+
+### 本轮实测（同批 Release 二进制，11:48 编出；证据全在仓库外 `F:/wb_a57_a59/`）
+
+| 项 | 读数 | 证据 |
+|---|---|---|
+| 单测 `objPrecheck`（14 例） | **55 / 0** | `test_objprecheck.log` |
+| **尺子有效性（变异对照）** | 把 `ObjIntegrityPrecheck.cpp:351` 的 `beyond-total` 判据短路 → 同一套断言 **43 / 12 FAIL、rc=1** | `test_mutant.log`、`build_mutant.log` |
+| 变异回滚后 | 与 `ObjIntegrityPrecheck.cpp.orig` **逐字节相同**、重编、全量套件 **383 / 0、rc=0** | `build_reverted.log`、`test_full_after.log` |
+| CLI 九组退出码 | reject 默认 **7** / reject 显式 **7** / `bad_vt` **7** / 非法档位 **4** / 文件不存在 **2** / `-epsg 999999` **6** / warn **0** / off **0** / 干净夹具 **0** | `cli_*`（**退出码直接取，不经管道**） |
+| 硬拒零产出 | 六个失败档目录里**只有本人重定向的 `run.log`**；中文输出目录在 rc=7 那跑**根本没被创建**（12:20 用全新目录 `拒收_复跑_20261028` 复跑一次坐实：跑前 `No such file`、跑后仍 `No such file`，日志 `model not read, no output written`） | `cli_reject_default/`、`cli_bad_vt/`、`输出目录/子目录/reject_cjk_rerun.log` |
+| warn 档记账 | 5 个 `objPrecheck*` 计数 + `obj_precheck` 阶段 0.0001212 s + **2 条** warning（汇总 + 点名 `line 4 … beyond-total`） | `cli_warn/conversion-report.json` |
+| off 档"没扫过"要看得出来 | **无** `obj_precheck` 阶段、**无**计数、**0** 条 warning（与 clean 档"扫过且干净"有 faces/refs 计数形成对照） | `cli_off/`、`cli_clean/` 两份报告 |
+| 成对矩阵（同二进制同时段 `-objcheck off` vs 默认 reject） | **12/12 rc=0**；名称/`rc`/`tileset`/`tiles`/`inBytes`/`outBytes` 五列 **12/12 完全相同**；唯一差异是预检计数列（off=缺、reject=0/refs），正是 `off` 的语义 | `matrix_off.log`、`matrix_reject.log` |
+| 官方 validator | **13 份报告**（12 个 `test_assets` + `c2_naruto_a59`）**叶层 `"severity": "ERROR"` 合计 0 条**、WARNING **8**（`t12` 4 + `c2_naruto` 4）、INFO 766；表头 `numWarnings` 各报 1，与叶层 4 **不成比例**（`run_validator.sh` 头注释那条口径） | `validation/*.validator.json`；**尺子阳性对照** `validation/_rulercontrol_missinggeometricerror.validator.json`：紧凑 grep **0 命中**（死的）、容忍空格 **2 命中** = 表头 `numErrors=2`。**该对照文件不是产物报告**，数报告时按 13 计（目录里现在共 14 个 `*.validator.json`） |
+| 预检开销 | `t03` `obj_precheck` **1.657429 s**（9 429 501 B ⇒ ≈5.69 MB/s；1 207 458 条引用 ⇒ ≈72.9 万次/s）。对 `totalSeconds` 35.53 s = **4.7 %**；对 stages 求和 1245.94 s = **0.13 %** | `t03_giant_single_mesh/conversion-report.json` |
+| A-59 真实资产复跑 | `c1_naruto_a58` → `c2_naruto_a59`：`inputBytes` **0 → 29 205 344**（= 外部 `stat`）、`cannot stat` 警告 **1 → 0**、`outputBytes` 190 915 / `tiles` 1 / `maxContentBytes` 188 832 **不变**、4 个产物 **sha256 逐位相同** | `hash_c1.txt` / `hash_c2.txt`（另存 `h1`/`h2`，两侧一致） |
+| 中文双端端到端 | CJK 输入 + CJK 输出目录 `rc=0`，`inputBytes=32`、`outputBytes=2 542`，报告/清单/tileset 都落在中文目录 | `cjk_clean.log`、`输出目录/子目录/out_a/` |
+| 确定性 | `t03` **7/7**、`t11` **15/15** 文件 sha256 两跑**零差异** | `F:/wb_a57_det/*.hashes` |
+| 站点数（不是估算） | `grep -c utf8ToPath src/3dtiles/production/ProductionPipeline.cpp` = **14**；`main.cpp` 6 个（两块 × 3）；`ObjIntegrityPrecheck.cpp:468` 1 个 | 本轮 grep |
+
+计时口径三条：①开销只按 `obj_precheck` 阶段秒说，wall 单样本（36.58 → 39.10 s）只作量级参考；
+②4.7 % 与 0.13 % 是**两个不同分母**（`totalSeconds` 只覆盖 `ProductionPipeline::run()`，见
+`ProductionPipeline.cpp:189`；stages 求和里含每瓦片并行条目），不许混用或摘一个当结论；
+③预检实际发生在 `run()` 计时窗**之前**（`main.cpp:574-606` 在 `readNodeFile` 前），所以"对
+`totalSeconds` 的占比"是开销指示，不是同一时间轴上的除法。
+
+### 本轮踩到的两条 harness 教训
+
+1. **一把死尺子中了一个"恰好正确"的 0**：首跑用 `grep -o '"severity":"ERROR"'` 数叶层，而报告是
+   缩进 JSON（`"severity": "ERROR"`，冒号后有空格）⇒ 模式永远匹配不上，读出 0；0 又与表头
+   `numErrors` 一致，所以没有暴露。**发现契机不是那个 0，而是同一把尺子数 WARNING 也得 0**、
+   节点里却明明白白写着 `"severity": "WARNING"`。修法：`grep -o '"severity": *"ERROR"'`，并用
+   一个故意缺 `geometricError` 的 tileset 做阳性对照（紧凑 0 命中 vs 容忍空格 2 命中 = 表头 2）。
+   重测后 ERROR 仍是 0，但结论现在站在一把活的尺子上。
+2. **成对矩阵不能整行比**：`off` 与 `reject` 的行整行比会得到 11/12 "DIFF"，差异全在预检自己的
+   计数列（off 缺、reject 有）—— 那正是 `off` 的语义。比的是产品中性五列（名称/`rc`/`tileset`/
+   `tiles`/`inBytes`/`outBytes`），**12/12 相同**。用错列就会把"改动按预期生效"读成"改动改了产物"。
+
+### 历史证据（本轮没有重做，引用时连口径一起引用）
+
+- **A-56 的根因定案**（2026-10-26，`F:/wb_stage0_ffbb3fe/20261026T092706/A56_ROOT_CAUSE.md` +
+  提交 `8abd48c`）：越界面索引来自**旧夹具生成器**，7 个夹具已修+基线重建。本轮"12 资产
+  `bad=0`/`viol=0`、`refs` 与面数对得上"是对那次修复的**独立复核**，不是新证据。
+- **读模后的索引守卫**（Q2/A-56，`SourceModel::build`）仍在，作为第二道防线；本轮没有削弱它，
+  也没有用它来证明预检有效。
+- 判据来源是仓库根目录那份**未提交**的执行手册（§5.3 预检要求、§4.1/§4.2 非有限与"不得裁剪"、
+  §7 报告字段、§14.17 失败不留半成品）。
+
+### 推断（不是读数，别当实测引用）
+
+- **reader 吸收越界索引**的机制：由"文件声明 3 条 `v`、面引用第 4 条 ⇒ 产物顶点数 **>** 源 `v` 数、
+  多出的值有限"这一指纹推断，**没有**读 `osgdb_obj` 源码去证（源码不在树内）。
+- 分组（`g`/`o`/`usemtl`）局部负索引语义：预检取**宽松的全文累计口径**，因此"只会漏报不会误报"
+  是口径推导，不是实测覆盖。
+- A-59 的影响面 = 所有走窄字符入口的 `std::filesystem` / 流调用；本轮只审了 production 与 CLI，
+  其他模块若走同一条路会同样中招 —— **未审**，因此**未主张**。
+
+### 未执行（明确不写成通过）
+
+- **真实 `.obj` 资产端到端**：审计资产树里只有 FBX/OSG，OBJ 侧覆盖 = 合成夹具 + `test_assets/`。
+  本轮任何"OBJ 干净/被拒"的读数都不外推到真实 OBJ 资产。
+- **本轮改动的视觉验收**：一张截图都没取、CesiumJS 一次没开 ⇒ 视觉维度记 **BLOCKED-VISUAL**。
+- 手册 **§6** 仪表核实 + 热点定位（#59）、**§7** 误差评估正确性（#60）、**§8** 代理与内存/线程
+  确定性（#61）、**§9** 同集回归 + 配对 A/B 性能（#62）、**§11–12** 最终报告（#64）、
+  **§5** 真实 FBX 坐标风险扫掠（#58）：本轮未做。
+- **A-59 的失败路径站点**：`ProductionPipeline.cpp:1029`/`:1325` 的 `filesystem::remove`、
+  `main.cpp:811-814`/`:835-838` 的空纹理目录清理，只在 `return 3` 分支上；本轮三次强行制造失败
+  （`-tri 1`、`-tri 2`、`-dc 1`）**全部 rc=0**（A-31 只降级不判死），没走上去 ⇒ 记**未证实**。
+- **Debug 构建**：`main.cpp:551-555` 的 UTF-8 转换在 `#ifndef NDEBUG` 里，A-59 在 Debug 下不生效；
+  本轮**没有**跑过 Debug。
+- **335 MB 档（`lugouqiao`）与 `longxiang` 档本轮未重跑**：A-54 的裁定（走"明确失败"、该档当前
+  不可发布、验收链停止）仍然有效，判据未动 ⇒ 重跑不改判据就不出盘，本轮不去碰。
+- **提交**：本轮代码**一条都没提交**；HEAD 在会话期间独立推进到 `34eb346`。`test_assets/` 之外
+  那 1637 行 `.gitignore` 改动按裁定**原样留在工作区不提交**。
+
+### 阻塞
+
+- 本轮**无新阻塞**：构建、单测、CLI、矩阵、validator、真实资产复跑都拿到了退出码。
+- **A-53**（`test_production` 在 `giant` 用例上的间歇性堆损坏 `0xc0000374`）仍 **OPEN**：本轮
+  全量 **383/0、rc=0** 一次通过、未复现，但样本仍然小，**不声称已消失**。
+- 视觉维度按上面的"未执行"记为 **BLOCKED-VISUAL**（不是外部阻塞，是本轮没做）。

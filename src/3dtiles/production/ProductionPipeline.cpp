@@ -619,7 +619,7 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     }
     out.bytes = 0;
     {
-        std::ifstream f(abs, std::ios::binary | std::ios::ate);
+        std::ifstream f(Utils::utf8ToPath(abs), std::ios::binary | std::ios::ate);
         if (f.is_open()) { out.bytes = static_cast<std::uint64_t>(f.tellg()); }
     }
 
@@ -657,7 +657,7 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
             }
             out.bytes = 0;
             {
-                std::ifstream f(abs, std::ios::binary | std::ios::ate);
+                std::ifstream f(Utils::utf8ToPath(abs), std::ios::binary | std::ios::ate);
                 if (f.is_open()) { out.bytes = static_cast<std::uint64_t>(f.tellg()); }
             }
             if (out.bytes <= _profile.budget.maxTileContentBytes) { break; }
@@ -1026,7 +1026,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
                     // 内节点（A-31），既不违反 7.3 也不报废整批数据。
                     const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
                     std::error_code ec;
-                    std::filesystem::remove(abs, ec);
+                    std::filesystem::remove(Utils::utf8ToPath(abs), ec);
                     _warnings.push_back("tile " + std::to_string(id) + ": proxy content " + why
                                         + " -> over-budget far-LOD file removed, children still cover "
                                         + std::to_string(scopeCount) + " source features"
@@ -1322,7 +1322,7 @@ int ProductionPipeline::buildInstanceTree()
                 // 实例瓦片是叶子：删掉等于丢实例，只能显式失败关闭发布（手册 7.3 / 14.17）
                 const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
                 std::error_code ec;
-                std::filesystem::remove(abs, ec);
+                std::filesystem::remove(Utils::utf8ToPath(abs), ec);
                 _failures.push_back("instance tile " + std::to_string(childId)
                                     + " over hard budget: "
                                     + std::to_string(wo.bytes) + " bytes / "
@@ -1398,6 +1398,31 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     // 验收时无法从 conversion-report.json 判断这批产物到底用了什么参数。
     _report.profile = _profile;
 
+    // 报告身份字段（AUDIT A-58）：这四格以前从不赋值，产物里的 conversion-report.json
+    // 恒为 inputFile="" / outputDir="" / inputBytes=0 / outputBytes=0，"0"看起来像
+    // "测过并且真的是 0"。取不到就在 warnings 里点名，不静默留 0。
+    _report.inputFile = _opt.sourceFile;
+    _report.outputDir = _opt.outputDir;
+    if (_opt.sourceFile.empty())
+    {
+        _warnings.push_back("report identity: caller did not pass the source path; "
+                            "inputFile/inputBytes are unavailable (not measured zero)");
+    }
+    else
+    {
+        std::error_code ec_input;
+        const auto sz = std::filesystem::file_size(Utils::utf8ToPath(_opt.sourceFile), ec_input);
+        if (ec_input)
+        {
+            _warnings.push_back("report identity: cannot stat source file " + _opt.sourceFile
+                                + " (" + ec_input.message() + "); inputBytes is unavailable");
+        }
+        else
+        {
+            _report.inputBytes = static_cast<std::uint64_t>(sz);
+        }
+    }
+
     // ---- import / normalize ----
     Timer tImport;
     CpuTimer cImport;
@@ -1452,6 +1477,47 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
         {
             _warnings.push_back("index validation: ... and "
                 + std::to_string(_model.indexViolations.size() - 10) + " more primitive set(s)");
+        }
+    }
+
+    // 原始 OBJ 索引预检的结果必须进报告（AUDIT A-57）。**干净文件也要落计数**：
+    // 否则"没扫过"和"扫过且没问题"在 conversion-report.json 里长得一模一样，
+    // 与 A-58 那条"0 得像测出来的"是同一个坑。
+    if (_opt.objPrecheck.ran)
+    {
+        const ObjPrecheckResult& pre = _opt.objPrecheck;
+        _report.addStage("obj_precheck", pre.seconds);
+        _report.addCounter("objPrecheckFaces", pre.faces);
+        _report.addCounter("objPrecheckCheckedRefs", pre.checkedRefs);
+        _report.addCounter("objPrecheckBadFaces", pre.badFaces);
+        _report.addCounter("objPrecheckViolations", pre.hardViolations);
+        _report.addCounter("objPrecheckForwardRefs", pre.forwardRefs);
+        if (!pre.readable)
+        {
+            _warnings.push_back("obj precheck: the source file could not be opened for "
+                                "scanning; face index coverage is unknown (not \"clean\")");
+        }
+        else if (pre.hardViolations != 0 || pre.pendingOverflow)
+        {
+            // warn 模式走到这里：几何照读者的样子转换，但报告必须点名——
+            // 读模后那道守卫看不见这类越界（reader 吸收了），这是唯一的记账点。
+            _warnings.push_back("obj precheck: " + std::to_string(pre.hardViolations)
+                + " invalid face reference(s) across " + std::to_string(pre.badFaces)
+                + " face(s) of " + std::to_string(pre.faces) + " scanned in "
+                + std::to_string(pre.lines) + " line(s); the OBJ reader absorbs them into legal "
+                "local indices, so the post-read index guard cannot see them and geometry may "
+                "carry garbage vertices"
+                + (pre.pendingOverflow ? "; scan stopped early (pending-overflow)" : ""));
+            const std::vector<std::string> details = pre.messages();
+            for (std::size_t i = 0; i < std::min<std::size_t>(10, details.size()); ++i)
+            {
+                _warnings.push_back("obj precheck: " + details[i]);
+            }
+            if (details.size() > 10)
+            {
+                _warnings.push_back("obj precheck: ... and "
+                    + std::to_string(details.size() - 10) + " more reference(s)");
+            }
         }
     }
 
@@ -1744,7 +1810,7 @@ bool ProductionPipeline::writeTilesetJson(const std::string& path) const
     }
     j["root"] = rootJson;
 
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(Utils::utf8ToPath(path), std::ios::binary);
     if (!f.is_open()) { return false; }
     f << j.dump(2);
     f.close();
@@ -1777,7 +1843,7 @@ bool ProductionPipeline::writeManifest(const std::string& path) const
     }
     m["aggregateProxies"] = agg;
 
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(Utils::utf8ToPath(path), std::ios::binary);
     if (!f.is_open()) { return false; }
     f << m.dump(2);
     f.close();
@@ -1818,7 +1884,7 @@ json TileTimings::toJson() const
 
 bool ProductionPipeline::writeReport(const std::string& path) const
 {
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(Utils::utf8ToPath(path), std::ios::binary);
     if (!f.is_open()) { return false; }
     json j = _report.toJson();
     j["tilesetGeometricError"] = _root >= 0 ? _tiles[_root].geometricErrorM : 0.0;
@@ -1946,7 +2012,7 @@ void forEachGltfJsonChunk(const std::string& bytes,
 // ---------------------------------------------------------------------------
 bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
 {
-    std::ifstream f(tilesetJsonPath, std::ios::binary);
+    std::ifstream f(Utils::utf8ToPath(tilesetJsonPath), std::ios::binary);
     if (!f.is_open()) { return false; }
     std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     f.close();
@@ -1980,7 +2046,7 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
     for (const std::string& u : uris)
     {
         const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + u;
-        std::ifstream cf(abs, std::ios::binary);
+        std::ifstream cf(Utils::utf8ToPath(abs), std::ios::binary);
         if (!cf.is_open())
         {
             _failures.push_back("selfValidate: content uri missing on disk: " + u);
@@ -2384,7 +2450,7 @@ void ProductionPipeline::discardStaging()
 {
     if (_opt.stagingDir.empty()) { return; }
     std::error_code ec;
-    const std::filesystem::path p(_opt.stagingDir);
+    const std::filesystem::path p = Utils::utf8ToPath(_opt.stagingDir);
     if (std::filesystem::exists(p, ec))
     {
         std::filesystem::remove_all(p, ec);
@@ -2421,15 +2487,43 @@ bool ProductionPipeline::finalize()
     TRACE("finalize: selfValidate ok");
 
     // report 必须在自校验之后落盘：覆盖计数与聚合抽稀 warning 都是校验阶段才产生的
+    // outputBytes 的口径（AUDIT A-58，固定下来不再随版本变）：自校验通过、写报告之前，
+    // 暂存目录里**全部已存在文件**的字节和——tileset.json、feature-manifest.json、
+    // tiles/*、textures/* 都算（textures/ 那批是与 GLB 内嵌字节逐字节相同的名字副本，
+    // 它们确实占盘，所以确实计数），**不含 conversion-report.json 本身**（此刻还没写）。
+    // 遍历失败不静默：记 0 同时在 warnings 里点名不可用——所以这段必须在
+    // _report.warnings 快照之前跑，否则这条 warning 自己进不了报告。
+    {
+        std::uint64_t bytes = 0;
+        std::error_code ec;
+        bool walked = true;
+        for (std::filesystem::recursive_directory_iterator it(Utils::utf8ToPath(_opt.stagingDir), ec), end;
+             !ec && it != end; it.increment(ec))
+        {
+            if (!it->is_regular_file(ec) || ec) { continue; }
+            if (it->path().filename() == "conversion-report.json") { continue; }
+            const auto sz = it->file_size(ec);
+            if (ec) { walked = false; break; }
+            bytes += static_cast<std::uint64_t>(sz);
+        }
+        _report.outputBytes = bytes;
+        if (!walked || ec)
+        {
+            _warnings.push_back("report identity: outputBytes walk over " + _opt.stagingDir
+                                + " incomplete (" + ec.message() + "); the number below is partial");
+        }
+    }
+
     _report.warnings = _warnings;
     _report.errors = _failures;
+
     TRACE("finalize: writeReport");
     if (!writeReport(_opt.stagingDir + sep + "conversion-report.json"))
     { _failures.push_back("finalize: write conversion-report.json failed"); discardStaging(); return false; }
 
     // 自校验通过：把暂存内容搬到最终目录
     std::error_code ec;
-    const std::filesystem::path outDir(_opt.outputDir);
+    const std::filesystem::path outDir = Utils::utf8ToPath(_opt.outputDir);
     std::filesystem::create_directories(outDir, ec);
     if (ec && !std::filesystem::exists(outDir))
     {
@@ -2439,7 +2533,7 @@ bool ProductionPipeline::finalize()
     }
 
     std::vector<std::filesystem::path> entries;
-    for (const auto& e : std::filesystem::directory_iterator(_opt.stagingDir, ec))
+    for (const auto& e : std::filesystem::directory_iterator(Utils::utf8ToPath(_opt.stagingDir), ec))
     {
         entries.push_back(e.path());
     }

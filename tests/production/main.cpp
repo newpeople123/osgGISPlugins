@@ -11,6 +11,7 @@
 #include "3dtiles/production/SourceModel.h"
 #include "3dtiles/production/SpatialPartitioner.h"
 #include "3dtiles/production/ProductionProfile.h"
+#include "3dtiles/production/ObjIntegrityPrecheck.h"
 #include "utils/GltfOptimizer.h"
 #include "utils/Simplifier.h"
 #include "utils/Utils.h"
@@ -39,6 +40,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -398,6 +400,363 @@ void testIndexValidationDropsOffendingTriangles()
         }
         check(reported == 1, "report counter says one triangle dropped",
               "got " + std::to_string(reported));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A-57：读模**之前**的原始 OBJ 面索引预检。
+//
+// 为什么读模后的守卫不够：osgdb_obj 不交付文件里的 `f` 索引，而是按引用把 `v` 坐标
+// 逐个拷进几何自己的数组，越界引用因此被"吸收"成本地 0..N-1 的合法下标（Q2/A-56 那道
+// 守卫结构性失明，见 ObjIntegrityPrecheck.h 的头注释与 A56_ROOT_CAUSE.md）。
+//
+// 定位：这些是**格式专项单元测试**，只验预检器自己的判定语义（三个索引空间、正/负/
+// 0/非整数/前向引用/续行/噪声）。它们不构成、也不替代真实 FBX 端到端回归，更不能据此
+// 声称任何真实资产干净——本轮没有任何真实 .obj 资产可跑（详见 STATUS.md 的"未执行"栏）。
+void testObjIntegrityPrecheck()
+{
+    std::cout << "[objPrecheck] A-57 raw OBJ face-index precheck" << std::endl;
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+    const std::string dir = (fs::temp_directory_path() / "wb_obj_precheck").string();
+    fs::remove_all(Utils::utf8ToPath(dir), ec);
+    fs::create_directories(Utils::utf8ToPath(dir), ec);
+
+    // 夹具路径一律用 std::string 拼接再交 Utils::utf8ToPath：窄字符 path 正是 A-59 里
+    // 会被 C locale 代码页解错的那条入口，测试不能踩在同一条路上冒充覆盖。
+    auto write = [&dir](const std::string& name, const std::string& text) {
+        const std::string p = dir + "/" + name;
+        std::ofstream f(Utils::utf8ToPath(p), std::ios::binary | std::ios::trunc);
+        f << text;
+        f.close();
+        return p;
+    };
+    auto fileSize = [&ec](const std::string& p) {
+        return static_cast<std::uint64_t>(fs::file_size(Utils::utf8ToPath(p), ec));
+    };
+    auto firstWhy = [](const ObjPrecheckResult& r) {
+        return r.violations.empty() ? std::string() : r.violations.front().why;
+    };
+    auto msgBlob = [](const ObjPrecheckResult& r) {
+        std::string s;
+        for (const std::string& m : r.messages()) { s += m + " ;; "; }
+        return s;
+    };
+
+    // 1) 阳性对照：四种面形态全合法，0 违规。
+    //    "0 违规"只有在解析**真的发生**时才算证据，所以同时钉住解析计数：
+    //    24 条引用（3 + 6 + 6 + 9）和三个空间各自的 maxRef 都非零。
+    const std::string cleanForms = write("clean_four_forms.obj",
+        "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+        "vt 0 0\nvt 1 0\nvt 1 1\nvn 0 0 1\n"
+        "f 1 2 3\nf 1/1 2/2 3/3\nf 1//1 2//1 3//1\nf 1/1/1 2/2/1 3/3/1\n");
+    {
+        const ObjPrecheckResult r = precheckObjFile(cleanForms);
+        check(r.ran && r.readable, "clean fixture opened and scanned");
+        check(r.hardViolations == 0 && r.badFaces == 0 && r.forwardRefs == 0
+                  && r.violations.empty() && r.clean(),
+              "positive control: four legal face forms give zero violations", msgBlob(r));
+        check(r.faces == 4 && r.numV == 4 && r.numVT == 3 && r.numVN == 1,
+              "counts: 4 faces / 4 v / 3 vt / 1 vn",
+              "faces=" + std::to_string(r.faces) + " v=" + std::to_string(r.numV)
+              + " vt=" + std::to_string(r.numVT) + " vn=" + std::to_string(r.numVN));
+        check(r.checkedRefs == 24, "all 24 references were checked",
+              "got " + std::to_string(r.checkedRefs));
+        check(r.maxRefV == 3 && r.maxRefVT == 3 && r.maxRefVN == 1,
+              "per-space max reference",
+              "v=" + std::to_string(r.maxRefV) + " t=" + std::to_string(r.maxRefVT)
+              + " n=" + std::to_string(r.maxRefVN));
+        check(r.bytes == fileSize(cleanForms) && r.lines == 12,
+              "buffered reader accounts every byte and line",
+              "bytes=" + std::to_string(r.bytes) + "/" + std::to_string(fileSize(cleanForms))
+              + " lines=" + std::to_string(r.lines));
+    }
+
+    // 2) A-56/A-57 的确切形态：文件声明 3 条 v，面引用第 4 条。
+    const std::string beyondTotal = write("beyond_total.obj",
+        "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 4\n");
+    {
+        const ObjPrecheckResult r = precheckObjFile(beyondTotal);
+        check(!r.clean() && r.hardViolations == 1, "beyond-total is a hard violation", msgBlob(r));
+        check(r.badFaces == 1 && r.faces == 1, "one face flagged, not three triangles",
+              "badFaces=" + std::to_string(r.badFaces) + " faces=" + std::to_string(r.faces));
+        check(firstWhy(r) == "beyond-total", "why code is beyond-total", firstWhy(r));
+        if (!r.violations.empty())
+        {
+            const ObjRefViolation& v = r.violations.front();
+            check(v.line == 4 && v.space == ObjRefSpace::Vertex && v.resolved == 4
+                      && v.capSoFar == 3 && v.capTotal == 3 && v.token == "4" && v.hard,
+                  "violation carries line 4 / v-space / resolved 4 / capTotal 3",
+                  "line=" + std::to_string(v.line) + " resolved=" + std::to_string(v.resolved)
+                  + " capTotal=" + std::to_string(v.capTotal) + " token=" + v.token);
+        }
+        const std::string m = msgBlob(r);
+        check(m.find("line 4") != std::string::npos && m.find("beyond-total") != std::string::npos
+                  && m.find("only 3") != std::string::npos && m.find("f 1 2 4") != std::string::npos,
+              "message names the line, the space, the total and the offending text", m);
+    }
+
+    // 3) 索引 0：OBJ 是 1 基，0 不是合法引用。
+    {
+        const std::string p = write("index_zero.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 0\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(firstWhy(r) == "index-zero" && r.hardViolations == 1 && r.badFaces == 1
+                  && !r.clean(), "index 0 is rejected as index-zero", msgBlob(r));
+    }
+
+    // 4) 负数（相对）引用合法：resolved = 到此为止的条数 + raw + 1。阳性对照。
+    {
+        const std::string p = write("negative_ok.obj",
+            "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\nf -1 -2 -3\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(r.clean() && r.hardViolations == 0 && r.forwardRefs == 0,
+              "legal relative references are not violations", msgBlob(r));
+        check(r.checkedRefs == 3 && r.maxRefV == 4,
+              "relative refs resolve against the 4 declared vertices",
+              "checked=" + std::to_string(r.checkedRefs) + " maxRefV=" + std::to_string(r.maxRefV));
+    }
+
+    // 5) 负得过头：只有 2 条 v 时 -3 回溯到第 1 条之前。
+    {
+        const std::string p = write("negative_underflow.obj", "v 0 0 0\nv 1 0 0\nf -3 -2 -1\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(firstWhy(r) == "negative-underflow" && r.hardViolations == 1 && r.badFaces == 1
+                  && !r.clean(), "underflowing relative reference is rejected", msgBlob(r));
+        if (!r.violations.empty())
+        {
+            const ObjRefViolation& v = r.violations.front();
+            check(v.raw == -3 && v.line == 3 && v.capSoFar == 2,
+                  "underflow records raw -3 on line 3 with 2 declared",
+                  "raw=" + std::to_string(v.raw) + " line=" + std::to_string(v.line)
+                  + " capSoFar=" + std::to_string(v.capSoFar));
+        }
+    }
+
+    // 6) 三个索引空间互相独立：vt 越界不连坐 v。
+    {
+        const std::string p = write("space_independent.obj",
+            "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nf 1/1 2/2 3/9\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(r.hardViolations == 1 && !r.violations.empty()
+                  && r.violations.front().space == ObjRefSpace::Texture,
+              "only the vt reference is flagged", msgBlob(r));
+        check(r.numVT == 2 && r.maxRefVT == 9 && r.maxRefVT > r.numVT,
+              "vt max reference exceeds declared vt count (the only signal the reader hides)",
+              "numVT=" + std::to_string(r.numVT) + " maxRefVT=" + std::to_string(r.maxRefVT));
+        check(r.maxRefV == 3 && r.numV == 3, "the v space stays untouched",
+              "maxRefV=" + std::to_string(r.maxRefV) + " numV=" + std::to_string(r.numV));
+        check(r.checkedRefs == 6 && r.badFaces == 1, "6 refs / 1 bad face",
+              "checked=" + std::to_string(r.checkedRefs) + " badFaces=" + std::to_string(r.badFaces));
+    }
+
+    // 7) 合法的前向引用（f 在 v 之前）只警告，不硬拒：导出器常见写法。
+    {
+        const std::string p = write("forward_ref.obj",
+            "f 1 2 3\nv 0 0 0\nv 1 0 0\nv 0 1 0\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(r.forwardRefs == 3 && r.hardViolations == 0 && r.badFaces == 0,
+              "forward references are counted, not rejected", msgBlob(r));
+        check(r.clean(), "a file with only forward references stays clean");
+        check(r.violations.size() == 3 && !r.violations.empty()
+                  && r.violations.front().why == "forward-reference"
+                  && !r.violations.front().hard,
+              "forward refs are recorded as soft violations",
+              "n=" + std::to_string(r.violations.size()));
+    }
+
+    // 8) n 边面（多边形）：一个面 5 个引用，只有引用号问题算一条违规、一个坏面。
+    {
+        const std::string p = write("ngon.obj",
+            "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4 5\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(r.faces == 1 && r.checkedRefs == 5, "one polygon, five references",
+              "faces=" + std::to_string(r.faces) + " checked=" + std::to_string(r.checkedRefs));
+        check(r.hardViolations == 1 && r.badFaces == 1 && firstWhy(r) == "beyond-total",
+              "the polygon is one bad face, not three triangles", msgBlob(r));
+    }
+
+    // 9) 噪声、CRLF、行内注释、非计数行与反斜杠续行：不能污染任何计数。阳性对照。
+    {
+        const std::string p = write("noisy.obj",
+            "# header comment\r\n"
+            "\r\n"
+            "mtllib mat.mtl\r\n"
+            "o object\r\n"
+            "g group\r\n"
+            "s off\r\n"
+            "vp 0.5 0.5\r\n"
+            "v 0 0 0\r\n"
+            "v 1 0 0     # inline comment\r\n"
+            "v 0 1 0\r\n"
+            "usemtl mat\r\n"
+            "f 1 2 \\\r\n"
+            "    3\r\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(r.clean() && r.hardViolations == 0, "noise-only fixture with continuation is clean",
+              msgBlob(r));
+        check(r.lines == 13 && r.logicalLines == 12, "13 physical lines fold into 12 logical",
+              "lines=" + std::to_string(r.lines) + " logical=" + std::to_string(r.logicalLines));
+        check(r.faces == 1 && r.checkedRefs == 3 && r.numV == 3,
+              "the continued face still yields exactly one face with 3 refs",
+              "faces=" + std::to_string(r.faces) + " checked=" + std::to_string(r.checkedRefs)
+              + " numV=" + std::to_string(r.numV));
+        check(r.numVT == 0 && r.numVN == 0, "mtllib/o/g/s/vp/usemtl do not enter the index spaces",
+              "vt=" + std::to_string(r.numVT) + " vn=" + std::to_string(r.numVN));
+        check(r.bytes == fileSize(p), "CRLF bytes are all counted",
+              "bytes=" + std::to_string(r.bytes) + " file=" + std::to_string(fileSize(p)));
+    }
+
+    // 10) 非整数 token："3abc" 是缺陷，不是"3"。
+    {
+        const std::string p = write("not_integer.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 a 3\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(firstWhy(r) == "not-integer" && r.hardViolations == 1 && r.badFaces == 1,
+              "a non-integer element is a hard violation", msgBlob(r));
+        check(r.checkedRefs == 2 && !r.violations.empty() && r.violations.front().token == "a",
+              "the bad token is the reported evidence",
+              "checked=" + std::to_string(r.checkedRefs)
+              + " token=" + (r.violations.empty() ? std::string() : r.violations.front().token));
+    }
+
+    // 11) 缺顶点索引（`f /2 ...`）：连 v 槽位都是空的。
+    {
+        const std::string p = write("index_missing.obj",
+            "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 1\nf /2 2 3\n");
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(firstWhy(r) == "index-missing" && r.hardViolations == 1 && r.badFaces == 1,
+              "a leading slash with no vertex index is reported", msgBlob(r));
+        check(r.checkedRefs == 3 && !r.violations.empty() && r.violations.front().token == "/2",
+              "the whole element token is kept for reading",
+              "checked=" + std::to_string(r.checkedRefs));
+    }
+
+    // 12) 不可读：绝不伪装成"扫过且干净"。
+    {
+        const ObjPrecheckResult r = precheckObjFile(dir + "/does_not_exist.obj");
+        check(r.ran && !r.readable, "a missing file reports ran-but-unreadable");
+        check(!r.clean(), "unreadable is never reported as clean");
+        check(r.bytes == 0 && r.lines == 0 && r.hardViolations == 0,
+              "unreadable carries no invented counts");
+        const std::vector<std::string> m = r.messages();
+        check(m.size() == 1 && m[0].find("could not be opened") != std::string::npos
+                  && m[0].find("unknown") != std::string::npos,
+              "the message says coverage is unknown, not zero",
+              m.empty() ? std::string("no message") : m[0]);
+    }
+
+    // 13) A-59：非 ASCII 目录下的 OBJ 必须能读到，且字节数与文件大小一致。
+    //     这条同时是给 Utils::utf8ToPath 上的锁：改回窄字符 path 就必然变成
+    //     readable=false（"文件不存在"），而不是静默通过。
+    {
+        const std::string cjkDir = dir + "/文章中的附件";
+        fs::create_directories(Utils::utf8ToPath(cjkDir), ec);
+        const std::string p = cjkDir + "/中文资产.obj";
+        {
+            std::ofstream f(Utils::utf8ToPath(p), std::ios::binary | std::ios::trunc);
+            f << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+            f.close();
+        }
+        check(fs::exists(Utils::utf8ToPath(p), ec), "CJK fixture was actually written", p);
+        const ObjPrecheckResult r = precheckObjFile(p);
+        check(r.ran && r.readable, "A-59: UTF-8 path reaches the precheck scanner", p);
+        check(r.clean() && r.faces == 1 && r.checkedRefs == 3,
+              "CJK-path fixture parsed identically", msgBlob(r));
+        check(r.bytes == fileSize(p) && r.bytes > 0, "byte count survives the CJK path",
+              "bytes=" + std::to_string(r.bytes) + " file=" + std::to_string(fileSize(p)));
+    }
+
+    // 14) 记账：预检结果必须由 CLI 一路走进 conversion-report.json 的
+    //     stages/counters/warnings，否则"warn 模式放行"等于什么都没记（手册 4.1）。
+    {
+        auto counterOf = [](const ProductionPipeline& pl, const char* name) {
+            for (const StageCount& c : pl.report().counters)
+            {
+                if (c.name == name) { return c.value; }
+            }
+            return std::uint64_t(0);
+        };
+        auto stageOf = [](const ProductionPipeline& pl, const char* name) {
+            for (const StageTiming& s : pl.report().stages)
+            {
+                if (s.name == name) { return true; }
+            }
+            return false;
+        };
+        auto warningWith = [](const ProductionPipeline& pl, const std::string& needle) {
+            for (const std::string& w : pl.warnings())
+            {
+                if (w.find(needle) != std::string::npos) { return true; }
+            }
+            return false;
+        };
+        auto runWith = [&](const std::string& tag, const ObjPrecheckResult& pre)
+            -> std::unique_ptr<ProductionPipeline> {
+            ProductionProfile profile;
+            std::unique_ptr<ProductionPipeline> pipeline(new ProductionPipeline(profile));
+            ProductionPipeline::Options opt;
+            opt.outputDir = dir + "/report_" + tag;
+            opt.sourceFile = beyondTotal;
+            opt.objPrecheck = pre;
+            (void)pipeline->run(makeGrid(2, 2, 1.0).get(), opt);
+            return pipeline;
+        };
+        Utils::registerFileAliases();
+
+        // 14a) 脏结果：counter/stage/warning 三处都要出现。
+        {
+            const auto dirty = runWith("dirty", precheckObjFile(beyondTotal));
+            check(stageOf(*dirty, "obj_precheck"), "obj_precheck stage is reported");
+            check(counterOf(*dirty, "objPrecheckViolations") == 1,
+                  "violation counter reaches the report",
+                  std::to_string(counterOf(*dirty, "objPrecheckViolations")));
+            check(counterOf(*dirty, "objPrecheckBadFaces") == 1
+                      && counterOf(*dirty, "objPrecheckFaces") == 1
+                      && counterOf(*dirty, "objPrecheckCheckedRefs") == 3
+                      && counterOf(*dirty, "objPrecheckForwardRefs") == 0,
+                  "face/ref counters reach the report",
+                  "bad=" + std::to_string(counterOf(*dirty, "objPrecheckBadFaces"))
+                  + " faces=" + std::to_string(counterOf(*dirty, "objPrecheckFaces"))
+                  + " refs=" + std::to_string(counterOf(*dirty, "objPrecheckCheckedRefs")));
+            check(warningWith(*dirty, "obj precheck: 1 invalid face reference"),
+                  "the summary warning names the count", joinMessages(dirty->warnings()));
+            check(warningWith(*dirty, "beyond-total"),
+                  "the per-violation detail is kept in warnings",
+                  joinMessages(dirty->warnings()));
+        }
+
+        // 14b) 干净结果：照样要有 counters（"0" 必须看起来是量出来的，不是没跑）。
+        {
+            const auto clean = runWith("clean", precheckObjFile(cleanForms));
+            check(stageOf(*clean, "obj_precheck"), "clean scan is still reported");
+            check(counterOf(*clean, "objPrecheckFaces") == 4
+                      && counterOf(*clean, "objPrecheckCheckedRefs") == 24
+                      && counterOf(*clean, "objPrecheckViolations") == 0,
+                  "clean scan reports non-zero work with zero violations",
+                  "faces=" + std::to_string(counterOf(*clean, "objPrecheckFaces"))
+                  + " refs=" + std::to_string(counterOf(*clean, "objPrecheckCheckedRefs")));
+            check(!warningWith(*clean, "obj precheck:"),
+                  "a clean scan produces no precheck warning", joinMessages(clean->warnings()));
+        }
+
+        // 14c) 没跑（非 OBJ 输入 / -objcheck off）：不许出现任何 obj_precheck 痕迹。
+        {
+            const auto skipped = runWith("skipped", ObjPrecheckResult());
+            check(!stageOf(*skipped, "obj_precheck"), "no obj_precheck stage when it did not run");
+            check(counterOf(*skipped, "objPrecheckFaces") == 0,
+                  "no objPrecheck counters when it did not run");
+            check(!warningWith(*skipped, "obj precheck"),
+                  "no precheck warning when it did not run");
+        }
+
+        // 14d) 不可读：warning 要说"覆盖面未知"，而不是"没有违规"。
+        {
+            const auto unread = runWith("unread", precheckObjFile(dir + "/gone.obj"));
+            check(stageOf(*unread, "obj_precheck"), "an unreadable scan is still reported");
+            check(warningWith(*unread, "could not be opened") && warningWith(*unread, "unknown"),
+                  "unreadable is reported as unknown coverage",
+                  joinMessages(unread->warnings()));
+        }
     }
 }
 
@@ -2964,6 +3323,7 @@ int main(int argc, char** argv)
     run("profile", &testProfileValidation);
     run("sourceModel", &testSourceModelBaking);
     run("indexGuard", &testIndexValidationDropsOffendingTriangles);
+    run("objPrecheck", &testObjIntegrityPrecheck);
     run("nrmRepair", &testZeroNormalRepair);
     run("partition", &testPartitionCoverageAndDeterminism);
     run("giant", &testGiantSingleMeshSplits);
