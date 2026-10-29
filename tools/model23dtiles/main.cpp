@@ -432,6 +432,8 @@ void printUsage()
 		osg::notify(osg::NOTICE) << "                          Production path (-sp): profile maxPrimitivesPerTile;" << std::endl;
 		osg::notify(osg::NOTICE) << "                          legacy HLOD path: TileBuilder per-tile drawcall cap." << std::endl;
 		osg::notify(osg::NOTICE) << "    -mb <number>        - Max bytes of a single tile content (b3dm/i3dm). Default is 8388608 (8MiB)" << std::endl;
+		osg::notify(osg::NOTICE) << "    -noProxyDegrade     - Fail closed instead of degrading over-budget inner far-LOD proxies" << std::endl;
+		osg::notify(osg::NOTICE) << "                          (default allows degradation to empty inner nodes)" << std::endl;
 	osg::notify(osg::NOTICE) << std::endl;
 
 	// =================== Texture Size ===================
@@ -800,6 +802,7 @@ int main(int argc, char** argv)
 			// 低于 64px 下限的输入交给 profile.validate() 明确拒绝（不静默夹取）。
 			profile.budget.proxyTextureMaxEdgePx = static_cast<unsigned>(proxyTextureMaxEdge);
 			if (arguments.find("-strictIdentity") > 0) { profile.strictIdentity = true; }
+			if (arguments.find("-noProxyDegrade") > 0) { profile.allowInnerProxyDegrade = false; }
 
 			ProductionPipeline::Options popt;
 			popt.outputDir = output;

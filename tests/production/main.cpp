@@ -3629,6 +3629,31 @@ void testPrimitiveBudgetProxyDegrades()
     }
     check(publishedLeaves > 0, "leaves still publish", std::to_string(publishedLeaves));
 
+    // 策略 C（-noProxyDegrade）：同一夹具禁止内节点降级时必须失败关闭、
+    // 不得提交数据集；默认策略（allowInnerProxyDegrade=true）不受影响。
+    {
+        ProductionProfile noDegrade = profile;
+        noDegrade.allowInnerProxyDegrade = false;
+        const std::filesystem::path outNo =
+            std::filesystem::temp_directory_path() / "wb_budget_no_degrade";
+        std::filesystem::remove_all(outNo, ec);
+        ProductionPipeline p(noDegrade);
+        ProductionPipeline::Options o;
+        o.outputDir = outNo.string();
+        o.stagingDir = (outNo / ".wb-staging").string();
+        const bool ranNo = p.run(scene.get(), o);
+        check(!ranNo, "inner-proxy degradation disabled fails the run");
+        bool disabled = false;
+        for (const std::string& f : p.failures())
+        {
+            if (f.find("-noProxyDegrade") != std::string::npos) { disabled = true; break; }
+        }
+        check(disabled, "failure explains that degradation is disabled",
+              joinMessages(p.failures()));
+        check(!std::filesystem::exists(outNo / "tileset.json"),
+              "no dataset is committed when degradation is disabled");
+    }
+
     // 边界对照：把预算抬到 60（本夹具根代理导出正好 60 个宿主），
     // 等于预算必须放行、且一个代理都不该被降级——否则上面的"超限必降级"
     // 可能只是把"所有代理"一律删掉造成的假绿。
@@ -3987,6 +4012,47 @@ void testInstanceHostBudget()
     }
 }
 
+void testAtlasImageOrderStable()
+{
+    std::cout << "[atlasOrder] image order is basename/content derived (A-74)" << std::endl;
+
+    auto img = [](int w, int h, unsigned char v, const std::string& fn) {
+        osg::ref_ptr<osg::Image> im = new osg::Image;
+        im->allocateImage(w, h, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+        std::memset(im->data(), v, im->getImageSizeInBytes());
+        im->setFileName(fn);
+        return im;
+    };
+    auto less = [](const osg::ref_ptr<osg::Image>& a, const osg::ref_ptr<osg::Image>& b) {
+        return GltfOptimizer::TextureAtlasBuilderVisitor::compareImageOrderForTest(a.get(), b.get());
+    };
+
+    // 不同目录、同一 simple name、不同内容：排序必须与目录前缀无关。
+    osg::ref_ptr<osg::Image> a1 = img(16, 16, 0x11, "dirA/tex.png");
+    osg::ref_ptr<osg::Image> b1 = img(16, 16, 0x22, "dirB/tex.png");
+    osg::ref_ptr<osg::Image> a2 = img(16, 16, 0x11, "dirB/tex.png");
+    osg::ref_ptr<osg::Image> b2 = img(16, 16, 0x22, "dirA/tex.png");
+    check(less(a1, b1) == less(a2, b2),
+          "same-name tie-break is directory-prefix independent");
+
+    // 不同 simple name、目录顺序反转：必须按文件名而不是完整路径排序。
+    osg::ref_ptr<osg::Image> z = img(16, 16, 0x33, "dirA/z.png");
+    osg::ref_ptr<osg::Image> a = img(16, 16, 0x44, "dirB/a.png");
+    check(!less(z, a) && less(a, z),
+          "different basenames order by name regardless of directory");
+
+    // 同内容同 simple name：比较结果对称相等（稳定）。
+    osg::ref_ptr<osg::Image> s1 = img(16, 16, 0x55, "dirA/same.png");
+    osg::ref_ptr<osg::Image> s2 = img(16, 16, 0x55, "dirB/same.png");
+    check(!less(s1, s2) && !less(s2, s1),
+          "identical name/content compares equal");
+
+    // 尺寸优先级保持：高者在前，与 A-52 的主排序一致。
+    osg::ref_ptr<osg::Image> tall = img(8, 32, 0x66, "x/tall.png");
+    osg::ref_ptr<osg::Image> wide = img(32, 8, 0x77, "y/wide.png");
+    check(less(tall, wide) && !less(wide, tall), "height/size priority preserved");
+}
+
 void testPrimitiveBudgetGate()
 {
     std::cout << "[budgetGate] glTF primitive / material budget" << std::endl;
@@ -4176,6 +4242,7 @@ int main(int argc, char** argv)
     run("leafBudget", &testLeafMultiMaterialBudget);
     run("instanceBudget", &testInstanceHostBudget);
     run("budgetDegrade", &testPrimitiveBudgetProxyDegrades);
+    run("atlasOrder", &testAtlasImageOrderStable);
     run("atlasCanvas", &testAtlasCanvasZeroed);
 
     std::cout << std::endl << "passed=" << g_passed << " failed=" << g_failed << std::endl;

@@ -1842,4 +1842,135 @@ A-53 **保持 OPEN**，没有根因、没有关闭。
 - 本轮改动**已提交**（用户指示）：`ProductionPipeline.cpp`、`tests/production/main.cpp`、
   四份文档；`.gitignore`/临时文件未动、未提交。
 
+## 2026-10-29（第六轮）：降级策略基础设施、卢沟桥完整闭环、basename 根因与修复
+
+### 基线
+
+| 项 | 读数 |
+|---|---|
+| 分支 / HEAD | `prod/model23dtiles-production` @ `14b7cf1`（任务书预期 `a909a49`；差 1 个提交，即上一轮成果已入库）；origin 同步 |
+| 工作区 | `M .gitignore`（用户改动，未动）、`?? dev_main_tmp.cpp`、`?? .workbuddy/` |
+| 证据二进制 | 站厅/wuhu/卢沟桥完整跑使用 18:35 `832ffb89…`；basename 修复后 09:24 `4582c775…`；测试 19:19/09:40 后多次重编 |
+| 证据根 | `F:\wb_3dtiles_out\_followup_20261028\r6_20261028\` |
+| 构建陷阱 | `tests` 的 `.tlog` 仍缺 `main.cpp`；每轮均手工补编 `MAIN.CPP` 并核对测试入口 |
+
+### 1. 站厅降级策略：证据复核与三种策略
+
+**r5 视觉结论更正**：r5 写的“缺失集中在 300–2300 m”不准确——帧名是**相机到根球心**距离
+（R≈105.2 m），实测差异帧覆盖 **119–6673 m**；其中 119 m 帧（`lod-threshold_64`）
+缺失整片曲面屋面，绝对差 **−75 022 px**（14.3%），183/191 m 帧差 8.5%/8.3%。
+224 个可比帧中：30 帧相对差 >5%（28 帧投影 >20 px），39 帧绝对差 >1000 px，
+最大相对 **−50.1%**；far-to-near 路径末端收敛到 0.1–0.3%，但 lod-threshold 的近距离
+阈值相机仍有大片缺失。226 vs 224 的 2 帧排除原因：feature-approach 第 10/11 帧在
+after/ref 两侧命中了不同 feature（7 vs 6），相机不同，不可比（非静默丢弃）。
+
+| 策略 | 视觉 | 发布成功率 | 产物体积/时间 | 回归风险 | 复杂度 | 证据 |
+|---|---|---|---|---|---|---|
+| A 接受降级 | 远景/中景成片缺失，近距阈值视角可缺屋面；无地面永久空洞 | 三项资产均 PASS（站厅 22、卢沟桥 1 个代理降级） | 站厅 225.9 MB；卢沟桥 927 MB；无额外时间 | 低（不改代码） | 无 | 充分但**无产品验收标准**，不能判视觉 PASS |
+| B1 材质/图集合并 | 保持现状纹理 | **对 22 个代理不可行** | — | — | 中 | 唯一材质签名 27–49（全部 >24）、采样器全 REPEAT（无法图集合并且不改 UV/平铺） |
+| B2 远景代理去纹理（保几何） | 保留轮廓、丢远景颜色/纹理 | 预估可行 | 字节更小 | 需验证材质/视觉 | 中（已有 `FarLodTextureStripper`） | 去纹理后唯一签名 1–9（全部 ≤24）；**未做视觉实验** |
+| C `-noProxyDegrade`（本轮实现，opt-in） | 无 LOD 空洞 | 站厅/卢沟桥该类资产会失败关闭 | 同现状 | 低（默认不变） | 低 | 单测 3 条（失败、诊断、不提交）；CLI 帮助已更新 |
+
+- 默认策略**未改**（仍允许内节点降级）；是否切换默认属产品裁定。
+- 建议：对“不能有 LOD 空洞”的资产用 C；B1 关闭；B2 作为唯一能保留远景几何的候选，
+  需按 `r6_20261028/irreducible_hosts.txt` 的边界做一次受控视觉实验后再裁定。
+
+### 2. 卢沟桥：完整真实资产闭环 **PASS（降级策略下）**
+
+- 输入 `D:\BaiduNetdiskDownload\20240529卢沟桥分洪枢纽.fbx`，SHA-256
+  `58e72bda41a18b61…`；18:35 二进制；独立输出 `r6_20261028/lugouqiao_full`。
+- **t8 历史失败（26 primitives/26 materials > 24）被 A-70/A-73 降级**：
+  `proxySkippedCount=1`、warning 明确记录“tile 8 … children still cover 285 source features”；
+  tileset 中 t8 无 content、2 个 children、`REPLACE`、GE=466.49。
+- 结果：`tileCount=1059`、`contentTileCount=1056`、`errors=[]`、`featuresMissingFromLeaves=0`、
+  `maxContentBytes=3 237 360`、`maxTrianglesInTile=119 840`、输出 **927 190 230 B**（930 b3dm
+  + 126 i3dm）、`totalSeconds=1 447.1`、`wall=1 469.7`、`CPU=4 816.8`、峰值 **11.46 GB**。
+- 发布产物 930 个 b3dm 的 primitive 分布 1–23（最大 **23** ≤24）；126 个 i3dm 由
+  `selfValidate` 一并校验。validator：**errors=0**、warnings 1051、infos 5。
+- 与 v19 对比：v19 1057 内容/0 降级、峰值 7.45 GB、total 4597 s；本轮 1056 内容/1 降级、
+  峰值 11.46 GB、total 1447 s。**耗时不可跨会话比**（环境不同）；内容少 1 个就是 t8。
+- 结论：真实资产在“允许内节点降级”的现行策略下**完整发布并通过 validator**；
+  视觉未验收（远景 LOD 缺 t8 一层），且默认策略是否接受需产品裁定。
+- **修复后回归**：`r6_20261028/lugouqiao_fix`（09:24 后缓存版二进制）→ **PASS**：
+  1059 瓦片/1056 内容/1 降级（t8 仍按预算降级）、errors=0；validator 0 errors/1051 warnings；
+  `total=1050.2 s`、峰值 11.49 GB、输出 925 292 702 B（修复前 927 190 230 B，差 1.9 MB）。
+- 与修复前对比：tileset.json 哈希相同；930 个 b3dm 中 **289 个字节变化**（图集重排），
+  其中 6 个瓦片的 primitive/material 数下降（如 t133 7→5），但**三角形/顶点数完全一致**
+  （只合并了材质宿主，几何未变）；其余变化仅为图集页内容/页名。
+
+### 3. 输入 basename：根因与修复
+
+- **调用链（实测 + 源码）**：
+  1. FBX 内嵌 143 段 JPEG + 23 段 PNG；
+  2. FBX SDK 在输入目录生成 `<输入 basename>.fbm/` 并提取纹理（`probe_name/芜湖水厂总装.fbm`
+     在运行后自动出现，69 个文件）；
+  3. `fbxTextureToOsgTexture` 的解析结果是 `<输入目录>/<basename>.fbm/<相对名>`
+     （插件探针：A=`input_wuhu.fbm\城南污水处理厂地形-6.jpg`，B=`芜湖水厂总装.fbm\…`）；
+  4. `osg::Image::getFileName()` 因此带上 basename；
+  5. `GltfOptimizer::TextureAtlasBuilderVisitor::imageOrderKey` 过去用**完整文件名**做
+     同尺寸图的末级排序键（`GltfOptimizer.cpp:2265`）⇒ basename 变，图集落位变，
+     一页图集内容哈希变，引用它的 8 个 b3dm 变。
+- **外部 `.fbm` 实验**：把 `芜湖水厂总装.fbm`/`总装.fbm`/`input_wuhu.fbm` 三份外部目录
+  图片全部替换，产物仍与无 `.fbm` 版本 **0 差异** ⇒ 外部文件不是实际来源（SDK 用内嵌
+  内容/自行提取），不能靠改外部纹理改产物。
+- **修复**：排序键改为 `osgDB::getSimpleFileName(getFileName())`；同名同尺寸时再用
+  像素内容哈希兜底（只在重名时付费）。新增 `atlasOrder` 单测 4 条。
+- **验证**：同一 FBX 字节，basename A/B 在修复后产物 **逐字节相同**（`A_vs_B=0`）；
+  相对旧基线：wuhu **8 个瓦片**变化、`textures/` 里 8 个图集页改名（同名源纹理不变，
+  primitive/材质/图集尺寸不变）；站厅 **370/370 瓦片仍逐字节相同**、tileset 哈希不变。
+  ⇒ 修复消除了 basename 依赖，同时多数既有资产产物不变。
+
+### 4. `textures/` 生命周期审计（仍 OPEN 的历史缺失）
+
+- 失败注入（`nan_vertex.obj`，输出目录预置旧 tileset/tiles 与 `textures/keep.ktx2`）：
+  rc=3；旧 tileset/tiles **保留**、非空 `textures/keep.ktx2` **保留**、新增
+  `conversion-failure.json`。
+- 失败 + **空** `textures/`：目录被删除（仅此代码路径会删）。
+- 成功提交覆盖旧数据集：旧 tileset/tiles 被替换、`.wb-previous` 清理干净，
+  `textures/keep.ktx2` **保留**（缓存不在备份/提交集里）。
+- 结论：`textures/` 非发布契约；缺失不影响 tileset/content 加载；缓存可由重跑重建；
+  失败不会误删历史成功产物；**唯一删除路径是失败+空目录**。历史“成功后整目录缺失”
+  仍无代码路径，保持 **OPEN（不可复现）**；候选假设：外部清理、并发运行共用输出、
+  旧二进制/人工操作。
+
+### 5. A-53 与 ASan（当前源码）
+
+- **ASan 构建**：`test_production_asan.exe`（`/fsanitize=address /Z7`，链接
+  `clang_rt.asan_dynamic-x86_64.lib` + runtime thunk，DLL 在 `Release/`）。
+- 全量 **481/0**（`asan_full3.log`、结果文件 `passed=481 failed=0`）；无 ASan 报告；
+  giant **5/5**；6 个进程并发 giant **6/6**（`asan_par_1..6.log`，均 `passed=7 failed=0`，
+  无报告）。
+- 一次早先的全量 ASan 进程在 `budgetDegrade` 处挂起 >1 小时（CPU 空转，被终止）；
+  清理并发负载后同二进制全量 481/0 通过。**挂起原因未定位**，不记作内存结论。
+- 盲区：OSG/FBX/TBB 在未插桩 DLL 中，ASan 不检查其内部越界；没有 PageHeap；
+  ASan 时序会改变竞态。A-53 仍 **OPEN**（原始并发触发未复现，无根因）。
+
+### 6. Debug/Release 与辅助工具
+
+- 生产 `model23dtiles` 读取语义已统一；`Tileset.cpp` 的 NDEBUG 只影响 JSON 缩进；
+  `b3dm2gltf` / `simplifier` / `texturepacker` / `gui` 仍存在“Release 才做 argv UTF-8
+  转换”的分叉（不属生产路径，本轮未改）。Debug 仍 **BLOCKED-DEBUG**。
+
+### 7. 本轮回归
+
+| 项 | 读数 |
+|---|---|
+| 单测（普通） | **481 / 0**（新增 `-noProxyDegrade` 3 条、`atlasOrder` 4 条） |
+| 单测（ASan） | **481 / 0**、giant 5/5、并发 6/6 |
+| wuhu（修复后 A/B） | 两 basename **逐字节相同**；相对旧基线 8 瓦片/8 图集页变化，语义不变 |
+| 站厅（修复后） | 394/370/22 降级/errors=0；**370/370 与旧产物逐字节相同**；validator 0 errors/364 warnings |
+| 卢沟桥（修复前，完整） | 1059/1056/1 降级/errors=0；validator 0 errors/1051 warnings；927 MB/11.46 GB/1447 s |
+| jianzhu（修复后） | 1089/1089 瓦片、tileset 与纹理哈希与修复前**逐字节相同**；validator 0 errors/1088 warnings；total 1393.4 s、峰值 19.72 GB |
+| 卢沟桥（修复后） | 1059/1056/1 降级/errors=0；validator 0 errors/1051 warnings；289/930 b3dm 因图集重排变化，6 个 prim/material 数下降但三角/顶点不变；total 1050.2 s、峰值 11.49 GB |
+
+### 8. 未闭合 / 裁定
+
+- 站厅降级（A）是否接受；B2 去纹理远景代理是否值得实验；默认策略是否切换。
+- 卢沟桥视觉未验收（t8 一层远景代理被降级）；修复后大资产回归已完成（见 §7）。
+- basename 修复改变 wuhu 8 个瓦片的图集页（语义不变），需确认是否接受该字节变化。
+- `textures/` 历史缺失 OPEN；A-53 OPEN；Debug BLOCKED；辅助工具 UTF-8 分叉未闭合。
+- 本轮改动**已提交**（用户指示）：`ProductionProfile.h`、`ProductionPipeline.cpp`、
+  `GltfOptimizer.cpp/.h`、`tools/model23dtiles/main.cpp`、`tests/production/main.cpp`、
+  四份文档；`.gitignore`/临时文件未动、未提交。
+
 

@@ -1197,15 +1197,25 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
                     // 内节点超限只是"这一层远景代理没做好"，子树仍覆盖同一
                     // source scope：删掉刚写进暂存区的超限文件，退化为无内容
                     // 内节点（A-31），既不违反 7.3 也不报废整批数据。
-                    const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
-                    std::error_code ec;
-                    std::filesystem::remove(Utils::utf8ToPath(abs), ec);
-                    _warnings.push_back("tile " + std::to_string(id) + ": proxy content " + why
-                                        + " -> over-budget far-LOD file removed, children still cover "
-                                        + std::to_string(scopeCount) + " source features"
-                                        + (ec ? " (file removal failed: " + ec.message() + ")" : ""));
-                    ++_report.proxySkippedCount;
-                    _tiles[id].hasContent = false;
+                    if (!_profile.allowInnerProxyDegrade)
+                    {
+                        // 策略 C（-noProxyDegrade）：显式拒绝 LOD 空洞，失败关闭。
+                        _failures.push_back("tile " + std::to_string(id) + " proxy content " + why
+                                            + " and inner-proxy degradation is disabled (-noProxyDegrade)");
+                        _tiles[id].hasContent = false;
+                    }
+                    else
+                    {
+                        const std::string abs = _opt.stagingDir + OSG_GIS_PLUGINS_PATH_SPLIT_STRING + relUri;
+                        std::error_code ec;
+                        std::filesystem::remove(Utils::utf8ToPath(abs), ec);
+                        _warnings.push_back("tile " + std::to_string(id) + ": proxy content " + why
+                                            + " -> over-budget far-LOD file removed, children still cover "
+                                            + std::to_string(scopeCount) + " source features"
+                                            + (ec ? " (file removal failed: " + ec.message() + ")" : ""));
+                        ++_report.proxySkippedCount;
+                        _tiles[id].hasContent = false;
+                    }
                 }
             }
             else

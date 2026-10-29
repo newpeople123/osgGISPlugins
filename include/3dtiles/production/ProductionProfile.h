@@ -98,6 +98,10 @@ struct ProductionProfile {
     // 业务策略
     bool strictIdentity = false;      // true: 禁止 aggregate proxy，无法达标即失败
     bool allowTriangleClip = false;   // true: 允许沿平面切开三角形（默认不切）
+    // 内节点 far-LOD 代理超 primitive/材质预算时，是否允许降级为“无内容内节点”。
+    // 默认 true（既有发布策略）；-noProxyDegrade 置 false 时改为失败关闭，
+    // 用于需要显式拒绝 LOD 空洞的资产。叶/实例瓦片始终失败关闭，不受此开关影响。
+    bool allowInnerProxyDegrade = true;
     bool lockSeamBorder = true;       // 简化时锁定边界
     // 代理简化加压阶梯的重试次数上限，由 ProxyMeshBuilder::simplifyNode 读取
     // （0 = 不进入阶梯，代理保持原始面数）。默认 8 是本次改动前的硬编码值，

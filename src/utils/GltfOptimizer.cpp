@@ -2253,16 +2253,32 @@ osg::ref_ptr<osg::Image> GltfOptimizer::TextureAtlasBuilderVisitor::resizeImageT
 	}
 }
 
+namespace {
+// 每图内容哈希只算一次：同名纹理的末级排序会反复比较同一批大图，
+// 逐次全像素哈希会把图集写出拖成分钟级（卢沟桥实测）。
+std::string atlasContentHash(osg::Image* img)
+{
+	if (!img) { return std::string(); }
+	const char* const cacheKey = "osgGIS_atlasContentKey";
+	std::string cached;
+	if (img->getUserValue<std::string>(cacheKey, cached)) { return cached; }
+	cached = TexturePacker::computeImageHash(osg::ref_ptr<osg::Image>(img));
+	img->setUserValue(cacheKey, cached);
+	return cached;
+}
+} // namespace
+
 std::string GltfOptimizer::TextureAtlasBuilderVisitor::imageOrderKey(osg::Image* img)
 {
 	if (!img) { return std::string(); }
-	if (!img->getFileName().empty()) { return "f:" + img->getFileName(); }
-	const char* const cacheKey = "osgGIS_atlasOrderKey";
-	std::string cached;
-	if (img->getUserValue<std::string>(cacheKey, cached)) { return cached; }
-	cached = "h:" + TexturePacker::computeImageHash(osg::ref_ptr<osg::Image>(img));
-	img->setUserValue(cacheKey, cached);
-	return cached;
+	// 只用文件名（不含目录）：FBX 的纹理从 `<输入 basename>.fbm/` 加载，
+	// 整条绝对路径会让图集排序键随输入文件名变化（A-74：同名换 basename
+	// 会改一页图集）。basename 相同再按像素内容哈希兜底（只在真正重名时付费）。
+	if (!img->getFileName().empty())
+	{
+		return "f:" + osgDB::getSimpleFileName(img->getFileName());
+	}
+	return "h:" + atlasContentHash(img);
 }
 
 bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2)
@@ -2275,11 +2291,17 @@ bool GltfOptimizer::TextureAtlasBuilderVisitor::compareImageHeight(osg::ref_ptr<
 	{
 		return img1->s() > img2->s();
 	}
-	// 同尺寸在这里是常态，而 packImges 用的是不保序的 std::sort：只比尺寸时，并列组内
-	// 谁先落地由进图顺序（= 场景图遍历序 / 地址序）决定 ⇒ 子图位置变 ⇒ 整页内容哈希变
-	// ⇒ 图集页名换、引用它的瓦片字节跟着换，同二进制两次跑不逐位相同（A-52）。
-	// 补一条纯内容派生的末级键，让顺序只由内容决定。
-	return imageOrderKey(img1.get()) < imageOrderKey(img2.get());
+	// 同尺寸在这里是常态，而 packImges 用的是不保序的 std::sort：只比尺寸时，
+	// 并列组内谁先落地由进图顺序（= 场景图遍历序 / 地址序）决定 ⇒ 子图位置变
+	// ⇒ 整页内容哈希变 ⇒ 图集页名换、引用它的瓦片字节跟着换，同二进制两次跑
+	// 不逐位相同（A-52）。补一条内容派生的末级键，让顺序只由内容决定。
+	const std::string key1 = imageOrderKey(img1.get());
+	const std::string key2 = imageOrderKey(img2.get());
+	if (key1 != key2) { return key1 < key2; }
+	// 同名（不同目录）且同尺寸：再用像素内容哈希分胜负，绝不退回入图顺序。
+	const std::string hash1 = atlasContentHash(img1.get());
+	const std::string hash2 = atlasContentHash(img2.get());
+	return hash1 < hash2;
 }
 
 /** MergeTransformVisitor */

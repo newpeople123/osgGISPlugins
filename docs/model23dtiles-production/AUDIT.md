@@ -2343,5 +2343,51 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
   `dump()`（缩进/字节不同，语义相同）。
 - Debug 仍旧 **BLOCKED-DEBUG**，没有两种构建的几何/坐标一致性实测。
 
+## 2026-10-29（第六轮）：basename 图集依赖修复、降级策略开关、视觉证据更正
 
+### A-77 FBX 输入 basename 通过 `.fbm` 提取路径进入图集排序 → 8 个 b3dm 字节漂移　**FIXED**
 
+- **根因链（插件探针 + 源码）**：FBX 内嵌纹理（143 JPEG/23 PNG）由 FBX SDK 提取到
+  `<输入目录>/<basename>.fbm/`；`fbxTextureToOsgTexture` 解析为
+  `<dir>/<basename>.fbm/<相对名>`，`osg::Image::getFileName()` 因此带 basename；
+  `GltfOptimizer::TextureAtlasBuilderVisitor::imageOrderKey`（`GltfOptimizer.cpp:2265`）
+  把**完整文件名**当同尺寸图的末级排序键 ⇒ basename 变、同尺寸组顺序变、图集页内容/
+  文件名变、引用它的瓦片字节变。实测：A=`input_wuhu.fbx` vs B=`芜湖水厂总装.fbx`，
+  A/B 各 8 个瓦片差、`textures/` 8 个图集页不同名；源纹理/primitive/材质数不变。
+- **外部 `.fbm` 无效**：三份候选外部目录图片全部替换后产物仍为 A（0 差异）⇒ 加载来源是
+  SDK 提取/内嵌内容，不是可替换的外部目录。
+- **修复**：排序键改为 `getSimpleFileName(getFileName())`（去目录/basename 前缀）；
+  同名同尺寸再用像素内容哈希兜底（每图像素哈希有 userValue 缓存，避免比较器反复
+  全图哈希——卢沟桥回归实测没有缓存时会明显拖慢）。新增 `atlasOrder` 4 条单测
+  （目录前缀无关、不同 basename 按名排序、同内容对称、尺寸优先级）。
+- **验证**：修复后 A/B 产物**逐字节相同**；相对旧基线 wuhu 8 瓦片/8 图集页变化
+  （语义不变），站厅 370/370 瓦片不变。残留：这是有意的排序键变更，既有 wuhu 产物
+  字节会变一次；是否接受需在发布口径中记录。
+
+### A-78 内节点降级策略开关 `-noProxyDegrade`（策略 C 基础设施）　**FIXED（opt-in，默认不变）**
+
+- `ProductionProfile::allowInnerProxyDegrade`（默认 true）；CLI `-noProxyDegrade` 置 false。
+- 超限内节点在开关关闭时写 failure（含实际 primitives/materials 与开关名）、
+  `hasContent=false`，数据集不提交；叶/i3dm 行为不变。
+- 单测 3 条：开关关闭必失败、failure 可解释、无 tileset 提交；默认路径仍降级。
+- 默认值未改，符合“改变默认行为需产品授权”的约束。
+
+### A-79 站厅降级视觉证据更正（r5 距离口径）
+
+- r5 的“300–2300 m”是错误概括：帧名距离是相机到根球心（R≈105.2 m），实测差异帧覆盖
+  **119–6673 m**；119 m 帧（idx 64）缺失整片曲面屋面，绝对差 −75 022 px（14.3%）；
+  183/191 m 帧差 8.5%/8.3%。224 可比帧中 30 帧相对差 >5%（28 帧投影 >20 px）、
+  39 帧绝对差 >1000 px、最大相对 −50.1%。far-to-near 近端收敛（126 m 差 0.1%），
+  但 lod-threshold 近距离阈值相机不收敛。
+- 226 vs 224：feature-approach 第 10/11 帧两侧命中不同 feature（7 vs 6），相机不同，
+  不可比；不是静默丢弃。参考集注入的 22 个内容在 manifest 中出现（t9 231 次、
+  t250 133 次），after 为 0，证明注入生效。
+- 结论：降级代价是“远景/中景成片缺失 + 近距阈值视角可缺整片屋面”，不是局部小洞；
+  是否接受需产品裁定（策略对比见 STATUS）。
+
+### A-80 `textures/` 生命周期故障注入（历史缺失仍 OPEN）
+
+- 失败+非空缓存：旧 tileset/tiles 与 `textures/keep.ktx2` 均保留，新增 failure 报告。
+- 失败+空缓存：目录被删除（唯一删除路径）。
+- 成功覆盖旧数据集：旧 tiles 被替换、`.wb-previous` 清理、`textures/keep.ktx2` 保留。
+- 历史“成功后整目录缺失”仍无代码路径，保持 OPEN（不可复现）。

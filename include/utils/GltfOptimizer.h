@@ -316,6 +316,15 @@ namespace osgGISPlugins
 
 			static bool compareImageHeight(osg::ref_ptr<osg::Image> img1, osg::ref_ptr<osg::Image> img2);
 
+		public:
+			// 仅用于回归测试：直接验证图集第三级排序键不依赖目录前缀（A-74）。
+			static bool compareImageOrderForTest(osg::Image* img1, osg::Image* img2)
+			{
+				return compareImageHeight(osg::ref_ptr<osg::Image>(img1),
+				                          osg::ref_ptr<osg::Image>(img2));
+			}
+
+		private:
 			// 图集装配的第三级排序键：只由图像内容派生（文件名，或对无文件名者取内容哈希）。
 			// 见 A-52——页内子图位置决定整页字节内容，进而决定页的内容哈希文件名。
 			static std::string imageOrderKey(osg::Image* img);

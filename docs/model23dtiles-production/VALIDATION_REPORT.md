@@ -1445,4 +1445,86 @@ ASan 构建：`msvc_build_asan.js`（tlog 标志加 `/fsanitize=address /Z7`，�
 - validator：`validation_jianzhu_r5` → **errors=0**、warnings 1088、infos 1，rc=0；
   警告与上一轮同类（`image/ktx2` / `KHR_texture_basisu` schema 滞后）。
 
+## 2026-10-29（第六轮）：卢沟桥闭环、basename 修复、ASan 与降级策略
 
+### 1. 基线与二进制
+
+- HEAD `14b7cf1`（origin 同步）；任务书预期 `a909a49`，差值即上一轮成果。
+- 证据跑：`model23dtiles.exe` 18:35 `832ffb89…`（站厅/卢沟桥完整跑的“修复前”基线）；
+  修复后 09:24 `4582c775…`，加哈希缓存后 10:19 `613faabd…`；`test_production.exe`
+  `3e623979…`；ASan `test_production_asan.exe` `99df20e7…`。
+- 构建：`node r4_20261028/msvc_build.js model23dtiles|test_production`；tests 的
+  `MAIN.CPP` 仍不在 `.tlog`，每轮手工补编后链接。
+- basename 探针用完已还原：`osgdb_fbx.dll` 恢复为 `6f0bc703…`，临时
+  `model23dtiles_probe.exe`/`osgdb_fbx_probe.dll` 已删除。
+
+### 2. 单元测试
+
+| 套件 | 结果 | 证据 |
+|---|---|---|
+| 普通 | **481 / 0** | `test_full_atlasfix.log`（新增 `-noProxyDegrade` 3 条、`atlasOrder` 4 条） |
+| ASan 全量 | **481 / 0**、无报告 | `asan_full3.log` + `test_production_result.txt` `passed=481 failed=0` |
+| ASan giant | **5/5**；6 进程并发 **6/6** | `asan_giant_fix_1..5.log`、`asan_par_1..6.log` |
+| Application Verifier | 仍 `Cannot enable layer [Core] (0x1C)` | 不作证据 |
+
+### 3. 卢沟桥完整运行（修复前 18:35 二进制，降级策略）
+
+```
+node r5_20261028/run_unicode_input.js D:/BaiduNetdiskDownload/20240529卢沟桥分洪枢纽.fbx \
+     r6_20261028/lugouqiao_full r6_20261028/lugouqiao_full.log
+```
+
+- 输入 SHA-256 `58e72bda41a18b61…`；rc=0；1059 瓦片/1056 内容/**1 降级（t8）**；
+  errors=0、featuresMissing=0；`maxContentBytes=3 237 360`、`maxTriangles=119 840`；
+  输出 927 190 230 B；`total=1447.1 s`、`wall=1469.7 s`、`CPU=4816.8 s`、峰值 11.46 GB。
+- 发布 930 个 b3dm 的 primitive 分布 1–23（最大 23）；126 个 i3dm 由 selfValidate 校验。
+- validator：`validation_lugouqiao` → **errors=0**、warnings 1051、infos 5，rc=0。
+- t8：无 content、2 children、REPLACE、GE=466.49；warning 记录“children still cover
+  285 source features”。
+- 修复后回归（09:24 二进制）：`r6_20261028/lugouqiao_fix`（进行中/回填）。
+
+### 4. 站厅（修复后 09:24 二进制）
+
+- **r5 距离口径更正**：r5 写的“300–2300 m”不准确；帧距离是相机到根球心（R≈105.2 m），
+  差异帧覆盖 **119–6673 m**，其中 119 m 帧缺失整片曲面屋面（绝对差 −75 022 px）。
+  详见 STATUS/AUDIT 的 A-79。
+
+- `r6_20261028/hall_fix`：394/370/22 降级/errors=0；`total=452.9 s`、峰值 13.77 GB、
+  输出 225 859 432 B。
+- 与修复前 `r5/hall_regress`：**370/370 瓦片逐字节相同**、tileset 哈希相同。
+- validator：`validation_hall_fix` → **errors=0**、warnings 364、infos 4。
+
+### 5. basename 根因实验
+
+| 实验 | 输入 | 结果 |
+|---|---|---|
+| A | `input_wuhu.fbx`（F:，无 `.fbm`） | 产物 A（旧） |
+| B | `芜湖水厂总装.fbx`（F:，无 `.fbm`） | 产物 B（旧）；与 A 差 8 瓦片/8 图集页 |
+| 原路径 | `D:\…\芜湖水厂总装.fbx` | 与 B 逐字节相同 |
+| 外部替换 | 三份 `.fbm` 图片全替换 | 与 A **0 差异** |
+| 插件探针 | A/B | `chosen=<dir>/<basename>.fbm/<相对名>`，确认 SDK 提取路径 |
+| 修复后 | A/B（09:24 二进制） | **A 与 B 逐字节相同**；相对旧 A 8 瓦片/8 图集页变化 |
+
+- 语义对照：变化瓦片的 primitive/材质/图像数/尺寸完全一致，仅图集页内容/文件名变；
+  源纹理缓存（112 个）内容不变（8 个旧图集页名消失、8 个新页名出现）。
+- wuhu 修复版 validator：`validation_wuhu_fix` → **errors=0**、warnings 60、infos 0。
+
+### 6. `textures/` 故障注入
+
+- 失败+非空缓存：旧数据集/非空 `textures/keep.ktx2` 保留，新增 `conversion-failure.json`。
+- 失败+空缓存：`textures/` 被删除（唯一删除路径）。
+- 成功覆盖旧数据集：旧 tiles 被替换、`.wb-previous` 清理、`textures/keep.ktx2` 保留。
+- 历史成功后整目录缺失仍不可复现：**OPEN**。
+
+### 7. 修复后大资产回归
+
+- jianzhu（09:24 二进制）：1089/1089 瓦片、tileset.json 哈希、纹理缓存与修复前
+  （`r5/jianzhu_regress`）**逐字节相同**；`errors=0`、0 降级；validator
+  `validation_jianzhu_fix` → **errors=0**、warnings 1088、infos 1；
+  `total=1393.4 s`、`wall=1423.2 s`、`CPU=12520.4 s`、峰值 19.72 GB。
+- 卢沟桥（09:24 后缓存版二进制）：1059/1056/1 降级、errors=0、featuresMissing=0；
+  validator `validation_lugouqiao_fix` → **errors=0**、warnings 1051、infos 5；
+  `total=1050.2 s`、`wall=1064.5 s`、`CPU=3838.1 s`、峰值 11.49 GB、输出 925 292 702 B。
+- 与修复前对比：tileset.json 哈希相同；930 个 b3dm 中 289 个字节变化（图集重排），
+  其中 6 个 primitive/material 数下降（t133 7→5 等），但 6 个的**三角形/顶点数完全一致**；
+  其余为图集页内容/页名变化。→ 语义不变，字节变化已分类。
