@@ -4,6 +4,7 @@
 #include <osg/PrimitiveSet>
 #include <osg/BoundingBox>
 #include <osg/ComputeBoundsVisitor>
+#include <osgUtil/SmoothingVisitor>
 #include <cstdlib>
 #include <algorithm>
 #include <array>
@@ -391,6 +392,205 @@ struct Cell {
     }
 };
 
+// 环境变量门控的几何退化探针：只在 WB_PROXY_GEOM_DEBUG=1 时统计并打印，
+// 不进入正常热路径。用途：区分退化是 materialize、simplify 还是导出引入。
+struct DegenerateProbe
+{
+    unsigned long long tris = 0, zeroArea = 0, repeated = 0, oob = 0, nonFinite = 0;
+};
+
+bool geomProbeEnabled()
+{
+    static const bool on = std::getenv("WB_PROXY_GEOM_DEBUG") != nullptr;
+    return on;
+}
+
+void probeGeometry(osg::Geometry* g, DegenerateProbe& p)
+{
+    osg::Vec3Array* pos = dynamic_cast<osg::Vec3Array*>(g->getVertexArray());
+    if (!pos || pos->empty()) { return; }
+    const std::size_t n = pos->size();
+    for (unsigned ps = 0; ps < g->getNumPrimitiveSets(); ++ps)
+    {
+        const osg::PrimitiveSet* set = g->getPrimitiveSet(ps);
+        if (!set || set->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
+        std::vector<unsigned> idx;
+        if (const auto* du = dynamic_cast<const osg::DrawElementsUInt*>(set)) { idx.assign(du->begin(), du->end()); }
+        else if (const auto* dus = dynamic_cast<const osg::DrawElementsUShort*>(set)) { idx.assign(dus->begin(), dus->end()); }
+        else if (const auto* dub = dynamic_cast<const osg::DrawElementsUByte*>(set)) { idx.assign(dub->begin(), dub->end()); }
+        else { continue; }
+        for (std::size_t i = 0; i + 2 < idx.size(); i += 3)
+        {
+            ++p.tris;
+            const unsigned a = idx[i], b = idx[i + 1], c = idx[i + 2];
+            if (a >= n || b >= n || c >= n) { ++p.oob; continue; }
+            if (a == b || b == c || a == c) { ++p.repeated; continue; }
+            const osg::Vec3& pa = (*pos)[a];
+            const osg::Vec3& pb = (*pos)[b];
+            const osg::Vec3& pc = (*pos)[c];
+            if (!std::isfinite(pa.x()) || !std::isfinite(pb.x()) || !std::isfinite(pc.x())) { ++p.nonFinite; continue; }
+            const double ux = static_cast<double>(pb.x()) - pa.x();
+            const double uy = static_cast<double>(pb.y()) - pa.y();
+            const double uz = static_cast<double>(pb.z()) - pa.z();
+            const double vx = static_cast<double>(pc.x()) - pa.x();
+            const double vy = static_cast<double>(pc.y()) - pa.y();
+            const double vz = static_cast<double>(pc.z()) - pa.z();
+            const double cx = uy * vz - uz * vy;
+            const double cy = uz * vx - ux * vz;
+            const double cz = ux * vy - uy * vx;
+            if (cx == 0.0 && cy == 0.0 && cz == 0.0) { ++p.zeroArea; }
+        }
+    }
+}
+
+DegenerateProbe probeNode(osg::Node* node)
+{
+    DegenerateProbe p;
+    if (!node) { return p; }
+    struct V : public osg::NodeVisitor
+    {
+        explicit V(DegenerateProbe& p) : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), p(p) {}
+        void apply(osg::Geode& g) override
+        {
+            for (unsigned d = 0; d < g.getNumDrawables(); ++d)
+            {
+                if (osg::Geometry* geom = g.getDrawable(d)->asGeometry()) { probeGeometry(geom, p); }
+            }
+            traverse(g);
+        }
+        DegenerateProbe& p;
+    } v(p);
+    node->accept(v);
+    return p;
+}
+
+// 代理几何安全网：按三角形重写 primitive set，删除**精确退化**三角形
+// （越界 / 重复索引 / 非有限坐标 / 叉积恒为零）。只清理零面积面，薄而
+// 非零的面保留（那是真实几何）。简化器在"过滤后不足一个三角形"时会
+// 回退到未过滤输入（Simplifier::simplifyIndices），外加多轮简化叠加，
+// 单靠简化器内部过滤不足以保证导出几何干净，这里在最终节点上再兜一次。
+unsigned sanitizeExactDegenerate(osg::Node* node)
+{
+    if (!node) { return 0; }
+    unsigned removed = 0;
+    struct V : public osg::NodeVisitor
+    {
+        V(unsigned& removed) : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), removed(removed) {}
+        void apply(osg::Geode& geode) override
+        {
+            std::vector<osg::Drawable*> empty;
+            for (unsigned d = 0; d < geode.getNumDrawables(); ++d)
+            {
+                osg::Geometry* g = geode.getDrawable(d)->asGeometry();
+                if (!g) { continue; }
+                removed += sanitizeGeometry(g);
+                if (g->getNumPrimitiveSets() == 0) { empty.push_back(g); }
+            }
+            for (osg::Drawable* d : empty) { geode.removeDrawable(d); }
+            traverse(geode);
+        }
+        static unsigned sanitizeGeometry(osg::Geometry* g)
+        {
+            osg::Vec3Array* pos = dynamic_cast<osg::Vec3Array*>(g->getVertexArray());
+            if (!pos || pos->empty()) { return 0; }
+            const std::size_t n = pos->size();
+            unsigned removed = 0;
+            std::vector<unsigned> kept;
+            for (unsigned ps = 0; ps < g->getNumPrimitiveSets();)
+            {
+                const osg::PrimitiveSet* set = g->getPrimitiveSet(ps);
+                std::vector<unsigned> idx;
+                bool tri = set && set->getMode() == osg::PrimitiveSet::TRIANGLES;
+                if (tri)
+                {
+                    if (const auto* du = dynamic_cast<const osg::DrawElementsUInt*>(set)) { idx.assign(du->begin(), du->end()); }
+                    else if (const auto* dus = dynamic_cast<const osg::DrawElementsUShort*>(set)) { idx.assign(dus->begin(), dus->end()); }
+                    else if (const auto* dub = dynamic_cast<const osg::DrawElementsUByte*>(set)) { idx.assign(dub->begin(), dub->end()); }
+                    else { tri = false; }
+                }
+                if (!tri) { ++ps; continue; }
+
+                removed += static_cast<unsigned>(idx.size() % 3);
+                kept.clear();
+                for (std::size_t i = 0; i + 2 < idx.size(); i += 3)
+                {
+                    const unsigned a = idx[i], b = idx[i + 1], c = idx[i + 2];
+                    if (a >= n || b >= n || c >= n) { ++removed; continue; }
+                    if (a == b || b == c || a == c) { ++removed; continue; }
+                    const osg::Vec3& pa = (*pos)[a];
+                    const osg::Vec3& pb = (*pos)[b];
+                    const osg::Vec3& pc = (*pos)[c];
+                    if (!std::isfinite(pa.x()) || !std::isfinite(pa.y()) || !std::isfinite(pa.z())
+                        || !std::isfinite(pb.x()) || !std::isfinite(pb.y()) || !std::isfinite(pb.z())
+                        || !std::isfinite(pc.x()) || !std::isfinite(pc.y()) || !std::isfinite(pc.z()))
+                    { ++removed; continue; }
+                    const double ux = static_cast<double>(pb.x()) - pa.x();
+                    const double uy = static_cast<double>(pb.y()) - pa.y();
+                    const double uz = static_cast<double>(pb.z()) - pa.z();
+                    const double vx = static_cast<double>(pc.x()) - pa.x();
+                    const double vy = static_cast<double>(pc.y()) - pa.y();
+                    const double vz = static_cast<double>(pc.z()) - pa.z();
+                    if (uy * vz - uz * vy == 0.0 && uz * vx - ux * vz == 0.0
+                        && ux * vy - uy * vx == 0.0) { ++removed; continue; }
+                    kept.push_back(a); kept.push_back(b); kept.push_back(c);
+                }
+                if (kept.size() == idx.size()) { ++ps; continue; }
+                if (kept.empty()) { g->removePrimitiveSet(ps); continue; }
+                osg::ref_ptr<osg::DrawElementsUInt> repl =
+                    new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+                repl->assign(kept.begin(), kept.end());
+                g->setPrimitiveSet(ps, repl.get());
+                ++ps;
+            }
+            return removed;
+        }
+        unsigned& removed;
+    } v(removed);
+    node->accept(v);
+    return removed;
+}
+
+// 简化后的代理几何与源法线不再匹配：meshopt 改变了三角形连接，但逐顶点法线
+// 仍来自原表面。实测 jianzhu 代理 31–48% 的三角形法线背向、平均 dot 仅
+// 0.03–0.33（叶为 0.94–1.0），远景出现黑面/阴影。
+//
+// 聚合代理里有大量共面/双面重复三角形：纯绕序平滑会互相抵消，源法线定向
+// 也不可靠。这里用 80° 折痕角重建：平滑面内合并，硬边处拆点，每个面片获得
+// 与自身绕序一致的法线。拆点只发生在代理上，叶与源几何不受影响。
+void recomputeSimplifiedProxyNormals(osg::Node* node)
+{
+    if (!node) { return; }
+    osgUtil::SmoothingVisitor smoothing;
+    smoothing.setCreaseAngle(osg::DegreesToRadians(120.0));
+    node->accept(smoothing);
+
+    // SmoothingVisitor 会给折痕拆点后未参与任何三角形的顶点留 (0,0,0)；
+    // glTF validator 要求 NORMAL accessor 的每个元素都是单位长度（含未引用项）。
+    struct NormalizeAll : public osg::NodeVisitor
+    {
+        NormalizeAll() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+        void apply(osg::Geometry& g) override
+        {
+            osg::Vec3Array* n = dynamic_cast<osg::Vec3Array*>(g.getNormalArray());
+            if (!n) { return; }
+            for (osg::Vec3& v : *n)
+            {
+                const float l2 = v.length2();
+                if (!(l2 > 1e-20f) || !std::isfinite(v.x()) || !std::isfinite(v.y())
+                    || !std::isfinite(v.z()))
+                {
+                    v.set(0.0f, 0.0f, 1.0f);
+                }
+                else
+                {
+                    v.normalize();
+                }
+            }
+        }
+    } normalize;
+    node->accept(normalize);
+}
+
 } // namespace
 
 osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
@@ -432,12 +632,19 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
         unsigned triangles = 0;
     };
     std::vector<CellEntry> entries;
+    DegenerateProbe cellPre, cellMerged, cellFinal;
     for (const Cell& k : keys)
     {
         CellEntry e;
         e.cell = k;
         e.cluster = _model.materialize(_prims, cells[k], true);
         if (!e.cluster.valid()) { continue; }
+        if (geomProbeEnabled())
+        {
+            const DegenerateProbe d = probeNode(e.cluster.get());
+            cellPre.tris += d.tris; cellPre.zeroArea += d.zeroArea;
+            cellPre.repeated += d.repeated; cellPre.oob += d.oob; cellPre.nonFinite += d.nonFinite;
+        }
 
         auto pushUnit = [&](const std::vector<osg::ref_ptr<osg::Geometry>>& u) {
             unsigned t = 0;
@@ -587,16 +794,45 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
         attach(mergeIntoSingleDrawable);
         if (cellGeode->getNumDrawables() == 0) { attach(false); }
         if (cellGeode->getNumDrawables() == 0) { continue; }
+        if (geomProbeEnabled())
+        {
+            const DegenerateProbe d = probeNode(cellGeode.get());
+            cellMerged.tris += d.tris; cellMerged.zeroArea += d.zeroArea;
+            cellMerged.repeated += d.repeated; cellMerged.oob += d.oob;
+            cellMerged.nonFinite += d.nonFinite;
+        }
 
         // 抽稀后仍超配额（feature 本身很大）才动用简化；简化把 cell 削空时
         // 回退到未简化的保留单元，绝不允许 cell 整体消失
+        DegenerateProbe preSimp;
+        if (geomProbeEnabled()) { preSimp = probeNode(cellGeode.get()); }
         if (countTriangles(cellGeode.get()) > quota)
         {
             simplifyNode(cellGeode.get(), quota, static_cast<double>(cellSize) * 0.05,
                          _profile.lockSeamBorder);
             if (countTriangles(cellGeode.get()) == 0) { attach(false); }
         }
+        const unsigned cellSanitized = sanitizeExactDegenerate(cellGeode.get());
+        if (geomProbeEnabled() && (cellSanitized || preSimp.zeroArea))
+        {
+            OSG_WARN << "[geomprobe] cellpath(" << e.cell.x << "," << e.cell.y << ","
+                     << e.cell.z << ") preSimplifiedZero=" << preSimp.zeroArea
+                     << " preRep=" << preSimp.repeated
+                     << " removedAfterSimplify=" << cellSanitized << std::endl;
+        }
+        if (cellSanitized && (proxyDebug() || geomProbeEnabled()))
+        {
+            OSG_WARN << "[geomprobe] sanitize cell(" << e.cell.x << "," << e.cell.y << ","
+                     << e.cell.z << ") removed=" << cellSanitized << std::endl;
+        }
         const unsigned trisAfter = countTriangles(cellGeode.get());
+        if (geomProbeEnabled())
+        {
+            const DegenerateProbe d = probeNode(cellGeode.get());
+            cellFinal.tris += d.tris; cellFinal.zeroArea += d.zeroArea;
+            cellFinal.repeated += d.repeated; cellFinal.oob += d.oob;
+            cellFinal.nonFinite += d.nonFinite;
+        }
         if (proxyDebug())
         {
             OSG_NOTICE << "[proxydbg] cell(" << e.cell.x << "," << e.cell.y << "," << e.cell.z
@@ -612,6 +848,16 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
         std::vector<FeatureId> srcs(cellFeatures[e.cell].begin(), cellFeatures[e.cell].end());
         std::sort(srcs.begin(), srcs.end());
         sources[pid] = srcs;
+    }
+    if (geomProbeEnabled())
+    {
+        OSG_WARN << "[geomprobe] cellstages cells=" << keys.size()
+                 << " preTris=" << cellPre.tris << " preZero=" << cellPre.zeroArea
+                 << " preRep=" << cellPre.repeated
+                 << " mergedTris=" << cellMerged.tris << " mergedZero=" << cellMerged.zeroArea
+                 << " mergedRep=" << cellMerged.repeated
+                 << " finalTris=" << cellFinal.tris << " finalZero=" << cellFinal.zeroArea
+                 << " finalRep=" << cellFinal.repeated << std::endl;
     }
     return root;
 }
@@ -634,8 +880,21 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         res.failure = "materialize failed";
         return res;
     }
+    const unsigned sanitizedMaterialize = sanitizeExactDegenerate(node.get());
+    if (sanitizedMaterialize && (proxyDebug() || geomProbeEnabled()))
+    {
+        OSG_WARN << "[geomprobe] sanitize materialize items=" << items.size()
+                 << " removed=" << sanitizedMaterialize << std::endl;
+    }
     const unsigned tris = countTriangles(node.get());
     res.triangles = tris;
+    if (geomProbeEnabled())
+    {
+        const DegenerateProbe d = probeNode(node.get());
+        OSG_WARN << "[geomprobe] materialize items=" << items.size() << " tris=" << tris
+                 << " zeroArea=" << d.zeroArea << " repeated=" << d.repeated
+                 << " oob=" << d.oob << " nonFinite=" << d.nonFinite << std::endl;
+    }
     // 空代理必须显式失败：0 三角形的远景瓦片能通过所有下游预算闸门，
     // 但在 Cesium 里表现为整块模型消失（实测 lugouqiao 事故根因）
     if (tris == 0)
@@ -683,11 +942,24 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         {
             bestRatio = simplifyNode(attempt.get(), targetTriangles, targetErrorMeters,
                                      _profile.lockSeamBorder);
+            const unsigned sanitizedSimplified = sanitizeExactDegenerate(attempt.get());
+            if (sanitizedSimplified && (proxyDebug() || geomProbeEnabled()))
+            {
+                OSG_WARN << "[geomprobe] sanitize simplified items=" << items.size()
+                         << " removed=" << sanitizedSimplified << std::endl;
+            }
             best = attempt;
             bestTris = countTriangles(attempt.get());
         }
         res.metrics.simplifySeconds +=
             std::chrono::duration<double>(std::chrono::steady_clock::now() - tSimp).count();
+    }
+    if (geomProbeEnabled() && best.valid())
+    {
+        const DegenerateProbe d = probeNode(best.get());
+        OSG_WARN << "[geomprobe] simplified items=" << items.size() << " tris=" << bestTris
+                 << " zeroArea=" << d.zeroArea << " repeated=" << d.repeated
+                 << " oob=" << d.oob << " nonFinite=" << d.nonFinite << std::endl;
     }
 
     const ProxyBytes bestBytes = best.valid() ? estimateBytes(best.get()) : ProxyBytes{};
@@ -699,6 +971,7 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
         res.triangles = bestTris;
         res.appliedRatio = bestRatio;
         res.fitsWithFloorTextures = (bestBytes.geo + bestBytes.texFloor <= maxBytes);
+        if (bestTris < tris) { recomputeSimplifiedProxyNormals(best.get()); }
         if (bestTris == 0)
         {
             res.failure = "proxy collapsed to zero triangles during simplification";
@@ -768,6 +1041,12 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
                 if (want == 0 || want >= aggTris) { want = aggTris / 2; }
                 if (want == 0) { break; }
                 simplifyNode(agg.get(), want, cellSize * 0.1, false);
+                const unsigned aggSanitized = sanitizeExactDegenerate(agg.get());
+                if (aggSanitized && (proxyDebug() || geomProbeEnabled()))
+                {
+                    OSG_WARN << "[geomprobe] sanitize aggregate factor=" << factor
+                             << " merge=" << merge << " removed=" << aggSanitized << std::endl;
+                }
                 aggTris = countTriangles(agg.get());
                 bs = estimateBytes(agg.get());
                 lastAggTris = aggTris;
@@ -795,7 +1074,17 @@ ProxyResult ProxyMeshBuilder::build(const std::vector<std::uint32_t>& items,
             res.triangles = aggTris;
             res.aggregate = true;
             res.aggregateSources = sources;
+            if (geomProbeEnabled())
+            {
+                const DegenerateProbe d = probeNode(agg.get());
+                OSG_WARN << "[geomprobe] aggregate items=" << items.size() << " tris=" << aggTris
+                         << " zeroArea=" << d.zeroArea << " repeated=" << d.repeated
+                         << " oob=" << d.oob << " nonFinite=" << d.nonFinite << std::endl;
+            }
             res.fitsWithFloorTextures = (bs.geo + bs.texFloor <= maxBytes);
+            // 几何/预算决策已确定；此处只重建法线（80° 折痕拆点），不再改变
+            // 三角形与聚合候选，避免法线开销反过来触发额外简化。
+            recomputeSimplifiedProxyNormals(agg.get());
             res.appliedRatio = static_cast<double>(aggTris) / static_cast<double>(tris);
             res.metrics.aggregateSeconds +=
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - tAgg).count();

@@ -63,13 +63,21 @@ namespace osgGISPlugins
     public:
         META_NodeVisitor(osgGISPlugins, BatchTableHierarchyVisitor)
 
-            BatchTableHierarchyVisitor() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentBatchId(0), _currentParentBatchId(0) {}
+        // sequentialBatchIds=true 用于 i3dm：实例批量表必须按实例顺序编号。
+        // i3dm 的实例几何通常共享同一份顶点数组，若仍从 _BATCHID 取号，
+        // 所有实例会读到最后一个实例的编号，批量表只剩一个有效 batch id。
+        BatchTableHierarchyVisitor(bool sequentialBatchIds = false)
+            : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN), _currentParentBatchId(0),
+              _currentBatchId(0), _sequentialBatchIds(sequentialBatchIds) {}
 
         void apply(osg::Geode& geode) override;
         void apply(osg::Group& group) override;
         void apply(osg::Drawable& drawable) override;
 
-        const unsigned int getBatchLength() const { return _currentBatchId + 1; }
+        const unsigned int getBatchLength() const
+        {
+            return _sequentialBatchIds ? _nextSequentialBatchId : _currentBatchId + 1;
+        }
 
         const std::map<std::vector<std::string>, std::vector<unsigned int>> getAttributeNameBatchIdsMap() const
         {
@@ -90,6 +98,8 @@ namespace osgGISPlugins
         unsigned int _currentParentBatchId;
         std::map<unsigned int, unsigned int> _nodeHierarchyMap;
         unsigned int _currentBatchId;
+        bool _sequentialBatchIds;
+        unsigned int _nextSequentialBatchId = 0;
         typedef std::map<std::string, std::string> Attributes;
         std::map<unsigned int, Attributes> _batchIdAttributesMap;
         std::map<unsigned int, unsigned int> _batchParentIdMap;

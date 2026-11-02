@@ -300,12 +300,17 @@ bool SpatialPartitioner::splitItemByTriangles(std::uint32_t itemId, int axis,
     if (base.tris.size() < 2) { return false; }
 
     // 按三角形质心排序，取中位数切开（不产生新顶点，不改属性）
+    // 注意：PrimRef::tris 存的是**局部三角形编号**，triangleIndices() 的第二个参数是
+    // 该 PrimRef 内的**序号**；对已经切分过的子单元（tris 不是 0..n-1）两者不同。
+    // 旧实现把 tris 的值当序号传，子单元会取到错误三角形（甚至回落三角形 0），
+    // 质心/AABB 随之错误（三角网错误分组的根因之一）。
     std::vector<std::pair<double, std::uint32_t>> keys;
     keys.reserve(base.tris.size());
-    for (std::uint32_t t : base.tris)
+    for (std::size_t i = 0; i < base.tris.size(); ++i)
     {
+        const std::uint32_t local = base.tris[i];
         unsigned idx[3];
-        _model.triangleIndices(base, t, idx);
+        _model.triangleIndices(base, static_cast<std::uint32_t>(i), idx);
         const SourceMesh& m = _model.meshes[base.meshId];
         const osg::Vec3& a = (*m.positions)[idx[0]];
         const osg::Vec3& b = (*m.positions)[idx[1]];
@@ -313,7 +318,7 @@ bool SpatialPartitioner::splitItemByTriangles(std::uint32_t itemId, int axis,
         const double cc = (axis == 0) ? (a.x() + b.x() + c.x()) / 3.0
                         : (axis == 1) ? (a.y() + b.y() + c.y()) / 3.0
                                       : (a.z() + b.z() + c.z()) / 3.0;
-        keys.push_back({cc, t});
+        keys.push_back({cc, local});
     }
     std::sort(keys.begin(), keys.end(), [](const std::pair<double, std::uint32_t>& a,
                                            const std::pair<double, std::uint32_t>& b) {
@@ -340,10 +345,10 @@ bool SpatialPartitioner::splitItemByTriangles(std::uint32_t itemId, int axis,
         pr.aabb.init();
         osg::Vec3d cen(0, 0, 0);
         std::vector<unsigned> verts;
-        for (std::uint32_t t : pr.tris)
+        for (std::size_t i = 0; i < pr.tris.size(); ++i)
         {
             unsigned idx[3];
-            _model.triangleIndices(pr, t, idx);
+            _model.triangleIndices(pr, static_cast<std::uint32_t>(i), idx);
             const SourceMesh& m = _model.meshes[pr.meshId];
             for (int k = 0; k < 3; ++k)
             {

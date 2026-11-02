@@ -6,6 +6,8 @@
 #include <osg/MatrixTransform>
 #include <osg/CoordinateSystemNode>
 #include <osg/CopyOp>
+#include <osg/UserDataContainer>
+#include <osg/ValueObject>
 #include <osg/Material>
 #include <osgdb_gltf/material/GltfMaterial.h>
 #include <osgdb_gltf/material/GltfPbrMRMaterial.h>
@@ -632,10 +634,16 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
         TRACE("foldTextureTransformsIntoUv folded=" << folded);
     };
 
-    // 每个 tile 写出前重建 tile-local batch index（手册 5.5 第 4 点）
-    BatchIdVisitor biv;
-    work->accept(biv);
-    out.batchLength = biv.getBatchLength();
+    // 每个 tile 写出前重建 tile-local batch index（手册 5.5 第 4 点）。
+    // i3dm 例外：实例共享同一份原型几何，写 _BATCHID 只会保留最后一个实例的
+    // 编号；i3dm 的实例身份由特征表 BATCH_ID + 按实例顺序的批量表表达，
+    // 因此实例瓦片不写 _BATCHID，避免客户端把共享顶点误认成单一 feature。
+    if (!isInstanceTile)
+    {
+        BatchIdVisitor biv;
+        work->accept(biv);
+        out.batchLength = biv.getBatchLength();
+    }
 
     // 记录 Geode 顺序（与 BatchIdVisitor 编号顺序一致），用于 manifest
     {
@@ -1462,6 +1470,18 @@ int ProductionPipeline::buildInstanceTree()
                     }
                 }
                 g->setName(insts[k]->name);
+                // 实例构件也是源对象：把源属性带到 Geode 上，i3dm 批量表才能
+                // 给出与 b3dm 叶一致的属性（只写名字会丢掉 UDP3DSMAX 等）。
+                const std::vector<SourceProperty>& props = insts[k]->properties;
+                if (!props.empty())
+                {
+                    osg::ref_ptr<osg::UserDataContainer> udc = new osg::DefaultUserDataContainer;
+                    for (const SourceProperty& p : props)
+                    {
+                        udc->addUserObject(new osg::StringValueObject(p.key, p.value));
+                    }
+                    g->setUserDataContainer(udc.get());
+                }
                 mt->addChild(g.get());
                 group->addChild(mt.get());
             }
@@ -1978,6 +1998,33 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     aggregateBounds(_root);
     TRACE("assignGeometricError");
     assignGeometricError(_root);
+
+    // ---- 无内容分支节点必须可遍历 ----
+    // Cesium 的 canTraverse 判据是 screenSpaceError > maxSSE，而 SSE 正比于
+    // geometricError；无内容且 GE=0 的分支节点因此永远不细化，子树从不被访问。
+    // 实测 i3dm 分组节点（根下"实例分支"）就是这样：wuhu/hall/lugouqiao 的
+    // i3dm 在 54+12 帧里 ready 全为 false，实例构件在 Cesium 里整体缺失。
+    // 这类节点没有自身误差可测，继承父级 GE（父级细化时一并遍历）；根节点
+    // 自身 GE=0 时取 1 m 兜底（仅 i3dm-only 模型可能触发），保证最少可遍历。
+    {
+        std::vector<std::pair<int, double>> stack;
+        stack.push_back(std::make_pair(_root, 0.0));
+        while (!stack.empty())
+        {
+            const int idx = stack.back().first;
+            const double inherited = stack.back().second;
+            stack.pop_back();
+            if (idx < 0 || static_cast<std::size_t>(idx) >= _tiles.size()) { continue; }
+            ProductionTile& t = _tiles[idx];
+            double ge = t.geometricErrorM;
+            if (ge == 0.0 && !t.hasContent && !t.children.empty())
+            {
+                ge = inherited > 0.0 ? inherited : 1.0;
+                t.geometricErrorM = ge;
+            }
+            for (int c : t.children) { stack.push_back(std::make_pair(c, ge)); }
+        }
+    }
     TRACE("stats");
 
     // ---- 统计 ----
@@ -2551,6 +2598,19 @@ bool ProductionPipeline::selfValidate(const std::string& tilesetJsonPath)
                 {
                     _failures.push_back("selfValidate: geometricError is not a finite non-negative "
                                         "number at depth " + std::to_string(depth));
+                    ok = false;
+                }
+                const bool hasContent = t.contains("content") && t["content"].is_object();
+                const bool hasChildren = t.contains("children") && t["children"].is_array()
+                                      && !t["children"].empty();
+                // 无内容分支 GE=0：Cesium canTraverse 的 SSE 判据恒假，子树永不加载
+                // （i3dm 实例整体缺失，A-85）。允许有内容的叶瓦片 GE=0。
+                if (!hasContent && hasChildren && ge == 0.0)
+                {
+                    _failures.push_back("selfValidate: contentless branch tile at depth "
+                                        + std::to_string(depth)
+                                        + " has geometricError 0; its children are unreachable "
+                                          "in Cesium (canTraverse uses SSE(GE))");
                     ok = false;
                 }
             }

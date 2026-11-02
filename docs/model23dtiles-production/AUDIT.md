@@ -2391,3 +2391,121 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
 - 失败+空缓存：目录被删除（唯一删除路径）。
 - 成功覆盖旧数据集：旧 tiles 被替换、`.wb-previous` 清理、`textures/keep.ktx2` 保留。
 - 历史“成功后整目录缺失”仍无代码路径，保持 OPEN（不可复现）。
+
+### A-81 简化器顶点重映射顺序错位（定层模型“三角面混乱/退化”主因）　**FIXED**
+
+- 现象：非叶内节点远景代理出现大量零面积面与横跨全场的三角面；单三角形最大面积
+  达 2.07×10^8 m²（wuhu），代理总面积比修复后大 10–30 倍；validator 仍 0 error，
+  但侧视渲染是互相穿插的三角碎片。
+- 根因：`Simplifier::simplifyMesh` 用 **pset 首次引用顺序** 给被引用顶点赋新下标，
+  而 `remapArray` 按**旧下标升序**打包顶点数组。两者不一致时索引与顶点错位。
+- 证据：逐 pset 过滤后 `after=0`，但写回后的几何仍含精确退化
+  （`[simplifier] writebackDegen=`）；`cellpath` 显示 simplify 后比 simplify 前多约
+  1,234 个精确退化（wuhu，6 次聚合尝试合计）；修复前 +Y 侧视截图
+  `docs/visual-acceptance/runs/r8_wuhu_sanitize_axis/axis-sweep_04_ax_py.png`。
+- 修复：新增 `Simplifier::buildVertexRemap`（先标记、再按旧下标升序赋号），
+  `simplifyMesh` 改用该函数。使用点：生产代理与遗留 HLOD 路径。
+- 回归：wuhu 代理零面积 4,264→0、重复 163→0、非流形边 2,840→1,081、
+  长边三角形 24,735→14,986；站厅 4,922→0；卢沟桥 18,677→0。
+
+### A-82 简化输出精确退化过滤 + 代理节点级 sanitize 安全网　**FIXED**
+
+- `Simplifier::removeExactDegenerateTriangles`：每次 meshopt 简化后删除重复索引、
+  越界、非有限坐标、精确零面积三角形，并裁掉 `%3` 尾巴；薄而面积非零的三角形保留。
+- 由于“过滤后不足一个三角形”会回退到未过滤输入（绝不删空有效几何），且源资产
+  本身含退化面，`ProxyMeshBuilder::sanitizeExactDegenerate` 在 materialize /
+  simplified / aggregate / 每个 cell 各执行一次；只删精确退化，几何被删空时
+  按既有语义显式失败（不发布 0 面代理）。
+- 单测：`simplifierDegenerate`（4）、`proxySanitize`（7），断言合法/薄非零面保留、
+  全退化源集合必须失败。
+- 残留：近退化（薄而非零）面不删——wuhu 6、卢沟桥 3,242（修前 2,819）。
+
+### A-83 三角形切分 ordinal/local ID 混用　**FIXED**
+
+- `SpatialPartitioner::splitItemByTriangles` 把 `PrimRef::tris` 的局部三角形编号
+  当 `triangleIndices` 的序号传入；对二次切分的子单元（tris 不再是 0..n-1）
+  会取到错误三角形，AABB/质心随之错误。`refresh` 同样混用。
+- 修复：两处都按**序号** `i` 调用 `triangleIndices(pr, i, idx)`，`tris[i]` 只作为
+  局部编号写入子单元。
+- 回归：`triSplitMetrics`（6 条）断言 triCount==tris.size、局部编号在界内、
+  子单元 AABB 等于自身三角形集合；卢沟桥叶瓦片分组边界变化（176/592 字节变化，
+  叶三角形合计 3,601,338 不变）。
+
+### A-84 代理几何诊断工具（env 门控）　**TOOLING（非生产行为）**
+
+- `WB_PROXY_GEOM_DEBUG=1` 打开：`ProxyMeshBuilder` 打印
+  `materialize/simplified/aggregate` 退化计数、`cellstages`（pre/merged/final）、
+  `cellpath`（simplify 前退化 vs sanitize 删除数）、sanitize 删除数；
+  `Simplifier` 打印逐 pset 过滤计数、`writebackDegen`（含 preBad/分类/rankMismatch）。
+- 外部脚本：`geom_scan.js`（GLB 三角形指标）、`geom_split.js`（按叶/代理汇总）、
+  `tile_area.js`（单瓦片面积/最大三角形）、`component_audit.js`（构件完整性），
+  位于 r8 证据目录。
+- 未开启环境变量时零额外遍历（仅一次 getenv 静态初始化）。
+
+### A-85 i3dm 分组节点 GE=0 导致实例构件在 Cesium 不可达　**FIXED**
+
+- 现象：导出的 tileset 中，根下"实例分支"是无内容节点（wuhu 5 / 站厅 35 /
+  卢沟桥 126 / longxiang 6 个 i3dm 子瓦片）。CesiumJS 1.119 的
+  `canTraverse` 用 `screenSpaceError > memoryAdjustedScreenSpaceError` 判定是否
+  细化，SSE 正比于 `geometricError`；该分支 GE=0 → 恒不细化 → i3dm 子树从不加载。
+- 证据：视觉验收 54+12 帧里所有 i3dm `ready=false`；给 tileset 副本把分支 GE
+  改为根 GE 后同一页 5/5 i3dm `ready=true`（一次性副本实验，产物已清理）。
+  影响实例数：wuhu 19、站厅 72、卢沟桥 1,787、longxiang 10。
+- 修复：`ProductionPipeline::run` 在 `assignGeometricError` 后自顶向下归一化——
+  无内容且有子节点的 GE=0 分支继承父级 GE（根自身 0 时取 1 m）；
+  `selfValidate` 新增"无内容分支 GE=0 即失败"闸门；单测 3 条（504/0）。
+- 验证：修复后 wuhu 5/5、站厅 35/35、longxiang 6/6、卢沟桥 78/78（视野内）
+  i3dm `ready=true`；wuhu 侧视剪影 +41%、正视 +37%、俯视 +1.5%。
+  内容文件与修复前逐字节相同，wuhu A/B 173/175 文件相同（差异仅 tileset.json
+  的分支 GE 与计时报告）。
+
+### A-86 i3dm 实例属性不可读（批量表与共享几何错位）　**FIXED**
+
+- 现象：Cesium Inspector 点选 i3dm 实例无属性；`getPropertyIds()` 抛
+  `TypeError: Cannot read properties of undefined (reading 'instances')`。
+- 根因：实例 Geode 共享原型 `osg::Geometry`，`BatchIdVisitor` 把 `_BATCHID`
+  反复写进同一顶点数组，最终全部等于最后一个实例的编号；批量表按 `_BATCHID`
+  建类，`classIds=[-1,-1,n-1]`，前 n-1 个实例没有类。`parentIds` 写 `-1`，
+  Cesium 的层级遍历以 `parentId == 自身` 为根哨兵，`-1` 会访问 `classes[-1]`。
+- 修复：`BatchTableHierarchyVisitor` 增加 sequential 模式（i3dm 按 Geode 遍历
+  顺序编号、父 id 自引用）；实例 Geode 写入 `SourceInstance::properties`；
+  i3dm 不再写共享 `_BATCHID`，实例身份由特征表 `BATCH_ID=0..n-1` 表达。
+- 验证：单测 515/0（新增 10 条 i3dm 批量表断言）；longxiang_final 在
+  CesiumJS 1.119 中 6/6 i3dm ready，逐实例
+  `getPropertyIds=["GeodeName","MaxHandle"]`、名称正确；wuhu/站厅/卢沟桥
+  validator 0 error。仅 i3dm 文件变化，b3dm 逐字节不变。
+
+### A-87 不同观察距离的瓦片外观差异（HLOD 设计权衡）　**OPEN（待裁定）**
+
+- 现象：jianzhu 远景为少量粗块，近景为完整建筑；用户截图三档距离外观不同。
+- 机制：REPLACE LOD 远景用内节点代理（聚合 cell 按配额抽稀 feature 单元 +
+  meshopt 简化；代码注释明确“远景聚合的核心手段是抽稀 feature”），近景用叶。
+  代理 `geometricError` 决定切叶距离；初始误差上限为瓦片对角线的 1%。
+- 度量：jianzhu 544 个代理中 375 个是聚合代理；代理 GE 中位 11.5 m，
+  336/544 个 >6.4 m（约 1 km 才切叶）、175 个 >25 m、70 个 >100 m；
+  identity 代理中位只保留叶三角形的 6%（源 109k→代理 12k）。
+  其他资产同机制：卢沟桥 71/462 >6.4 m（37 个 >100 m）、站厅 11/156、
+  longxiang 7/60、wuhu 27/27（模型尺度 116 km）；聚合抽样保留率
+  wuhu 95%、jianzhu 82.7%、longxiang 45.7%。
+- 结论：是 HLOD 粒度/误差上限的设计权衡，不是数据丢失或几何损坏
+  （叶覆盖全部 feature、validator 0 error）。收紧误差上限或细化 cell 会增加
+  代理三角形/产物大小，需产品裁定。
+
+### A-88 远景代理法线与简化后三角面错位（黑面/阴影）　**FIXED**
+
+- 现象：远景代理出现整面发黑/阴影；法线扫描显示 jianzhu 代理 31–48% 的
+  三角形法线背向、平均 dot 仅 0.03–0.33，而叶为 0.94–1.0；源 FBX 法线为
+  单位长度且无零长。
+- 根因：meshopt 简化重组了三角形连接，但逐顶点法线仍来自原表面；聚合代理
+  还存在大量共面/双面重复三角形，纯按绕序平滑会互相抵消。
+- 修复：在代理几何/预算决策完成后，用 `osgUtil::SmoothingVisitor` 以
+  **120° 折痕角**重建法线（平滑面内合并、硬边处拆点）；不改三角形、不改
+  聚合候选；叶与 i3dm 不调用。
+- 验证：单测 522/0；jianzhu 代理 avgDot 0.99–0.995、背向 0、弱法线 0
+  （修前 42–48% 背向）；wuhu 0.98–0.999、背向 0–3 个；三次采样三角形数与
+  修前完全一致；`attrCountMismatch=0`、UV/材质不变；validator 0 error。
+- 代价：硬边拆点增加顶点数——jianzhu 1811.7→2163.6 MiB（+19.4%）、
+  lugouqiao 947.6→1010.1 MiB（+6.6%）、hall 225.8→234.3 MiB（+3.8%）、
+  longxiang 86.3→88.0 MiB（+2.0%）、wuhu 65.8→66.1 MiB（+0.5%）；
+  最大内容字节 3.79/3.65/2.82/2.54/2.42 MB（上限 8 MiB），
+  三角形/primitive/material 预算不变。

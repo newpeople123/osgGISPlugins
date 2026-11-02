@@ -30,6 +30,19 @@ namespace osgGISPlugins {
 
         META_NodeVisitor(osgGISPlugins, Simplifier)
 
+        // 只删除精确退化三角形：索引重复、索引越界、顶点非有限、面积精确为 0。
+        // 细长但面积非零的三角形合法，必须保留。indices.size()%3 的尾数一并裁掉。
+        // 返回删除的三角形数；不改变顶点数组（由调用方做统一重映射）。
+        static std::size_t removeExactDegenerateTriangles(const std::vector<float>& positions,
+                                                          std::size_t vertexCount,
+                                                          std::vector<unsigned int>& indices);
+        // 被引用顶点按**旧下标升序**分配新下标（0..n-1），未引用顶点保持 0xFFFFFFFF。
+        // 必须与 remapArray 的打包顺序一致：按 pset 首次引用顺序赋号会让索引
+        // 与顶点数组错位，输出三角面连接错误顶点（表现为退化/混乱三角网）。
+        static std::vector<unsigned int> buildVertexRemap(
+            const std::vector<std::vector<unsigned int>>& psets, std::size_t vertexCount);
+        std::size_t removedDegenerateTriangles() const { return _removedDegenerateTris; }
+
         void apply(osg::Geometry& geom) override
         {
             simplifyMesh(geom);
@@ -43,6 +56,8 @@ namespace osgGISPlugins {
                              const std::vector<float>& positions,
                              std::size_t vertexCount,
                              std::vector<unsigned int>& out);
+    private:
+        std::size_t _removedDegenerateTris = 0;
     };
 }
 #endif // !OSG_GIS_PLUGINS_SIMPLIFIER_H

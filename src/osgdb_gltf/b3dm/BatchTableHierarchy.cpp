@@ -5,7 +5,9 @@
 #include "osgdb_gltf/b3dm/UserDataVisitor.h"
 using namespace osgGISPlugins;
 void BatchTableHierarchyVisitor::apply(osg::Group& group) {
-	_currentParentBatchId = _currentBatchId == 0 ? 0 : _currentBatchId - 1;
+	if (!_sequentialBatchIds) {
+		_currentParentBatchId = _currentBatchId == 0 ? 0 : _currentBatchId - 1;
+	}
 	traverse(group);
 }
 
@@ -53,12 +55,19 @@ void BatchTableHierarchyVisitor::apply(osg::Geode& geode) {
 			}
 		}
 
-		_batchIdAttributesMap.insert(std::make_pair(_currentBatchId, attributes));
+		// i3dm：按 Geode（实例）遍历顺序编号，与特征表 BATCH_ID = 0..n-1 对齐。
+		// 不能读 _BATCHID：实例几何共享同一份顶点数组，读到的是最后一个实例的编号。
+		const unsigned batchId = _sequentialBatchIds ? _nextSequentialBatchId++ : _currentBatchId;
+		_batchIdAttributesMap.insert(std::make_pair(batchId, attributes));
 
 		const BatchTableHierarchyVisitor::StringVector attrNames = convertAttributesToVector(attributes);
-		_attributeNameBatchIdsMap[attrNames].push_back(_currentBatchId);
+		_attributeNameBatchIdsMap[attrNames].push_back(batchId);
 
-		_batchParentIdMap.insert(std::make_pair(_currentBatchId, _currentParentBatchId));
+		// Cesium 的层级遍历以"parentId == 自身"作为根哨兵；写 -1 会继续向上
+		// 访问 classes[-1] 并抛 TypeError（实例属性读取失败）。顺序模式下每个
+		// 实例都是根，父 id 指向自身。
+		_batchParentIdMap.insert(std::make_pair(
+			batchId, _sequentialBatchIds ? batchId : _currentParentBatchId));
 	}
 }
 
@@ -79,6 +88,9 @@ BatchTableHierarchyVisitor::StringVector BatchTableHierarchyVisitor::convertAttr
 }
 
 void BatchTableHierarchyVisitor::apply(osg::Drawable& drawable) {
+	if (_sequentialBatchIds) {
+		return;  // 顺序编号模式不依赖顶点属性里的 _BATCHID
+	}
 	osg::Geometry* geometry = drawable.asGeometry();
 	if (geometry) {
 		const osg::ref_ptr<osg::FloatArray> batchIds = dynamic_cast<osg::FloatArray*>(geometry->getVertexAttribArray(0));

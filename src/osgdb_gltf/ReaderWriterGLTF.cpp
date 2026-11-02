@@ -30,7 +30,9 @@ osgDB::ReaderWriter::WriteResult ReaderWriterGLTF::writeNode(
 
     osg::Node& nc_node = const_cast<osg::Node&>(node); // won't change it, promise :)
     nc_node.ref();
-    BatchTableHierarchyVisitor bthv;
+    // i3dm：批量表按实例顺序编号（特征表 BATCH_ID = 0..n-1），不能依赖
+    // 共享几何上的 _BATCHID；b3dm 保持原有的 _BATCHID 层级语义。
+    BatchTableHierarchyVisitor bthv(ext == "i3dm");
     if (ext == "b3dm" || ext == "i3dm")
         nc_node.accept(bthv);
 

@@ -37,6 +37,7 @@
 #include <exception>
 #include <cstdlib>
 #include <limits>
+#include <cstring>
 #include <filesystem>
 #include <algorithm>
 #include <cstring>
@@ -3919,7 +3920,7 @@ void testInstanceHostBudget()
     std::cout << "[budget] i3dm prototype primitive/material budget" << std::endl;
     Utils::registerFileAliases();
 
-    auto buildScene = [](unsigned drawables) {
+    auto buildScene = [](unsigned drawables, unsigned copies = 2) {
         // 两个实例必须被识别成"同一原型"：这里让两份 Geode 共享同一批
         // StateSet 指针（compareStateSet 的快路径），避免测试夹具落进
         // "相等但非同一对象的 PBR StateSet 比较" 这条与本用例无关的路径。
@@ -3934,7 +3935,7 @@ void testInstanceHostBudget()
             states.push_back(ss);
         }
         osg::ref_ptr<osg::Group> root = new osg::Group;
-        for (unsigned k = 0; k < 2; ++k)
+        for (unsigned k = 0; k < copies; ++k)
         {
             osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
             mt->setMatrix(osg::Matrixd::translate(static_cast<double>(k) * 100.0, 0.0, 0.0));
@@ -4009,6 +4010,158 @@ void testInstanceHostBudget()
         check(!tile.empty() && tilePrimsMats(tile, p, m) && p == 24 && m == 24,
               "i3dm content is exactly at 24 primitives / 24 materials",
               std::to_string(p) + "/" + std::to_string(m));
+
+        // A-85：无内容分支节点 GE 必须 > 0。Cesium 的 canTraverse 用
+        // SSE(geometricError) 与 maxSSE 比较，GE=0 的空分支永远不细化，
+        // i3dm 子树从不加载（实测实例构件整体缺失）。
+        nlohmann::json ts;
+        {
+            std::ifstream in(out / "tileset.json", std::ios::binary);
+            in >> ts;
+        }
+        unsigned branches = 0, zeroBranches = 0, i3dmTiles = 0;
+        std::function<void(const nlohmann::json&)> walk = [&](const nlohmann::json& t) {
+            const bool hasContent = t.contains("content") && t["content"].is_object();
+            const bool hasChildren = t.contains("children") && t["children"].is_array()
+                                  && !t["children"].empty();
+            if (hasContent && t["content"].contains("uri") && t["content"]["uri"].is_string()
+                && t["content"]["uri"].get<std::string>().find(".i3dm") != std::string::npos)
+            {
+                ++i3dmTiles;
+            }
+            if (!hasContent && hasChildren)
+            {
+                ++branches;
+                if (t.value("geometricError", 0.0) == 0.0) { ++zeroBranches; }
+            }
+            if (hasChildren)
+            {
+                for (const nlohmann::json& c : t["children"]) { walk(c); }
+            }
+        };
+        walk(ts["root"]);
+        check(i3dmTiles >= 1, "published scene contains an i3dm tile",
+              std::to_string(i3dmTiles));
+        check(branches >= 1, "published scene has a contentless branch tile",
+              std::to_string(branches));
+        check(zeroBranches == 0,
+              "every contentless branch tile has a traversable geometricError",
+              std::to_string(zeroBranches) + " of " + std::to_string(branches));
+    }
+
+    // A-86：i3dm 批量表必须按实例顺序（0..n-1）建类。实例几何共享同一份
+    // 顶点数组，若批量表仍从 _BATCHID 取号，所有实例会落到最后一个 batch id，
+    // Cesium 里除最后一个实例外都读不到属性。
+    {
+        ProductionProfile profile;
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_instance_batch_table";
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline pipeline(profile);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        const bool ran = pipeline.run(buildScene(1, 4).get(), opt);
+        check(ran && pipeline.finalize(), "4-copy scene publishes", joinMessages(pipeline.failures()));
+        check(pipeline.report().instanceTileCount == 1, "one i3dm tile for three instances",
+              std::to_string(pipeline.report().instanceTileCount));
+
+        std::filesystem::path tile;
+        for (const auto& e : std::filesystem::directory_iterator(out / "tiles", ec))
+        {
+            if (e.path().extension() == ".i3dm") { tile = e.path(); }
+        }
+        check(!tile.empty(), "i3dm tile exists for batch-table check", tile.string());
+        if (!tile.empty())
+        {
+            std::ifstream in(tile, std::ios::binary);
+            std::vector<char> buf((std::istreambuf_iterator<char>(in)),
+                                  std::istreambuf_iterator<char>());
+            auto u32 = [&](std::size_t o) {
+                uint32_t v = 0;
+                std::memcpy(&v, buf.data() + o, sizeof(v));
+                return v;
+            };
+            const uint32_t ftl = u32(12), fbl = u32(16), btl = u32(20);
+            const nlohmann::json ft = nlohmann::json::parse(
+                std::string(buf.data() + 32, ftl));
+            const nlohmann::json bt = nlohmann::json::parse(
+                std::string(buf.data() + 32 + ftl + fbl, btl));
+            const unsigned n = ft["INSTANCES_LENGTH"].get<unsigned>();
+            check(n == 3, "three instances share one i3dm prototype", std::to_string(n));
+
+            const nlohmann::json& bid = ft["BATCH_ID"];
+            const std::size_t bidOff = bid["byteOffset"].get<std::size_t>();
+            const std::string bidType = bid["componentType"].get<std::string>();
+            std::vector<unsigned> ids;
+            for (unsigned i = 0; i < n; ++i)
+            {
+                const char* p = buf.data() + 32 + ftl + bidOff;
+                if (bidType == "UNSIGNED_BYTE")
+                {
+                    ids.push_back(static_cast<unsigned char>(p[i]));
+                }
+                else if (bidType == "UNSIGNED_SHORT")
+                {
+                    uint16_t v = 0; std::memcpy(&v, p + i * 2, 2); ids.push_back(v);
+                }
+                else
+                {
+                    uint32_t v = 0; std::memcpy(&v, p + i * 4, 4); ids.push_back(v);
+                }
+            }
+            bool sequential = ids.size() == n;
+            for (unsigned i = 0; i < ids.size(); ++i) { sequential = sequential && ids[i] == i; }
+            check(sequential, "feature-table BATCH_ID is 0..n-1",
+                  ids.size() == n ? std::to_string(ids.front()) + ".." + std::to_string(ids.back())
+                                  : "size " + std::to_string(ids.size()));
+
+            const nlohmann::json& h = bt["extensions"]["3DTILES_batch_table_hierarchy"];
+            check(h["instancesLength"].get<unsigned>() == n,
+                  "batch-table hierarchy length equals INSTANCES_LENGTH",
+                  std::to_string(h["instancesLength"].get<unsigned>()));
+            bool allClassed = h.contains("classIds") && h["classIds"].size() == n;
+            if (allClassed)
+            {
+                for (const auto& c : h["classIds"]) { allClassed = allClassed && c.get<int>() >= 0; }
+            }
+            check(allClassed, "every instance has a batch-table class",
+                  h.contains("classIds") ? std::to_string(h["classIds"].size()) : "missing");
+            // Cesium 以 parentId == 自身作为根哨兵；-1 会触发 classes[-1] 崩溃
+            bool selfParent = h.contains("parentIds") && h["parentIds"].size() == n;
+            if (selfParent)
+            {
+                for (unsigned i = 0; i < n; ++i)
+                {
+                    selfParent = selfParent && h["parentIds"][i].get<int>() == static_cast<int>(i);
+                }
+            }
+            check(selfParent, "each i3dm instance is its own hierarchy root",
+                  h.contains("parentIds") ? std::to_string(h["parentIds"].size()) : "missing");
+            const nlohmann::json& cls = h["classes"].at(0);
+            check(cls["length"].get<unsigned>() == n,
+                  "one class instance per i3dm instance",
+                  std::to_string(cls["length"].get<unsigned>()));
+            check(cls["instances"]["GeodeName"].size() == n,
+                  "one GeodeName entry per i3dm instance",
+                  std::to_string(cls["instances"]["GeodeName"].size()));
+
+            // 原型 glTF 不再写 _BATCHID（实例身份由 BATCH_ID 表达）
+            const std::size_t glb = 32 + ftl + fbl + btl + u32(24);
+            const uint32_t glbJsonLen = u32(glb + 12);
+            const nlohmann::json gj = nlohmann::json::parse(
+                std::string(buf.data() + glb + 20, glbJsonLen));
+            bool hasBatchAttr = false;
+            for (const auto& mesh : gj["meshes"])
+            {
+                for (const auto& prim : mesh["primitives"])
+                {
+                    hasBatchAttr = hasBatchAttr || prim["attributes"].contains("_BATCHID");
+                }
+            }
+            check(!hasBatchAttr, "i3dm prototype carries no shared _BATCHID attribute");
+        }
     }
 }
 
@@ -4051,6 +4204,370 @@ void testAtlasImageOrderStable()
     osg::ref_ptr<osg::Image> tall = img(8, 32, 0x66, "x/tall.png");
     osg::ref_ptr<osg::Image> wide = img(32, 8, 0x77, "y/wide.png");
     check(less(tall, wide) && !less(wide, tall), "height/size priority preserved");
+}
+
+void testTriangleSplitMetrics()
+{
+    std::cout << "[partition] triangle-split items keep correct AABB/centroid" << std::endl;
+
+    // 80x80 网格（12800 三角形）强制定向三角形级切分；切分后的子单元
+    // tris 不再是 0..n-1，旧代码把 tris 的值当 triangleIndices 的序号传，
+    // 会取错三角形，AABB/质心跟着错。
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    osg::ref_ptr<osg::DrawElementsUInt> idx =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    const int N = 80;
+    for (int y = 0; y < N; ++y)
+    {
+        for (int x = 0; x < N; ++x)
+        {
+            pos->push_back(osg::Vec3(x, y, 0));
+            pos->push_back(osg::Vec3(x + 1, y, 0));
+            pos->push_back(osg::Vec3(x + 1, y + 1, 0));
+            pos->push_back(osg::Vec3(x, y + 1, 0));
+            const unsigned b = static_cast<unsigned>(pos->size()) - 4;
+            idx->push_back(b); idx->push_back(b + 1); idx->push_back(b + 2);
+            idx->push_back(b); idx->push_back(b + 2); idx->push_back(b + 3);
+        }
+    }
+    geom->setVertexArray(pos.get());
+    geom->addPrimitiveSet(idx.get());
+    geode->addChild(geom.get());
+
+    SourceModel model;
+    check(model.build(geode.get()), "triangle-split fixture builds");
+    ProductionProfile profile;
+    profile.budget.targetTrianglesPerTile = 500;
+    profile.budget.maxTrianglesPerTile = 1000;
+    std::vector<PrimRef> table = model.prims;
+    SpatialPartitioner sp(model, profile, table);
+    const int root = sp.build();
+    check(root >= 0, "triangle-split fixture partitions");
+    check(table.size() > model.prims.size(), "triangle-level split appended units",
+          std::to_string(table.size()));
+
+    unsigned badCount = 0, badAabb = 0, badIndex = 0;
+    for (std::size_t id = 0; id < table.size(); ++id)
+    {
+        const PrimRef& pr = table[id];
+        if (pr.triCount != pr.tris.size()) { ++badCount; continue; }
+        const SourceMesh& mesh = model.meshes[pr.meshId];
+        const SourcePrimSet& ps = mesh.primSets[pr.primSetIndex];
+        osg::BoundingBox want;
+        for (std::size_t i = 0; i < pr.tris.size(); ++i)
+        {
+            const std::uint32_t local = pr.tris[i];
+            if (local * 3u + 2u >= ps.tris.size()) { ++badIndex; continue; }
+            for (int k = 0; k < 3; ++k) { want.expandBy((*mesh.positions)[ps.tris[local * 3u + k]]); }
+        }
+        if (!pr.aabb.valid() || !want.valid()) { ++badAabb; continue; }
+        const double d = std::max({
+            std::fabs(pr.aabb.xMin() - want.xMin()), std::fabs(pr.aabb.xMax() - want.xMax()),
+            std::fabs(pr.aabb.yMin() - want.yMin()), std::fabs(pr.aabb.yMax() - want.yMax()),
+            std::fabs(pr.aabb.zMin() - want.zMin()), std::fabs(pr.aabb.zMax() - want.zMax())});
+        if (d > 1e-5) { ++badAabb; }
+    }
+    check(badCount == 0, "triCount matches tris.size on every split unit",
+          std::to_string(badCount));
+    check(badIndex == 0, "every local triangle id is in range", std::to_string(badIndex));
+    check(badAabb == 0, "every split unit AABB equals its own triangle set",
+          std::to_string(badAabb));
+}
+
+void testSimplifierDegenerateFilter()
+{
+    std::cout << "[simplifier] exact-degenerate triangles removed, thin ones kept" << std::endl;
+
+    // 顶点：0/1/2 合法三角，3/4/5 共线，6 极薄但非零，7 非有限。
+    const std::vector<float> pos = {
+        0, 0, 0,   1, 0, 0,   0, 1, 0,
+        2, 0, 0,   3, 0, 0,   4, 0, 0,
+        0.5f, 1e-6f, 0,
+        std::numeric_limits<float>::quiet_NaN(), 0, 0
+    };
+    std::vector<unsigned int> idx = {
+        0, 1, 2,      // 合法
+        0, 1, 1,      // 重复索引
+        3, 4, 5,      // 精确零面积（共线）
+        0, 1, 9,      // 越界
+        0, 1, 6,      // 极薄但非零：必须保留
+        0, 1, 7,      // 非有限顶点
+        0, 1          // 不完整尾部：裁掉
+    };
+    const std::size_t removed =
+        Simplifier::removeExactDegenerateTriangles(pos, 8, idx);
+    check(removed == 4, "four exact-degenerate triangles removed", std::to_string(removed));
+    check(idx.size() == 6, "incomplete tail trimmed and two triangles kept",
+          std::to_string(idx.size()));
+    check(idx.size() == 6 && idx[0] == 0 && idx[1] == 1 && idx[2] == 2
+              && idx[3] == 0 && idx[4] == 1 && idx[5] == 6,
+          "valid and thin-nonzero triangles survive unchanged",
+          idx.size() == 6 ? "idx ok" : "idx wrong");
+    // 合法输入不得被改动
+    std::vector<unsigned int> clean = {0, 1, 2};
+    check(Simplifier::removeExactDegenerateTriangles(pos, 8, clean) == 0
+              && clean.size() == 3,
+          "clean triangle set is a no-op");
+}
+
+void testSimplifierRemapOrder()
+{
+    std::cout << "[simplifier] vertex remap follows ascending old-index order" << std::endl;
+
+    // 首次引用顺序 9 → 5 → 0，与旧下标升序 0 → 5 → 9 不同。remapArray 按升序
+    // 打包顶点数组，因此新下标必须按升序分配；按首次引用顺序赋号会让输出三角
+    // 面连接错误顶点（R8 实测产生零面积/混乱三角网）。
+    const std::vector<std::vector<unsigned int>> psets = {{9, 5, 0}, {5, 3}};
+    const std::vector<unsigned int> remap = Simplifier::buildVertexRemap(psets, 12);
+    check(remap.size() == 12, "remap covers every vertex slot");
+    check(remap[0] == 0 && remap[3] == 1 && remap[5] == 2 && remap[9] == 3,
+          "referenced vertices numbered in ascending old-index order",
+          std::to_string(remap[0]) + "," + std::to_string(remap[3]) + ","
+              + std::to_string(remap[5]) + "," + std::to_string(remap[9]));
+    check(remap[1] == 0xFFFFFFFFu && remap[11] == 0xFFFFFFFFu,
+          "unreferenced vertices stay unmapped");
+}
+
+namespace {
+// 代理节点上的精确退化扫描：重复索引 / 越界 / 非有限 / 叉积恒为零。
+struct ExactDegenerateScan : public osg::NodeVisitor
+{
+    unsigned triangles = 0, degenerate = 0;
+    ExactDegenerateScan() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+    void apply(osg::Geometry& g) override
+    {
+        const osg::Vec3Array* pos = dynamic_cast<const osg::Vec3Array*>(g.getVertexArray());
+        if (!pos) { return; }
+        for (unsigned p = 0; p < g.getNumPrimitiveSets(); ++p)
+        {
+            const osg::PrimitiveSet* ps = g.getPrimitiveSet(p);
+            if (!ps || ps->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
+            std::vector<unsigned> idx;
+            if (const auto* du = dynamic_cast<const osg::DrawElementsUInt*>(ps))
+            { idx.assign(du->begin(), du->end()); }
+            else if (const auto* dus = dynamic_cast<const osg::DrawElementsUShort*>(ps))
+            { idx.assign(dus->begin(), dus->end()); }
+            else { continue; }
+            for (std::size_t i = 0; i + 2 < idx.size(); i += 3)
+            {
+                ++triangles;
+                const unsigned a = idx[i], b = idx[i + 1], c = idx[i + 2];
+                if (a >= pos->size() || b >= pos->size() || c >= pos->size())
+                { ++degenerate; continue; }
+                if (a == b || b == c || a == c) { ++degenerate; continue; }
+                const osg::Vec3& pa = (*pos)[a];
+                const osg::Vec3& pb = (*pos)[b];
+                const osg::Vec3& pc = (*pos)[c];
+                const double ux = static_cast<double>(pb.x()) - pa.x();
+                const double uy = static_cast<double>(pb.y()) - pa.y();
+                const double uz = static_cast<double>(pb.z()) - pa.z();
+                const double vx = static_cast<double>(pc.x()) - pa.x();
+                const double vy = static_cast<double>(pc.y()) - pa.y();
+                const double vz = static_cast<double>(pc.z()) - pa.z();
+                if (uy * vz - uz * vy == 0.0 && uz * vx - ux * vz == 0.0
+                    && ux * vy - uy * vx == 0.0) { ++degenerate; }
+            }
+        }
+    }
+};
+
+// 一个 feature 的夹具：5 个合法三角形（含 1 个极薄非零）+ 2 个精确退化。
+osg::ref_ptr<osg::Geode> degenerateFixture()
+{
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    geode->setName("degen_feature");
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    pos->push_back(osg::Vec3(0, 0, 0));       // 0
+    pos->push_back(osg::Vec3(10, 0, 0));      // 1
+    pos->push_back(osg::Vec3(10, 10, 0));     // 2
+    pos->push_back(osg::Vec3(0, 10, 0));      // 3
+    pos->push_back(osg::Vec3(20, 0, 0));      // 4
+    pos->push_back(osg::Vec3(30, 0, 0));      // 5
+    pos->push_back(osg::Vec3(30, 10, 0));     // 6
+    pos->push_back(osg::Vec3(20, 10, 0));     // 7
+    pos->push_back(osg::Vec3(40, 0, 0));      // 8 共线
+    pos->push_back(osg::Vec3(50, 0, 0));      // 9
+    pos->push_back(osg::Vec3(60, 0, 0));      // 10
+    pos->push_back(osg::Vec3(0.5f, 1e-6f, 0)); // 11 极薄非零
+    osg::ref_ptr<osg::DrawElementsUInt> idx =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    idx->push_back(0); idx->push_back(1); idx->push_back(2);
+    idx->push_back(0); idx->push_back(2); idx->push_back(3);
+    idx->push_back(4); idx->push_back(5); idx->push_back(6);
+    idx->push_back(4); idx->push_back(6); idx->push_back(7);
+    idx->push_back(0); idx->push_back(1); idx->push_back(11);  // 薄但非零
+    idx->push_back(0); idx->push_back(0); idx->push_back(1);   // 重复索引
+    idx->push_back(8); idx->push_back(9); idx->push_back(10);  // 共线
+    geom->setVertexArray(pos.get());
+    geom->addPrimitiveSet(idx.get());
+    geode->addDrawable(geom.get());
+    return geode;
+}
+} // namespace
+
+void testProxySanitizesDegenerateTriangles()
+{
+    std::cout << "[proxy] exact-degenerate triangles never reach proxy output" << std::endl;
+
+    // 身份保持路径（目标面数大于源面数）：物化后直接接受，正是旧实现把源里
+    // 的重复索引/零面积面原样带进远景代理的路径。
+    {
+        osg::ref_ptr<osg::Geode> geode = degenerateFixture();
+        SourceModel m;
+        check(m.build(geode.get()), "degenerate fixture builds");
+        std::vector<std::uint32_t> items;
+        for (std::size_t i = 0; i < m.prims.size(); ++i) { items.push_back(static_cast<std::uint32_t>(i)); }
+
+        ProductionProfile profile;
+        profile.budget.targetTrianglesPerTile = 1000;
+        profile.budget.maxTrianglesPerTile = 2000;
+        ProxyMeshBuilder builder(m, profile, m.prims);
+        const ProxyResult r = builder.build(items, 1000, true);
+        check(r.node.valid() && r.failure.empty(), "identity proxy builds",
+              r.failure);
+        check(r.triangles == 5, "5 valid triangles kept, 2 exact-degenerate removed",
+              std::to_string(r.triangles));
+        if (r.node.valid())
+        {
+            ExactDegenerateScan scan;
+            r.node->accept(scan);
+            check(scan.triangles == 5, "proxy node carries only valid triangles",
+                  std::to_string(scan.triangles));
+            check(scan.degenerate == 0, "no exact-degenerate triangle survives in the proxy",
+                  std::to_string(scan.degenerate));
+        }
+    }
+
+    // 全部是退化面的源集合必须显式失败：不能发布 0 面远景瓦片（A-27 同类）。
+    {
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName("all_degenerate");
+        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0, 0, 0));
+        pos->push_back(osg::Vec3(10, 0, 0));
+        pos->push_back(osg::Vec3(20, 0, 0));
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);  // 共线
+        idx->push_back(0); idx->push_back(0); idx->push_back(1);  // 重复
+        geom->setVertexArray(pos.get());
+        geom->addPrimitiveSet(idx.get());
+        geode->addDrawable(geom.get());
+
+        SourceModel m;
+        check(m.build(geode.get()), "degenerate-only fixture builds");
+        std::vector<std::uint32_t> items;
+        for (std::size_t i = 0; i < m.prims.size(); ++i) { items.push_back(static_cast<std::uint32_t>(i)); }
+        ProductionProfile profile;
+        ProxyMeshBuilder builder(m, profile, m.prims);
+        const ProxyResult r = builder.build(items, 1000, true);
+        check(!r.node.valid() && !r.failure.empty(),
+              "degenerate-only source fails instead of publishing an empty proxy",
+              r.failure);
+    }
+}
+
+void testProxyNormalsRecomputed()
+{
+    std::cout << "[proxy] simplified normals are rebuilt from final triangles" << std::endl;
+
+    // 40x40 网格 + 正确的源法线（+Z）：简化后代理必须仍给出与三角面一致的
+    // 法线。真实资产里简化会重组三角形、源法线随之错位（远景黑面/阴影）。
+    const int N = 40;
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    geode->setName("normal_grid");
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+    osg::ref_ptr<osg::Vec3Array> nrm = new osg::Vec3Array;
+    osg::ref_ptr<osg::DrawElementsUInt> idx =
+        new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+    auto v = [N](int x, int y) { return static_cast<unsigned>(y * N + x); };
+    for (int y = 0; y < N; ++y)
+        for (int x = 0; x < N; ++x)
+        {
+            pos->push_back(osg::Vec3(static_cast<float>(x), static_cast<float>(y), 0.0f));
+            nrm->push_back(osg::Vec3(0.0f, 0.0f, 1.0f));
+        }
+    for (int y = 0; y + 1 < N; ++y)
+        for (int x = 0; x + 1 < N; ++x)
+        {
+            idx->push_back(v(x, y)); idx->push_back(v(x + 1, y)); idx->push_back(v(x + 1, y + 1));
+            idx->push_back(v(x, y)); idx->push_back(v(x + 1, y + 1)); idx->push_back(v(x, y + 1));
+        }
+    geom->setVertexArray(pos.get());
+    geom->setNormalArray(nrm.get(), osg::Array::BIND_PER_VERTEX);
+    geom->addPrimitiveSet(idx.get());
+    geode->addDrawable(geom.get());
+
+    SourceModel m;
+    check(m.build(geode.get()), "normal-grid fixture builds");
+    std::vector<std::uint32_t> items;
+    for (std::size_t i = 0; i < m.prims.size(); ++i) { items.push_back(static_cast<std::uint32_t>(i)); }
+
+    ProductionProfile profile;
+    profile.budget.targetTrianglesPerTile = 200;
+    profile.budget.maxTrianglesPerTile = 400;
+    ProxyMeshBuilder builder(m, profile, m.prims);
+    const ProxyResult r = builder.build(items, 200, false);
+    check(r.node.valid() && r.failure.empty(), "simplified proxy builds", r.failure);
+    check(r.triangles <= 200, "proxy is simplified", std::to_string(r.triangles));
+    if (!r.node.valid()) { return; }
+
+    struct Scan : public osg::NodeVisitor
+    {
+        unsigned tris = 0, zero = 0, back = 0, zeroNormals = 0;
+        double dotSum = 0.0;
+        Scan() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
+        void apply(osg::Geometry& g) override
+        {
+            const osg::Vec3Array* p = dynamic_cast<const osg::Vec3Array*>(g.getVertexArray());
+            const osg::Vec3Array* n = dynamic_cast<const osg::Vec3Array*>(g.getNormalArray());
+            if (!p || !n) { return; }
+            for (const osg::Vec3& v : *n) { if (v.length2() <= 0.0f) { ++zeroNormals; } }
+            for (unsigned ps = 0; ps < g.getNumPrimitiveSets(); ++ps)
+            {
+                const osg::PrimitiveSet* set = g.getPrimitiveSet(ps);
+                if (!set || set->getMode() != osg::PrimitiveSet::TRIANGLES) { continue; }
+                std::vector<unsigned> id;
+                if (const auto* du = dynamic_cast<const osg::DrawElementsUInt*>(set))
+                { id.assign(du->begin(), du->end()); }
+                else if (const auto* dus = dynamic_cast<const osg::DrawElementsUShort*>(set))
+                { id.assign(dus->begin(), dus->end()); }
+                else { continue; }
+                for (std::size_t i = 0; i + 2 < id.size(); i += 3)
+                {
+                    const unsigned a = id[i], b = id[i + 1], c = id[i + 2];
+                    if (a >= p->size() || b >= p->size() || c >= p->size()) { continue; }
+                    const osg::Vec3& pa = (*p)[a];
+                    const osg::Vec3& pb = (*p)[b];
+                    const osg::Vec3& pc = (*p)[c];
+                    osg::Vec3 face = (pb - pa) ^ (pc - pa);
+                    if (face.length() <= 0.0f) { continue; }
+                    face.normalize();
+                    osg::Vec3 nv = (*n)[a] + (*n)[b] + (*n)[c];
+                    if (nv.length() <= 0.0f) { ++zero; ++tris; continue; }
+                    nv.normalize();
+                    ++tris;
+                    const double d = nv * face;
+                    dotSum += d;
+                    if (d < 0.0) { ++back; }
+                }
+            }
+        }
+    } scan;
+    r.node->accept(scan);
+    check(scan.tris > 0, "proxy carries triangles with normals", std::to_string(scan.tris));
+    check(scan.zero == 0, "no zero-length normal after rebuild", std::to_string(scan.zero));
+    check(scan.zeroNormals == 0, "every normal element is unit length (incl. unused)",
+          std::to_string(scan.zeroNormals));
+    check(scan.back == 0, "no triangle normal points away from its face", std::to_string(scan.back));
+    check(scan.tris > 0 && scan.dotSum / scan.tris > 0.9,
+          "rebuilt normals align with the simplified faces",
+          scan.tris ? std::to_string(scan.dotSum / scan.tris) : "no triangles");
 }
 
 void testPrimitiveBudgetGate()
@@ -4226,6 +4743,11 @@ int main(int argc, char** argv)
     run("manifest", &testFeatureManifest);
     run("batchid", &testBatchIdVisitorPreservesAttrib0);
     run("simplifier", &testSimplifierMultiplePrimitiveSets);
+    run("triSplitMetrics", &testTriangleSplitMetrics);
+    run("simplifierDegenerate", &testSimplifierDegenerateFilter);
+    run("simplifierRemap", &testSimplifierRemapOrder);
+    run("proxySanitize", &testProxySanitizesDegenerateTriangles);
+    run("proxyNormals", &testProxyNormalsRecomputed);
     run("proxyAggregate", &testProxyAggregateCoversSourceScope);
     run("proxyAttempts", &testProxyAttemptsIsEffective);
     run("proxyTexture", &testProxyTextureBudget);

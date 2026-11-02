@@ -1528,3 +1528,185 @@ node r5_20261028/run_unicode_input.js D:/BaiduNetdiskDownload/20240529卢沟桥�
 - 与修复前对比：tileset.json 哈希相同；930 个 b3dm 中 289 个字节变化（图集重排），
   其中 6 个 primitive/material 数下降（t133 7→5 等），但 6 个的**三角形/顶点数完全一致**；
   其余为图集页内容/页名变化。→ 语义不变，字节变化已分类。
+
+## 2026-10-29（第八轮）：定层模型三角网退化/混乱修复验证
+
+### 1. 二进制与源码
+
+- `Release/model23dtiles.exe`（本轮重链接）、`Release/test_production.exe`（501/0）。
+- 改动：`include/utils/Simplifier.h`、`src/utils/Simplifier.cpp`、
+  `src/3dtiles/production/ProxyMeshBuilder.cpp`、
+  `src/3dtiles/production/SpatialPartitioner.cpp`、`tests/production/main.cpp`。
+- 诊断开关：`WB_PROXY_GEOM_DEBUG=1`（默认关闭，不进入生产热路径）。
+
+### 2. 单元测试（普通构建）
+
+`passed=523 failed=0`（`test_full_normals6.log`）。本轮新增：
+- `simplifierDegenerate`（4）：精确退化删除、尾部裁剪、薄非零面保留、干净输入无操作。
+- `simplifierRemap`（3）：新下标按旧下标升序、未引用顶点不映射。
+- `proxySanitize`（7）：身份代理只保留 5 个合法面（含极薄面）；全退化源集合显式失败。
+- `triSplitMetrics`（6）：切分单元 triCount/局部编号/AABB 自洽（A-83）。
+- `proxyNormals`（8）：简化后的代理法线必须与最终三角形对齐、无零长/背向。
+- `instanceBudget` 增补 3 条：导出的 tileset 必须含 i3dm、含无内容分支、
+  且该分支 `geometricError > 0`（A-85）；再增补 10 条：特征表 `BATCH_ID=0..n-1`、
+  批量表 `classIds` 全覆盖、每实例一个 `GeodeName`、`parentId==自身`、
+  原型 glTF 不含共享 `_BATCHID`（A-86）。
+
+### 3. ASan（定向）
+
+`test_production_asan.exe`（`/fsanitize=address /Z7`）：
+`simplifierDegenerate` 4/0、`simplifierRemap` 3/0、`proxySanitize` 7/0、
+`budgetDegrade` 11/0；日志无 `AddressSanitizer` 报告。全量 ASan 未重跑，
+A-53 保持 OPEN（原始并发触发仍未复现）。ASan 构建早于 A-85 的管道 GE 归一化，
+该修复由普通构建的 3 条 tileset 断言覆盖。
+
+### 4. wuhu（`input_wuhu.fbx`）
+
+- 输出 `r8_20261029/wuhu_final`：60 content、5 聚合代理、errors=0、
+  featuresMissing=0；validator **0 error / 60 warn**（`validator_wuhu_final`）。
+- 几何（`geom_split`）：
+  | 角色 | 瓦片 | 三角形 | 零面积 | 重复 | 非流形边 | 重复面 |
+  |---|---|---|---|---|---|---|
+  | 叶（修前=修后） | 33 | 148,730 | 312 | 70 | 0 | 0 |
+  | 代理（修前） | 27 | 450,631 | 4,264 | 163 | 2,840 | 464 |
+  | 代理（修后） | 27 | 448,995 | **0** | **0** | 1,081 | 235 |
+- 源生退化：源 FBX 70 重复 / 394 局部零面积（世界 344），叶输出 70/312，如实保留。
+- 确定性：同输入两次运行 174/175 文件逐字节相同，唯一差异是
+  `conversion-report.json` 的计时字段。
+- 字节影响：修后 vs 仅 sanitize（未修 remap）仅 5 个聚合代理瓦片变化；
+  33 个叶 + 22 个简单代理逐字节相同。
+
+### 5. 站厅（`input_hall.fbx`）
+
+- `r8_20261029/hall_final`：370 content、34 聚合候选、errors=0、
+  featuresMissing=0；validator **0 error / 364 warn / 4 info**（`validator_hall_final`）。
+- 代理零面积 4,922→**0**、重复 448→**0**、非流形边 69,439→53,976；
+  叶 459/450（源生）不变；22 个 primitive/material 超限代理按既有策略降级（与 R6 相同）。
+- 代理三角形 905,103→1,082,058（+19.6%，均 ≤3.3 万/瓦片，预算 8 万）；
+  最大内容 2.82 MB（上限 8 MiB）。
+
+### 6. 卢沟桥（`20240529卢沟桥分洪枢纽.fbx`，全量）
+
+- `r8_20261029/lugouqiao_final`：1059 tiles、1054 content、errors=0、
+  featuresMissing=0；validator **0 error / 1,049 warn / 5 info**
+  （`validator_lugouqiao_final`）。
+- 代理零面积 18,677→**0**、重复 20→**0**、非流形边 586,582→148,064（−75%）、
+  重复面 211,236→81,655（−61%）；叶 8/77 不变。
+- 降级代理 **1→3**（tile 8/261/262，primitives/materials > 24）：
+  修复后简化结果不同导致聚合候选不同；策略仍是失败关闭 + 降级，**预算未放宽**。
+- 叶瓦片 176/592 字节变化（A-83 切分边界变化），叶三角形合计 3,601,338 不变。
+- 耗时/内存：total 993.9 s、峰值 10.46 GB、输出 948.7 MiB
+  （R6：1,050.2 s / 10.70 GB / 882.4 MiB；与其它资产并发运行，墙钟不可跨会话比较）。
+
+### 7. 视觉（wuhu，CesiumJS 1.119，内置浏览器）
+
+- `runs/r8_wuhu_sanitize_axis`（修复前）vs `runs/r8_wuhu_final_axis`（修复后），
+  `axis-sweep` 12 帧：+Y 侧视修复前为互相穿插的三角碎片，修复后为连贯地面轮廓
+  + 建筑立面；+Z 俯视两者与源平面一致，纹理正常（KTX2 解码）。
+- `far-to-near` 两侧各 11 帧；≥21.7R 帧 `sil=0` 是相机高度为负（椭球面下）导致
+  Earth 遮挡，属伪影，不记作几何洞。
+- `lod-threshold` 帧名含 geometricError，修复改变聚合代理 GE（t2 3,402→386 等），
+  该路径 A/B 不可比，不作为判据。
+- 完整 10 路径/226 帧视觉验收未重跑；上述为定向帧证据。
+
+### 8. 未闭合
+
+- 卢沟桥降级 1→3 已经用户裁定**可接受**（策略不变）。
+- 近退化面（薄非零）保留策略：wuhu 6、卢沟桥 3,242（修前 2,819）、jianzhu 叶 36。
+- A-53 OPEN、Debug BLOCKED-DEBUG、`textures/` 历史缺失 OPEN、去纹理策略禁止采用。
+
+## 2026-10-29（第八轮增补）：六资产回归与构件完整性
+
+### 9. 扩展资产回归（naruto / longxiang / jianzhu+tietu）
+
+| 资产 | 内容瓦片 | 代理零面积/重复 | 叶零面积/重复 | validator | 备注 |
+|---|---|---|---|---|---|
+| naruto（29 MB） | 1 | 无内节点代理 | 0/0 | 0 error / 1 warn | 单叶瓦片，3 features |
+| longxiang（66 MB） | 127 | **0/0** | 12/1 | 0 error / 121 warn | 6 i3dm / 10 实例 |
+| wuhu（132 MB） | 60 | **0/0** | 312/70 | 0 error / 60 warn | 5 i3dm / 19 实例 |
+| 站厅（221 MB） | 370 | **0/0** | 450/459 | 0 error / 364 warn / 4 info | 35 i3dm / 72 实例 |
+| 卢沟桥（335 MB） | 1,054 | **0/0** | 77/8 | 0 error / 1,049 warn / 5 info | 126 i3dm / 1,787 实例 |
+| jianzhu+tietu（433 MB） | 1,089 | **0/0**（修前 27,453/311） | 30,243/2,682 | 0 error / 1,086 warn / 3 info | 544 代理瓦片 |
+
+- jianzhu 修复后代理三角形 9.08M→11.36M，零面积/重复清零；非流形边
+  2.01M→2.68M、重复面 1.11M→1.60M，按三角形归一化 +7%/+15%（正确几何保留了
+  更多真实共面构件）。叶三角形 12,829,475 = 源模型三角形总数，未丢面。
+- 全部资产 `featuresMissingFromLeaves=0`、`errors=0`。
+- wuhu 修复前/后内容文件逐字节比对：173/175 相同，仅 `tileset.json`（分支 GE）
+  与 `conversion-report.json`（计时）不同。
+
+### 10. 构件完整性审计（`component_audit.js`）
+
+| 资产 | 源 feature | 叶覆盖 | 代理覆盖 | 实例 feature | i3dm 文件/实例 | 降级代理 | 问题 |
+|---|---|---|---|---|---|---|---|
+| naruto | 3 | 3 | 0（单瓦片即根） | 0 | 0/0 | 0 | 0 |
+| longxiang | 145 | 135 | 145 | 10 | 6/10 | 0 | 0 |
+| wuhu | 87 | 68 | 87 | 19 | 5/19 | 0 | 0 |
+| 站厅 | 469 | 397 | 469 | 72 | 35/72 | 22 | 0 |
+| 卢沟桥 | 2,729 | 942 | 2,729 | 1,787 | 126/1,787 | 3 | 0 |
+| jianzhu+tietu | 48 | 48 | 48 | 0 | 0/0 | 0 | 0 |
+
+- 对账项全部为 0：manifest 出现瓦片缺失、batch id 越界、叶 GeodeName 不符、
+  聚合代理 source id 不存在、feature 无叶/实例覆盖。除单瓦片 naruto 外，
+  每个 feature 至少出现在一个内节点代理或聚合代理 sources 中（代理覆盖=feature 数）。
+- 降级代理（站厅 22、卢沟桥 3）无自身内容，但后代叶覆盖全部源 feature；
+  属 LOD 降级，不是永久构件丢失。
+- **A-85（FIXED）**：i3dm 分组节点（无内容分支）此前 GE=0，Cesium
+  `canTraverse` 恒假 → 实例子树从不加载（视觉 54+12 帧 ready 全 false）。
+  修复：无内容分支 GE=0 时继承父级 GE；selfValidate 加闸；单测 3 条。
+  修复后 wuhu 5/5、站厅 35/35、longxiang 6/6、卢沟桥 78/78（视野内）
+  i3dm `ready=true`；wuhu 侧视剪影 +41%、正视 +37%、俯视 +1.5%。
+
+### 11. 增补后的未闭合
+
+- 完整 10 路径/226 帧视觉未重跑；本轮为 axis-sweep + i3dm 可达性定向帧。
+- 全量 ASan 未重跑；A-53 保持 OPEN。
+
+### 12. i3dm 属性读取修复（A-86）
+
+- 修复前：实例共享原型 Geometry，`_BATCHID` 被最后一个实例覆盖；批量表
+  `classIds=[-1,-1,n-1]`、`parentIds=-1`。Cesium 1.119 中 `getPropertyIds()`
+  抛 `TypeError: Cannot read properties of undefined (reading 'instances')`。
+- 修复后：i3dm 批量表按实例顺序编号、父 id 自引用；实例 Geode 写入源属性；
+  不再写共享 `_BATCHID`。
+- CesiumJS 1.119 实测（longxiang_final，`i3dm_property_probe.json`）：
+  6/6 i3dm `ready=true`；i122/i123 各 3 个实例，逐个
+  `getPropertyIds=["GeodeName","MaxHandle"]`，名称分别为
+  `zt2hq_030/057/059`、`DTZTZS_02/06/07`，无异常。
+- 字节：仅 i3dm 变化；wuhu 55 个 b3dm、longxiang 121 个、站厅 335 个逐字节不变。
+  validator：wuhu 0/60、longxiang 0/121、站厅 0/364、卢沟桥 0/1,049，均 0 error。
+
+### 13. 不同观察距离外观差异（A-87）
+
+- 同一相机/不同距离出现不同外观属于 REPLACE LOD：远景代理（聚合 cell 抽稀
+  feature + meshopt 简化），近景叶（原始几何）；切叶距离由代理 `geometricError`
+  决定。
+- jianzhu：375/544 代理为聚合代理；代理 GE 中位 11.5 m，336/544 个 >6.4 m、
+  175 个 >25 m、70 个 >100 m；identity 代理中位只保留叶三角形的 6%
+  （109k→12k）。初始简化误差上限为瓦片对角线 1%，大瓦片可达数十米。
+- 其他资产同机制：卢沟桥 71/462 个 >6.4 m（37 个 >100 m）、站厅 11/156、
+  longxiang 7/60、wuhu 27/27（模型尺度 116 km）；聚合抽样保留率
+  wuhu 95%、jianzhu 82.7%、longxiang 45.7%。
+- 判定：不是数据丢失或几何损坏（叶覆盖全部 feature、validator 0 error），
+  是 HLOD 粒度/误差上限的设计权衡；收紧误差或细化 cell 会增加代理三角形与
+  产物大小，需产品裁定。统计见 `lod_analysis.json`。
+
+### 14. 本轮新增未闭合
+
+- A-87 是否调整代理误差上限/聚合粒度（影响远景一致性与产物体积）。
+- 完整视觉与全量 ASan 未重跑。
+
+### 15. 远景代理法线重建（A-88）
+
+- 修复前法线扫描（jianzhu）：t0/t1/t805/t804 代理平均 dot 0.03–0.33，
+  背向三角形 31–48%，弱法线 51–71%；叶 0.94–1.0。
+- 修复：代理几何/预算决策完成后，用 120° 折痕角重建法线（硬边拆点、平滑面合并），
+  不改变三角形/聚合候选；叶与 i3dm 不调用。
+- 修复后：t0/t1/t805/t804 平均 dot 0.990–0.995、背向 **0**、弱法线 **0**；
+  wuhu 0.983–0.999、背向 0–3；三角形数与修前逐瓦片完全一致（jianzhu 1089/1089）。
+- 预算：最大内容字节 jianzhu 3.79 MB、lugouqiao 3.65 MB、hall 2.82 MB、
+  longxiang 2.54 MB、wuhu 2.42 MB（上限 8 MiB）；产物 jianzhu +19.4%、
+  lugouqiao +6.6%、hall +3.8%、longxiang +2.0%、wuhu +0.5%；primitive/material/三角形预算不变。
+- 单测 `proxyNormals` 8/0，全量 **523/0**；五资产 validator 均 0 error。
+- 说明：法线修复消除黑面/阴影；**几何轮廓的远近差异（A-87）仍存在**，
+  这是代理抽稀/简化本身的设计权衡，需另行裁定是否收紧。
