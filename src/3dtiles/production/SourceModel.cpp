@@ -132,11 +132,34 @@ std::string valueObjectToString(const osg::ValueObject* vo, std::string& typeNam
 struct MeshSignature {
     std::size_t vertCount = 0;
     std::size_t triCount = 0;
+    std::size_t uvCount = 0;
+    std::size_t attribCount = 0;
     std::size_t hash = 0;
     bool operator==(const MeshSignature& o) const {
-        return vertCount == o.vertCount && triCount == o.triCount && hash == o.hash;
+        return vertCount == o.vertCount && triCount == o.triCount
+            && uvCount == o.uvCount && attribCount == o.attribCount && hash == o.hash;
     }
 };
+
+// OSG 使用行向量约定：p' = p * M。切线 t' = t * A，法线必须满足
+// n' · t' = 0，因此 n' = n * (A^-1)^T（这里 out 的上 3x3 就是 A^-T）。
+// 直接拿 A 变换法线只在旋转/均匀缩放下碰巧成立，非均匀缩放/剪切会错。
+// 返回 false 表示矩阵不可逆或非有限：调用方按既有零法线修复机制处理，
+// 绝不用近似逆矩阵。
+bool buildNormalTransform(const osg::Matrixd& world, osg::Matrixd& out, double& det)
+{
+    const double a00 = world(0, 0), a01 = world(0, 1), a02 = world(0, 2);
+    const double a10 = world(1, 0), a11 = world(1, 1), a12 = world(1, 2);
+    const double a20 = world(2, 0), a21 = world(2, 1), a22 = world(2, 2);
+    det = a00 * (a11 * a22 - a12 * a21)
+        - a01 * (a10 * a22 - a12 * a20)
+        + a02 * (a10 * a21 - a11 * a20);
+    if (!std::isfinite(det)) { return false; }
+    osg::Matrixd inv;
+    if (!inv.invert(world)) { return false; }
+    out.transpose(inv);
+    return true;
+}
 
 MeshSignature computeSignature(const osg::Geode& geode)
 {
@@ -149,10 +172,14 @@ MeshSignature computeSignature(const osg::Geode& geode)
         const osg::Vec3Array* pos = dynamic_cast<const osg::Vec3Array*>(g->getVertexArray());
         if (!pos) { continue; }
         sig.vertCount += pos->size();
+        sig.uvCount += g->getNumTexCoordArrays();
+        sig.attribCount += g->getNumVertexAttribArrays();
         for (unsigned p = 0; p < g->getNumPrimitiveSets(); ++p)
         {
             sig.triCount += g->getPrimitiveSet(p)->getNumIndices() / 3;
         }
+        seed ^= std::hash<std::size_t>()(g->getNumTexCoordArrays()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        seed ^= std::hash<std::size_t>()(g->getNumVertexAttribArrays()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         const std::size_t step = pos->size() / 32 + 1;
         for (std::size_t k = 0; k < pos->size(); k += step)
         {
@@ -426,29 +453,93 @@ bool SourceModel::build(osg::Node* root)
                 continue;
             }
 
-            // 连续属性
+            // 连续属性。法线必须用 A^-T 变换（见 buildNormalTransform）：
+            // 非均匀缩放/剪切下直接用 A 会让法线偏离真实面方向。
+            double worldDet = 0.0;
+            osg::Matrixd normalMat;
+            const bool normalTransformOk =
+                buildNormalTransform(f.worldMatrix, normalMat, worldDet);
+            const bool mirrored = std::isfinite(worldDet) && worldDet < 0.0;
+
             const osg::Vec3Array* srcNrm = dynamic_cast<const osg::Vec3Array*>(geom->getNormalArray());
-            if (srcNrm && srcNrm->size() == srcPos3->size())
+            if (srcNrm && !srcNrm->empty())
             {
-                mesh.normals = new osg::Vec3Array(*srcNrm);
-                // 法线用旋转部分变换（忽略平移）。归一化后仍要查有限性：奇异矩阵
-                // （det=0）或超大幅度矩阵会把法线推到 inf/NaN，再降成 float 写进
-                // NORMAL accessor —— 那是 validator 判 ERROR 的输入。
-                // 非有限条目置零，交给 A-43 的零法线重建（按入射面/图元均值），
-                // 并逐条计数，不静默保留 NaN。
-                for (osg::Vec3& n : *mesh.normals)
+                const osg::Geometry::AttributeBinding nb = geom->getNormalBinding();
+                const bool supported =
+                    (nb == osg::Geometry::BIND_PER_VERTEX && srcNrm->size() == srcPos3->size())
+                    || (nb == osg::Geometry::BIND_PER_PRIMITIVE_SET
+                        && srcNrm->size() >= geom->getNumPrimitiveSets())
+                    || (nb == osg::Geometry::BIND_OVERALL && srcNrm->size() >= 1);
+                if (!supported)
                 {
-                    osg::Vec3d r = osg::Matrixd::transform3x3(osg::Vec3d(n), f.worldMatrix);
-                    r.normalize();
-                    const osg::Vec3 fn(static_cast<float>(r.x()), static_cast<float>(r.y()),
-                                       static_cast<float>(r.z()));
-                    if (!std::isfinite(fn.x()) || !std::isfinite(fn.y()) || !std::isfinite(fn.z()))
+                    OSG_WARN << "[SourceModel] node '" << obj.name << "' drawable " << d
+                             << ": unsupported normal binding/array size (binding=" << int(nb)
+                             << " normals=" << srcNrm->size() << " positions=" << srcPos3->size()
+                             << "); normals dropped and left to normal repair." << std::endl;
+                }
+                else
+                {
+                    mesh.normals = new osg::Vec3Array(srcPos3->size());
+                    auto transformNormal = [&](const osg::Vec3& n, osg::Vec3& out) {
+                        if (!normalTransformOk) { out.set(0.0f, 0.0f, 0.0f); ++nonFiniteNormalsZeroed; return; }
+                        osg::Vec3d r = osg::Matrixd::transform3x3(osg::Vec3d(n), normalMat);
+                        r.normalize();
+                        const osg::Vec3 fn(static_cast<float>(r.x()), static_cast<float>(r.y()),
+                                           static_cast<float>(r.z()));
+                        if (!std::isfinite(fn.x()) || !std::isfinite(fn.y()) || !std::isfinite(fn.z()))
+                        {
+                            ++nonFiniteNormalsZeroed;
+                            out.set(0.0f, 0.0f, 0.0f);
+                            return;
+                        }
+                        out = fn;
+                    };
+                    if (nb == osg::Geometry::BIND_PER_VERTEX)
                     {
-                        ++nonFiniteNormalsZeroed;
-                        n.set(0.0f, 0.0f, 0.0f);
-                        continue;
+                        for (std::size_t i = 0; i < srcPos3->size(); ++i)
+                        {
+                            transformNormal((*srcNrm)[i], (*mesh.normals)[i]);
+                        }
                     }
-                    n = fn;
+                    else if (nb == osg::Geometry::BIND_OVERALL)
+                    {
+                        osg::Vec3 n;
+                        transformNormal((*srcNrm)[0], n);
+                        for (std::size_t i = 0; i < mesh.normals->size(); ++i) { (*mesh.normals)[i] = n; }
+                    }
+                    else
+                    {
+                        // BIND_PER_PRIMITIVE_SET：每个 primitiveSet 共用一个法线，
+                        // 展开成逐顶点数组供 glTF/材质化消费；索引仍保持三角形。
+                        // 若同一个顶点被多个 primitiveSet 以不同法线引用，这种绑定
+                        // 本身无法无损转成逐顶点数组：按最后一次赋值处理并显式告警。
+                        std::vector<char> assigned(mesh.normals->size(), 0);
+                        bool conflicting = false;
+                        for (unsigned p = 0; p < geom->getNumPrimitiveSets(); ++p)
+                        {
+                            if (p >= srcNrm->size()) { continue; }
+                            std::vector<unsigned> tris;
+                            expandPrimitiveSet(geom->getPrimitiveSet(p), tris);
+                            osg::Vec3 n;
+                            transformNormal((*srcNrm)[p], n);
+                            for (unsigned v : tris)
+                            {
+                                if (v >= mesh.normals->size()) { continue; }
+                                if (assigned[v]
+                                    && ((*mesh.normals)[v] - n).length2() > 1e-12f)
+                                { conflicting = true; }
+                                (*mesh.normals)[v] = n;
+                                assigned[v] = 1;
+                            }
+                        }
+                        if (conflicting)
+                        {
+                            OSG_WARN << "[SourceModel] node '" << obj.name << "' drawable " << d
+                                     << ": BIND_PER_PRIMITIVE_SET shares vertices with conflicting "
+                                        "normals; expanded per-vertex array uses the last set's normal."
+                                     << std::endl;
+                        }
+                    }
                 }
             }
             const osg::Vec2Array* srcUV = dynamic_cast<const osg::Vec2Array*>(geom->getTexCoordArray(0));
@@ -514,9 +605,12 @@ bool SourceModel::build(osg::Node* root)
                     }
                     if (inRange)
                     {
+                        // 负行列式/镜像变换会翻转绕序：位置已烘焙但索引未变，
+                        // 不交换后两个索引会让原本的正面变成背面（Cesium 默认
+                        // 背面剔除）。法线已按 A^-T 同步翻转，二者保持一致。
                         kept.push_back(sps.tris[i]);
-                        kept.push_back(sps.tris[i + 1]);
-                        kept.push_back(sps.tris[i + 2]);
+                        kept.push_back(sps.tris[i + (mirrored ? 2 : 1)]);
+                        kept.push_back(sps.tris[i + (mirrored ? 1 : 2)]);
                         continue;
                     }
                     ++viol.droppedTriangles;

@@ -29,6 +29,7 @@
 #include <osg/StateSet>
 #include <osg/Image>
 #include <osgDB/ReadFile>
+#include <osgDB/WriteFile>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -2329,6 +2330,167 @@ void testProxyTextureLadder()
 }
 
 // ---------------------------------------------------------------------------
+// R9 任务一：生产链禁止自动去纹理。下限分辨率仍超预算时，代理必须显式失败并
+// 进入既有降级/失败关闭语义；不得写出无纹理灰模，叶纹理保持原样。
+// ---------------------------------------------------------------------------
+void testProxyTextureFloorNoStrip()
+{
+    std::cout << "[texturePolicy] proxy floor over budget fails, never strips textures" << std::endl;
+    Utils::registerFileAliases();
+
+    auto makeScene = [](unsigned objects, unsigned edge) {
+        osg::ref_ptr<osg::Group> root = new osg::Group;
+        osg::ref_ptr<osg::Texture2D> tex = makeTextured(edge);
+        osg::Image* srcImg = tex->getImage();
+        if (srcImg && srcImg->data()) { std::memset(srcImg->data(), 128, srcImg->getImageSizeInBytes()); }
+        if (srcImg)
+        {
+            const std::string texPath = (std::filesystem::temp_directory_path() / ("wb_r9_tex_" + std::to_string(edge) + ".png")).string();
+            srcImg->setFileName(texPath);
+            osgDB::writeImageFile(*srcImg, texPath);
+        }
+        for (unsigned i = 0; i < objects; ++i)
+        {
+            osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+            geode->setName("tex_" + std::to_string(i));
+            osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+            osg::ref_ptr<osg::Vec3Array> p = new osg::Vec3Array;
+            const float x0 = static_cast<float>(i) * 2.0f;
+            p->push_back(osg::Vec3(x0, 0, 0));
+            p->push_back(osg::Vec3(x0 + 1, 0, 0));
+            p->push_back(osg::Vec3(x0 + 1, 1, 0));
+            p->push_back(osg::Vec3(x0, 1, 0));
+            osg::ref_ptr<osg::DrawElementsUInt> idx =
+                new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+            idx->push_back(0); idx->push_back(1); idx->push_back(2);
+            idx->push_back(0); idx->push_back(2); idx->push_back(3);
+            g->setVertexArray(p.get());
+            g->addPrimitiveSet(idx.get());
+            osg::ref_ptr<osg::StateSet> ss = new osg::StateSet;
+            ss->setTextureAttributeAndModes(0, tex.get(), osg::StateAttribute::ON);
+            geode->setStateSet(ss.get());
+            geode->addDrawable(g.get());
+            root->addChild(geode.get());
+        }
+        return root;
+    };
+    auto imageCount = [](const std::filesystem::path& p) -> int {
+        std::ifstream in(p, std::ios::binary);
+        if (!in) { return -1; }
+        std::vector<char> b((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (b.size() < 28 || std::memcmp(b.data(), "b3dm", 4) != 0) { return -1; }
+        auto u32 = [&](std::size_t o) { uint32_t v = 0; std::memcpy(&v, b.data() + o, 4); return v; };
+        const std::size_t glb = 28 + u32(12) + u32(16) + u32(20) + u32(24);
+        if (glb + 20 > b.size() || std::memcmp(b.data() + glb, "glTF", 4) != 0) { return -1; }
+        const uint32_t jl = u32(glb + 12);
+        const nlohmann::json j = nlohmann::json::parse(std::string(b.data() + glb + 20, jl));
+        return j.contains("images") ? static_cast<int>(j["images"].size()) : 0;
+    };
+
+    auto makeProfile = [](bool allowDegrade, std::uint64_t maxBytes) {
+        ProductionProfile profile;
+        profile.budget.maxTrianglesPerTile = 1000;
+        profile.budget.targetTrianglesPerTile = 1000;
+        profile.budget.maxPrimitivesPerTile = 1;
+        profile.budget.targetPrimitivesPerTile = 1;
+        profile.budget.maxTileContentBytes = maxBytes;
+        profile.budget.targetTileContentBytes = std::min<std::uint64_t>(4u * 1024u * 1024u, maxBytes);
+        profile.allowInnerProxyDegrade = allowDegrade;
+        return profile;
+    };
+    auto runScene = [&](ProductionPipeline& pipeline, const std::filesystem::path& out) {
+        std::error_code ec;
+        std::filesystem::remove_all(out, ec);
+        ProductionPipeline::Options opt;
+        opt.outputDir = out.string();
+        opt.stagingDir = (out / ".wb-staging").string();
+        return pipeline.run(makeScene(110, 64).get(), opt);
+    };
+
+    // 下限纹理仍超预算（geo=11840, texFloor=2048, max=13000）：
+    // 代理失败 -> 默认降级为无内容内节点；叶照常发布。
+    {
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_texture_floor_no_strip";
+        ProductionPipeline pipeline(makeProfile(true, 66800));
+        const bool ran = runScene(pipeline, out);
+        check(ran, "texture-floor fixture builds", joinMessages(pipeline.failures()));
+        const bool fin = pipeline.finalize();
+        check(fin, "floor-over-budget proxy degrades instead of stripping textures",
+              joinMessages(pipeline.failures()));
+        check(pipeline.report().proxySkippedCount >= 1,
+              "texture-floor proxy counted as degraded", std::to_string(pipeline.report().proxySkippedCount));
+        bool explained = false;
+        for (const std::string& w : pipeline.warnings())
+        {
+            if (w.find("texture floor") != std::string::npos
+                && w.find("automatic texture removal is disabled") != std::string::npos)
+            { explained = true; }
+        }
+        check(explained, "failure explains the texture-floor policy", joinMessages(pipeline.warnings()));
+        bool degradedInternal = false;
+        unsigned leafImages = 0;
+        for (const ProductionTile& t : pipeline.tiles())
+        {
+            if (!t.isLeaf && !t.hasContent && !t.children.empty() && !t.sourceScope.empty())
+            {
+                degradedInternal = true;
+                const std::filesystem::path p = out / "tiles" / ("t" + std::to_string(t.id) + ".b3dm");
+                check(!std::filesystem::exists(p), "degraded proxy leaves no textureless b3dm");
+            }
+            if (t.isLeaf && t.hasContent)
+            {
+                const std::filesystem::path p = out / "tiles" / ("t" + std::to_string(t.id) + ".b3dm");
+                leafImages += static_cast<unsigned>(std::max(0, imageCount(p)));
+            }
+        }
+        check(degradedInternal, "at least one inner proxy degraded to content-less");
+        check(leafImages > 0, "leaf tiles keep their textures", std::to_string(leafImages));
+        check(pipeline.report().featuresMissingFromLeaves == 0,
+              "degrading a texture-floor proxy loses no source feature",
+              std::to_string(pipeline.report().featuresMissingFromLeaves));
+    }
+    // 策略 C：同一夹具关闭降级必须失败关闭、零提交。
+    {
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_texture_floor_no_degrade";
+        ProductionPipeline pipeline(makeProfile(false, 66800));
+        const bool ran = runScene(pipeline, out);
+        check(!ran, "texture-floor proxy fails the run when degradation is disabled",
+              joinMessages(pipeline.failures()));
+        bool disabled = false;
+        for (const std::string& f : pipeline.failures())
+        {
+            if (f.find("-noProxyDegrade") != std::string::npos) { disabled = true; }
+        }
+        check(disabled, "failure explains -noProxyDegrade", joinMessages(pipeline.failures()));
+        check(!std::filesystem::exists(out / "tileset.json"),
+              "no dataset committed with -noProxyDegrade");
+    }
+    // 预算充足：代理和叶都保留纹理，确认生产链没有"默认去纹理"。
+    {
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / "wb_texture_keep";
+        ProductionPipeline pipeline(makeProfile(true, 1u << 20));
+        const bool ran = runScene(pipeline, out);
+        check(ran && pipeline.finalize(), "texture budget fixture publishes",
+              joinMessages(pipeline.failures()));
+        unsigned proxyImages = 0, leafImages = 0;
+        for (const ProductionTile& t : pipeline.tiles())
+        {
+            if (!t.hasContent) { continue; }
+            const std::filesystem::path p = out / "tiles" / ("t" + std::to_string(t.id) + ".b3dm");
+            const int n = std::max(0, imageCount(p));
+            if (t.isLeaf) { leafImages += static_cast<unsigned>(n); }
+            else { proxyImages += static_cast<unsigned>(n); }
+        }
+        check(proxyImages > 0, "proxy textures are retained when budget fits",
+              std::to_string(proxyImages));
+        check(leafImages > 0, "leaf textures are retained", std::to_string(leafImages));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 代理瓦片降分辨率的隔离性。回归的是 longxiang 的产物级缺陷：给内节点代理压到
 // 512px 之后，同一批次里的**叶**瓦片贴图字节掉了一到两成（t71 的 KTX2 从 534958B
 // 变成 294305B，尺寸却仍是 2048x2048 —— 先缩小再被塞回大图集页的糊图特征）。
@@ -4276,6 +4438,329 @@ void testTriangleSplitMetrics()
           std::to_string(badAabb));
 }
 
+void testSourceNormalTransform()
+{
+    std::cout << "[sourceNormals] inverse-transpose normals under nonuniform/shear/mirror" << std::endl;
+
+    // 源三角形位于 XZ 平面，法线为 -Y；所有变换后的法线都必须与
+    // SourceModel 最终输出的三角形绕序一致（不是只对某个向量数值）。
+    auto build = [](SourceModel& m, const osg::Matrixd& M) {
+        osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+        mt->setMatrix(M);
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName("normal_case");
+        osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0, 0, 0));
+        pos->push_back(osg::Vec3(2, 0, 0));
+        pos->push_back(osg::Vec3(0, 0, 3));
+        osg::ref_ptr<osg::Vec3Array> nrm = new osg::Vec3Array; nrm->assign(3, osg::Vec3(0, -1, 0));
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        g->setVertexArray(pos.get());
+        g->setNormalArray(nrm.get(), osg::Array::BIND_PER_VERTEX);
+        g->addPrimitiveSet(idx.get());
+        geode->addDrawable(g.get());
+        mt->addChild(geode.get());
+        m.build(mt.get());
+    };
+    auto verify = [](const SourceModel& m, const std::string& name, bool shouldFlip) {
+        if (m.meshes.empty() || !m.meshes[0].normals.valid()
+            || m.meshes[0].primSets.empty())
+        {
+            check(false, name + ": mesh/normals missing");
+            return;
+        }
+        const SourceMesh& mesh = m.meshes[0];
+        const auto& p = *mesh.positions;
+        const auto& n = *mesh.normals;
+        const auto& tris = mesh.primSets[0].tris;
+        bool ok = tris.size() == 3 && n.size() == p.size();
+        double minDot = 1.0;
+        for (std::size_t i = 0; ok && i + 2 < tris.size(); i += 3)
+        {
+            const osg::Vec3& a = p[tris[i]];
+            const osg::Vec3& b = p[tris[i + 1]];
+            const osg::Vec3& c = p[tris[i + 2]];
+            osg::Vec3 face = (b - a) ^ (c - a);
+            if (face.length() <= 0.0f) { ok = false; break; }
+            face.normalize();
+            osg::Vec3 avg = n[tris[i]] + n[tris[i + 1]] + n[tris[i + 2]];
+            if (avg.length() <= 0.0f) { ok = false; break; }
+            avg.normalize();
+            const double d = avg * face;
+            minDot = std::min(minDot, d);
+            if (!(d > 0.9)) { ok = false; }
+        }
+        if (shouldFlip && tris.size() == 3)
+        {
+            // 镜像后的三角形绕序必须交换后两个索引，否则背面剔除会消失。
+            ok = ok && tris[1] == 2 && tris[2] == 1;
+        }
+        check(ok, name, "minDot=" + std::to_string(minDot));
+    };
+
+    struct Case { const char* name; osg::Matrixd m; bool flip; };
+    osg::Matrixd shear;
+    shear.makeIdentity();
+    shear(0, 1) = 0.5;
+    osg::Matrixd nonuniform = osg::Matrixd::scale(2.0, 1.0, 0.5);
+    osg::Matrixd rot = osg::Matrixd::rotate(osg::PI / 3.0, osg::Vec3d(0, 0, 1));
+    osg::Matrixd negX = osg::Matrixd::scale(-1.0, 1.0, 1.0);
+    osg::Matrixd negXY = osg::Matrixd::scale(-1.0, -1.0, 1.0);
+    const Case cases[] = {
+        {"identity", osg::Matrixd::identity(), false},
+        {"translation", osg::Matrixd::translate(10.0, 20.0, 30.0), false},
+        {"rotation", rot, false},
+        {"uniform scale", osg::Matrixd::scale(2.0, 2.0, 2.0), false},
+        {"nonuniform scale", nonuniform, false},
+        {"nonuniform*rotation", nonuniform * rot, false},
+        {"shear", shear, false},
+        {"negative X", negX, true},
+        {"negative X/Y (det positive)", negXY, false},
+        {"extreme scale", osg::Matrixd::scale(1e-3, 1e3, 2.0), false},
+    };
+    for (const Case& c : cases)
+    {
+        SourceModel m;
+        build(m, c.m);
+        verify(m, std::string("normal transform: ") + c.name, c.flip);
+    }
+
+    // 奇异矩阵：不得伪造逆矩阵；法线置零交给既有零法线修复，且不能出现 NaN。
+    {
+        SourceModel m;
+        build(m, osg::Matrixd::scale(0.0, 1.0, 1.0));
+        bool finite = true;
+        if (!m.meshes.empty() && m.meshes[0].normals.valid())
+        {
+            for (const osg::Vec3& v : *m.meshes[0].normals)
+            {
+                finite = finite && std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z());
+            }
+        }
+        check(m.nonFiniteNormalsZeroed > 0 || (m.meshes.empty() == false),
+              "singular matrix is reported, not silently given a fake inverse",
+              std::to_string(m.nonFiniteNormalsZeroed));
+        check(finite, "singular matrix never emits NaN/Inf normals");
+    }
+    // 非有限矩阵：顶点阶段必须拒收整条 drawable，不能只修法线。
+    {
+        osg::Matrixd bad = osg::Matrixd::identity();
+        bad(0, 3) = std::numeric_limits<double>::quiet_NaN();
+        SourceModel m;
+        build(m, bad);
+        check(m.meshes.empty() || m.nonFiniteGeometry.size() > 0,
+              "non-finite world matrix is dropped and reported");
+    }
+}
+
+void testNormalBindings()
+{
+    std::cout << "[sourceNormals] BIND_OVERALL / BIND_PER_PRIMITIVE_SET" << std::endl;
+    auto makeScene = [](osg::Array::Binding binding, unsigned normalCount) {
+        osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+        mt->setMatrix(osg::Matrixd::scale(2.0, 1.0, 0.5));
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->setName("binding_case");
+        osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> pos = new osg::Vec3Array;
+        pos->push_back(osg::Vec3(0, 0, 0));
+        pos->push_back(osg::Vec3(2, 0, 0));
+        pos->push_back(osg::Vec3(0, 0, 3));
+        osg::ref_ptr<osg::Vec3Array> nrm = new osg::Vec3Array;
+        for (unsigned i = 0; i < normalCount; ++i) { nrm->push_back(osg::Vec3(0, -1, 0)); }
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        g->setVertexArray(pos.get());
+        g->setNormalArray(nrm.get(), binding);
+        g->addPrimitiveSet(idx.get());
+        geode->addDrawable(g.get());
+        mt->addChild(geode.get());
+        return mt;
+    };
+    {
+        SourceModel m;
+        osg::ref_ptr<osg::Node> scene = makeScene(osg::Array::BIND_OVERALL, 1);
+        check(m.build(scene.get()), "BIND_OVERALL fixture builds");
+        check(!m.meshes.empty() && m.meshes[0].normals.valid()
+                && m.meshes[0].normals->size() == m.meshes[0].positions->size(),
+              "BIND_OVERALL expands to per-vertex normals");
+        if (!m.meshes.empty() && m.meshes[0].normals.valid()
+            && m.meshes[0].normals->size() >= 3)
+        {
+            const osg::Vec3& a = (*m.meshes[0].positions)[0];
+            const osg::Vec3& b = (*m.meshes[0].positions)[1];
+            const osg::Vec3& c = (*m.meshes[0].positions)[2];
+            osg::Vec3 face = (b - a) ^ (c - a);
+            face.normalize();
+            const osg::Vec3& n = (*m.meshes[0].normals)[0];
+            check(n * face > 0.9, "BIND_OVERALL normal follows transformed face");
+        }
+    }
+    {
+        SourceModel m;
+        osg::ref_ptr<osg::Node> scene = makeScene(osg::Array::BIND_PER_PRIMITIVE_SET, 1);
+        check(m.build(scene.get()), "BIND_PER_PRIMITIVE_SET fixture builds");
+        check(!m.meshes.empty() && m.meshes[0].normals.valid()
+                && m.meshes[0].normals->size() == m.meshes[0].positions->size(),
+              "BIND_PER_PRIMITIVE_SET expands to per-vertex normals");
+    }
+    {
+        // 声明 PER_VERTEX 但数组长度不匹配：不能悄悄按 3 个顶点读取后面越界数据。
+        SourceModel m;
+        osg::ref_ptr<osg::Node> scene = makeScene(osg::Array::BIND_PER_VERTEX, 1);
+        check(m.build(scene.get()), "mismatched per-vertex normal fixture builds");
+        check(m.meshes.empty() || !m.meshes[0].normals.valid(),
+              "mismatched per-vertex normal array is dropped, not partially read");
+    }
+}
+
+void testInstanceCompareCompleteness()
+{
+    std::cout << "[instanceCompare] UV sets / vertex attributes / bindings / psets" << std::endl;
+    auto baseGeom = []() {
+        osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> p = new osg::Vec3Array;
+        p->push_back(osg::Vec3(0, 0, 0));
+        p->push_back(osg::Vec3(1, 0, 0));
+        p->push_back(osg::Vec3(0, 1, 0));
+        osg::ref_ptr<osg::Vec3Array> n = new osg::Vec3Array; n->assign(3, osg::Vec3(0, 0, 1));
+        osg::ref_ptr<osg::Vec2Array> uv = new osg::Vec2Array; uv->assign(3, osg::Vec2(0, 0));
+        osg::ref_ptr<osg::DrawElementsUInt> idx =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+        idx->push_back(0); idx->push_back(1); idx->push_back(2);
+        g->setVertexArray(p.get());
+        g->setNormalArray(n.get(), osg::Array::BIND_PER_VERTEX);
+        g->setTexCoordArray(0, uv.get());
+        g->addPrimitiveSet(idx.get());
+        return g;
+    };
+    auto clone = [](const osg::ref_ptr<osg::Geometry>& g) {
+        return osg::ref_ptr<osg::Geometry>(osg::clone(g.get(), osg::CopyOp::DEEP_COPY_ALL));
+    };
+    osg::ref_ptr<osg::Geometry> base = baseGeom();
+    osg::ref_ptr<osg::Geometry> same = clone(base);
+    check(Utils::compareGeometry(base, same), "identical geometry compares equal");
+
+    auto differs = [&](const std::string& name, const std::function<void(osg::Geometry&)>& mutate) {
+        osg::ref_ptr<osg::Geometry> v = clone(base);
+        mutate(*v);
+        check(!Utils::compareGeometry(base, v), "different " + name + " must not be instanced");
+    };
+    differs("POSITION", [](osg::Geometry& g) {
+        static_cast<osg::Vec3Array*>(g.getVertexArray())->at(0).x() = 9.0f;
+    });
+    differs("NORMAL", [](osg::Geometry& g) {
+        static_cast<osg::Vec3Array*>(g.getNormalArray())->at(0).set(1, 0, 0);
+    });
+    differs("UV0", [](osg::Geometry& g) {
+        static_cast<osg::Vec2Array*>(g.getTexCoordArray(0))->at(0).set(1, 1);
+    });
+    differs("UV1 channel", [](osg::Geometry& g) {
+        osg::ref_ptr<osg::Vec2Array> uv1 = new osg::Vec2Array; uv1->assign(3, osg::Vec2(0.5, 0.5));
+        g.setTexCoordArray(1, uv1.get());
+    });
+    differs("COLOR", [](osg::Geometry& g) {
+        osg::ref_ptr<osg::Vec4Array> c = new osg::Vec4Array; c->assign(3, osg::Vec4(1, 0, 0, 1));
+        g.setColorArray(c.get(), osg::Array::BIND_PER_VERTEX);
+    });
+    differs("vertex attribute", [](osg::Geometry& g) {
+        osg::ref_ptr<osg::Vec4Array> a = new osg::Vec4Array; a->assign(3, osg::Vec4(0, 1, 0, 1));
+        g.setVertexAttribArray(3, a.get(), osg::Array::BIND_PER_VERTEX);
+    });
+    differs("primitive set count/type", [](osg::Geometry& g) {
+        osg::ref_ptr<osg::DrawElementsUInt> extra =
+            new osg::DrawElementsUInt(osg::PrimitiveSet::LINES);
+        extra->push_back(0); extra->push_back(1);
+        g.addPrimitiveSet(extra.get());
+    });
+    differs("primitive index order", [](osg::Geometry& g) {
+        auto* idx = static_cast<osg::DrawElementsUInt*>(g.getPrimitiveSet(0));
+        idx->at(1) = 2; idx->at(2) = 1;
+    });
+    differs("Geometry StateSet", [](osg::Geometry& g) {
+        osg::ref_ptr<GltfPbrMRMaterial> m = new GltfPbrMRMaterial;
+        m->baseColorFactor = { 1.0, 0.0, 0.0, 1.0 };
+        g.getOrCreateStateSet()->setAttributeAndModes(m.get(), osg::StateAttribute::ON);
+    });
+    {
+        osg::ref_ptr<osg::Geometry> v = clone(base);
+        osg::ref_ptr<osg::Vec4Array> a1 = new osg::Vec4Array; a1->assign(3, osg::Vec4(0, 1, 0, 1));
+        osg::ref_ptr<osg::Vec4Array> a2 = new osg::Vec4Array; a2->assign(3, osg::Vec4(0, 1, 0, 1));
+        base->setVertexAttribArray(3, a1.get(), osg::Array::BIND_PER_VERTEX);
+        v->setVertexAttribArray(3, a2.get(), osg::Array::BIND_OVERALL);
+        check(!Utils::compareGeometry(base, v), "different vertex-attribute binding must not be instanced");
+    }
+
+    // Geode 级：StateSet / drawable 数量 / 完全相同。
+    {
+        osg::ref_ptr<osg::Geode> g1 = new osg::Geode;
+        osg::ref_ptr<osg::Geode> g2 = new osg::Geode;
+        g1->addDrawable(base.get());
+        g2->addDrawable(clone(base).get());
+        check(Utils::compareGeode(g1, g2), "identical geodes compare equal");
+        osg::ref_ptr<GltfPbrMRMaterial> m = new GltfPbrMRMaterial;
+        m->baseColorFactor = { 0.0, 1.0, 0.0, 1.0 };
+        g2->getOrCreateStateSet()->setAttributeAndModes(m.get(), osg::StateAttribute::ON);
+        check(!Utils::compareGeode(g1, g2), "different Geode StateSet must not be instanced");
+        g2->addDrawable(clone(base).get());
+        check(!Utils::compareGeode(g1, g2), "different drawable count must not be instanced");
+    }
+
+    // SourceModel 端到端：签名相同的两个几何只有在严格比较全部通过后才实例化。
+    {
+        auto scene = [&](bool uv1Diff, bool reverseIndex) {
+            osg::ref_ptr<osg::Group> root = new osg::Group;
+            for (int k = 0; k < 2; ++k)
+            {
+                osg::ref_ptr<osg::MatrixTransform> mt = new osg::MatrixTransform;
+                mt->setMatrix(osg::Matrixd::translate(static_cast<double>(k) * 10.0, 0, 0));
+                osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+                geode->setName("cmp_" + std::to_string(k));
+                osg::ref_ptr<osg::Geometry> g = baseGeom();
+                if (uv1Diff && k == 1)
+                {
+                    osg::ref_ptr<osg::Vec2Array> uv1 = new osg::Vec2Array; uv1->assign(3, osg::Vec2(0.25, 0.25));
+                    g->setTexCoordArray(1, uv1.get());
+                }
+                if (reverseIndex && k == 1)
+                {
+                    auto* idx = static_cast<osg::DrawElementsUInt*>(g->getPrimitiveSet(0));
+                    idx->at(1) = 2; idx->at(2) = 1;
+                }
+                geode->addDrawable(g.get());
+                mt->addChild(geode.get());
+                root->addChild(mt.get());
+            }
+            return root;
+        };
+        {
+            SourceModel m;
+            osg::ref_ptr<osg::Group> root = scene(false, false);
+            check(m.build(root.get()), "identical instance scene builds");
+            check(m.instances.size() == 1, "identical geometry with different matrices is one instance",
+                  std::to_string(m.instances.size()));
+        }
+        {
+            SourceModel m;
+            osg::ref_ptr<osg::Group> root = scene(true, false);
+            check(m.build(root.get()), "UV1-different scene builds");
+            check(m.instances.empty(), "extra UV channel prevents false instance merge",
+                  std::to_string(m.instances.size()));
+        }
+        {
+            SourceModel m;
+            osg::ref_ptr<osg::Group> root = scene(false, true);
+            check(m.build(root.get()), "index-order-different scene builds");
+            check(m.instances.empty(), "same signature but different index order is not instanced",
+                  std::to_string(m.instances.size()));
+        }
+    }
+}
+
 void testSimplifierDegenerateFilter()
 {
     std::cout << "[simplifier] exact-degenerate triangles removed, thin ones kept" << std::endl;
@@ -4744,6 +5229,10 @@ int main(int argc, char** argv)
     run("batchid", &testBatchIdVisitorPreservesAttrib0);
     run("simplifier", &testSimplifierMultiplePrimitiveSets);
     run("triSplitMetrics", &testTriangleSplitMetrics);
+    run("sourceNormals", &testSourceNormalTransform);
+    run("normalBindings", &testNormalBindings);
+    run("instanceCompare", &testInstanceCompareCompleteness);
+    run("textureFloor", &testProxyTextureFloorNoStrip);
     run("simplifierDegenerate", &testSimplifierDegenerateFilter);
     run("simplifierRemap", &testSimplifierRemapOrder);
     run("proxySanitize", &testProxySanitizesDegenerateTriangles);

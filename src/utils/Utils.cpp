@@ -263,9 +263,34 @@ bool Utils::compareGeometry(const osg::ref_ptr<osg::Geometry>& geom1, const osg:
 		return false;
 	}
 
-	// 纹理坐标数组比较
-	for (unsigned int i = 0; i < geom1->getNumTexCoordArrays(); ++i) {
+	// 纹理坐标数组：通道数必须先相等；只按 geom1 的数量遍历会漏掉
+	// geom2 多出来的 UV1/UV2，导致不同几何被误判为可实例化。
+	const unsigned uvCount1 = geom1->getNumTexCoordArrays();
+	const unsigned uvCount2 = geom2->getNumTexCoordArrays();
+	if (uvCount1 != uvCount2) { return false; }
+	for (unsigned int i = 0; i < uvCount1; ++i) {
 		if (!compareArray(geom1->getTexCoordArray(i), geom2->getTexCoordArray(i)))
+		{
+			return false;
+		}
+		const osg::Array* uv1 = geom1->getTexCoordArray(i);
+		const osg::Array* uv2 = geom2->getTexCoordArray(i);
+		if ((uv1 ? uv1->getBinding() : osg::Array::BIND_UNDEFINED)
+			!= (uv2 ? uv2->getBinding() : osg::Array::BIND_UNDEFINED)) { return false; }
+	}
+
+	// 通用顶点属性：数量、每个槽位的内容/类型/长度、绑定方式都必须一致。
+	// 以前完全没比较这里，Tangent 或其他自定义属性不同的几何会被归为实例。
+	const unsigned attrCount1 = geom1->getNumVertexAttribArrays();
+	const unsigned attrCount2 = geom2->getNumVertexAttribArrays();
+	if (attrCount1 != attrCount2) { return false; }
+	for (unsigned a = 0; a < attrCount1; ++a)
+	{
+		if (!compareArray(geom1->getVertexAttribArray(a), geom2->getVertexAttribArray(a)))
+		{
+			return false;
+		}
+		if (geom1->getVertexAttribBinding(a) != geom2->getVertexAttribBinding(a))
 		{
 			return false;
 		}
@@ -274,6 +299,14 @@ bool Utils::compareGeometry(const osg::ref_ptr<osg::Geometry>& geom1, const osg:
 	// 绑定方式比较
 	if (geom1->getNormalBinding() != geom2->getNormalBinding()) { return false; }
 	if (geom1->getColorBinding() != geom2->getColorBinding()) { return false; }
+	const osg::Array* n1 = geom1->getNormalArray();
+	const osg::Array* n2 = geom2->getNormalArray();
+	if ((n1 ? n1->getBinding() : osg::Array::BIND_UNDEFINED)
+		!= (n2 ? n2->getBinding() : osg::Array::BIND_UNDEFINED)) { return false; }
+	const osg::Array* c1 = geom1->getColorArray();
+	const osg::Array* c2 = geom2->getColorArray();
+	if ((c1 ? c1->getBinding() : osg::Array::BIND_UNDEFINED)
+		!= (c2 ? c2->getBinding() : osg::Array::BIND_UNDEFINED)) { return false; }
 
 	// StateSet比较
 	if (!compareStateSet(geom1->getStateSet(), geom2->getStateSet()))
@@ -331,6 +364,12 @@ bool Utils::compareGeode(const osg::ref_ptr<osg::Geode>& geode1, const osg::ref_
 		else if (geom1 || geom2)  // 一个是Geometry另一个不是
 		{
 			return false;
+		}
+		else
+		{
+			// 非 Geometry Drawable 没有可严格比较的顶点数据；至少类型不同
+			// 不能当成同一原型，宁可保留普通几何（假阴性）也不误归并。
+			if (drawable1->className() != drawable2->className()) { return false; }
 		}
 	}
 

@@ -68,7 +68,8 @@ struct ByteEstimateVisitor : public osg::NodeVisitor
             //（Osg2Gltf 固定行为），大聚合瓦片纹理字节占大头，不能漏估。
             const std::uint64_t decoded = img->getTotalSizeInBytes() / 8ull;
             texBytes += decoded;
-            // 降到下限分辨率后按面积折算：远景代理可以先降分辨率再考虑去纹理
+            // 降到下限分辨率后按面积折算：这是最保守的纹理字节估计，
+            // 生产链不再有"去纹理"兜底（下限仍超预算时显式失败/降级）。
             const unsigned edge = std::max<unsigned>(img->s(), img->t());
             const double ratio = edge <= proxyTextureFloorEdgePx
                 ? 1.0
@@ -189,6 +190,7 @@ struct AttrSig
         if (colorType != o.colorType) { return colorType < o.colorType; }
         return attribTypes < o.attribTypes;
     }
+    bool operator==(const AttrSig& o) const { return !(*this < o) && !(o < *this); }
 };
 
 int arrayType(const osg::Array* a) { return a ? static_cast<int>(a->getType()) : -1; }
@@ -768,15 +770,56 @@ osg::ref_ptr<osg::Node> ProxyMeshBuilder::buildAggregate(
             cellGeode->removeDrawables(0, cellGeode->getNumDrawables());
             if (merge)
             {
-                std::map<std::pair<AttrSig, const osg::StateSet*>,
-                         std::vector<osg::Geometry*>> byKey;
-                for (osg::Geometry* g : kept) { byKey[{ signatureOf(g), g->getStateSet() }].push_back(g); }
-                std::vector<std::pair<AttrSig, const osg::StateSet*>> order;
-                for (auto& kv : byKey) { order.push_back(kv.first); }
-                std::sort(order.begin(), order.end());
-                for (const auto& key : order)
+                // 分组仍按 StateSet 指针身份（不跨指针合并：compareStateSet 只比
+                // 文件名/尺寸，不比像素，跨指针合并有错并材质的风险）。但输出顺序
+                // 绝不能按指针排：std::map 对无关指针排序的相对次序依赖进程堆布局，
+                // 同一输入在不同运行/二进制下可能把两个材质组写到不同 drawable
+                // 槽位（A-40 类不确定性的来源）。这里给每个组分配一个"内容等价
+                // 类"（同 sig 且 compareStateSet 相等归一类），按 (sig, 类) 稳定
+                // 排序；同类内保持首次遇到顺序，完全由确定性输入顺序决定。
+                struct MergeGroup {
+                    AttrSig sig;
+                    osg::ref_ptr<osg::StateSet> state;
+                    std::vector<osg::Geometry*> geoms;
+                    std::size_t matClass = 0;
+                };
+                std::vector<MergeGroup> groups;
+                for (osg::Geometry* g : kept)
                 {
-                    osg::ref_ptr<osg::Geometry> m = mergeGeometries(byKey[key]);
+                    const AttrSig sig = signatureOf(g);
+                    osg::ref_ptr<osg::StateSet> ss = g->getStateSet();
+                    bool placed = false;
+                    for (MergeGroup& grp : groups)
+                    {
+                        if (grp.state.get() != ss.get()) { continue; }
+                        if (!(grp.sig == sig)) { continue; }
+                        grp.geoms.push_back(g);
+                        placed = true;
+                        break;
+                    }
+                    if (!placed) { groups.push_back({sig, ss, {g}, groups.size()}); }
+                }
+                // 内容等价类：只用于排序 tie-break，不改变分组。
+                for (std::size_t i = 0; i < groups.size(); ++i)
+                {
+                    if (groups[i].matClass != i) { continue; }
+                    for (std::size_t j = i + 1; j < groups.size(); ++j)
+                    {
+                        if (groups[j].matClass != j) { continue; }
+                        if (Utils::compareStateSet(groups[i].state, groups[j].state))
+                        {
+                            groups[j].matClass = i;
+                        }
+                    }
+                }
+                std::stable_sort(groups.begin(), groups.end(),
+                                 [](const MergeGroup& a, const MergeGroup& b) {
+                                     if (!(a.sig == b.sig)) { return a.sig < b.sig; }
+                                     return a.matClass < b.matClass;
+                                 });
+                for (const MergeGroup& grp : groups)
+                {
+                    osg::ref_ptr<osg::Geometry> m = mergeGeometries(grp.geoms);
                     if (m.valid()) { cellGeode->addDrawable(m.get()); }
                 }
             }

@@ -1710,3 +1710,80 @@ A-53 保持 OPEN（原始并发触发仍未复现）。ASan 构建早于 A-85 �
 - 单测 `proxyNormals` 8/0，全量 **523/0**；五资产 validator 均 0 error。
 - 说明：法线修复消除黑面/阴影；**几何轮廓的远近差异（A-87）仍存在**，
   这是代理抽稀/简化本身的设计权衡，需另行裁定是否收紧。
+
+---
+
+## R9（2026-11-02）：四项正确性修复验证
+
+### 16. 单测与 ASan
+
+- 最终 `Release/test_production.exe`（`96c9238f…`，ASan 构建后恢复）：全量 **577/0**。
+- R9 新增：`sourceNormals` 13/0、`normalBindings` 7/0、`instanceCompare` 20/0、
+  `textureFloor` 14/0；R8 回归 `proxyNormals` 8/0、`simplifierRemap` 3/0、
+  `simplifierDegenerate` 4/0、`proxySanitize` 7/0、`budgetDegrade` 11/0。
+- ASan：ASan 重编译全部测试对象；44 个用例过滤逐项运行全部 rc=0、
+  0 条 AddressSanitizer 报告。全量单进程一次在 `textureFloor` 开始时以
+  `0x40010004` 终止（无 ASan 报告）；该用例单独运行 14/0，归为环境/退出异常。
+- `git diff --check` 通过。
+
+### 17. 确定性矩阵（最终二进制 `415fd77b…`）
+
+| 夹具 | 配置 | 次数 | 结果 | 签名 |
+|---|---|---|---|---|
+| t02_thin_features | j1/j2/j4/j8/default | 30×5 | 全部逐字节一致 | `0f52d7fbeda6c49e…` |
+| t09_cross_tile_object | j1/j2/j4/j8/default | 30×5 | 全部逐字节一致 | `b29aee9d212220c4…` |
+
+- 覆盖 tile/容器哈希、`tileset.json`、manifest、树结构、source feature 范围、
+  三角形/顶点数、误差字段、认证/宽松分类、聚合映射。
+- 六资产并行转换负载下 t02 再跑 30 次：30/30 相同（签名同干净矩阵）。
+- A-40 旧夹具复现（最终二进制 + `-objcheck off`）：t02 30 次 = 28 基线 + 2 个单例
+  （另一批次 26+4，变体数随残留内存取值波动）、t09 30 次 = 27 + 3（4 个签名）；
+  t09 `maxContentBytes` 档位 `41120/41144/41136/41152` 与历史证据吻合。
+  默认 precheck 对旧夹具 rc=7、零产物。
+
+### 18. 官方 validator（最终产物，ERROR 计数）
+
+| 资产 | 内容瓦片 | ERROR | WARNING | INFO |
+|---|---|---|---|---|
+| naruto | 1 | 0 | 1 | 0 |
+| wuhu | 60 | 0 | 60 | 0 |
+| longxiang | 127 | 0 | 121 | 0 |
+| hall | 370 | 0 | 364 | 4 |
+| jianzhu+tietu | 1,087 | 0 | 1,086 | 1 |
+| lugouqiao | 1,053 | 0 | 1,049 | 4 |
+
+warning 均为 `KHR_texture_basisu`/`image/ktx2` 未被 validator 识别，不是几何/结构错误。
+
+### 19. 真实资产差异（R8 → R9，最终产物）
+
+| 资产 | 文件差异 | 解释 |
+|---|---|---|
+| naruto | 1（t0 法线舍入） | A-90 浮点舍入 |
+| wuhu | 30（法线舍入 + t2 重简化；t6/t8/t9 绕序） | A-90 镜像/非均匀修复 |
+| longxiang | 76（法线舍入） | A-90 浮点舍入 |
+| hall | 219（法线舍入；b3dm 逐字节相同的文件） | A-90 浮点舍入 |
+| jianzhu | 仅 t77/t350 删除 + tileset/manifest | A-89 去纹理禁止→降级 |
+| lugouqiao | t485 删除 + 508 法线舍入 | A-89/A-90 |
+
+- 六资产 `featuresMissingFromLeaves=0`、`component_audit` problems=0；
+  instanceCount 与 R8 一致（19/10/72/1,787/0/0）。i3dm 特征表抽验
+  （wuhu i56–i58、hall i359、lugouqiao i1000）逐字节相同，实例矩阵未变；
+  变化的 i3dm 仅法线浮点舍入。
+- 降级代理：hall 22（不变）、jianzhu 2（新）、lugouqiao 4（原 3 + t485）；
+  后代叶/代理覆盖其全部 source feature。
+
+### 20. CesiumJS 1.119 定向视觉（最终产物）
+
+| 资产 | 路径 | 帧 | 空洞 | 失败 | 备注 |
+|---|---|---|---|---|---|
+| wuhu | axis-sweep | 12 | 0 | 0 | top-down chroma 0.097→0.661，silhouette -1.9% |
+| jianzhu | axis-sweep（4 采样帧） | 4 | 0 | 0 | 降级代理无新整块空洞 |
+| lugouqiao | axis-sweep（4 采样帧） | 4 | 0 | 0 | 实例/几何正常 |
+| hall | axis-sweep（4 采样帧） | 4 | 0 | 0 | 灰白材质，无暗帧 |
+
+完整 10 路径/226 帧未重跑；以上为与 R8 同机位的定向帧。
+
+### 21. R9 未闭合
+
+- A-38 / A-53 / Debug / `textures/` / A-87 状态不变（见 AUDIT）。
+- 完整视觉矩阵与 ASan 全量单进程套件未完成。

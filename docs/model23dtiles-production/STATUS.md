@@ -2167,3 +2167,142 @@ sources 对账；i3dm 实例数与 manifest 实例数对账；无内容分支的
 - 本轮改动**未提交、未推送 Git**。
 
 
+
+---
+
+## R9（2026-11-02）：四项正确性修复与确定性回归（未提交）
+
+### R9.1 基线与构建
+
+- 分支 `prod/model23dtiles-production`，HEAD `de54e9d`（与 `origin` 同 SHA）；
+  本轮全部改动留在工作区，未提交、未推送。
+- 最终二进制：`Release/model23dtiles.exe` `415fd77b4188…`（MSVC 2022 / SDK 10.0.26100 /
+  Release x64 / C++17）；`Release/test_production.exe` `96c9238f…`（ASan 构建后恢复）；
+  `Release/osgdb_gltf.dll` `53aeed1b…`（本轮未改插件行为）。
+- R8 的 A-81/A-82/A-83/A-85/A-86/A-88 实现全部保留；全量单测 **577/0**。
+
+### R9.2 任务一：禁止生产自动去纹理（PASS，用户明确禁止采用）
+
+- 删除 `ProductionPipeline` 内的 `FarLodTextureStripper` 类及唯一调用点；
+  最低分辨率纹理仍装不下时，代理显式失败并进入既有失败处理：
+  - 默认（允许内节点降级）→ 无内容内节点 + warning，后代继续覆盖同一 source scope；
+  - `-noProxyDegrade` → 失败关闭、零提交。
+- 写出阶段只保留 `textureDownscaleLadder`（256/128/64px）降分辨率，绝无删纹理/
+  换纯色材质分支；`GltfOptimizer` 里对应注释同步。
+- 真实资产命中：jianzhu t77/t350、lugouqiao t485 历史上写的是**无纹理灰模**
+  （R8 日志 `far-LOD proxy built without textures`），本轮改为降级；
+  jianzhu 其余 1087 个内容文件与 R8 逐字节相同，lugouqiao 其余差异仅为正常法线舍入。
+- 单测 `textureFloor` 14/0：floor 超预算→降级不写灰模、叶纹理保留、
+  `featuresMissingFromLeaves=0`；`-noProxyDegrade`→fail closed 且无 `tileset.json`；
+  预算充足→代理与叶纹理都保留；`texResize` 继续钉住共享 `osg::Image` 不被就地缩放。
+
+### R9.3 任务二：A-40 根因与修复（FIXED）
+
+- **根因不在并行窗口**：历史 t02/t09 使用的是 2026-10-26 前的缺陷 OBJ 夹具
+  （t02 有 64 处 `vn` 越界，t09 有 `v/vt/vn` 越界）。`osgdb_obj` 读到越界
+  `f` 索引不报错，而是从坐标数组尾部/残留堆内存取顶点/法线；值随进程堆状态
+  变化 → 包围盒/剖分树/leaf↔proxy 分类/误差字段一起变。这解释了历史上
+  "树变体 + `nodesBoundLoose/nodesCertified` 跳变 + `errMax 386.77↔331.62`"，
+  也解释了为何 `WB_JOBS=4`、`WB_PROXY_DEBUG` 都能复现（它们只改变堆 churn）。
+- **直接复现**（最终二进制 + 归档旧夹具 `fixgen_orig`，`-objcheck off`）：
+  旧 t02 30 次 = 28 基线 + 2 个单例（另一次批次 26+4，变体数随残留内存取值波动）；
+  旧 t09 30 次 = 27 + 3（4 个签名）。历史 t02 的 5 个哈希、t09 的 4 个变体
+  落在同一形态内；t09 `maxContentBytes` 档位 `41120/41144/41136/41152` 与历史
+  记录的 `41120/41144/41152` 逐值吻合。默认 `-objcheck reject` 对旧夹具
+  **rc=7、零产物**。
+- **修复**：输入硬闸（`ObjIntegrityPrecheck`，默认 reject）+ 夹具重建（2026-10-26）
+  + 读模后越界三角形守卫（A-56）。另把 `ProxyMeshBuilder` 聚合合并的
+  `(AttrSig, StateSet*)` map 排序改为 `(AttrSig, 内容等价类)` + 首遇顺序
+  （A-92，潜在堆布局依赖）。
+- **最终确定性矩阵**（洁净夹具、最终二进制）：t02 / t09 × `WB_JOBS=1/2/4/8/default`
+  各 30 次，10 组共 300 次全部逐字节一致；t02 所有配置同一签名
+  `0f52d7fbeda6c49e…`，t09 同一签名 `b29aee9d212220c4…`。六资产并行转换负载下
+  再跑 t02 30 次，仍 30/30 相同。证据：`r9_20261102/A40_ROOT_CAUSE.md`、
+  `determinism/t0*_30_*_final/summary.json`、`determinism/stress_t02_default_loaded_final/`。
+
+### R9.4 任务三：法线逆转置变换（FIXED）
+
+- OSG 行向量约定 `p' = p·M`、`t' = t·A`，法线用 `n' = normalize(n·(A^-1)^T)`；
+  奇异/非有限矩阵不伪造逆矩阵（法线置零并计入既有修复）；支持
+  `BIND_PER_VERTEX/BIND_OVERALL/BIND_PER_PRIMITIVE_SET`（后者展开；共享顶点冲突
+  显式告警），其余绑定显式告警；行列式 <0 时交换三角形后两个索引修正绕序。
+- 单测 `sourceNormals` 13/0（12 类矩阵 + 奇异/非有限），`normalBindings` 7/0。
+- 真实资产：wuhu 法线-绕序一致率 **82.77% → 99.94%**（坏三角形 102,943 → 366 /
+  589,428）；t6 由 26,900/26,900 全背向变为 0。naruto/longxiang/hall/lugouqiao
+  无镜像，只有 1e-16 量级舍入。wuhu t2 聚合代理因镜像索引顺序改变而重新简化
+  （31,421→23,493 三角形，误差上界 386.2019→386.1411 m，仍 BOUND_LOOSE）。
+
+### R9.5 任务四：实例判重完整性（FIXED）
+
+- `Utils::compareGeometry` 现在比较：UV 通道数、每通道内容与 binding、通用顶点
+  属性数量/每槽内容类型长度/binding、法线/颜色数组 binding、PrimitiveSet
+  类型/索引/顺序、Geometry/Geode StateSet；`compareGeode` 对非 Geometry drawable
+  至少比较 className。`computeSignature` 混入 uvCount/attribCount，仅作预筛。
+- 单测 `instanceCompare` 20/0（含 UV1、通用属性、绑定、pset、StateSet、
+  "同签名不同索引顺序不得实例化"）。
+- 六资产 instanceCount 与 R8 完全一致（wuhu 19 / longxiang 10 / 站厅 72 /
+  卢沟桥 1,787 / naruto、jianzhu 0）；i3dm 文件数与原型对应关系不变；
+  i3dm 特征表（实例矩阵/位置/缩放）逐字节相同（wuhu i56–i58、hall i359、
+  lugouqiao i1000 抽验）；变化的 i3dm 仅法线浮点舍入（maxAbsDiff ~1e-23）。
+
+### R9.6 真实资产与交叉回归
+
+最终二进制六资产全部 rc=0；与 R8 的差异已逐项解释：
+
+| 资产 | 瓦片/内容 | 实例 | R8→R9 产物差异 | 结论 |
+|---|---|---|---|---|
+| naruto | 1 / 1 | 0 | 仅 t0.b3dm 法线浮点舍入 | 无回归 |
+| wuhu | 62 / 60 | 19 | 30 文件：法线舍入 + t2 镜像重简化；t6/t8/t9 绕序修正 | 正确性修复 |
+| longxiang | 129 / 127 | 10 | 76 文件：法线浮点舍入，字节数不变 | 无回归 |
+| 站厅 | 394 / 370 | 72 | 219 文件：法线浮点舍入；22 个降级代理不变 | 无回归 |
+| jianzhu+tietu | 1,089 / 1,087 | 0 | t77/t350 去纹理灰模→降级；其余 1,087 文件逐字节相同 | 策略要求 |
+| 卢沟桥 | 1,059 / 1,053 | 1,787 | t485 去纹理灰模→降级；508 文件法线舍入 | 策略要求 |
+
+- 构件覆盖：六资产 `featuresMissingFromLeaves=0`、`component_audit` problems=0；
+  降级代理（站厅 22、jianzhu 2、卢沟桥 4）后代覆盖其全部 source feature。
+- R8 回归：`proxySanitize`/`simplifierDegenerate`/`simplifierRemap`/`proxyNormals`/
+  `budgetDegrade` 等全部在 577/0 中通过；`textures/` 语义与 A-52 图集画布、
+  A-74 图集顺序测试未回退。
+
+### R9.7 测试、ASan、validator 与视觉
+
+- 单测：最终 Release 全量 **577/0**；R9 新增 `sourceNormals` 13、`normalBindings` 7、
+  `instanceCompare` 20、`textureFloor` 14；R8 的 `proxyNormals` 8、`simplifier*`、
+  `proxySanitize`、`budget*`、`atlasOrder`、`atlasCanvas` 全部继续通过。
+- ASan：用 ASan 重新编译全部测试对象（`test_production_asan.exe`）。44 个用例过滤
+  逐项运行全部 rc=0、**0 条 AddressSanitizer 报告**（覆盖 R9 四项与 R8 代理/简化/
+  预算用例）。全量单进程一次运行在 `textureFloor` 开始时被环境以 `0x40010004`
+  终止且无 ASan 报告；该用例单独运行 14/0，登记为环境/退出异常（与 A-53 分开，
+  不冒充内存问题）。
+- 官方 validator（最终产物，叶层 severity=ERROR）：naruto 0、wuhu 0、longxiang 0、
+  hall 0、jianzhu 0、lugouqiao 0；warning 均为 validator 不认识
+  `KHR_texture_basisu`/KTX2（`image/ktx2`），非几何/结构错误。
+- CesiumJS 1.119 定向视觉（Qoder 内置浏览器 + 本地 Cesium，最终产物）：
+  - wuhu `axis-sweep` 12 帧：0 空洞/0 失败/0 暗帧；top-down 帧 chroma 0.097→0.661
+    （镜像法线修复后光照恢复），silhouette 最大变化 -1.9%（t2 镜像重简化）。
+  - jianzhu 4 帧、lugouqiao 4 帧、hall 4 帧：均 0 空洞/0 失败/0 暗帧；
+    jianzhu 两个降级代理在远景帧无新的整块空洞（子级覆盖）。
+  - 完整 10 路径/226 帧未重跑；本轮为定向帧（与 R8 同机位可比）。
+- 几何扫描：wuhu oobIndices/nonFiniteVertices/zeroArea=0，t2 仅拓扑随镜像修复改变；
+  hall 全量质量计数与 R8 相同；jianzhu `attrCountMismatch=0`。
+
+### R9.8 保持 OPEN / 未闭合
+
+- A-38（偶发荒谬顶点）：仍 OPEN。A-40 的输入侧根因解释了同一变异树上的
+  法线槽污染；POSITION 槽的写入方仍未定位，不因本轮关闭。
+- A-53（并发挂起）：仍 OPEN；本轮 ASan 全量单进程异常终止无 ASan 报告，
+  与 A-53 的堆损坏/挂起不是同一证据，未合并。
+- Debug 构建 BLOCKED-DEBUG；`textures/` 历史缺失 OPEN；A-87（HLOD 轮廓差异）
+  OPEN，未改代理质量策略。
+- 完整视觉 226 帧、全量 ASan 单进程套件未完成（见 R9.7）；不影响四项修复判据。
+
+### R9.9 Git 与文件保护
+
+- 本轮**未提交、未推送**。工作区变更：`ProductionPipeline.{h,cpp}`、`SourceModel.cpp`、
+  `ProxyMeshBuilder.cpp`、`Utils.cpp`、`ProductionProfile.h`、`GltfOptimizer.cpp`（注释）、
+  `tools/model23dtiles/main.cpp`（注释）、`tests/production/main.cpp`、`AUDIT.md`，
+  以及下文四份文档。
+- `.gitignore` 的改动是用户既有修改，本轮未触碰；`dev_main_tmp.cpp`、`.workbuddy/`
+  未改动。`git diff --check` 通过。
+- 视觉验收临时 junction `docs/visual-acceptance/r9_assets` 用完删除；F: 证据目录
+  `r9_20261102/` 保留。

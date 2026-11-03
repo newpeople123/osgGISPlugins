@@ -1349,9 +1349,9 @@ void GltfOptimizer::TextureAtlasBuilderVisitor::apply(osg::Drawable& drawable)
 		osg::ref_ptr<osg::StateSet> oldStateSet = drawable.getStateSet();
 		if (oldStateSet.valid())
 		{
-			// 远景 LOD 代理的 StateSet 已在构建时去纹理（FarLodTextureStripper）。
-			// 这类无纹理 StateSet 没有任何可图集化的纹理，克隆+替换毫无意义，
-			// 反而会触碰可能与共享对象纠缠的 Uniform 生命周期（历史段错误根因）。
+			// 无纹理 StateSet（源模型本身无贴图，或纯几何代理）没有任何可图集化
+			// 的纹理，克隆+替换毫无意义，反而会触碰可能与共享对象纠缠的 Uniform
+			// 生命周期（历史段错误根因）。生产链不会为了预算删除纹理。
 			// 所有纹理单元均无纹理属性时直接跳过。
 			bool hasTexture = false;
 			const osg::StateSet::TextureAttributeList& tal = oldStateSet->getTextureAttributeList();

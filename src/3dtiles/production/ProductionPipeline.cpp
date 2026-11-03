@@ -145,52 +145,6 @@ struct ClearTextureExportCacheVisitor : public osg::NodeVisitor
     }
 };
 
-// 远景 LOD 代理去纹理：为每个节点/Drawable 构造私有 StateSet（SHALLOW
-// 拷贝容器，纹理属性清空，GltfMaterial 子类替换为只带 diffuse 的普通
-// osg::Material）。
-// 关键约束：绝不修改共享的原始 StateSet/Uniform/GltfMaterial —— 并行构建
-// 时 worker 还在读源模型，任何共享写都会破坏引用计数（v8-v10 段错误根因）。
-// 代理内容节点本身是 materialize 私有产物，替换其 stateSet 指针安全。
-struct FarLodTextureStripper : public osg::NodeVisitor
-{
-    FarLodTextureStripper() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) {}
-    static osg::ref_ptr<osg::StateSet> makeTextureless(osg::StateSet* src)
-    {
-        // 全新空 StateSet，不从 src 拷贝构造：SHALLOW_COPY 的拷贝构造会给
-        // 共享 Uniform addParent / 拷贝共享纹理属性的 ref_ptr，多 worker 并行
-        // 时对同一批共享对象的引用计数做非原子写（历史段错误根因）。
-        // 远景代理只需要一个材质副本：无纹理、无 Uniform、不共享任何属性。
-        osg::ref_ptr<osg::StateSet> ss = new osg::StateSet();
-        if (src)
-        {
-            if (osg::Material* mat =
-                    dynamic_cast<osg::Material*>(src->getAttribute(osg::StateAttribute::MATERIAL)))
-            {
-                // GltfMaterial 子类（glTF 专用字段挂在 StateSet 上）替换为
-                // 普通 osg::Material 副本，Osg2Gltf 走干净的 baseColorFactor 路径
-                osg::ref_ptr<osg::Material> plain =
-                    new osg::Material(*mat, osg::CopyOp::SHALLOW_COPY);
-                ss->setAttributeAndModes(plain.get(), osg::StateAttribute::ON);
-            }
-        }
-        return ss;
-    }
-    static void applyTo(osg::Node& n)
-    {
-        if (n.getStateSet()) { n.setStateSet(makeTextureless(n.getStateSet())); }
-    }
-    void apply(osg::Node& node) override
-    {
-        applyTo(node);
-        traverse(node);
-    }
-    void apply(osg::Geode& geode) override
-    {
-        applyTo(geode);
-        traverse(geode);
-    }
-    void apply(osg::Drawable& d) override { applyTo(d); }
-};
 } // namespace
 #ifdef _WIN32
 #include <windows.h>
@@ -745,10 +699,9 @@ ProductionPipeline::writeContent(osg::Node* node, const std::string& relUri,
     }
 
     // 说明：内节点代理的纹理在这里按 proxyTextureMaxEdgePx 降分辨率（见上面
-    // textureMaxEdgePx），仍然超限则由上面的阶梯继续折半；剥掉整张纹理只在
-    // processTileHeavy 里、构建阶段用私有 StateSet 做（写时剥离要改动与源模型
-    // 共享的 StateSet，并行构建下会破坏引用计数，v8-v10 段错误根因），
-    // 见 FarLodTextureStripper。
+    // textureMaxEdgePx），仍然超限则由上面的阶梯继续折半到下限；本函数
+    // 绝不删除纹理。下限仍装不下的代理在构建阶段显式失败/降级（见
+    // processTileHeavy），不会写出无纹理灰模。
     out.ok = true;
     return out;
 }
@@ -903,12 +856,13 @@ ProductionPipeline::processTileHeavy(int pn, int id)
         w.aggregate = pr.aggregate;
         w.aggregateSources = pr.aggregateSources;
 
-        // 内节点代理（远景 LOD）纹理策略：先降分辨率，装不下才去纹理。
+        // 内节点代理（远景 LOD）纹理策略：只降分辨率，绝不删除纹理。
         // 判据用 ProxyMeshBuilder 在**建好的代理节点**上量的去重估算：同一张
         // 纹理被 N 个 primitive 引用只算一次。旧实现在这里用
         // Σ PrimRef.byteEstimate 逐 primitive 累加纹理字节，共享纹理被重复计数，
         // longxiang 实测 42/42 代理被判超限 → 整片退化成无纹理灰模（顶层瓦片
-        // 无贴图，视觉验收不接受）。
+        // 无贴图，视觉验收不接受）。下限分辨率仍装不下时显式失败/降级，
+        // 不再有任何去纹理分支。
         // 降分辨率本身不在构建期做：代理的 StateSet 与源模型共享，构建期改图
         // 会波及其他 worker 正在读的原始模型。改为给写出阶段传
         // proxyTextureMaxEdgePx，由 GltfOptimizer 缩放——它克隆 StateSet 只到
@@ -922,19 +876,15 @@ ProductionPipeline::processTileHeavy(int pn, int id)
                                  ? 0u : _profile.budget.proxyTextureMaxEdgePx;
         if (!pr.fitsWithFloorTextures)
         {
-            // 连下限分辨率都装不下（几何本身吃掉大半预算）：最后手段，
-            // 构建时直接建成无纹理版，通过 w.texturesDropped 上报记 warning。
-            TRACE("proxy far-lod detexture pn=" << pn
-                  << " floor textures do not fit, textures at floor are the last resort");
-            FarLodTextureStripper stripper;
-            w.content->accept(stripper);
-            w.texturesCappedPx = 0;
-            w.texturesDropped = true;
+            // 用户已裁定禁止自动去纹理：连下限分辨率纹理都装不下时，不再剥纹理，
+            // 而是让这个内节点代理显式失败，进入既有失败/降级语义（默认降级为
+            // 无内容节点，-noProxyDegrade 下失败关闭）。叶节点与源纹理不受影响。
+            w.failure = "proxy texture floor does not fit tile byte budget; "
+                        "automatic texture removal is disabled (policy: textures must be kept)";
+            TRACE("proxy far-lod texture floor over budget pn=" << pn);
+            return w;
         }
-        else
-        {
-            TRACE("proxy far-lod texture cap pn=" << pn << " capPx=" << w.texturesCappedPx);
-        }
+        TRACE("proxy far-lod texture cap pn=" << pn << " capPx=" << w.texturesCappedPx);
     }
 
     if (!w.content.valid())
@@ -1086,6 +1036,16 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
             _tiles[id].timing.finalizeCpuSec = cFinalize.elapsed();
             return;
         }
+        if (!_profile.allowInnerProxyDegrade)
+        {
+            // 策略 C：内节点任何失败都按失败关闭处理，必须拒绝数据集。
+            _failures.push_back(w.failure + " and inner-proxy degradation is disabled (-noProxyDegrade)");
+            _microFinalizeSec += tFinalize.elapsed();
+            _microFinalizeCpuSec += cFinalize.elapsed();
+            _tiles[id].timing.finalizeSec = tFinalize.elapsed();
+            _tiles[id].timing.finalizeCpuSec = cFinalize.elapsed();
+            return;
+        }
         _warnings.push_back(w.failure + " -> tile carries no far-LOD content, children "
                             "still cover " + std::to_string(scopeCount)
                             + " source features");
@@ -1133,15 +1093,7 @@ void ProductionPipeline::finalizeTileFromWork(int pn, int id, TileHeavyWork&& w)
         }
         else
         {
-            if (w.texturesDropped)
-            {
-                _warnings.push_back("tile " + std::to_string(id) +
-                                    ": far-LOD proxy built without textures, even the "
-                                    + std::to_string(proxyTextureFloorEdgePx)
-                                    + "px texture floor does not fit budget (bytes=" +
-                                    std::to_string(wo.bytes) + ")");
-            }
-            else if (w.texturesCappedPx > 0)
+            if (w.texturesCappedPx > 0)
             {
                 ++_report.proxyTextureCappedCount;
             }
@@ -1899,7 +1851,7 @@ bool ProductionPipeline::run(osg::Node* input, const Options& opt)
     //     ├─ micro_materialize + micro_proxy_build + micro_collect_triangles + micro_evaluate
     //     │    （micro_proxy_simplify / micro_proxy_aggregate 在 proxy_build 之内，
     //     │      micro_bvh_build / micro_eval_* 在 micro_evaluate 之内）
-    //     └─ 残差 = 身份范围收集 / 代理字节预估 / 去纹理等未单列的小段
+    //     └─ 残差 = 身份范围收集 / 代理字节预估等未单列的小段
     //   micro_finalize_encode = 主线程收尾全程，micro_write 是其中的编码写出段
     _report.addStage("micro_total", _microHeavySec);
     _report.addStage("micro_materialize", _microMaterializeSec);

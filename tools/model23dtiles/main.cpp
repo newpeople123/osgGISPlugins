@@ -560,7 +560,7 @@ int main(int argc, char** argv)
 	const int maxTextureAtlasWidth = parseArgument(arguments, "-aw", 2048);
 	const int maxTextureAtlasHeight = parseArgument(arguments, "-ah", 2048);
 	// 内节点代理（远景 LOD）单张纹理边长上限：叶瓦片保持 -tw/-th，代理只降
-	// 分辨率、不整张删纹理（降到 -mb 装不下的下限才去纹理）。
+	// 分辨率、不整张删纹理（下限仍装不下时代理失败/降级）。
 	const int proxyTextureMaxEdge = parseArgument(arguments, "-ptw", 512);
 
 	// -tri 的"是否显式给出"必须在 parseArgument 之前取：osg::ArgumentParser::read()

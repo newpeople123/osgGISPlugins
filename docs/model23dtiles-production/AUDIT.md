@@ -49,7 +49,7 @@
 | A-37 | "父包围盒覆盖子包围盒"只在历史 bug 注释里提过，代码里没有任何检查点（当年靠外部回扫发现） | `ProductionPipeline.cpp::selfValidate` | CLOSED（发布闸 + 逐轴越界单测 + 18 数据集回扫） | 12.1/17 | 中 |
 | A-38 | 产物里偶发单个荒谬顶点（矩阵 t02：X=6.555e10 / Z=4.474e27），源模型里没有；有限性与父覆盖子都拦不住（父盒同样被污染）。逐元素差分定位到**缺陷形态**：一份共享源顶点数组里 1 个 POSITION 槽 + 5 个 NORMAL 槽装着"别的数据"，凡拷贝到该区间的瓦片都带上；值本身随分配器状态变化，所以看起来偶发。**累计 127 次产物只出现 1 次**（matrix_a34），同一二进制（15:47:04，不含 2b）追加 90 次（3 配置 × 30）**0 次重现**，污染字节全库仍只命中那 3 个瓦片；那一次的 t1/t2/t3 与 A-40 的"树变体"**逐字节相同** → 污染那次就是这条非确定性分支上的一个产物 | `ProductionPipeline.cpp::selfValidate` 2b | OPEN（写入方未定位，90 次新样本未产生可差分污染产物）+ CLOSED（发布闸拒绝出盘） | 12.1/17 | 高 |
 | A-39 | `ProxyMeshBuilder::appendElements` 用**源**数组类型 `static_cast` **目标**数组，属性类型不一致时按错误步长写（堆越界） | `ProxyMeshBuilder.cpp::appendElements` | CLOSED（显式拒绝 dst/src 类型不一致；实测现存分组不会触发，属加固） | 5.3 | 中 |
-| A-40 | 同一二进制、同一输入，产物**不逐位一致**：t02 累计 127 次产物里 121 次落在同一基线，6 次是**整棵瓦片树变了**的变体（共 5 个互不相同的哈希；`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3 之间跳，峰值 RSS 也随之变）。变体同时出现在默认并行(jobs8)、`WB_JOBS=4`、`WB_PROXY_DEBUG=1` 三种配置，其中 jobs4 那次的哈希与旧记的"WB_PROXY_DEBUG 第 3 跑"变体**完全相同** → 变体与调试开关、与并行度都无绑定（旧结论"不是并行度本身"证据仅 n=6 已撤回）。而且**同一份 b3dm 内容会换瓦片槽位**（基线 t5 == 变体 t3，sha256 相同）——症状不是数值算错，是分类/分配次序依赖运行时时序。**本轮新增第二个样本 t09（单轮 0.75 s）**：22:40 二进制单独跑 8 次得 3 个 `t0.b3dm` 变体，矩阵内那次是第 4 个，且 `errMax` 随变体在 386.77 ↔ 331.62 之间动；6/8 次逐字节等于 22:14 那轮的树 → 变体也与**二进制版本**无关 | `ProductionPipeline::buildB3dmTree` 并行窗口 / 误差评估分支 | OPEN（非确定性来源未定位；jobs4 也复现，说明"关掉并行即可稳定"未经证实；t09 可用 8×0.75 s 廉价复现，是后续定位的首选样本） | 17 | 高 |
+| A-40 | 同一二进制、同一输入，产物**不逐位一致**：t02 累计 127 次产物里 121 次落在同一基线，6 次是**整棵瓦片树变了**的变体（共 5 个互不相同的哈希；`nodesBoundLoose` 在 0/1/3、`nodesCertified` 在 1/2/3 之间跳，峰值 RSS 也随之变）。变体同时出现在默认并行(jobs8)、`WB_JOBS=4`、`WB_PROXY_DEBUG=1` 三种配置，其中 jobs4 那次的哈希与旧记的"WB_PROXY_DEBUG 第 3 跑"变体**完全相同** → 变体与调试开关、与并行度都无绑定（旧结论"不是并行度本身"证据仅 n=6 已撤回）。而且**同一份 b3dm 内容会换瓦片槽位**（基线 t5 == 变体 t3，sha256 相同）——症状不是数值算错，是分类/分配次序依赖运行时时序。**本轮新增第二个样本 t09（单轮 0.75 s）**：22:40 二进制单独跑 8 次得 3 个 `t0.b3dm` 变体，矩阵内那次是第 4 个，且 `errMax` 随变体在 386.77 ↔ 331.62 之间动；6/8 次逐字节等于 22:14 那轮的树 → 变体也与**二进制版本**无关 | 旧 `test_assets` 夹具越界面索引 + `osgdb_obj` 静默吸收（不是 `buildB3dmTree` 并行窗口） | **FIXED（R9）**：根因=旧夹具含越界 `v/vt/vn` 索引，OSG OBJ reader 从残留内存取顶点/法线，值随堆状态变 → 包围盒/剖分树/误差分类变。归档旧夹具（`fixgen_orig`）在**当前二进制**上 `-objcheck off` 复现 t02 5 个签名/30 次、t09 4 个/30 次，且 t09 `maxContentBytes` 档位 `41120/41144/41152/41160` 与历史证据逐值吻合；默认 precheck rc=7 零产物。合法夹具 30×（j1/j2/j4/j8/default）+30× 并发负载全部逐字节一致。详见 `F:\wb_3dtiles_out\_followup_20261028\r9_20261102\A40_ROOT_CAUSE.md` | 17 | 高 |
 | A-41 | i3dm 实例瓦片的**每实例位姿全部丢失**，且原型几何被同组 N 个实例矩阵**就地累乘**污染。链条：`writeContent` 让一份原型 drawable 被 N 个 `MatrixTransform` 共享（`ProductionPipeline.cpp:963-972`）→ `FlattenTransformsVisitor` 用 `osgUtil::TransformAttributeFunctor` **就地**改这份共享数组（`GltfOptimizer.cpp:549-554`）并把每个 MatrixTransform 复位成单位阵（`GltfOptimizer.cpp:563-565`）→ `createFeatureI3DMTableBinary` 只能分解出单位阵（`ReaderWriterGLTF.cpp:302-345`）→ POSITION 全 0、SCALE 全 1。**t05 定量证实**：299 个实例的合法平移合计 (273.09, 2956.73, −1788.77) 与出盘几何相对原型的偏移 (273.09, 1788.78, 2956.72) **逐项相等**（只差 Y-up 的 (x,−z,y) 轴序）。lugouqiao_v15：126/126 个 i3dm 瓦片 POSITION 全 0；80/126 是 IL≥2（共享数组被累乘）；6 个瓦片烘焙坐标 >1e4，最坏 `i1018.i3dm` \|v\|=1.22e8 m，而同一数据集里所有实例变换的矩阵元素绝对值最大只有 378；root 包围盒被抬到 1.33e8 m、root `geometricError` 抬到 7.65e7 m，全树 LOD 阈值随之失效 | `GltfOptimizer.cpp::FlattenTransformsVisitor` + `ProductionPipeline.cpp::writeContent` / `buildInstanceTree` | FIXED（两段分开修：flatten 掩码 22:40 生效；"相对原型"那半在 22:40 是**空操作**——`pw.invert(invProto)` 把方向写反，23:53 才真正生效。验收口径同时从"命中绝对平移"改到相对帧。v15/v16 与所有 22:40 产物一律作废） | 5.5 / 12.1 | 高（阻断级：实例内容不可渲染） |
 | A-42 | 发布产物里泄漏**本地绝对路径**，且瓦片字节数随输出目录长短变化。两个口子都是"路径当名字"：`Osg2Gltf.cpp:763/766` 把纹理的完整输出路径写进 GLB `bufferView.name`/`image.name`（随 `.b3dm/.i3dm` **分发出去**：lugouqiao_v15 实测 **691/1057** 个瓦片带 `F:/wb_3dtiles_out/lugouqiao_v15\textures\…`）；FBX 导入器用源文件绝对路径命名根节点，顺着 `nodePath` 进 `feature-manifest.json`（同数据集 **2729** 处 `D:/BaiduNetdiskDownload/…fbx/…`）。副作用更难查：name 进 GLB JSON chunk → 同一输入、同一代码，t12 的 `t0.b3dm` 在不同输出目录下出现过 510432/510440/510344/510304/510296 五个尺寸，**以前把这类差异算成 A-40 的噪声** | `Osg2Gltf.cpp::getTexture` + `SourceModel.cpp::SourceModelVisitor::apply(Node&)` | FIXED（exe 00:12 + 插件 00:16：两处只留文件名；`path_leak_scan.js` 复扫 `matrix_a42fix` **0/213 瓦片、0/36 json**；两个长度差 40 字符的目录产出 sha256 相同；`test_production` 150/150。**`osgdb_gltf` 是 MODULE 插件，按目标构建不会重建它**。v17 复验：结构判据 `path_leak_structural.js` 报 **1057 瓦片 CLEAN / rc=0**、旁证绝对路径 **2729→0**；`path_leak_scan.js` 那 4 处是 BIN chunk 噪声，不是泄漏，该工具降级为粗筛） | —（手册未列：交付物含本地路径） | 中（分发物带操作者目录结构；并污染"逐字节可复现"这一验收口径） |
 | A-43 | 产物里有零长度 NORMAL：`lugouqiao_v15` 实测 **195 个顶点 / 26 个瓦片**，其中 **55 个落在非退化三角形上**（法线本该算得出）。旧判据用绝对面积阈值，1e-8↔1e-9 之间"真隐患"档在 36↔55 之间跳，无法定级 | **源数据本身**（非产品代码）；产物侧为忠实透传 `SourceModel.cpp:805-807`、写出闸 `:856` | 源侧定性 **CONFIRMED**，写出侧修复**已在 `49b6d3c` 实施，并于 2026-10-20 下午**产物级复验通过**（`lugouqiao_v19`：validator 叶层 ERROR **0** / `rc=0`；同轮对 v17 复跑仍是 195 条 / `rc=1` 作阳性对照；`zero_normal_triage.js` v17=195 → v19=0）**：裸读源 FBX 实测 2729 个法线数组（解析失败 0）、按内容去重 626 个，其中 **7 个含零法线**（另有 29 个逐字节相同的 instance 拷贝，故原始计数是 36 个数组）；零角点 **63** 个 = **21 个整面全零三角形**（按 PVI 真实负下标边界算，不是"3 角点/面"假设），散落单角点 **0**。尺子本轮已修对（主判据 `REL×中位面积`、绝对阈值降为对照列、`make_zero_norm_fixture.js` 阳性对照、非单位列做解析自检）。已排除：简化器（`EXACT_LEAF` 瓦片带同样 3 条）、写出侧造零（`SourceModel` 只能原样带上或整条丢掉）、平滑（`-nrm` 未开，`SmoothingVisitor` 不参与）、A-38 同族（确定、可逐字节复现）。证据 `evidence/a43-source-side-fbx-probe.txt`，含源↔产物两条独立读路径在同一个 4 818 面 mesh 上对上"面数 + 3 条零" | —（手册未列：非单位法线） | 低（**成因**：输入数据缺陷 + 忠实透传，可渲染、局部 shading 异常）。**发布等级本轮上调**：2026-10-20 官方 validator 对 `lugouqiao_v17` 判 **rc=1 / 26 个内容文件 / 叶层 195 条 `not of unit length: 0` ERROR**（同工具对 `matrix_a42fix` 12/12 与 `longxiang_a42` 判 0 error），旧写法"validator 只逐条告警、不按拒绝发布处理"已撤回——写出侧修复已于 `49b6d3c` 落地（`SourceModel::repairZeroNormals`，v17 分档实测 55 可由入射面修复 / 140 退本图元平均面法线 / 0 无解），v17 与已终止的 v18 都不是这份代码出的盘，**`lugouqiao_v19` 才是**（2026-10-20 下午，ERROR 0 / rc=0）； **v19 的视觉验收仍未做**，电池与 validator 全绿不等于可发布；禁止用丢属性或降级判据凑通过 |
@@ -847,7 +847,26 @@ min/max 那条报警，把某个分量改成 `NaN` 则只有"非有限"那条报
 
 ---
 
-### A-40 同一二进制、同一输入，产物不逐位一致　**OPEN**
+### A-40 同一二进制、同一输入，产物不逐位一致　**FIXED（R9，2026-11-02）**
+
+> **R9 结案（根因不是并行窗口）**：历史样本使用的是 2026-10-26 之前有缺陷的
+> `test_assets` OBJ 夹具（A-56/A-57 已证明 t02 有 4 处、t09 有 1 处越界面索引）。
+> OSG `osgdb_obj` 对越界 `f` 索引不报错，而是从坐标数组尾部/残留堆内存取
+> 顶点/法线；值随进程堆状态变化 → 几何、包围盒、剖分树、leaf↔proxy 分类与
+> 误差字段一起变。这正是本条观测到的"树变体 + 分类跳变 + errMax 变化"。
+>
+> 直接复现（当前 Release 二进制 + 归档旧夹具 `fixgen_orig`，`-objcheck off`）：
+> t02 30 次 = 26 基线 + 4 个单例（5 个签名，历史 127 次也是 5 个哈希）；
+> t09 30 次 = 27 基线 + 3 个单例（历史 8 次 3 变体 + 矩阵 1 个），且
+> `maxContentBytes` 档位 `41120/41144/41152/41160` 与历史记录的
+> `41120/41144/41152` 逐值吻合。默认 `-objcheck reject` 对旧夹具 **rc=7、
+> 零产物**；合法夹具 30 次 × j1/j2/j4/j8/default 与 30 次并发负载全部
+> 逐字节一致。证据：`F:\wb_3dtiles_out\_followup_20261028\r9_20261102\
+> A40_ROOT_CAUSE.md`、`determinism/oldfix_t*_objoff/summary.json`。
+>
+> 结论：**非确定性来源在输入侧，不在 `ProductionPipeline` 并行/误差评估**；
+> 输入硬闸 + 合法夹具重建后本条关闭。并行度只改变堆 churn（越界读落在哪个
+> 残留值的概率），这解释了历史上"jobs8/jobs4/debug 都出现、同一哈希跨配置"。
 `ProductionPipeline::buildB3dmTree` 并行窗口 / 误差评估分支
 
 `t02_thin_features`（0.3 s 的小资产）累计 127 份产物：§5 的 30 次默认并行滑窗、§7 的
@@ -2509,3 +2528,75 @@ A-58 的代码（身份七格赋值、`outputBytes` 口径固定、投影失败 
   longxiang 86.3→88.0 MiB（+2.0%）、wuhu 65.8→66.1 MiB（+0.5%）；
   最大内容字节 3.79/3.65/2.82/2.54/2.42 MB（上限 8 MiB），
   三角形/primitive/material 预算不变。
+
+---
+
+### A-89 生产链自动去纹理与用户裁定冲突　**FIXED（R9）**
+
+- 位置：`ProductionPipeline::processTileHeavy` 的 `!pr.fitsWithFloorTextures`
+  分支原会构造 `FarLodTextureStripper` 清空代理 StateSet 纹理和材质，
+  把"最低分辨率纹理仍装不下的代理"写成无纹理灰模（t02/jianzhu t77/t350、
+  lugouqiao t485 历史日志均有 `far-LOD proxy built without textures`）。
+- 修复：删除 `FarLodTextureStripper` 类与全部调用点；下限纹理仍超预算时写
+  `w.failure = "proxy texture floor does not fit tile byte budget; automatic
+  texture removal is disabled (policy: textures must be kept)"` 并返回，进入既有
+  内节点失败处理：默认降级为无内容内节点（子级继续覆盖同一 source scope），
+  `-noProxyDegrade` 时失败关闭、零提交。写出阶段只保留"降分辨率阶梯"
+  （`textureDownscaleLadder`，下限 64px），绝不删除纹理或替换材质。
+- 测试：`textureFloor` 14 条断言——floor 超预算→降级且不写灰模、无内容内节点、
+  叶纹理计数 >0、`featuresMissingFromLeaves=0`；`-noProxyDegrade`→失败且无
+  `tileset.json`；预算充足→代理与叶纹理都保留；`texResize` 继续钉住共享
+  `osg::Image` 不被就地缩放。
+- 真实资产：jianzhu t77/t350、lugouqiao t485 由"无纹理灰模"改为降级；
+  其余内容文件逐字节不变（jianzhu 1087/1087、lugouqiao 仅正常法线舍入差异）。
+  validator 0 error。
+
+### A-90 源法线用线性矩阵直接变换 / 镜像绕序未翻转　**FIXED（R9）**
+
+- 位置：`SourceModel::build` 原用 `Matrixd::transform3x3(n, worldMatrix)`；
+  非均匀缩放/剪切下法线方向错误；负行列式（镜像）只改了位置、没有交换三角形
+  后两个索引，导致绕序与法线相反（Cesium 默认背面剔除下表现为黑面/缺面）。
+- 修复：OSG 行向量约定下 `p' = p·M`，`t' = t·A`，法线用
+  `n' = normalize(n·(A^-1)^T)`（实现为 `out.transpose(inverse(world))` 的上 3×3）。
+  奇异/非有限矩阵不伪造逆矩阵：法线置零并计入既有零法线修复，几何侧超限仍按
+  既有 `nonFiniteGeometry` 丢弃；支持 `BIND_PER_VERTEX` / `BIND_OVERALL` /
+  `BIND_PER_PRIMITIVE_SET`（后者展开成逐顶点，共享顶点法线冲突时显式告警），
+  其余绑定显式告警并交给法线修复。行列式 <0 时交换每个三角形的后两个索引。
+- 测试：`sourceNormals` 13 条（单位/平移/旋转/均匀/非均匀/非均匀×旋转/剪切/
+  单轴负缩放/双轴负缩放/极端缩放/奇异/非有限，均以变换后真实三角形叉积
+  为独立判据）；`normalBindings` 7 条（OVERALL/PER_PRIMITIVE_SET 展开、
+  长度不匹配不越界读取）。
+- 真实资产：wuhu 法线-绕序一致率从 **82.77%**（坏三角形 102,943/597,343）
+  提升到 **99.94%**（366/589,428）；t6 由 26,900/26,900 全部背向变为 0；
+  naruto/longxiang/hall/lugouqiao 无镜像，只有 1e-16 量级浮点舍入差异；
+  wuhu t2 聚合代理因镜像索引顺序改变，meshopt 结果 31,421→23,493 三角形，
+  误差上界 386.2019→386.1411 m（仍 BOUND_LOOSE，质量不降）。
+
+### A-91 重复实例判重漏 UV 通道数 / 通用顶点属性 / 绑定　**FIXED（R9）**
+
+- 位置：`Utils::compareGeometry` 只按 geom1 的 UV 数量遍历，未比较多余 UV 通道；
+  完全没比较 `getNumVertexAttribArrays()` 及每个 slot 的内容/类型/长度/绑定；
+  `compareGeode` 对非 Geometry drawable 没有可严格比较的字段。
+- 修复：先比较 UV 通道数，再逐通道比较内容与 `Array::getBinding`；通用顶点
+  属性比较数量、每槽 `compareArray`（类型/分量类型/长度/内容）与
+  `Geometry::getVertexAttribBinding`；法线/颜色增加数组级 binding；非 Geometry
+  drawable 至少要求 className 一致（保守，宁可假阴性）。`computeSignature`
+  把 uvCount/attribCount 混入哈希与相等判定，但哈希仍只做预筛，正确性由
+  `compareGeode` 严格比较保证。
+- 测试：`instanceCompare` 20 条（POSITION/NORMAL/UV0/UV1/COLOR/通用属性/属性
+  绑定/pset 类型/索引顺序/Geometry StateSet/Geode StateSet/drawable 数量；
+  相同几何允许实例化；同签名但索引顺序不同不得实例化）。
+- 真实资产：六资产 instanceCount 与 R8 完全一致（wuhu 19、longxiang 10、
+  hall 72、lugouqiao 1,787、naruto/jianzhu 0），i3dm 文件数与原型/实例对应
+  关系不变；变化的 i3dm 仅法线浮点舍入（maxAbsDiff ~1e-23）。
+
+### A-92 聚合合并分组以 StateSet 指针做 std::map 键（输出顺序隐患）　**FIXED（R9）**
+
+- 位置：`ProxyMeshBuilder` 聚合 cell 合并时 `std::map<std::pair<AttrSig,
+  const osg::StateSet*>>`，组顺序由无关指针的相对地址决定。
+- 修复：分组仍按 StateSet 指针身份（不跨指针合并，避免 `compareStateSet`
+  只比文件名/尺寸造成的错并材质）；排序键改为 `(AttrSig, 内容等价类)`，
+  同类内保持首次遇到顺序——完全由确定性的 `kept` 输入顺序决定。
+- 验证：修正前后 wuhu 两次同二进制运行 174/174 文件逐字节相同；该改动不改变
+  几何/材质集合，只固定 drawable 顺序。六资产最终复跑与修正前输出一致
+  （naruto 4/4 逐字节相同；其余差异均来自 A-89/A-90 的预期行为）。

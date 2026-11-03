@@ -13,8 +13,8 @@ namespace production {
 
 using json = nlohmann::json;
 
-// 内节点代理纹理的最低可接受边长：写出阶段的降采样阶梯到此为止，构建期
-// "降到下限仍装不下才去纹理"的判据用同一个值，两边不能各说各话。
+// 内节点代理纹理的最低可接受边长：写出阶段的降采样阶梯到此为止；构建期
+// 用同一个值判断"下限纹理是否装得下"，装不下就显式失败/降级，绝不删除纹理。
 constexpr unsigned proxyTextureFloorEdgePx = 64;
 
 // ---------------------------------------------------------------------------
@@ -37,8 +37,8 @@ struct ResourceBudget {
     unsigned maxAtlasDimension = 4096;
     unsigned targetAtlasDimension = 2048;
     // 内节点代理（远景 LOD）纹理最大边长：按预算降分辨率，而不是整张删纹理。
-    // 装不下 maxTileContentBytes 时逐级折半，直到 proxyTextureFloorEdgePx
-    // 仍不达标才去纹理。
+    // 装不下 maxTileContentBytes 时逐级折半，直到 proxyTextureFloorEdgePx；
+    // 仍不达标则代理显式失败/降级，生产链不去纹理。
     unsigned proxyTextureMaxEdgePx = 512;
     // 空间树
     unsigned maxTreeDepth = 48;

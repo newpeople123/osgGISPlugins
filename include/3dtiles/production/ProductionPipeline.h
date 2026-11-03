@@ -273,7 +273,6 @@ private:
         bool isProxy = false;
         bool aggregate = false;
         bool leaf = false;
-        bool texturesDropped = false;  // 内节点代理连下限分辨率纹理都装不下，构建时去纹理
         unsigned texturesCappedPx = 0; // 内节点代理写出时纹理边长上限（0 = 不额外降分辨率）
         std::map<FeatureId, std::vector<FeatureId>> aggregateSources;
         std::vector<FeatureId> sourceScope;
